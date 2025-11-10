@@ -14021,36 +14021,35 @@
         ];
         let customMemes = JSON.parse(localStorage.getItem('customMemes')) || [];
         let allMemes = [...defaultMemes, ...customMemes];
+
         function getRandomMeme() {
             if (allMemes.length === 0) {
                 document.getElementById('memeImage').src = 'https://via.placeholder.com/300x200?text=No+Memes';
                 document.getElementById('memeCaption').textContent = 'No memes available. Add some!';
                 return;
             }
+            
             const randomIndex = Math.floor(Math.random() * allMemes.length);
-            const url = allMemes[randomIndex];
+            const meme = allMemes[randomIndex];
+            
+            // ✅ HANDLE BOTH OLD (string) & NEW (object) FORMAT
+            const url = typeof meme === 'string' ? meme : meme.url;
+            const caption = typeof meme === 'string' ? 'Click to see another meme!' : meme.caption;
+            
             const img = document.getElementById('memeImage');
             img.src = url;
-            const captions = [
-                "Studying valuation models while feeling worthless...",
-                "At least my problems are compounding faster than inflation...",
-                "I’m basically shorting my happiness for long-term gains..."                
-                // ... (giữ nguyên list captions)
-            ];
-            const randomCaption = captions[Math.floor(Math.random() * captions.length)];
-            document.getElementById('memeCaption').textContent = randomCaption;
+            document.getElementById('memeCaption').textContent = caption;
             
-            // Handle errors
             img.onerror = function() {
                 console.warn('Failed to load meme:', url);
-                // Remove broken meme
-                allMemes = allMemes.filter(m => m !== url);
-                if (customMemes.includes(url)) {
-                    customMemes = customMemes.filter(m => m !== url);
-                    localStorage.setItem('customMemes', JSON.stringify(customMemes));
-                    updateCustomMemesCount();
-                }
-                // Try another meme
+                allMemes = allMemes.filter(m => {
+                    const mUrl = typeof m === 'string' ? m : m.url;
+                    return mUrl !== url;
+                });
+                customMemes = customMemes.filter(m => m.url !== url);
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+                updateCustomMemesCount();
+                
                 if (allMemes.length > 0) {
                     getRandomMeme();
                 } else {
@@ -14059,7 +14058,12 @@
             };
         }
 
-        // ===== ADD CUSTOM MEME =====
+
+
+
+
+
+
         function addCustomMeme() {
             const urlInput = document.getElementById('customMemeUrl');
             const url = urlInput.value.trim();
@@ -14069,7 +14073,7 @@
                 return;
             }
             
-            // Validate URL format
+            // Validate URL
             try {
                 new URL(url);
             } catch {
@@ -14078,20 +14082,29 @@
             }
             
             // Check duplicate
-            if (customMemes.includes(url)) {
+            if (customMemes.some(m => m.url === url)) {
                 showNotification('⚠️ This meme already exists!', 'error');
                 return;
             }
             
-            customMemes.push(url);
-            allMemes.push(url);
+            // ✅ PROMPT FOR CAPTION
+            const caption = prompt('Enter a caption for this meme (optional):', '') || 'No caption';
+            
+            // ✅ LƯU OBJECT THAY VÌ STRING
+            const newMeme = { url, caption, addedAt: new Date().toISOString() };
+            customMemes.push(newMeme);
+            allMemes.push(newMeme);
+            
             localStorage.setItem('customMemes', JSON.stringify(customMemes));
             
             urlInput.value = '';
             updateCustomMemesCount();
             showNotification('✅ Meme added successfully!', 'success');
-            getRandomMeme(); // Show new meme
+            getRandomMeme();
         }
+
+
+
 
         // ===== UPDATE MEME COUNT =====
         function updateCustomMemesCount() {
@@ -14157,48 +14170,91 @@
             if (modal) modal.remove();
         }
 
-        // ===== RENDER MEMES LIST =====
+
+
         function renderCustomMemesList() {
-            return customMemes.map((url, index) => `
-                <div style="background: var(--bg-light); padding: 12px; border-radius: 12px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
-                    <img src="${url}" alt="Meme ${index + 1}" 
-                        style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; flex-shrink: 0;"
-                        onerror="this.src='https://via.placeholder.com/100?text=Error'">
-                    
-                    <div style="flex: 1; min-width: 0; overflow: hidden;">
-                        <div style="font-size: 0.85rem; color: var(--text-muted); word-break: break-all; margin-bottom: 6px;">
-                            ${url}
-                        </div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">
-                            Added: ${new Date().toLocaleDateString()}
+            return customMemes.map((meme, index) => {
+                const url = typeof meme === 'string' ? meme : meme.url;
+                const caption = typeof meme === 'string' ? 'No caption' : meme.caption;
+                
+                return `
+                    <div style="background: var(--bg-light); padding: 12px; border-radius: 12px; margin-bottom: 12px;">
+                        <div style="display: flex; gap: 12px; align-items: start;">
+                            <img src="${url}" alt="Meme ${index + 1}" 
+                                style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; flex-shrink: 0;"
+                                onerror="this.src='https://via.placeholder.com/100?text=Error'">
+                            
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 6px;">
+                                    "${caption}"
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-muted); word-break: break-all; margin-bottom: 6px;">
+                                    ${url}
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                    Added: ${typeof meme === 'object' && meme.addedAt ? new Date(meme.addedAt).toLocaleDateString() : 'Unknown'}
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; flex-direction: column; gap: 6px;">
+                                <button onclick="editMemeCaption('${url.replace(/'/g, "\\'")}', '${caption.replace(/'/g, "\\'")}')" 
+                                    style="background: #3b82f6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
+                                    ✏️ Edit
+                                </button>
+                                <button onclick="deleteCustomMeme('${url.replace(/'/g, "\\'")}')" 
+                                    style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
+                                    🗑️ Delete
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    
-                    <button onclick="deleteCustomMeme('${url.replace(/'/g, "\\'")}')" 
-                        style="background: #ef4444; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
-                        🗑️ Delete
-                    </button>
-                </div>
-            `).join('');
+                `;
+            }).join('');
+        }
+
+        function editMemeCaption(url, oldCaption) {
+            const newCaption = prompt('Edit caption:', oldCaption);
+            if (newCaption === null) return; // User cancelled
+            
+            const memeIndex = customMemes.findIndex(m => m.url === url);
+            if (memeIndex !== -1) {
+                customMemes[memeIndex].caption = newCaption || 'No caption';
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+                
+                // Update allMemes
+                const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === url);
+                if (allIndex !== -1) {
+                    allMemes[allIndex] = customMemes[memeIndex];
+                }
+                
+                // Re-render modal
+                const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
+                if (modalBody) {
+                    modalBody.innerHTML = renderCustomMemesList();
+                }
+                
+                showNotification('✅ Caption updated!', 'success');
+            }
         }
 
         // ===== DELETE MEME =====
         function deleteCustomMeme(url) {
             if (!confirm('🗑️ Delete this meme?')) return;
             
-            customMemes = customMemes.filter(m => m !== url);
-            allMemes = allMemes.filter(m => m !== url);
+            customMemes = customMemes.filter(m => m.url !== url);
+            allMemes = allMemes.filter(m => {
+                const mUrl = typeof m === 'string' ? m : m.url;
+                return mUrl !== url;
+            });
             
             localStorage.setItem('customMemes', JSON.stringify(customMemes));
             updateCustomMemesCount();
             
-            // Re-render modal
             const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
             if (modalBody) {
                 modalBody.innerHTML = renderCustomMemesList();
             }
             
-            // Update header count
             const headerCount = document.querySelector('#manageMemesModal p');
             if (headerCount) {
                 headerCount.textContent = `${customMemes.length} custom memes`;
@@ -14207,6 +14263,7 @@
             showNotification('Meme deleted', 'info');
         }
 
+
         // ===== INITIALIZE =====
         document.addEventListener('DOMContentLoaded', function() {
             updateCustomMemesCount();
@@ -14214,7 +14271,24 @@
         });
 
 
-
+        // Thêm vào DOMContentLoaded:
+        document.addEventListener('DOMContentLoaded', function() {
+            // ✅ MIGRATE OLD STRING FORMAT TO OBJECT FORMAT
+            const needsMigration = customMemes.some(m => typeof m === 'string');
+            if (needsMigration) {
+                customMemes = customMemes.map(m => 
+                    typeof m === 'string' 
+                        ? { url: m, caption: 'No caption', addedAt: new Date().toISOString() }
+                        : m
+                );
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+            }
+            
+            allMemes = [...defaultMemes.map(url => ({ url, caption: 'Built-in meme' })), ...customMemes];
+            
+            updateCustomMemesCount();
+            getRandomMeme();
+        });
 
     </script>
 
