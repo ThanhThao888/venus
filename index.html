@@ -9282,6 +9282,8 @@
             }, 10000);
         }
 
+
+
         function exportProgress() {
             const data = {
                 studyHours: studyHours,
@@ -9289,15 +9291,17 @@
                 readingList: readingList,
                 courses: courses,
                 goals: goals,
-                archivedGoals: archivedGoals,
+                archivedGoals: archivedGoals,  // ✅ Đã thêm đúng như yêu cầu
                 dailyStudyData: dailyStudyData,
                 sessionLogs: sessionLogs,
                 customQuotes: customQuotes,
                 customMemes: customMemes,
                 exportDate: new Date().toISOString(),
                 totalHours: Object.values(studyHours).reduce((total, career) =>
-                    total + Object.values(career).reduce((sum, hours) => sum + hours, 0), 0)
+                    total + Object.values(career).reduce((sum, hours) => sum + hours, 0), 0
+                )
             };
+
             const dataStr = JSON.stringify(data, null, 2);
             const dataBlob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(dataBlob);
@@ -9312,6 +9316,7 @@
         }
 
 
+        
         function importProgress(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -10786,6 +10791,85 @@
         let goals = JSON.parse(localStorage.getItem('goals')) || [];
         let archivedGoals = JSON.parse(localStorage.getItem('archivedGoals')) || [];
 
+        // ===== ARCHIVE FUNCTION =====
+        function archiveGoal(goalId) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal) return;
+            
+            const status = getGoalStatus(goal);
+            
+            if (status !== 'completed') {
+                showNotification('⚠️ Only completed goals can be archived!', 'error');
+                return;
+            }
+            
+            if (confirm(`📦 Archive "${goal.title}"? You can view it later in History.`)) {
+                // Remove from active goals
+                goals = goals.filter(g => g.id !== goalId);
+                
+                // Add to archived with timestamp
+                archivedGoals.push({
+                    ...goal,
+                    archivedAt: new Date().toISOString()
+                });
+                
+                // Save both
+                localStorage.setItem('archivedGoals', JSON.stringify(archivedGoals));
+                saveGoals();
+                
+                // Update UI
+                renderGoals();
+                updateGoalProgressChart();
+                
+                showNotification('✅ Goal archived successfully!', 'success');
+            }
+        }
+
+        // ===== RESTORE FUNCTION =====
+        function restoreArchivedGoal(goalId) {
+            const goal = archivedGoals.find(g => g.id === goalId);
+            if (!goal) return;
+            
+            if (confirm(`↩️ Restore "${goal.title}" back to active goals?`)) {
+                // Remove from archived
+                archivedGoals = archivedGoals.filter(g => g.id !== goalId);
+                
+                // Add back to active goals (remove archivedAt timestamp)
+                const restoredGoal = { ...goal };
+                delete restoredGoal.archivedAt;
+                goals.push(restoredGoal);
+                
+                localStorage.setItem('archivedGoals', JSON.stringify(archivedGoals));
+                saveGoals();
+                renderGoals();
+                renderArchivedGoals();
+                
+                showNotification(`✅ Goal "${goal.title}" restored!`, 'success');
+            }
+        }
+
+        // ===== PERMANENT DELETE FROM ARCHIVE =====
+        function permanentlyDeleteArchivedGoal(goalId) {
+            const goal = archivedGoals.find(g => g.id === goalId);
+            if (!goal) return;
+            
+            if (confirm(`🗑️ PERMANENTLY delete "${goal.title}"? This cannot be undone!`)) {
+                archivedGoals = archivedGoals.filter(g => g.id !== goalId);
+                localStorage.setItem('archivedGoals', JSON.stringify(archivedGoals));
+                renderArchivedGoals();
+                
+                // Update button count if modal is open
+                const archiveBtn = document.querySelector('.goal-archive-btn');
+                if (archiveBtn) {
+                    archiveBtn.innerHTML = `📦 View Archived Goals (${archivedGoals.length})`;
+                }
+                
+                showNotification('Goal permanently deleted', 'info');
+            }
+        }
+
+
+
         function saveGoals() {
             localStorage.setItem('goals', JSON.stringify(goals));
         }
@@ -10887,6 +10971,7 @@
         });
 
 
+        // ===== THAY THẾ FUNCTION deleteGoal CŨ =====
         function deleteGoal(goalId) {
             const goal = goals.find(g => g.id === goalId);
             if (!goal) return;
@@ -10894,6 +10979,7 @@
             const status = getGoalStatus(goal);
             
             if (status === 'completed') {
+                // Completed goals → Suggest archive instead
                 if (confirm('📦 Archive this completed goal? (You can view it in History later)')) {
                     goals = goals.filter(g => g.id !== goalId);
 
@@ -10908,6 +10994,7 @@
                     showNotification('✅ Goal archived successfully!', 'success');
                 }
             } else {
+                // Active/Overdue goals → Normal delete
                 if (confirm('🗑️ Permanently delete this goal? This cannot be undone.')) {
                     goals = goals.filter(g => g.id !== goalId);
                     saveGoals();
@@ -10916,6 +11003,8 @@
                 }
             }
         }
+
+
 
         function openUpdateCustomGoalModal(id) {
             const goal = goals.find(g => g.id === id);
@@ -10959,6 +11048,21 @@
         function updateGoals() {
             renderGoals();
         }
+
+
+        // ===== THÊM VÀO DOMContentLoaded =====
+        // Tìm document.addEventListener('DOMContentLoaded', function() { ... })
+        // THÊM ĐOẠN NÀY VÀO CUỐI (trước dấu });)
+
+        // Close archived modal on backdrop click
+        document.getElementById('archivedGoalsModal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeArchivedGoalsModal();
+            }
+        });
+
+
+
 
         function showNotification(message, type = 'success') {
             const existing = document.querySelector('.notification');
@@ -11247,6 +11351,8 @@
             showNotification(`✅ Template applied: ${title}`, 'success');
         }
 
+
+
         function renderGoals() {
             const container = document.getElementById('goalsContainer');
             const careerTitleEl = document.getElementById('goalsCareerTitle');
@@ -11344,7 +11450,11 @@
                     </div>
                 `;
             }
+
+            // ✅ Render HTML vào container
             container.innerHTML = html;
+
+            // ✅ Thêm nút "View Archived Goals" NGAY SAU khi set innerHTML, TRƯỚC updateGoalProgressChart()
             const addGoalBtn = document.querySelector('.goal-add-btn');
             if (addGoalBtn && !document.querySelector('.goal-archive-btn')) {
                 const archiveBtn = document.createElement('button');
@@ -11371,8 +11481,10 @@
                 addGoalBtn.parentNode.insertBefore(archiveBtn, addGoalBtn.nextSibling);
             }
 
+            // ✅ Cập nhật biểu đồ sau cùng
             updateGoalProgressChart();
         }
+
 
 
         function toggleCompletedGoals() {
@@ -11546,10 +11658,7 @@
         }
 
 
-
-
-
-        // Helper: Render Action Buttons
+        // ===== THAY THẾ FUNCTION renderGoalActionButtons CŨ =====
         function renderGoalActionButtons(goal, status) {
             let buttons = '';
             
@@ -11571,36 +11680,114 @@
                 </button>
             `;
             
-            // Complete/Uncomplete Goal
-            if (status !== 'completed') {
-                // Show Mark Complete button if not completed
+            // ✅ ARCHIVE BUTTON (for completed) OR DELETE (for active)
+            if (status === 'completed') {
                 buttons += `
-                    <button onclick="completeGoal('${goal.id}')" 
-                        style="padding: 8px 14px; background: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
-                        ✅ Mark Complete
+                    <button onclick="deleteGoal('${goal.id}')" 
+                        style="padding: 8px 14px; background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid #10b981; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
+                        📦 Archive
                     </button>
                 `;
-            } else if (goal.type === 'custom') {
-                // Show Reopen button only for completed custom goals
+            } else {
                 buttons += `
-                    <button onclick="uncompleteGoal('${goal.id}')" 
-                        style="padding: 8px 14px; background: var(--bg-light); color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
-                        ↩️ Reopen
+                    <button onclick="deleteGoal('${goal.id}')" 
+                        style="padding: 8px 14px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
+                        🗑️ Delete
                     </button>
                 `;
             }
-            // For non-custom goals that are completed, no specific complete/uncomplete button is shown here,
-            // relying on other logic or potentially a different reopen mechanism if applicable.
-            
-            // Delete Goal
-            buttons += `
-                <button onclick="deleteGoal('${goal.id}')" 
-                    style="padding: 8px 14px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
-                    🗑️ Delete
-                </button>
-            `;
             
             return buttons;
+        }
+
+        // ===== OPEN ARCHIVED GOALS MODAL =====
+        function openArchivedGoalsModal() {
+            document.getElementById('archivedGoalsModal').style.display = 'flex';
+            renderArchivedGoals();
+        }
+
+        // ===== CLOSE ARCHIVED GOALS MODAL =====
+        function closeArchivedGoalsModal() {
+            document.getElementById('archivedGoalsModal').style.display = 'none';
+        }
+
+        // ===== RENDER ARCHIVED GOALS =====
+        function renderArchivedGoals() {
+            const container = document.getElementById('archivedGoalsContainer');
+            const careerFilter = document.getElementById('archiveCareerFilter').value;
+            
+            if (!container) return;
+            
+            let filteredArchived = archivedGoals;
+            
+            if (careerFilter !== 'all') {
+                filteredArchived = archivedGoals.filter(g => g.career === careerFilter);
+            }
+            
+            if (filteredArchived.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+                        <div style="font-size: 4rem; margin-bottom: 15px; opacity: 0.3;">📦</div>
+                        <h3 style="margin: 0 0 8px 0; color: var(--text-dark);">No Archived Goals</h3>
+                        <p style="margin: 0; font-size: 0.95rem;">
+                            ${careerFilter === 'all' ? 'Complete some goals to see them here!' : 'No archived goals for this career yet.'}
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Sort by archived date (newest first)
+            filteredArchived.sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt));
+            
+            // Group by month
+            const groupedByMonth = {};
+            filteredArchived.forEach(goal => {
+                const date = new Date(goal.archivedAt);
+                const monthKey = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+                
+                if (!groupedByMonth[monthKey]) {
+                    groupedByMonth[monthKey] = [];
+                }
+                groupedByMonth[monthKey].push(goal);
+            });
+            
+            let html = `
+                <div style="margin-bottom: 20px; padding: 16px; background: rgba(16, 185, 129, 0.1); border-radius: 12px; border-left: 4px solid #10b981;">
+                    <div style="font-size: 1.1rem; font-weight: 600; color: #10b981; margin-bottom: 8px;">
+                        🎉 Total Achievements
+                    </div>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 150px;">
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">Total Archived</div>
+                            <div style="font-size: 1.8rem; font-weight: 700; color: #10b981;">${filteredArchived.length}</div>
+                        </div>
+                        <div style="flex: 1; min-width: 150px;">
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">Total Hours Completed</div>
+                            <div style="font-size: 1.8rem; font-weight: 700; color: #10b981;">
+                                ${filteredArchived.reduce((sum, g) => sum + (g.target || 0), 0).toFixed(0)}h
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Render each month group
+            Object.entries(groupedByMonth).forEach(([month, goals]) => {
+                html += `
+                    <div style="margin-bottom: 30px;">
+                        <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-dark); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border-color); display: flex; align-items: center; gap: 10px;">
+                            📅 ${month}
+                            <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">(${goals.length} goals)</span>
+                        </div>
+                        <div style="display: grid; gap: 12px;">
+                            ${goals.map(goal => renderArchivedGoalCard(goal)).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
         }
 
         function completeGoal(goalId) {
@@ -14365,6 +14552,51 @@
             </div>
         </div>
     </div>
+
+
+
+    <!-- Archived Goals Modal -->
+    <div id="archivedGoalsModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 900px; max-height: 85vh; overflow-y: auto;">
+            <div class="modal-header" style="position: sticky; top: 0; background: var(--bg-white); z-index: 10; padding-bottom: 15px; border-bottom: 2px solid var(--border-color);">
+                <div>
+                    <h2 style="margin: 0 0 8px 0; font-size: 1.5rem; color: var(--text-dark);">
+                        📦 Archived Goals History
+                    </h2>
+                    <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">
+                        All your completed goals, preserved forever
+                    </p>
+                </div>
+                <button class="modal-close" onclick="closeArchivedGoalsModal()">&times;</button>
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <select id="archiveCareerFilter" onchange="renderArchivedGoals()" style="flex: 1; min-width: 150px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark);">
+                        <option value="all">All Careers</option>
+                        <option value="pe">💼 Private Equity</option>
+                        <option value="ib">🏦 Investment Banking</option>
+                        <option value="hf">📈 Hedge Funds</option>
+                        <option value="sc">🎯 Strategy Consulting</option>
+                        <option value="fintech">💳 Fintech</option>
+                        <option value="english">🚩 English</option>
+                        <option value="chinese">💞 Chinese</option>
+                        <option value="school">🎒 School</option>
+                        <option value="cfa1">📜 CFA Level 1</option>
+                    </select>
+                    
+                    <button onclick="clearAllArchivedGoals()" style="padding: 10px 20px; background: #ef4444; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                        🗑️ Clear All
+                    </button>
+                </div>
+                
+                <div id="archivedGoalsContainer">
+                    <!-- Archived goals will render here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
 
 
 </body>
