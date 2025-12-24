@@ -9283,184 +9283,6 @@
         }
 
 
-
-        function exportProgress() {
-            const data = {
-                studyHours: studyHours,
-                gamification: gamification,
-                readingList: readingList,
-                courses: courses,
-                goals: goals,
-                archivedGoals: archivedGoals,  // ✅ Đã thêm đúng như yêu cầu
-                dailyStudyData: dailyStudyData,
-                sessionLogs: sessionLogs,
-                customQuotes: customQuotes,
-                customMemes: customMemes,
-                exportDate: new Date().toISOString(),
-                totalHours: Object.values(studyHours).reduce((total, career) =>
-                    total + Object.values(career).reduce((sum, hours) => sum + hours, 0), 0
-                )
-            };
-
-            const dataStr = JSON.stringify(data, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `finance-skills-progress-${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            showNotification('✅ Progress exported successfully!', 'success');
-        }
-
-
-        
-        function importProgress(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const importedData = JSON.parse(e.target.result);
-                    let updatedSomething = false;
-                    if (typeof importedData !== 'object' || importedData === null) {
-                        throw new Error('Invalid data format');
-                    }
-                    if (importedData.studyHours && typeof importedData.studyHours === 'object') {
-                        Object.entries(importedData.studyHours).forEach(([career, skills]) => {
-                            if (typeof skills !== 'object') throw new Error('Invalid study hours format');
-                        });
-                        studyHours = importedData.studyHours;
-                        localStorage.setItem('studyHours', JSON.stringify(studyHours));
-                        updatedSomething = true;
-                    }
-                    if (importedData.gamification && typeof importedData.gamification === 'object') {
-                        if (typeof importedData.gamification.points === 'number' &&
-                            typeof importedData.gamification.level === 'number') {
-                            gamification = {
-                                ...gamification,
-                                ...importedData.gamification
-                            };
-                            localStorage.setItem('gamification', JSON.stringify(gamification));
-                            updatedSomething = true;
-                        }
-                    }
-                    if (Array.isArray(importedData.readingList)) {
-                        readingList = importedData.readingList.filter(book => 
-                            book.title && book.author && book.id
-                        );
-                        localStorage.setItem('readingList', JSON.stringify(readingList));
-                        updatedSomething = true;
-                    }
-                    if (Array.isArray(importedData.courses)) {
-                        courses = importedData.courses.filter(course => 
-                            course.title && course.career && course.id
-                        ).map(course => ({
-                            ...course,
-                            url: course.url || "",
-                            hoursStudied: course.hoursStudied || 0,
-                            estimatedHours: course.estimatedHours || 1,
-                            favorite: course.favorite || false
-                        }));
-                        localStorage.setItem('courses', JSON.stringify(courses));
-                        updatedSomething = true;
-                    }
-                    if (Array.isArray(importedData.goals)) {
-                        goals = importedData.goals.filter(goal => 
-                            goal.title && goal.type && goal.target && goal.id
-                        ).map(goal => ({
-                            ...goal,
-                            currentProgress: goal.currentProgress || 0,
-                            career: goal.career || currentCareer
-                        }));
-                        localStorage.setItem('goals', JSON.stringify(goals));
-                        updatedSomething = true;
-                    }
-
-                    if (Array.isArray(importedData.archivedGoals)) {
-                        archivedGoals = importedData.archivedGoals.filter(goal => 
-                            goal.title && goal.type && goal.id
-                        );
-                        localStorage.setItem('archivedGoals', JSON.stringify(archivedGoals));
-                        updatedSomething = true;
-                    }
-                    if (importedData.dailyStudyData && typeof importedData.dailyStudyData === 'object') {
-                        const validDailyData = {};
-                        Object.entries(importedData.dailyStudyData).forEach(([date, hours]) => {
-                            if (typeof hours === 'number' && hours >= 0) {
-                                validDailyData[date] = hours;
-                            }
-                        });
-                        dailyStudyData = validDailyData;
-                        localStorage.setItem('dailyStudyData', JSON.stringify(dailyStudyData));
-                        updatedSomething = true;
-                    }
-                    if (Array.isArray(importedData.sessionLogs)) {
-                        sessionLogs = importedData.sessionLogs.filter(log => 
-                            log.text && log.timestamp && log.id
-                        );
-                        localStorage.setItem('sessionLogs', JSON.stringify(sessionLogs));
-                        updatedSomething = true;
-                    }
-                    
-                    // ===== THÊM PHẦN IMPORT CUSTOM QUOTES =====
-                    if (Array.isArray(importedData.customQuotes)) {
-                        customQuotes = importedData.customQuotes.filter(q => 
-                            q.text && q.id
-                        );
-                        motivationalQuotes = [...defaultQuotes, ...customQuotes];
-                        localStorage.setItem('customQuotes', JSON.stringify(customQuotes));
-                        updatedSomething = true;
-                        updateCustomQuotesCount();
-                    }
-                    // ===== KẾT THÚC PHẦN IMPORT CUSTOM QUOTES =====
-
-
-                    // ===== THÊM PHẦN IMPORT CUSTOM MEMES =====
-                    if (Array.isArray(importedData.customMemes)) {
-                        customMemes = importedData.customMemes.filter(m => typeof m === 'object' && m.url); // Lọc meme hợp lệ (theo format object mới)
-                        allMemes = [...defaultMemes, ...customMemes];
-                        localStorage.setItem('customMemes', JSON.stringify(customMemes));
-                        updatedSomething = true;
-                        updateCustomMemesCount(); // Cập nhật số lượng meme trên UI
-                    }
-                    // ===== KẾT THÚC PHẦN IMPORT CUSTOM MEMES =====
-
-
-                    if (updatedSomething) {
-                        loadSkills(currentCareer);
-                        updateStats();
-                        updateGamificationStats();
-                        updateChart();
-                        renderReadingList();
-                        updateReadingCounts();
-                        renderCourses();
-                        renderGoals();
-                        renderSessionLogs();
-                        updateDailyStudyDisplay();
-                        getRandomQuote();      
-                        showNotification(`✅ Import successful! Updated ${Object.keys(importedData).length} data types.`, 'success');
-                    } else {
-                        showNotification('ℹ️ No valid data found in the file.', 'info');
-                    }
-
-                } catch (error) {
-                    console.error("Import error:", error);
-                    showNotification(`❌ Import failed: ${error.message || 'Invalid file format'}`, 'error');
-                }
-            };
-            reader.onerror = function() {
-                showNotification('❌ Failed to read file', 'error');
-            };
-            reader.readAsText(file);
-            event.target.value = '';
-        }
-
-
-
-
         function updateDailyStreak() {
             const today = new Date().toDateString();
             const yesterday = new Date();
@@ -14693,6 +14515,172 @@
         });
 
 
+        // --- DATA MANAGEMENT (EXPORT/IMPORT) ---
+
+        function exportProgress() {
+            try {
+                // ✅ Get data directly from localStorage instead of variables
+                const data = {
+                    studyHours: JSON.parse(localStorage.getItem('studyHours') || '{}'),
+                    gamification: JSON.parse(localStorage.getItem('gamification') || '{}'),
+                    readingList: JSON.parse(localStorage.getItem('readingList') || '[]'),
+                    courses: JSON.parse(localStorage.getItem('courses') || '[]'),
+                    goals: JSON.parse(localStorage.getItem('goals') || '[]'),
+                    archivedGoals: JSON.parse(localStorage.getItem('archivedGoals') || '[]'),
+                    dailyStudyData: JSON.parse(localStorage.getItem('dailyStudyData') || '{}'),
+                    sessionLogs: JSON.parse(localStorage.getItem('sessionLogs') || '[]'),
+                    customQuotes: JSON.parse(localStorage.getItem('customQuotes') || '[]'),
+                    customMemes: JSON.parse(localStorage.getItem('customMemes') || '[]'),
+                    sleepSessions: JSON.parse(localStorage.getItem('sleepSessions') || '[]'),
+                    investmentAnalyses: JSON.parse(localStorage.getItem('investmentAnalyses') || '[]'),
+                    dealDiary: JSON.parse(localStorage.getItem('dealDiary') || '[]'),
+                    exportDate: new Date().toISOString(),
+                    version: "2.1"
+                };
+
+                const dataStr = JSON.stringify(data, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(dataBlob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `finance-skills-tracker-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                showNotification('✅ Data exported successfully!', 'success');
+            } catch (err) {
+                console.error("Export failed:", err);
+                showNotification('❌ Export failed: ' + err.message, 'error');
+            }
+        }
+
+        function importProgress(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    
+                    // ✅ Safe import with proper initialization
+                    if (data.studyHours) { 
+                        localStorage.setItem('studyHours', JSON.stringify(data.studyHours));
+                        studyHours = JSON.parse(localStorage.getItem('studyHours')) || {};
+                    }
+                    if (data.gamification) { 
+                        localStorage.setItem('gamification', JSON.stringify(data.gamification));
+                        gamification = JSON.parse(localStorage.getItem('gamification')) || {};
+                    }
+                    if (data.readingList) { 
+                        localStorage.setItem('readingList', JSON.stringify(data.readingList));
+                        readingList = JSON.parse(localStorage.getItem('readingList')) || [];
+                    }
+                    if (data.courses) { 
+                        localStorage.setItem('courses', JSON.stringify(data.courses));
+                        courses = JSON.parse(localStorage.getItem('courses')) || [];
+                    }
+                    if (data.goals) { 
+                        localStorage.setItem('goals', JSON.stringify(data.goals));
+                        goals = JSON.parse(localStorage.getItem('goals')) || [];
+                    }
+                    if (data.archivedGoals) { 
+                        localStorage.setItem('archivedGoals', JSON.stringify(data.archivedGoals));
+                        archivedGoals = JSON.parse(localStorage.getItem('archivedGoals')) || [];
+                    }
+                    if (data.dailyStudyData) { 
+                        localStorage.setItem('dailyStudyData', JSON.stringify(data.dailyStudyData));
+                        dailyStudyData = JSON.parse(localStorage.getItem('dailyStudyData')) || {};
+                    }
+                    if (data.sessionLogs) { 
+                        localStorage.setItem('sessionLogs', JSON.stringify(data.sessionLogs));
+                        sessionLogs = JSON.parse(localStorage.getItem('sessionLogs')) || [];
+                    }
+                    
+                    // ✅ Custom Quotes Import - SAFE VERSION
+                    if (data.customQuotes) { 
+                        localStorage.setItem('customQuotes', JSON.stringify(data.customQuotes));
+                        // Force reload from localStorage instead of using variables
+                        customQuotes = JSON.parse(localStorage.getItem('customQuotes')) || [];
+                        
+                        if (typeof defaultQuotes !== 'undefined') {
+                            motivationalQuotes = [...defaultQuotes, ...customQuotes];
+                        }
+                        
+                        if (typeof updateCustomQuotesCount === 'function') {
+                            updateCustomQuotesCount();
+                        }
+                    }
+                    
+                    // ✅ Custom Memes Import - SAFE VERSION
+                    if (data.customMemes) { 
+                        localStorage.setItem('customMemes', JSON.stringify(data.customMemes));
+                        // Force reload from localStorage instead of using variables
+                        customMemes = JSON.parse(localStorage.getItem('customMemes')) || [];
+                        
+                        if (typeof defaultMemes !== 'undefined') {
+                            const defaultMemesArray = defaultMemes.map(url => 
+                                typeof url === 'string' ? { url, caption: 'Built-in meme' } : url
+                            );
+                            allMemes = [...defaultMemesArray, ...customMemes];
+                        }
+                        
+                        if (typeof updateCustomMemesCount === 'function') {
+                            updateCustomMemesCount();
+                        }
+                    }
+                    
+                    if (data.sleepSessions) { 
+                        localStorage.setItem('sleepSessions', JSON.stringify(data.sleepSessions));
+                        sleepSessions = JSON.parse(localStorage.getItem('sleepSessions')) || [];
+                    }
+                    if (data.investmentAnalyses) { 
+                        localStorage.setItem('investmentAnalyses', JSON.stringify(data.investmentAnalyses));
+                        investmentAnalyses = JSON.parse(localStorage.getItem('investmentAnalyses')) || [];
+                    }
+                    if (data.dealDiary) { 
+                        localStorage.setItem('dealDiary', JSON.stringify(data.dealDiary));
+                        dealDiary = JSON.parse(localStorage.getItem('dealDiary')) || [];
+                    }
+
+                    // ✅ Reload ALL UI components
+                    if (typeof loadCareer === 'function') loadCareer(currentCareer);
+                    if (typeof updateStats === 'function') updateStats();
+                    if (typeof updateGamificationStats === 'function') updateGamificationStats();
+                    if (typeof renderReadingList === 'function') renderReadingList();
+                    if (typeof updateReadingCounts === 'function') updateReadingCounts();
+                    if (typeof renderCourses === 'function') renderCourses();
+                    if (typeof renderGoals === 'function') renderGoals();
+                    if (typeof renderSessionLogs === 'function') renderSessionLogs();
+                    if (typeof renderSleepHistory === 'function') renderSleepHistory();
+                    if (typeof renderSleepChart === 'function') renderSleepChart();
+                    if (typeof renderAnalysisCards === 'function') renderAnalysisCards();
+                    if (typeof renderDealCards === 'function') renderDealCards();
+                    if (typeof getRandomQuote === 'function') getRandomQuote();
+                    if (typeof getRandomMeme === 'function') getRandomMeme();
+                    if (typeof updateDailyStudyDisplay === 'function') updateDailyStudyDisplay();
+                    if (typeof updateCorrelationAnalytics === 'function') updateCorrelationAnalytics();
+                    
+                    showNotification('✅ Data imported successfully! All data restored.', 'success');
+                    
+                    // ✅ Force page reload after 2 seconds to ensure everything syncs
+                    setTimeout(() => {
+                        if (confirm('Data imported! Reload page to ensure everything syncs properly?')) {
+                            location.reload();
+                        }
+                    }, 2000);
+                    
+                } catch (err) {
+                    console.error("Import failed:", err);
+                    showNotification('❌ Import failed: ' + err.message, 'error');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = ''; // Reset input
+        }
 
     </script>
 
@@ -14758,8 +14746,5 @@
             </div>
         </div>
     </div>
-
-
-
 </body>
 </html>
