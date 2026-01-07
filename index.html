@@ -8327,10 +8327,33 @@
             streak: 0,
             lastStreakDate: null
         };
+
         let progressChart = null;
 
+        // ===== DEFAULT MEMES =====
+        const defaultMemes = [
+            'https://i.pinimg.com/736x/fb/ac/5f/fbac5f18cf0ad901d9d36d30b0cf7f3f.jpg',
+            'https://i.pinimg.com/736x/67/be/19/67be19c0a81a54e97c57fcc847c96525.jpg',
+            'https://pbs.twimg.com/media/GYZwl3KbIAAb6tw?format=jpg&name=small'
+        ];
+        let customMemes = JSON.parse(localStorage.getItem('customMemes')) || [];
+        let allMemes = [...defaultMemes, ...customMemes];
 
-        // --- NEW: SMART MOOD SKILL MAP ---
+        // ===== MEME MIGRATION  =====
+        (function migrateMemes() {
+            const needsMigration = customMemes.some(m => typeof m === 'string');
+            if (needsMigration) {
+                customMemes = customMemes.map(m => 
+                    typeof m === 'string' 
+                        ? { url: m, caption: 'No caption', addedAt: new Date().toISOString() }
+                        : m
+                );
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+            }
+            allMemes = [...defaultMemes.map(url => ({ url, caption: 'Built-in meme' })), ...customMemes];
+        })();
+
+        // --- SMART MOOD SKILL MAP ---
         const moodSkillMap = {
         focused: { skills: [] },
         analytical: { skills: [] },
@@ -8731,39 +8754,6 @@
             initChart();
             getRandomMeme();
             updateDailyStudyDisplay();
-
-        function getRandomMeme() {
-            // Danh sách URL ảnh meme bạn muốn hiển thị
-            const memeUrls = [
-                'https://i.pinimg.com/736x/67/be/19/67be19c0a81a54e97c57fcc847c96525.jpg',
-                'https://pbs.twimg.com/media/GYZwl3KbIAAb6tw?format=jpg&name=small'
-            ];
-
-            // Lấy ảnh ngẫu nhiên
-            const randomIndex = Math.floor(Math.random() * memeUrls.length);
-            const url = memeUrls[randomIndex];
-
-            // Hiển thị ảnh
-            document.getElementById('memeImage').src = url;
-            document.getElementById('memeCaption').textContent = "Click to see another meme!";
-            
-            // Nếu muốn thêm caption ngẫu nhiên
-            const captions = [
-                "This is why I need a career in finance...",
-                "I’m basically shorting my happiness for long-term gains..."
-            ];
-            const randomCaption = captions[Math.floor(Math.random() * captions.length)];
-            document.getElementById('memeCaption').textContent = randomCaption;
-
-            const img = document.getElementById('memeImage');
-            img.onload = function() {
-                console.log("Meme loaded!");
-            };
-            img.onerror = function() {
-                console.warn("Failed to load meme image. Using fallback.");
-                img.src = "https://via.placeholder.com/300x200?text=No+Meme";
-            };
-        }
 
 
             // --- GOAL PROGRESS CHART ---
@@ -9329,7 +9319,7 @@
             progressChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: ['PE', 'IB', 'HF', 'SC', 'Fintech', 'English', 'Chinese', 'School', 'CFA L1'],
+                    labels: ['PE', 'IB', 'HF', 'SC', 'Fintech', 'English', 'Chinese', 'Tools', 'CFA L1'],
                     datasets: [{
                         label: 'Hours Studied',
                         data: [0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -9341,7 +9331,7 @@
                             '#00ffef', // Fintech
                             '#fbe82c', // English
                             '#00ffd2', // Chinese
-                            '#ff1265', // School 
+                            '#ff1265', // Tools 
                             '#00ff82'  // CFA L1 
                         ],
                         borderColor: Array(8).fill('#c4d3e0'),
@@ -9384,7 +9374,7 @@
                 calculateTotalHours('fintech'),
                 calculateTotalHours('english'),
                 calculateTotalHours('chinese'),
-                calculateTotalHours('school'), 
+                calculateTotalHours('tools'), 
                 calculateTotalHours('cfa1')    
             ];
             progressChart.data.datasets[0].data = hours;
@@ -10338,7 +10328,7 @@
             fintech: "💳 Fintech",
             english: "🚩 English",
             chinese: "💞 Chinese",
-            school: "🎒 School",
+            tools: "🛠️ Finance Tools",
             cfa1: "📜 CFA Level 1",
             general: "📊 General Finance"
         };
@@ -10895,11 +10885,7 @@
         }
 
 
-        // ===== THÊM VÀO DOMContentLoaded =====
-        // Tìm document.addEventListener('DOMContentLoaded', function() { ... })
-        // THÊM ĐOẠN NÀY VÀO CUỐI (trước dấu });)
 
-        // Close archived modal on backdrop click
         document.getElementById('archivedGoalsModal')?.addEventListener('click', function(e) {
             if (e.target === this) {
                 closeArchivedGoalsModal();
@@ -11940,15 +11926,7 @@
                         { title: "Complete Intensive CFA L1 Prep (450h)", type: "study_hours", target: 450, description: "For comprehensive mastery" }
                     );
                     break;
-                    
-                // --- SCHOOL ---
-                case 'school':
-                    suggestions.push(
-                        { title: "Pass Mid-term Exams", type: "study_hours", target: 150, description: "Prepare for upcoming exams" },
-                        { title: "Complete Semester Strong", type: "study_hours", target: 300, description: "Finish semester with high GPA" },
-                        { title: "Master Time Management", type: "skill_mastery", target: 25, skillName: "Time Management", description: "Balance study and life" }
-                    );
-                    break;
+
                     
                 // --- FINANCE CAREERS (PE, IB, HF, SC, FINTECH) ---
                 case 'pe':
@@ -12273,7 +12251,6 @@
         document.getElementById('courseForm').addEventListener('submit', saveCourse);
         document.getElementById('addHoursForm').addEventListener('submit', addHoursToCourse);
         document.addEventListener('DOMContentLoaded', function() {
-            // ...existing code...
             renderSessionLogs();
         });
  
@@ -13904,7 +13881,7 @@
             const careerColors = {
                 pe: '#e74c3c', ib: '#3498db', hf: '#f39c12', sc: '#2ecc71',
                 fintech: '#00ffef', english: '#fbe82c', chinese: '#00ffd2',
-                school: '#ff1265', cfa1: '#00ff82'
+                tools: '#ff1265', cfa1: '#00ff82'
             };
             
             const careerColor = careerColors[goal.career] || '#3b82f6';
@@ -14012,11 +13989,8 @@
             }
         }
 
-        // Thêm vào DOMContentLoaded:
+
         document.addEventListener('DOMContentLoaded', function() {
-            // ... existing code ...
-            
-            // Close archived modal on backdrop click
             document.getElementById('archivedGoalsModal')?.addEventListener('click', function(e) {
                 if (e.target === this) {
                     closeArchivedGoalsModal();
@@ -14025,14 +13999,7 @@
         });
 
 
-        // ===== DEFAULT MEMES (Backup nếu user chưa có memes) =====
-        const defaultMemes = [
-            'https://i.pinimg.com/736x/fb/ac/5f/fbac5f18cf0ad901d9d36d30b0cf7f3f.jpg',
-            'https://i.pinimg.com/736x/67/be/19/67be19c0a81a54e97c57fcc847c96525.jpg',
-            'https://pbs.twimg.com/media/GYZwl3KbIAAb6tw?format=jpg&name=small'            
-        ];
-        let customMemes = JSON.parse(localStorage.getItem('customMemes')) || [];
-        let allMemes = [...defaultMemes, ...customMemes];
+        // ===== DEFAULT MEMES =====
 
         function getRandomMeme() {
             if (allMemes.length === 0) {
@@ -14283,24 +14250,6 @@
         });
 
 
-        // Thêm vào DOMContentLoaded:
-        document.addEventListener('DOMContentLoaded', function() {
-            // ✅ MIGRATE OLD STRING FORMAT TO OBJECT FORMAT
-            const needsMigration = customMemes.some(m => typeof m === 'string');
-            if (needsMigration) {
-                customMemes = customMemes.map(m => 
-                    typeof m === 'string' 
-                        ? { url: m, caption: 'No caption', addedAt: new Date().toISOString() }
-                        : m
-                );
-                localStorage.setItem('customMemes', JSON.stringify(customMemes));
-            }
-            
-            allMemes = [...defaultMemes.map(url => ({ url, caption: 'Built-in meme' })), ...customMemes];
-            
-            updateCustomMemesCount();
-            getRandomMeme();
-        });
 
         // ===== OPEN ARCHIVED GOALS MODAL =====
         function openArchivedGoalsModal() {
@@ -14403,7 +14352,7 @@
             const careerColors = {
                 pe: '#e74c3c', ib: '#3498db', hf: '#f39c12', sc: '#2ecc71',
                 fintech: '#00ffef', english: '#fbe82c', chinese: '#00ffd2',
-                school: '#ff1265', cfa1: '#00ff82'
+                tools: '#ff1265', cfa1: '#00ff82'
             };
             
             const careerColor = careerColors[goal.career] || '#3b82f6';
@@ -14745,7 +14694,7 @@
                         <option value="fintech">💳 Fintech</option>
                         <option value="english">🚩 English</option>
                         <option value="chinese">💞 Chinese</option>
-                        <option value="school">🎒 School</option>
+                        <option value="tools">🛠️ Finance Tools</option>
                         <option value="cfa1">📜 CFA Level 1</option>
                     </select>
                     
