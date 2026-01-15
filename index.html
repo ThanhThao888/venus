@@ -14922,6 +14922,7 @@
                 .join('');
         }
 
+
         function renderResourceCard(resource) {
             const typeIcons = {
                 video: "🎥",
@@ -14965,6 +14966,24 @@
                 </div>
             ` : '';
             
+            // ===== MARKDOWN PARSING =====
+            let notesHTML = '';
+            if (resource.notes) {
+                let processedNotes = resource.notes
+                    // Bold: **text** -> <strong>text</strong>
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    // Italic: *text* -> <em>text</em>
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    // Bullet points: - item -> • item
+                    .replace(/^- (.*?)(?:\n|$)/gm, '• $1<br>')
+                    // Numbered lists: 1. item -> 1. item
+                    .replace(/^(\d+)\. (.*?)(?:\n|$)/gm, '$1. $2<br>')
+                    // Line breaks
+                    .replace(/\n/g, '<br>');
+                
+                notesHTML = `<div class="finance-card-thesis" style="font-size: 0.9rem; line-height: 1.5;">${processedNotes}</div>`;
+            }
+            
             return `
                 <div class="finance-card" style="border-left: 4px solid ${cardColor};">
                     <div class="finance-card-header">
@@ -14980,7 +14999,7 @@
                         </div>
                     </div>
                     <div class="finance-card-content">
-                        ${resource.notes ? `<div class="finance-card-thesis" style="font-size: 0.9rem;">${resource.notes}</div>` : ''}
+                        ${notesHTML}
                         ${tagsHTML}
                         <div style="margin-top: 12px;">
                             <a href="${resource.url}" target="_blank" class="course-action-btn open-link" style="width: 100%; text-align: center; text-decoration: none; padding: 8px 12px; font-size: 0.85rem;">🔗 Open Resource</a>
@@ -14994,6 +15013,7 @@
                 </div>
             `;
         }
+
 
         // ===== MODAL FUNCTIONS =====
         function openResourceModal(resourceId = null) {
