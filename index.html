@@ -11063,6 +11063,8 @@
         }
 
 
+
+
         function populateGoalTypeSpecificFields(type, goalData = {}) {
             const container = document.getElementById('goalTypeSpecificFields');
             container.innerHTML = '';
@@ -11080,14 +11082,26 @@
                                     ✅ <strong>Auto-updates</strong> when you add study time to any skill in this career.
                                 </p>
                                 
+                                <!-- ✅ UNLOCK TARGET INPUT FOR STUDY HOURS -->
+                                <div style="margin-top: 12px; padding: 12px; background: rgba(59, 130, 246, 0.08); border-radius: 8px;">
+                                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--text-dark);">
+                                        🎯 Set Your Target Hours:
+                                    </label>
+                                    <input type="number" id="studyHoursCustomTarget" min="1" step="1" placeholder="e.g., 300 for Advanced, 1000 for Expert"
+                                        style="width: 100%; padding: 10px; border: 2px solid #3b82f6; border-radius: 8px; background: white; color: var(--text-dark); font-size: 1rem;">
+                                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px;">
+                                        💡 Tip: 300h = Advanced, 1000h = Technical Mastery, 5000h+ = Expertise
+                                    </div>
+                                </div>
+                                
                                 <!-- Smart Suggestions -->
                                 <div style="background: rgba(59, 130, 246, 0.08); padding: 12px; border-radius: 8px; margin-top: 12px;">
                                     <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dark); font-size: 0.9rem;">
-                                        💡 Suggested Targets:
+                                        💡 Quick Presets:
                                     </div>
                                     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                         ${getStudyHoursSuggestions().map(suggestion => `
-                                            <button type="button" class="suggestion-btn" onclick="applySuggestion(${suggestion.hours}, '${suggestion.label}')"
+                                            <button type="button" class="suggestion-btn" onclick="applyStudyHoursSuggestion(${suggestion.hours}, '${suggestion.label}')"
                                                 style="padding: 6px 12px; background: white; border: 1px solid #3b82f6; border-radius: 20px; cursor: pointer; font-size: 0.85rem; color: #3b82f6; transition: all 0.2s;">
                                                 ${suggestion.label} (${suggestion.hours}h)
                                             </button>
@@ -11098,6 +11112,22 @@
                         </div>
                     </div>
                 `;
+                
+                // ✅ AUTO-FILL TARGET when custom input changes
+                const customTargetInput = document.getElementById('studyHoursCustomTarget');
+                const mainTargetInput = document.getElementById('goalTarget');
+                
+                if (customTargetInput && mainTargetInput) {
+                    customTargetInput.addEventListener('input', function() {
+                        mainTargetInput.value = this.value;
+                    });
+                    
+                    // ✅ If editing, pre-fill
+                    if (goalData && goalData.target) {
+                        customTargetInput.value = goalData.target;
+                        mainTargetInput.value = goalData.target;
+                    }
+                }
                 
             // 🎯 SKILL MASTERY GOAL
             } else if (type === 'skill_mastery') {
@@ -11240,6 +11270,26 @@
                 `;
             }
         }
+
+        // ✅ Apply Study Hours Suggestion (different from skill-based suggestion)
+        function applyStudyHoursSuggestion(hours, label) {
+            const customInput = document.getElementById('studyHoursCustomTarget');
+            const targetInput = document.getElementById('goalTarget');
+            const titleInput = document.getElementById('goalTitle');
+            
+            if (customInput) customInput.value = hours;
+            if (targetInput) targetInput.value = hours;
+            
+            // Auto-suggest title if empty
+            if (titleInput && !titleInput.value.trim()) {
+                const careerTitle = skillsData[currentCareer]?.title || currentCareer;
+                titleInput.value = `${label} in ${careerTitle}`;
+            }
+            
+            showNotification(`✅ Target set to ${hours} hours (${label})`, 'success');
+        }
+
+
 
         // Helper: Get Study Hours Suggestions based on career
         function getStudyHoursSuggestions() {
