@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title> Finance Career Skills Tracker </title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root {
@@ -236,10 +237,10 @@
         /* Main Content Layout */
         .main-content {
             display: grid;
-            grid-template-columns: 50% 50%; 
+            grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
             gap: 30px; 
             align-items: start;
-        }
+        }        
 
         /* Skills Section */
         .skills-section {
@@ -421,6 +422,7 @@
             color: var(--text-dark);
         }
 
+
         .add-time-btn {
             background: #3b82f6;
             color: white;
@@ -431,7 +433,12 @@
             cursor: pointer;
             transition: var(--transition);
             font-size: 0.9rem;
-        }
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            min-width: 44px;
+            min-height: 44px;
+        }        
+
 
         .add-time-btn:hover {
             background: #2563eb;
@@ -442,7 +449,7 @@
             background: #3b82f6;
         }
 
-        /* Sidebar */
+        /* Sidebar */      
         .sidebar {
             display: flex;
             flex-direction: column;
@@ -452,8 +459,8 @@
             max-height: calc(100vh - 40px); 
             overflow-y: auto; 
             padding-right: 10px;
-        }        
-
+            -webkit-overflow-scrolling: touch;
+        }
 
         .sidebar-card {
             background: var(--bg-white);
@@ -1497,13 +1504,18 @@
         .career-title[data-career="fintech"] { color: var(--fintech-color); }
         .career-title[data-career="tools"] { color: var(--tools-color); }
         .career-title[data-career="cfa1"] { color: var(--cfa1-color); }       
-       
+ 
+        
         @media (max-width: 1100px) {
             .main-content {
                 grid-template-columns: 1fr;
             }
             .sidebar {
                 grid-row: 1;
+                position: relative;
+                top: auto;
+                max-height: none;
+                overflow-y: visible;
             }
             #quoteCard {
                 max-width: 250px;
@@ -1536,6 +1548,7 @@
             }
         }
 
+
         @media (max-width: 480px) {
             .career-grid {
                 grid-template-columns: 1fr;
@@ -1545,11 +1558,10 @@
                 align-items: flex-start;
             }
             #quoteCard {
-                max-width: calc(100vw - 20px);
-                left: 10px;
-                right: 10px;
+                display: none;
             }
         }
+
                 #sessionLogsContainer::-webkit-scrollbar {
             width: 8px;
         }
@@ -8697,6 +8709,1006 @@
                 </div>
             </div>
 
+
+
+
+
+
+
+<!-- ============ DEADLINE TRACKER ULTIMATE + GOOGLE CALENDAR ============ -->
+<style>
+#dlTracker {
+  margin-bottom: 24px;
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px 18px;
+  box-shadow: var(--shadow-md);
+}
+.dlt-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
+}
+.dlt-header h3 {
+  font-size: 1.1rem; font-weight: 700; color: var(--text-dark);
+  margin: 0; display: flex; align-items: center; gap: 8px;
+}
+.dlt-header-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.dlt-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; border: none; padding: 8px 16px; border-radius: 20px;
+  font-size: 0.83rem; font-weight: 700; cursor: pointer;
+  transition: all 0.2s; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.dlt-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(99,102,241,.4); }
+.dlt-btn-ghost {
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+.dlt-btn-ghost:hover { background: var(--bg-light); box-shadow: none; }
+
+/* ── Stats ── */
+.dlt-stats {
+  display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.dlt-stat {
+  flex: 1; min-width: 68px; background: var(--bg-light);
+  border-radius: 10px; padding: 10px 8px;
+  text-align: center; transition: 0.2s;
+}
+.dlt-stat-n { font-size: 1.5rem; font-weight: 800; line-height: 1; color: #6366f1; }
+.dlt-stat-l { font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--text-muted); margin-top: 3px; }
+.dlt-stat.s-danger .dlt-stat-n  { color: #ef4444; }
+.dlt-stat.s-warn   .dlt-stat-n  { color: #f59e0b; }
+.dlt-stat.s-ok     .dlt-stat-n  { color: #10b981; }
+
+/* ── Filter tabs ── */
+.dlt-tabs {
+  display: flex; gap: 6px; margin-bottom: 14px;
+  flex-wrap: wrap; padding-bottom: 2px;
+}
+.dlt-tab {
+  padding: 5px 13px; border-radius: 16px; font-size: 0.77rem; font-weight: 600;
+  border: 1px solid var(--border-color); background: var(--bg-white);
+  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+.dlt-tab.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; border-color: transparent;
+}
+
+/* ── Cards ── */
+.dlt-list { display: flex; flex-wrap: wrap; gap: 11px; }
+.dlt-card {
+  background: var(--bg-white); border: 1px solid var(--border-color);
+  border-radius: 12px; padding: 13px 14px;
+  display: flex; align-items: center; gap: 12px;
+  flex: 1 1 230px; min-width: 210px; max-width: 350px;
+  border-left: 5px solid #6366f1; transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
+}
+.dlt-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.dlt-card.c-urgent  { border-left-color: #ef4444; background: rgba(239,68,68,.03); }
+.dlt-card.c-warning { border-left-color: #f59e0b; background: rgba(245,158,11,.03); }
+.dlt-card.c-safe    { border-left-color: #10b981; }
+.dlt-card.c-overdue { border-left-color: #9ca3af; opacity: .78; }
+.dlt-card.c-done    { border-left-color: #10b981; opacity: .5; }
+
+.dlt-days-wrap { text-align: center; flex-shrink: 0; min-width: 42px; }
+.dlt-days {
+  font-size: 1.9rem; font-weight: 800; line-height: 1; color: var(--text-dark);
+}
+.dlt-card.c-urgent  .dlt-days { color: #ef4444; }
+.dlt-card.c-warning .dlt-days { color: #f59e0b; }
+.dlt-card.c-safe    .dlt-days { color: #10b981; }
+.dlt-card.c-overdue .dlt-days { color: #9ca3af; }
+.dlt-card.c-done    .dlt-days { color: #10b981; }
+.dlt-days-unit {
+  font-size: 0.65rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .3px;
+}
+
+.dlt-info { flex: 1; min-width: 0; }
+.dlt-name {
+  font-weight: 700; font-size: 0.92rem; color: var(--text-dark);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px;
+}
+.dlt-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
+.dlt-badges { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.dlt-badge {
+  font-size: 0.67rem; font-weight: 700; padding: 2px 8px; border-radius: 8px;
+  background: rgba(99,102,241,.1); color: #6366f1;
+}
+.dlt-card.c-urgent  .dlt-badge.status { background: rgba(239,68,68,.12); color: #ef4444; }
+.dlt-card.c-warning .dlt-badge.status { background: rgba(245,158,11,.12); color: #d97706; }
+.dlt-card.c-safe    .dlt-badge.status { background: rgba(16,185,129,.12); color: #059669; }
+.dlt-card.c-overdue .dlt-badge.status { background: rgba(107,114,128,.12); color: #6b7280; }
+.dlt-card.c-done    .dlt-badge.status { background: rgba(16,185,129,.18); color: #059669; }
+.dlt-badge.src { background: rgba(99,102,241,.07); color: var(--text-muted); font-style: italic; }
+
+.dlt-countdown {
+  font-size: 0.71rem; font-weight: 700; color: #ef4444;
+  font-family: monospace; margin-top: 3px;
+}
+
+.dlt-card-btns { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+.dlt-done-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1.5px solid #10b981; color: #10b981; background: none;
+  cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; touch-action: manipulation;
+}
+.dlt-done-btn:hover { background: #10b981; color: #fff; }
+.dlt-del-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: none; background: none; color: var(--text-muted); cursor: pointer;
+  font-size: 0.85rem; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; touch-action: manipulation;
+}
+.dlt-del-btn:hover { background: #fee2e2; color: #ef4444; }
+
+/* ── Google Calendar button ── */
+.dlt-gcal-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1.5px solid #4285f4; color: #4285f4; background: none;
+  cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; touch-action: manipulation;
+}
+.dlt-gcal-btn:hover { background: #4285f4; color: #fff; }
+
+.dlt-empty { color: var(--text-muted); font-size: 0.9rem; font-style: italic; }
+
+/* ── Add Modal ── */
+#dltModal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.52); z-index: 9999;
+  align-items: center; justify-content: center; padding: 20px;
+}
+#dltModal.open { display: flex; }
+.dlt-modal-box {
+  background: var(--bg-white); border-radius: 18px; padding: 26px;
+  width: 100%; max-width: 430px; box-shadow: var(--shadow-lg);
+  max-height: 90vh; overflow-y: auto;
+}
+.dlt-modal-box h3 { margin: 0 0 20px; font-size: 1.15rem; font-weight: 700; color: var(--text-dark); }
+.dlt-fg { margin-bottom: 14px; }
+.dlt-fg label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 5px; }
+.dlt-fg input, .dlt-fg select, .dlt-fg textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border-color);
+  border-radius: 8px; font-size: 0.92rem; background: var(--bg-light);
+  color: var(--text-dark); outline: none; -webkit-appearance: none;
+  transition: border-color .2s; font-family: inherit;
+}
+.dlt-fg input:focus, .dlt-fg select:focus { border-color: #6366f1; }
+.dlt-modal-actions { display: flex; gap: 10px; margin-top: 6px; }
+.dlt-modal-save {
+  flex: 1; padding: 11px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: .93rem;
+  cursor: pointer; touch-action: manipulation;
+}
+.dlt-modal-cancel {
+  padding: 11px 16px; background: var(--bg-light); color: var(--text-muted);
+  border: none; border-radius: 8px; font-weight: 600; font-size: .9rem;
+  cursor: pointer; touch-action: manipulation;
+}
+
+/* ── Daily Popup ── */
+#dltPopup {
+  display: none; position: fixed; bottom: 24px; right: 24px; z-index: 9998;
+  background: var(--bg-white); border-radius: 14px; padding: 18px 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.2); max-width: 310px; width: 90%;
+  border-top: 4px solid #6366f1;
+  animation: dltSlideIn .35s ease;
+}
+@keyframes dltSlideIn { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+#dltPopup h4 { margin: 0 0 10px; font-size: 1rem; font-weight: 700; color: var(--text-dark); }
+.dlt-popup-items { margin-bottom: 14px; font-size: 0.83rem; color: var(--text-dark); }
+.dlt-popup-item { padding: 4px 0; display: flex; gap: 8px; align-items: flex-start; border-bottom: 1px solid var(--border-color); }
+.dlt-popup-item:last-child { border: none; }
+.dlt-popup-btns { display: flex; gap: 8px; }
+.dlt-popup-ok {
+  flex:1; padding: 8px; background: linear-gradient(135deg,#6366f1,#8b5cf6);
+  color: #fff; border: none; border-radius: 8px; font-weight: 700;
+  font-size: .83rem; cursor: pointer; touch-action: manipulation;
+}
+.dlt-popup-skip {
+  padding: 8px 12px; background: var(--bg-light); color: var(--text-muted);
+  border: none; border-radius: 8px; font-size: .8rem; cursor: pointer; touch-action: manipulation;
+}
+
+/* ── XP Flash ── */
+.dlt-xp {
+  position: fixed; top: 76px; right: 20px; z-index: 10000;
+  background: linear-gradient(135deg, #10b981, #059669); color: #fff;
+  padding: 10px 18px; border-radius: 20px; font-weight: 700; font-size: .88rem;
+  box-shadow: 0 4px 16px rgba(16,185,129,.45);
+  animation: dltXpIn .3s ease, dltXpOut .4s ease 2s forwards;
+  pointer-events: none;
+}
+@keyframes dltXpIn  { from { opacity:0; transform:translateY(-8px) scale(.9); } to { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes dltXpOut { to { opacity:0; transform:translateY(-6px); } }
+
+@media (max-width: 600px) {
+  .dlt-card { max-width: 100%; }
+  #dltPopup { bottom: 12px; right: 12px; left: 12px; width: auto; max-width: none; }
+  .dlt-stats { gap: 7px; }
+}
+</style>
+
+<!-- HTML -->
+<div id="dlTracker">
+  <div class="dlt-header">
+    <h3>📅 Deadlines</h3>
+    <div class="dlt-header-btns">
+      <button class="dlt-btn dlt-btn-ghost" onclick="DLT.sync()">🔄 Sync</button>
+      <button class="dlt-btn" onclick="DLT.openModal()">＋ Add</button>
+    </div>
+  </div>
+  <div class="dlt-stats" id="dltStats"></div>
+  <div class="dlt-tabs"  id="dltTabs"></div>
+  <div class="dlt-list"  id="dltList"><span class="dlt-empty">No deadlines yet.</span></div>
+</div>
+
+<!-- Modal -->
+<div id="dltModal">
+  <div class="dlt-modal-box">
+    <h3>📌 New Deadline</h3>
+    <div class="dlt-fg">
+      <label>Name</label>
+      <input type="text" id="dltName" placeholder="e.g. CFA Exam Registration" maxlength="70" />
+    </div>
+    <div class="dlt-fg">
+      <label>Date</label>
+      <input type="date" id="dltDate" />
+    </div>
+    <div class="dlt-fg">
+      <label>Category</label>
+      <select id="dltCat">
+        <option value="">— None —</option>
+        <option>📜 CFA</option><option>💼 PE</option><option>🏦 IB</option>
+        <option>📈 HF</option><option>🎯 Consulting</option><option>🌐 English</option>
+        <option>💞 Chinese</option><option>🛠️ Tools</option><option>💳 Fintech</option>
+        <option>📚 Other</option>
+      </select>
+    </div>
+    <div class="dlt-modal-actions">
+      <button class="dlt-modal-cancel" onclick="DLT.closeModal()">Cancel</button>
+      <button class="dlt-modal-save"   onclick="DLT.save()">Save ✓</button>
+    </div>
+  </div>
+</div>
+
+<!-- Daily Popup -->
+<div id="dltPopup">
+  <h4>⏰ Deadline Brief</h4>
+  <div class="dlt-popup-items" id="dltPopupItems"></div>
+  <div class="dlt-popup-btns">
+    <button class="dlt-popup-skip" onclick="DLT.dismissPopup(true)">Skip today</button>
+    <button class="dlt-popup-ok"   onclick="DLT.dismissPopup(false)">Got it ✓</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  /* ─── Constants ─── */
+  const CAREER_MAP = {
+    pe:'💼 PE', ib:'🏦 IB', hf:'📈 HF', sc:'🎯 Consulting',
+    fintech:'💳 Fintech', english:'🌐 English', chinese:'💞 Chinese',
+    tools:'🛠️ Tools', cfa1:'📜 CFA'
+  };
+
+  /* ─── Storage ─── */
+  let manualList = JSON.parse(localStorage.getItem('deadlines') || '[]');
+  let doneIds    = JSON.parse(localStorage.getItem('dltDoneIds') || '[]');
+  let curFilter  = 'all';
+
+  function persist() {
+    localStorage.setItem('deadlines',  JSON.stringify(manualList));
+    localStorage.setItem('dltDoneIds', JSON.stringify(doneIds));
+  }
+
+  /* ─── Auto-scan from app data ─── */
+  function autoScan() {
+    const items = [];
+    const push  = (id, name, date, category, source) => items.push({ id, name, date, category, source });
+
+    (JSON.parse(localStorage.getItem('courses') || '[]')).forEach(c => {
+      if (c.deadline) push('c_'+c.id, c.title, c.deadline, CAREER_MAP[c.career]||'📚 Course', '📖 Course');
+    });
+    (JSON.parse(localStorage.getItem('goals') || '[]')).forEach(g => {
+      if (g.deadline && !g.completed) push('g_'+g.id, g.title, g.deadline, CAREER_MAP[g.career]||'🎯 Goal', '🎯 Goal');
+    });
+    (JSON.parse(localStorage.getItem('dealDiary') || '[]')).forEach(d => {
+      if (d.date) push('d_'+d.id, d.dealName||'Deal', d.date, '🤝 Deal', '🤝 Deal');
+    });
+    (JSON.parse(localStorage.getItem('investmentAnalyses') || '[]')).forEach(a => {
+      if (a.date) push('a_'+a.id, a.title||'Analysis', a.date, '📊 Analysis', '📊 Analysis');
+    });
+    return items;
+  }
+
+  function allItems() {
+    const auto   = autoScan();
+    const autoIds = new Set(auto.map(a => a.id));
+    return [...auto, ...manualList.filter(m => !autoIds.has(m.id))];
+  }
+
+  /* ─── Time helpers ─── */
+  function daysLeft(dateStr) {
+    const now = new Date(); now.setHours(0,0,0,0);
+    const d   = new Date(dateStr); d.setHours(0,0,0,0);
+    return Math.round((d - now) / 86400000);
+  }
+
+  function countdown(dateStr) {
+    const ms = new Date(dateStr + 'T23:59:59') - new Date();
+    if (ms <= 0 || ms > 72 * 3600000) return '';
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return `⏱ ${h}h ${m}m left`;
+  }
+
+  function fmtDate(s) {
+    return new Date(s + 'T00:00:00').toLocaleDateString('en-GB',
+      { day:'2-digit', month:'short', year:'numeric' });
+  }
+
+  function cardCls(days, done) {
+    if (done)     return 'c-done';
+    if (days < 0) return 'c-overdue';
+    if (days <= 3) return 'c-urgent';
+    if (days <= 7) return 'c-warning';
+    return 'c-safe';
+  }
+
+  function statusTxt(days, done) {
+    if (done)      return '✓ Done';
+    if (days < 0)  return `${Math.abs(days)}d overdue`;
+    if (days === 0) return 'TODAY!';
+    if (days === 1) return 'Tomorrow!';
+    if (days <= 3)  return `${days}d left ⚡`;
+    if (days <= 7)  return 'This week';
+    return `${days} days`;
+  }
+
+  /* ─── XP ─── */
+  function addXP(pts) {
+    try {
+      let g = JSON.parse(localStorage.getItem('gamification') || '{"points":0,"level":1}');
+      g.points = (g.points || 0) + pts;
+      g.level  = Math.floor(g.points / 100) + 1;
+      localStorage.setItem('gamification', JSON.stringify(g));
+      if (typeof updateGamificationStats === 'function') updateGamificationStats();
+      const el = document.createElement('div');
+      el.className = 'dlt-xp';
+      el.textContent = `＋${pts} XP — Deadline crushed! 🎯`;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2500);
+    } catch(e) {}
+  }
+
+  /* ─── Google Calendar Link ─── */
+  function googleCalendarUrl(name, dateStr) {
+    // All-day event: YYYYMMDD/YYYYMMDD (next day as end)
+    const d = new Date(dateStr + 'T00:00:00');
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const start = `${y}${m}${day}`;
+    // End = next day
+    d.setDate(d.getDate() + 1);
+    const y2 = d.getFullYear();
+    const m2 = String(d.getMonth() + 1).padStart(2, '0');
+    const d2 = String(d.getDate()).padStart(2, '0');
+    const end = `${y2}${m2}${d2}`;
+    
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: name,
+      dates: `${start}/${end}`,
+      details: 'Added from Finance Goals Tracker'
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  }
+
+  /* ─── Render ─── */
+  function render() {
+    const all = allItems();
+    const shown = curFilter === 'all'
+      ? all
+      : all.filter(d => d.category && d.category.includes(curFilter));
+
+    shown.sort((a, b) => {
+      const aDone = doneIds.includes(a.id), bDone = doneIds.includes(b.id);
+      if (aDone !== bDone) return aDone ? 1 : -1;
+      const aD = daysLeft(a.date), bD = daysLeft(b.date);
+      if (aD < 0 && bD >= 0) return 1;
+      if (bD < 0 && aD >= 0) return -1;
+      return new Date(a.date) - new Date(b.date);
+    });
+
+    /* Stats */
+    const urgent  = all.filter(d => !doneIds.includes(d.id) && daysLeft(d.date) >= 0 && daysLeft(d.date) <= 3).length;
+    const overdue = all.filter(d => !doneIds.includes(d.id) && daysLeft(d.date) < 0).length;
+    const done    = doneIds.filter(id => all.find(d => d.id === id)).length;
+    document.getElementById('dltStats').innerHTML = `
+      <div class="dlt-stat">       <div class="dlt-stat-n">${all.length}</div><div class="dlt-stat-l">Total</div></div>
+      <div class="dlt-stat s-danger"><div class="dlt-stat-n">${urgent}</div>  <div class="dlt-stat-l">Urgent</div></div>
+      <div class="dlt-stat s-warn"> <div class="dlt-stat-n">${overdue}</div> <div class="dlt-stat-l">Overdue</div></div>
+      <div class="dlt-stat s-ok">   <div class="dlt-stat-n">${done}</div>   <div class="dlt-stat-l">Done ✓</div></div>`;
+
+    /* Tabs */
+    const cats = ['all', ...new Set(all.map(d => d.category).filter(Boolean))];
+    document.getElementById('dltTabs').innerHTML = cats.map(c =>
+      `<button class="dlt-tab ${curFilter===c?'active':''}" onclick="DLT.filter('${c}')">${c==='all'?'✦ All':c}</button>`
+    ).join('');
+
+    /* Cards */
+    const list = document.getElementById('dltList');
+    if (!shown.length) { list.innerHTML = '<span class="dlt-empty">Nothing here — add or sync.</span>'; return; }
+
+    list.innerHTML = shown.map(d => {
+      const days = doneIds.includes(d.id) ? 999 : daysLeft(d.date);
+      const done = doneIds.includes(d.id);
+      const cls  = cardCls(days, done);
+      const dNum = done ? '✓' : (days < 0 ? Math.abs(days) : days);
+      const dUnit = done ? '' : (days === 0 ? 'today' : Math.abs(days)===1 ? 'day' : 'days');
+      const cdHtml = (!done && days >= 0 && days <= 3)
+        ? `<div class="dlt-countdown" data-date="${d.date}"></div>` : '';
+      const srcBadge = d.source
+        ? `<span class="dlt-badge src">${d.source}</span>` : '';
+      const canDel = !d.source;
+      const gcalUrl = googleCalendarUrl(d.name, d.date);
+
+      return `<div class="dlt-card ${cls}">
+        <div class="dlt-days-wrap">
+          <div class="dlt-days">${dNum}</div>
+          <div class="dlt-days-unit">${dUnit}</div>
+        </div>
+        <div class="dlt-info">
+          <div class="dlt-name" title="${d.name}">${d.name}</div>
+          <div class="dlt-meta">${d.category?d.category+' · ':''}${fmtDate(d.date)}</div>
+          <div class="dlt-badges">
+            <span class="dlt-badge status">${statusTxt(days, done)}</span>
+            ${srcBadge}
+          </div>
+          ${cdHtml}
+        </div>
+        <div class="dlt-card-btns">
+          ${!done ? `<button class="dlt-done-btn" onclick="DLT.done('${d.id}',${days})" title="Mark done">✓</button>` : ''}
+          <a class="dlt-gcal-btn" href="${gcalUrl}" target="_blank" title="Add to Google Calendar">📅</a>
+          ${canDel ? `<button class="dlt-del-btn" onclick="DLT.del('${d.id}')" title="Delete">✕</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    tickCountdowns();
+  }
+
+  function tickCountdowns() {
+    document.querySelectorAll('.dlt-countdown[data-date]').forEach(el => {
+      el.textContent = countdown(el.dataset.date);
+    });
+  }
+
+  /* ─── Daily Popup ─── */
+  function checkPopup() {
+    if (localStorage.getItem('dltSkipDay') === new Date().toDateString()) return;
+    const urgent = allItems().filter(d => !doneIds.includes(d.id) && daysLeft(d.date) >= 0 && daysLeft(d.date) <= 3);
+    if (!urgent.length) return;
+    const top = urgent.slice(0, 5);
+    document.getElementById('dltPopupItems').innerHTML = top.map(d => {
+      const days = daysLeft(d.date);
+      const icon = days === 0 ? '🚨' : days <= 1 ? '🔴' : '🟡';
+      const when = days === 0 ? 'TODAY' : `${days}d left`;
+      return `<div class="dlt-popup-item">${icon} <span><strong>${d.name}</strong> — ${when}</span></div>`;
+    }).join('');
+    setTimeout(() => { document.getElementById('dltPopup').style.display = 'block'; }, 1400);
+  }
+
+  /* ─── Public API ─── */
+  window.DLT = {
+    sync()   { render(); },
+    filter(c){ curFilter = c; render(); },
+
+    openModal() {
+      document.getElementById('dltName').value = '';
+      document.getElementById('dltDate').value = '';
+      document.getElementById('dltCat').value  = '';
+      document.getElementById('dltModal').classList.add('open');
+      setTimeout(() => document.getElementById('dltName').focus(), 100);
+    },
+    closeModal() { document.getElementById('dltModal').classList.remove('open'); },
+
+    save() {
+      const name = document.getElementById('dltName').value.trim();
+      const date = document.getElementById('dltDate').value;
+      const cat  = document.getElementById('dltCat').value;
+      if (!name || !date) { alert('Please fill in name and date!'); return; }
+      manualList.push({ id: Date.now().toString(), name, date, category: cat || '📌 Manual' });
+      persist();
+      DLT.closeModal();
+      render();
+    },
+
+    done(id, days) {
+      if (doneIds.includes(id)) return;
+      doneIds.push(id);
+      persist();
+      addXP(days >= 0 ? 30 : 10);
+      render();
+    },
+
+    del(id) {
+      if (!confirm('Delete this deadline?')) return;
+      manualList = manualList.filter(d => d.id !== id);
+      doneIds    = doneIds.filter(x => x !== id);
+      persist();
+      render();
+    },
+
+    dismissPopup(skipToday) {
+      document.getElementById('dltPopup').style.display = 'none';
+      if (skipToday) localStorage.setItem('dltSkipDay', new Date().toDateString());
+    }
+  };
+
+  /* ─── Init ─── */
+  document.getElementById('dltModal').addEventListener('click', e => { if (e.target.id==='dltModal') DLT.closeModal(); });
+
+  function init() { render(); checkPopup(); setInterval(() => { tickCountdowns(); render(); }, 60000); }
+  document.readyState === 'loading'
+    ? document.addEventListener('DOMContentLoaded', init)
+    : init();
+})();
+</script>
+<!-- ============ END DEADLINE TRACKER ULTIMATE + GOOGLE CALENDAR ============ -->
+
+<!-- ========== ADHD 2-MINUTE LAUNCHPAD ========== -->
+<style>
+#adhdLaunchpad {
+  background: linear-gradient(135deg, #fef9e7, #fdf2e9);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  border: 1px solid #fde68a;
+  box-shadow: var(--shadow-md);
+  transition: all 0.3s;
+}
+.dark-mode #adhdLaunchpad {
+  background: linear-gradient(135deg, #2d2a1e, #2e2416);
+  border-color: #4a3f1f;
+}
+.launchpad-header {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 14px;
+}
+.launchpad-header h3 {
+  font-size: 1.05rem; font-weight: 800;
+  color: #92400e; margin: 0;
+  display: flex; align-items: center; gap: 6px;
+}
+.dark-mode .launchpad-header h3 { color: #fbbf24; }
+.launchpad-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.launch-card {
+  background: white;
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid #fde68a;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 90px;
+}
+.launch-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(245,158,11,0.15);
+  border-color: #f59e0b;
+}
+.dark-mode .launch-card {
+  background: #1e293b;
+  border-color: #4a3f1f;
+}
+.dark-mode .launch-card:hover { border-color: #f59e0b; }
+.launch-icon {
+  font-size: 1.5rem;
+  margin-bottom: 6px;
+}
+.launch-text {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.dark-mode .launch-text { color: #f1f5f9; }
+.launch-meta {
+  font-size: 0.7rem;
+  color: #64748b;
+  margin-top: 4px;
+  font-weight: 500;
+}
+.launch-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.launch-refresh-btn {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.launch-refresh-btn:hover {
+  background: #d97706;
+  transform: scale(1.02);
+}
+.launch-tip {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+</style>
+
+<div id="adhdLaunchpad">
+  <div class="launchpad-header">
+    <h3>🚀 2‑Minute Launchpad</h3>
+    <span style="font-size:0.7rem;color:var(--text-muted);">(just pick one)</span>
+  </div>
+  <div class="launchpad-grid" id="launchpadGrid"></div>
+  <div class="launch-actions">
+    <button class="launch-refresh-btn" onclick="ADHDLP.refresh()">🔀 New tasks</button>
+    <span class="launch-tip">💡 Click any card to jump right in</span>
+  </div>
+</div>
+
+<script>
+(function() {
+  /* ── Helper: get random item ── */
+  const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  /* ── Pick 1 micro-task from each source ── */
+  function buildTasks() {
+    const tasks = [];
+
+    // 1) Flashcard yếu nhất
+    if (typeof flashcards !== 'undefined' && flashcards.length > 0) {
+      const weak = [...flashcards].sort((a,b) => (a.mastery||0) - (b.mastery||0));
+      const candidate = weak[0];
+      tasks.push({
+        icon: '🎴',
+        title: 'Review: ' + candidate.question.substring(0, 50),
+        meta: `Mastery ${candidate.mastery||0}%`,
+        action: () => {
+          if (typeof openFullscreenFlashcard === 'function') {
+            // đặt index flashcard về đúng thẻ này
+            const idx = flashcards.findIndex(f => f.id === candidate.id);
+            if (idx !== -1 && typeof fullscreenCardIndex !== 'undefined') {
+              fullscreenCardIndex = idx;
+            }
+            openFullscreenFlashcard();
+          } else {
+            alert('Please open the Flashcard section first!');
+          }
+        }
+      });
+    }
+
+    // 2) Skill chưa hoàn thành
+    const studyHours = JSON.parse(localStorage.getItem('studyHours') || '{}');
+    const allSkills = [];
+    for (const [career, careerData] of Object.entries(skillsData)) {
+      for (const [catName, cat] of Object.entries(careerData.categories)) {
+        cat.skills.forEach(skill => {
+          const hours = (studyHours[career] && studyHours[career][skill.name]) ? studyHours[career][skill.name] : 0;
+          const target = skill.targetHours || 10;
+          if (hours < target) {
+            allSkills.push({ ...skill, career, target, hours });
+          }
+        });
+      }
+    }
+    if (allSkills.length > 0) {
+      const pick = randomPick(allSkills);
+      tasks.push({
+        icon: '📈',
+        title: 'Study: ' + pick.name,
+        meta: `${pick.hours.toFixed(1)} / ${pick.target}h`,
+        action: () => {
+          // Chọn career và cuộn đến skill
+          if (typeof selectCareer === 'function') {
+            selectCareer(pick.career);
+            setTimeout(() => {
+              const skillElements = document.querySelectorAll('.skill-item');
+              for (const el of skillElements) {
+                if (el.textContent.includes(pick.name)) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  el.style.transition = '0.2s';
+                  el.style.boxShadow = '0 0 0 3px #f59e0b';
+                  setTimeout(() => el.style.boxShadow = '', 2000);
+                  break;
+                }
+              }
+            }, 600);
+          }
+        }
+      });
+    }
+
+    // 3) Book chưa đọc xong
+    const readingList = JSON.parse(localStorage.getItem('readingList') || '[]');
+    const readingNow = readingList.filter(b => b.status === 'reading');
+    if (readingNow.length > 0) {
+      const pick = randomPick(readingNow);
+      tasks.push({
+        icon: '📖',
+        title: 'Read: ' + pick.title,
+        meta: pick.author || 'Reading in progress',
+        action: () => {
+          alert('📖 Open your book: ' + pick.title);
+        }
+      });
+    }
+
+    // 4) Goal chưa hoàn thành
+    const goals = JSON.parse(localStorage.getItem('goals') || '[]');
+    const pendingGoals = goals.filter(g => g.progress < 100);
+    if (pendingGoals.length > 0) {
+      const pick = randomPick(pendingGoals);
+      tasks.push({
+        icon: '🎯',
+        title: 'Goal: ' + pick.title,
+        meta: `${pick.progress||0}% done`,
+        action: () => {
+          alert('🎯 Work on your goal: ' + pick.title);
+        }
+      });
+    }
+
+    // 5) Quote truyền lực
+    tasks.push({
+      icon: '💬',
+      title: '"' + motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)].text.substring(0, 60) + '…"',
+      meta: 'Inspiration',
+      action: () => {
+        if (typeof getRandomQuote === 'function') getRandomQuote();
+      }
+    });
+
+    return tasks.slice(0, 5);
+  }
+
+  function render() {
+    const grid = document.getElementById('launchpadGrid');
+    const tasks = buildTasks();
+    grid.innerHTML = tasks.map((t, idx) => `
+      <div class="launch-card" onclick="ADHDLP.execute(${idx})">
+        <div>
+          <div class="launch-icon">${t.icon}</div>
+          <div class="launch-text">${t.title}</div>
+          <div class="launch-meta">${t.meta}</div>
+        </div>
+      </div>
+    `).join('');
+
+    // Store tasks for later execution
+    window._adhdTasks = tasks;
+  }
+
+  window.ADHDLP = {
+    refresh() { render(); },
+    execute(idx) {
+      const tasks = window._adhdTasks;
+      if (tasks && tasks[idx] && tasks[idx].action) {
+        tasks[idx].action();
+      }
+    }
+  };
+
+  /* initial render */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', render);
+  } else {
+    render();
+  }
+})();
+</script>
+<!-- ========== END ADHD 2-MINUTE LAUNCHPAD ========== -->
+          
+
+<!-- ========== SKILL QUEST MAP - ZELDA STYLE ========== -->
+<style>
+#zeldaMapContainer {
+  margin-bottom: 24px;
+  background: #1a1c2b;
+  border-radius: var(--radius-lg);
+  padding: 20px 20px 14px;
+  box-shadow: var(--shadow-md);
+  border: 2px solid #4a5568;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+}
+.dark-mode #zeldaMapContainer { background: #0f111a; }
+.zelda-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; flex-wrap: wrap; gap: 8px;
+}
+.zelda-header h3 {
+  font-size: 1.2rem; font-weight: 800; margin: 0;
+  color: #fbbf24; letter-spacing: 1px;
+}
+.zelda-legend {
+  display: flex; gap: 14px; font-size: 0.7rem; font-weight: 700;
+}
+.zelda-legend span { display: flex; align-items: center; gap: 4px; }
+.zelda-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.zelda-region {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px; padding: 12px 10px;
+  min-height: 130px;
+  transition: all 0.2s;
+}
+.zelda-region:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
+.zelda-region-title {
+  font-size: 0.75rem; font-weight: 700; text-align: center;
+  margin-bottom: 10px; color: #e2e8f0;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+}
+.zelda-dots {
+  display: flex; flex-wrap: wrap; gap: 5px; justify-content: center;
+  align-items: center; min-height: 40px;
+}
+.zelda-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #4b5563; /* xám - chưa học */
+  cursor: pointer; transition: all 0.2s; position: relative;
+  box-shadow: 0 0 6px rgba(0,0,0,0.5);
+}
+.zelda-dot:hover { transform: scale(1.4); z-index: 5; }
+.zelda-dot.learning { background: #f97316; box-shadow: 0 0 12px #f97316; }
+.zelda-dot.completed { background: #fbbf24; box-shadow: 0 0 14px #fbbf24; }
+.zelda-dot[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: #1e293b; color: #f1f5f9; font-size: 0.65rem; white-space: nowrap;
+  padding: 3px 8px; border-radius: 4px; z-index: 20;
+  border: 1px solid #fbbf24; font-family: sans-serif;
+}
+.zelda-footer {
+  margin-top: 14px; text-align: right; font-size: 0.7rem;
+  color: rgba(255,255,255,0.5); font-style: italic;
+}
+</style>
+
+<div id="zeldaMapContainer">
+  <div class="zelda-header">
+    <h3>🗺️ Skill Quest Map</h3>
+    <div class="zelda-legend">
+      <span><div class="zelda-dot" style="background:#4b5563;box-shadow:none;"></div> Locked</span>
+      <span><div class="zelda-dot" style="background:#f97316;box-shadow:none;"></div> Learning</span>
+      <span><div class="zelda-dot" style="background:#fbbf24;box-shadow:none;"></div> Mastered</span>
+    </div>
+  </div>
+  <div class="zelda-grid" id="zeldaGrid"></div>
+  <div class="zelda-footer">⚔️ Click a dot to journey there</div>
+</div>
+
+<script>
+(function() {
+  const careerIcons = {
+    pe: '🌋', ib: '🏙️', hf: '🏰', sc: '🗼', fintech: '🚀',
+    english: '🏛️', chinese: '🎋', tools: '⚙️', cfa1: '📜'
+  };
+  const careerNames = {
+    pe: 'PE', ib: 'IB', hf: 'HF', sc: 'Consulting',
+    fintech: 'Fintech', english: 'English', chinese: 'Chinese',
+    tools: 'Tools', cfa1: 'CFA'
+  };
+
+  function buildMap() {
+    const studyHours = JSON.parse(localStorage.getItem('studyHours') || '{}');
+    const grid = document.getElementById('zeldaGrid');
+    let html = '';
+
+    for (const [career, data] of Object.entries(skillsData)) {
+      let dotsHtml = '';
+      // Gom tất cả skill của career
+      const allSkills = [];
+      for (const [catName, cat] of Object.entries(data.categories)) {
+        cat.skills.forEach(s => allSkills.push(s));
+      }
+
+      allSkills.forEach(skill => {
+        const hours = (studyHours[career] && studyHours[career][skill.name]) ? studyHours[career][skill.name] : 0;
+        const target = skill.targetHours || 10;
+        const progress = Math.min(100, (hours / target) * 100);
+        let dotClass = '';
+        if (progress === 0) dotClass = '';
+        else if (progress < 100) dotClass = 'learning';
+        else dotClass = 'completed';
+
+        dotsHtml += `<div class="zelda-dot ${dotClass}" 
+          data-tooltip="${skill.name.replace(/"/g, '&quot;')} (${Math.round(progress)}%)"
+          onclick="ZMap.go('${career}', '${skill.name.replace(/'/g, "\\'")}')"></div>`;
+      });
+
+      html += `
+        <div class="zelda-region">
+          <div class="zelda-region-title">${careerIcons[career] || '📍'} ${careerNames[career] || career}</div>
+          <div class="zelda-dots">${dotsHtml}</div>
+        </div>`;
+    }
+    grid.innerHTML = html;
+  }
+
+  window.ZMap = {
+    go: function(career, skillName) {
+      if (typeof selectCareer === 'function') {
+        selectCareer(career);
+        setTimeout(() => {
+          const skillEls = document.querySelectorAll('.skill-item');
+          for (const el of skillEls) {
+            if (el.textContent.includes(skillName)) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.style.transition = '0.3s';
+              el.style.boxShadow = '0 0 24px #fbbf24';
+              setTimeout(() => el.style.boxShadow = '', 2500);
+              break;
+            }
+          }
+        }, 700);
+      }
+    },
+    refresh: buildMap
+  };
+
+  // Init
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', buildMap);
+  } else {
+    buildMap();
+  }
+  // Rebuild mỗi 30s để cập nhật progress
+  setInterval(buildMap, 30000);
+})();
+</script>
+<!-- ========== END SKILL QUEST MAP ========== -->
+
+
+
+
+
+
+
+
+
+
             <div class="main-content">
                 <div class="skills-section">
                     <h2 id="currentCareerTitle">Courses</h2>
@@ -8708,6 +9720,10 @@
 
                 
                 <div class="sidebar">
+
+
+
+                    
                     <div class="sidebar-card">
                         <h3 class="sidebar-title">📊 Your Progress</h3>
                         <div class="gamification-stats">
@@ -8731,6 +9747,8 @@
                             <span id="totalStudyInfo">Total: 0.0 hours</span>
                         </div>
 
+
+                        
                         <div class="chart-container" style="height: 140px; margin: 15px 0; background: #f8fafc; border-radius: var(--radius-md);">
                             <canvas id="dailyStudyChart"></canvas>
                         </div>
@@ -10267,7 +11285,7 @@
                 <button class="modal-close" onclick="closeFullReviewModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <pre id="fullReviewText" style="white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto; padding: 10px; background-color: #f5f5f5; border-radius: 4px; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.5;"></pre>
+                <div id="fullReviewText" style="max-height: 500px; overflow-y: auto; padding: 15px; background-color: #f5f5f5; border-radius: 4px; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;"></div>
             </div>
         </div>
     </div>
@@ -31584,5 +32602,8 @@ window.getFlashcardDashboard = getFlashcardDashboard;
             </div>
         </div>
     </div>
+
+
+    
 </body>
 </html>
