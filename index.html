@@ -237,7 +237,7 @@
         /* Main Content Layout */
         .main-content {
             display: grid;
-            grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+            grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
             gap: 30px; 
             align-items: start;
         }        
@@ -10280,6 +10280,354 @@
 <!-- ========== END ADHD 2-MINUTE LAUNCHPAD v2 ========== -->
           
 
+
+
+
+<!-- ==========================================
+     ⚡ DAILY BATTLE PLAN
+     Paste NGAY TRÊN <div class="main-content">
+     ========================================== -->
+
+<style>
+#dbpModal {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,0.55); z-index:2000;
+    align-items:center; justify-content:center; padding:20px;
+}
+#dbpModal.open { display:flex; }
+#dbpBox {
+    background:var(--bg-white); border-radius:var(--radius-lg);
+    width:100%; max-width:680px; max-height:90vh;
+    overflow-y:auto; box-shadow:var(--shadow-lg);
+    padding:24px; color:var(--text-dark);
+    font-family:'Segoe UI',sans-serif;
+}
+.dbp-header {
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--border-color);
+}
+.dbp-title { font-size:1.2rem; font-weight:700; }
+.dbp-close { background:none; border:none; font-size:1.5rem; cursor:pointer; color:var(--text-muted); }
+.dbp-config { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:16px; }
+.dbp-config label {
+    display:block; font-size:0.75rem; font-weight:700;
+    color:var(--text-muted); margin-bottom:6px;
+    text-transform:uppercase; letter-spacing:0.05em;
+}
+.dbp-config input, .dbp-config select {
+    width:100%; padding:10px; border:1px solid var(--border-color);
+    border-radius:var(--radius-sm); background:var(--bg-light);
+    color:var(--text-dark); font-size:0.9rem;
+}
+.dbp-budget-info { display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-muted); margin-bottom:5px; }
+.dbp-budget-bar { background:var(--bg-light); border-radius:99px; height:8px; overflow:hidden; margin-bottom:16px; }
+.dbp-budget-fill { height:100%; border-radius:99px; background:linear-gradient(90deg,#10b981,#3b82f6); transition:width 0.3s,background 0.3s; }
+.dbp-tasks-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.dbp-tasks-title { font-size:0.9rem; font-weight:600; }
+.dbp-task-row {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; background:var(--bg-light);
+    border-radius:var(--radius-sm); margin-bottom:7px;
+    border:1px solid transparent; transition:all 0.2s;
+}
+.dbp-task-row.selected { background:rgba(59,130,246,0.08); border-color:rgba(59,130,246,0.25); }
+.dbp-task-row input[type=checkbox] { width:16px; height:16px; cursor:pointer; flex-shrink:0; accent-color:var(--primary); }
+.dbp-task-name { font-size:0.85rem; font-weight:500; }
+.dbp-task-sub { font-size:0.72rem; color:var(--text-muted); margin-top:2px; }
+.dbp-task-duration {
+    width:68px; padding:6px 8px; border:1px solid var(--border-color);
+    border-radius:var(--radius-sm); background:var(--bg-white);
+    color:var(--text-dark); font-size:0.82rem; text-align:center;
+}
+.dbp-generate-btn {
+    width:100%; padding:13px; background:var(--primary); color:white;
+    border:none; border-radius:var(--radius-md); font-weight:700;
+    font-size:0.95rem; cursor:pointer; margin:16px 0 8px; transition:opacity 0.2s;
+}
+.dbp-generate-btn:hover { opacity:0.88; }
+.dbp-block {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:6px; font-size:0.85rem;
+}
+.dbp-block.work { background:rgba(59,130,246,0.08); border-left:3px solid var(--primary); }
+.dbp-block.break-short { background:var(--bg-light); border-left:3px solid var(--border-color); color:var(--text-muted); font-style:italic; }
+.dbp-block.break-long { background:rgba(16,185,129,0.07); border-left:3px solid #10b981; color:var(--text-muted); font-style:italic; }
+.dbp-block-time { font-size:0.77rem; font-weight:700; color:var(--text-muted); min-width:116px; font-family:monospace; }
+.dbp-block-name { flex:1; font-weight:500; }
+.dbp-block-dur { font-size:0.74rem; color:var(--text-muted); min-width:36px; text-align:right; }
+.dbp-gcal-btn {
+    padding:4px 10px; background:rgba(66,133,244,0.1); color:#4285f4;
+    border:1px solid rgba(66,133,244,0.3); border-radius:20px; font-size:0.71rem;
+    font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; display:inline-block;
+}
+.dbp-gcal-btn:hover { background:rgba(66,133,244,0.22); }
+.dbp-add-all-btn {
+    width:100%; padding:11px; background:rgba(66,133,244,0.1); color:#4285f4;
+    border:1px solid rgba(66,133,244,0.3); border-radius:var(--radius-md);
+    font-weight:700; font-size:0.88rem; cursor:pointer; margin-top:10px; display:none;
+}
+.dbp-plan-meta {
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:12px; padding:10px 14px;
+    background:rgba(99,102,241,0.08); border-radius:var(--radius-sm); font-size:0.8rem;
+}
+#dbpTriggerBtn {
+    position:fixed; bottom:80px; right:24px;
+    background:linear-gradient(135deg,#3b82f6,#6366f1);
+    color:white; border:none; border-radius:50px;
+    padding:12px 20px; font-size:0.88rem; font-weight:700;
+    cursor:pointer; box-shadow:0 4px 15px rgba(59,130,246,0.4);
+    z-index:998; transition:all 0.2s; display:flex; align-items:center; gap:8px;
+}
+#dbpTriggerBtn:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(59,130,246,0.5); }
+</style>
+
+<!-- Floating Trigger Button -->
+<button id="dbpTriggerBtn" onclick="DBP.open()">Today's Plan</button>
+
+<!-- Modal -->
+<div id="dbpModal">
+    <div id="dbpBox">
+        <div class="dbp-header">
+            <div>
+                <div class="dbp-title">⚡ Daily Battle Plan</div>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:3px;">Fill every slot. No idle time.</div>
+            </div>
+            <button class="dbp-close" onclick="DBP.close()">×</button>
+        </div>
+
+        <div class="dbp-config">
+            <div>
+                <label>Start Time</label>
+                <input type="time" id="dbpStartTime" value="08:00">
+            </div>
+            <div>
+                <label>Hours Available</label>
+                <input type="number" id="dbpHours" min="1" max="14" step="0.5" value="4" oninput="DBP.updateBudget()">
+            </div>
+            <div>
+                <label>Session Style</label>
+                <select id="dbpStyle" onchange="DBP.refreshTasks()">
+                    <option value="deep">🧠 Deep Work (90/15)</option>
+                    <option value="pomo">🍅 Pomodoro (50/10)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="dbp-budget-info">
+            <span>⏱ Time selected vs available</span>
+            <span id="dbpBudgetText">0 / 0 min</span>
+        </div>
+        <div class="dbp-budget-bar">
+            <div class="dbp-budget-fill" id="dbpBudgetFill" style="width:0%"></div>
+        </div>
+
+        <div class="dbp-tasks-header">
+            <div class="dbp-tasks-title">📋 Chọn tasks — đặt số phút mỗi slot</div>
+        </div>
+        <div id="dbpTaskList"></div>
+
+        <button class="dbp-generate-btn" onclick="DBP.generate()">⚡ Generate Battle Plan</button>
+
+        <div id="dbpSchedule"></div>
+        <button class="dbp-add-all-btn" id="dbpAddAllBtn" onclick="DBP.addAll()">
+            📅 Add ALL blocks to Google Calendar
+        </button>
+    </div>
+</div>
+
+<script>
+(function () {
+    // ── helpers ──────────────────────────────────────────
+    const gel  = id => document.getElementById(id);
+    const pad  = n  => String(n).padStart(2,'0');
+    const fmt  = d  => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const addM = (d,m)=> new Date(d.getTime() + m*60000);
+
+    function gcalUrl(title, start, end, details) {
+        const f = d =>
+            `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`+
+            `T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+        return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+            +`&text=${encodeURIComponent('📚 '+title)}`
+            +`&dates=${f(start)}/${f(end)}`
+            +`&details=${encodeURIComponent(details||'')}`;
+    }
+
+    // ── pull data from localStorage ───────────────────────
+    function getTasks(styleDef) {
+        const icons = {video:'🎥',book:'📖',podcast:'🎙️',research:'📑',journal:'📰',tool:'🛠️',data:'📊',other:'📌'};
+        const resources = JSON.parse(localStorage.getItem('resourceLibrary')||'[]')
+            .filter(r=>r.status==='to-read'||r.status==='reading')
+            .map(r=>({
+                id:'r_'+r.id,
+                label:(icons[r.type]||'📌')+' '+r.title,
+                sub:[r.type,r.category].filter(Boolean).join(' · '),
+                def:styleDef,
+                details:r.url||''
+            }));
+        const goals = JSON.parse(localStorage.getItem('goals')||'[]')
+            .filter(g=>!['completed','archived'].includes((g.status||'').toLowerCase()))
+            .map(g=>({
+                id:'g_'+(g.id||Math.random()),
+                label:'🎯 '+(g.title||g.name||'Goal'),
+                sub:'Goal · '+(g.career||''),
+                def:Math.round(styleDef*0.7/5)*5||60,
+                details:g.description||''
+            }));
+        return [...resources,...goals];
+    }
+
+    // ── budget bar ────────────────────────────────────────
+    function updateBudget() {
+        const avail = parseFloat(gel('dbpHours').value||0)*60;
+        let used = 0;
+        document.querySelectorAll('#dbpTaskList .dbp-task-row').forEach(row=>{
+            const cb = row.querySelector('input[type=checkbox]');
+            if(cb&&cb.checked) used += parseInt(row.querySelector('.dbp-task-duration').value||0);
+            row.classList.toggle('selected',!!(cb&&cb.checked));
+        });
+        const pct = avail>0 ? Math.min(110,used/avail*100) : 0;
+        gel('dbpBudgetFill').style.width = Math.min(100,pct)+'%';
+        gel('dbpBudgetFill').style.background = pct>100
+            ? 'linear-gradient(90deg,#ef4444,#f97316)'
+            : pct>80
+            ? 'linear-gradient(90deg,#f59e0b,#10b981)'
+            : 'linear-gradient(90deg,#10b981,#3b82f6)';
+        gel('dbpBudgetText').textContent = `${used} / ${Math.round(avail)} min`;
+    }
+
+    // ── render task list ──────────────────────────────────
+    function renderTasks() {
+        const style   = gel('dbpStyle').value;
+        const styleDef= style==='pomo' ? 50 : 90;
+        const tasks   = getTasks(styleDef);
+        const list    = gel('dbpTaskList');
+
+        if(!tasks.length){
+            list.innerHTML='<div style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:20px;">Chưa có resource hay goal active nào.<br>Thêm vào Resource Library hoặc Goals trước nhé!</div>';
+            return;
+        }
+        list.innerHTML = tasks.map(t=>`
+            <div class="dbp-task-row" data-id="${t.id}">
+                <input type="checkbox"
+                    data-details="${encodeURIComponent(t.details)}"
+                    data-label="${encodeURIComponent(t.label)}"
+                    onchange="DBP.updateBudget()">
+                <div style="flex:1;min-width:0;">
+                    <div class="dbp-task-name">${t.label}</div>
+                    ${t.sub?`<div class="dbp-task-sub">${t.sub}</div>`:''}
+                </div>
+                <input class="dbp-task-duration" type="number"
+                    min="15" max="360" step="5" value="${t.def}"
+                    onchange="DBP.updateBudget()" title="Số phút cho task này">
+                <span style="font-size:0.7rem;color:var(--text-muted);">min</span>
+            </div>
+        `).join('');
+    }
+
+    // ── generate schedule ─────────────────────────────────
+    function generate() {
+        const [sh,sm] = (gel('dbpStartTime').value||'08:00').split(':').map(Number);
+        const style   = gel('dbpStyle').value;
+        const shortBr = style==='pomo' ? 10 : 15;
+        const longBr  = 30;
+
+        const picked = [];
+        document.querySelectorAll('#dbpTaskList .dbp-task-row input[type=checkbox]:checked').forEach(cb=>{
+            const row = cb.closest('.dbp-task-row');
+            picked.push({
+                name:    decodeURIComponent(cb.dataset.label||'Task'),
+                dur:     parseInt(row.querySelector('.dbp-task-duration').value||90),
+                details: decodeURIComponent(cb.dataset.details||'')
+            });
+        });
+
+        if(!picked.length){ alert('⚠️ Chọn ít nhất 1 task!'); return; }
+
+        const start = new Date();
+        start.setHours(sh,sm,0,0);
+
+        const blocks = [];
+        let cursor   = new Date(start);
+        let cumWork  = 0;
+
+        picked.forEach((task,i)=>{
+            blocks.push({name:task.name, start:new Date(cursor), end:addM(cursor,task.dur), isBreak:false, details:task.details, dur:task.dur});
+            cursor  = addM(cursor,task.dur);
+            cumWork += task.dur;
+
+            if(i<picked.length-1){
+                const bd  = cumWork>=180 ? longBr : shortBr;
+                const lbl = bd===longBr ? '🍱 Long Break' : '☕ Break';
+                const cls = bd===longBr ? 'break-long'   : 'break-short';
+                if(bd===longBr) cumWork=0;
+                blocks.push({name:lbl, start:new Date(cursor), end:addM(cursor,bd), isBreak:true, cls, dur:bd});
+                cursor = addM(cursor,bd);
+            }
+        });
+
+        renderSchedule(blocks);
+    }
+
+    // ── render schedule ───────────────────────────────────
+    function renderSchedule(blocks) {
+        _blocks = blocks;
+        const work     = blocks.filter(b=>!b.isBreak);
+        const totalMin = work.reduce((s,b)=>s+b.dur,0);
+
+        gel('dbpSchedule').innerHTML = `
+            <div class="dbp-plan-meta">
+                <div>🕐 ${fmt(blocks[0].start)} → ${fmt(blocks[blocks.length-1].end)}</div>
+                <div>🧠 ${Math.round(totalMin/60*10)/10}h tập trung · ${work.length} blocks</div>
+            </div>
+            ${blocks.map(b=>`
+                <div class="dbp-block ${b.isBreak?(b.cls||'break-short'):'work'}">
+                    <div class="dbp-block-time">${fmt(b.start)} – ${fmt(b.end)}</div>
+                    <div class="dbp-block-name">${b.name}</div>
+                    <div class="dbp-block-dur">${b.dur}m</div>
+                    ${!b.isBreak?`<a class="dbp-gcal-btn" href="${gcalUrl(b.name,b.start,b.end,b.details)}" target="_blank" rel="noopener">📅 GCal</a>`:''}
+                </div>
+            `).join('')}
+        `;
+
+        gel('dbpAddAllBtn').style.display='block';
+        gel('dbpSchedule').scrollIntoView({behavior:'smooth',block:'nearest'});
+    }
+
+    // ── add all to gcal ───────────────────────────────────
+    function addAll() {
+        const work = (_blocks||[]).filter(b=>!b.isBreak);
+        if(!work.length) return;
+        if(!confirm(`Mở ${work.length} tab Google Calendar?\n(Cho phép popup nếu browser chặn)`)) return;
+        work.forEach((b,i)=>setTimeout(()=>window.open(gcalUrl(b.name,b.start,b.end,b.details),'_blank'),i*500));
+    }
+
+    let _blocks = [];
+
+    // ── public API ────────────────────────────────────────
+    window.DBP = {
+        open() {
+            gel('dbpSchedule').innerHTML='';
+            gel('dbpAddAllBtn').style.display='none';
+            renderTasks();
+            updateBudget();
+            gel('dbpModal').classList.add('open');
+        },
+        close()       { gel('dbpModal').classList.remove('open'); },
+        generate,
+        addAll,
+        updateBudget,
+        refreshTasks() { renderTasks(); updateBudget(); }
+    };
+
+    // close on backdrop
+    gel('dbpModal').addEventListener('click', e=>{
+        if(e.target===gel('dbpModal')) DBP.close();
+    });
+})();
+</script>
+<!-- ========== END DAILY BATTLE PLAN ========== -->
 
 
 
@@ -34074,5 +34422,9 @@ window.getFlashcardDashboard = getFlashcardDashboard;
         </div>
     </div>
 
+
+
+
+    
 </body>
 </html>
