@@ -7787,7 +7787,7 @@
 
 
         .dark-mode .resource-card-fade {
-            background: linear-gradient(to bottom, transparent, var(--bg-card));
+            background: linear-gradient(to bottom, transparent, var(--bg-white));
         }
 
         /* ===== TAG IMPROVEMENTS ===== */
@@ -7969,87 +7969,6 @@
 
         .active-filter-chip button:hover {
             opacity: 1;
-        }
-
-        /* ===== RESOURCE CARD ===== */
-        .resource-card-collapsible {
-            max-height: 200px;
-            overflow: hidden;
-            position: relative;
-            transition: max-height 0.3s ease;
-        }
-
-        .resource-card-collapsible.expanded {
-            max-height: none;
-        }
-
-        .resource-card-fade {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 60px;
-            background: linear-gradient(to bottom, transparent, var(--bg-white));
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-        }
-
-        .resource-card-collapsible.expanded .resource-card-fade {
-            opacity: 0;
-        }
-
-        .resource-expand-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            width: 100%;
-            padding: 8px;
-            margin-top: 8px;
-            background: var(--bg-light);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            color: var(--text-dark);
-            transition: all 0.2s ease;
-        }
-
-        .resource-expand-btn:hover {
-            background: var(--bg-white);
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        .finance-card-thesis {
-            font-size: 0.9rem;
-            line-height: 1.6;
-            color: var(--text-dark);
-            font-style: normal;
-        }
-
-        .finance-card-thesis strong {
-            color: var(--text-dark);
-            font-weight: 600;
-        }
-
-        .finance-card-thesis em {
-            color: var(--text-dark);
-            font-style: normal;
-            font-weight: 500;
-        }
-
-        .dark-mode .resource-card-fade {
-            background: linear-gradient(to bottom, transparent, var(--bg-card));
-        }
-
-        .dark-mode .tag-cloud-item {
-            background: var(--bg-card);
-        }
-
-        .dark-mode .tag-cloud-item:hover,
-        .dark-mode .tag-cloud-item.active {
-            background: var(--primary);
         }
 
         /* ===== END RESOURCE ===== */
@@ -13412,8 +13331,8 @@ window.DBP={
             </button>
             
             <!-- Filters & Add Button -->
-            <div style="display: flex; gap: 8px; margin-bottom: 15px;">
-                <select id="resourceTypeFilter" onchange="filterResources()" class="filter-select">
+            <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
+                <select id="resourceTypeFilter" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 110px;">
                     <option value="all">All Types</option>
                     <option value="video">🎥 Video</option>
                     <option value="journal">📰 Journal/Article</option>
@@ -13428,6 +13347,23 @@ window.DBP={
                 <button class="add-analysis-btn" onclick="openResourceModal()">
                     <i class="fas fa-plus"></i> Add
                 </button>
+            </div>
+
+            <!-- Status Filter + Sort Row -->
+            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+                <select id="resourceStatusFilter" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 120px;">
+                    <option value="all">All Status</option>
+                    <option value="to-read">📋 To Read</option>
+                    <option value="reading">📖 Reading</option>
+                    <option value="completed">✅ Completed</option>
+                </select>
+                <select id="resourceSortBy" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 120px;">
+                    <option value="newest">🕐 Newest</option>
+                    <option value="oldest">📅 Oldest</option>
+                    <option value="priority">🔺 Priority</option>
+                    <option value="title">🔤 Title A–Z</option>
+                    <option value="status">📊 Status</option>
+                </select>
             </div>
             
             <!-- Search Bar -->
@@ -13532,11 +13468,25 @@ window.DBP={
                             
                             <div class="form-group">
                                 <label for="resourceStatus" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Status</label>
-                                <select id="resourceStatus" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                <select id="resourceStatus" onchange="toggleProgressField()" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
                                     <option value="to-read">📋 To Read</option>
                                     <option value="reading">📖 Reading</option>
                                     <option value="completed">✅ Completed</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        <!-- Progress slider — visible only when status = reading -->
+                        <div class="form-group" id="resourceProgressGroup" style="display: none; margin-bottom: 16px;">
+                            <label style="display: flex; justify-content: space-between; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">
+                                <span>📊 Reading Progress</span>
+                                <span id="resourceProgressLabel" style="color: var(--primary); font-weight: 700;">50%</span>
+                            </label>
+                            <input type="range" id="resourceProgress" min="0" max="100" value="50" step="5"
+                                oninput="document.getElementById('resourceProgressLabel').textContent = this.value + '%'"
+                                style="width: 100%; accent-color: var(--primary); cursor: pointer;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                                <span>0%</span><span>50%</span><span>100%</span>
                             </div>
                         </div>
 
@@ -21140,7 +21090,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 duration: parseFloat(durationHours.toFixed(2)),
                 startFormatted: new Date(sleepStartTime).toLocaleString('vi-VN'),
                 endFormatted: new Date(endTime).toLocaleString('vi-VN'),
-                manual: true
+                manual: false
             };
             
             sleepSessions.push(session);
@@ -21199,6 +21149,21 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <input type="datetime-local" id="manualSleepEnd" value="${defaultEnd}" required>
                             </div>
                             <div id="manualSleepDuration" class="duration-display">Duration: -- hours</div>
+                            <div class="form-group">
+                                <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Chất lượng giấc ngủ</label>
+                                <div id="manualSleepQuality" style="display:flex; gap:8px; justify-content:center; margin-bottom:4px;">
+                                    ${[1,2,3,4,5].map(n => `<button type="button" data-q="${n}" onclick="selectSleepQuality('manualSleepQuality',${n})"
+                                        style="width:36px;height:36px;border-radius:50%;border:2px solid var(--border-color);background:var(--bg-light);cursor:pointer;font-size:1.1rem;transition:all 0.15s;"
+                                        title="${['😫 Rất tệ','😞 Tệ','😐 Bình thường','😊 Tốt','😄 Rất tốt'][n-1]}">${['😫','😞','😐','😊','😄'][n-1]}</button>`).join('')}
+                                </div>
+                                <input type="hidden" id="manualSleepQualityVal" value="0">
+                                <div style="text-align:center;font-size:0.8rem;color:var(--text-muted);" id="manualSleepQualityLabel">Chưa chọn</div>
+                            </div>
+                            <div class="form-group">
+                                <label for="manualSleepNotes" style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Ghi chú <span style="font-weight:400;color:var(--text-muted);">(tuỳ chọn)</span></label>
+                                <textarea id="manualSleepNotes" placeholder="VD: uống cà phê buổi tối, stress công việc, ngủ trưa..." rows="2"
+                                    style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-light);color:var(--text-dark);font-size:0.9rem;resize:vertical;font-family:inherit;"></textarea>
+                            </div>
                             <div class="modal-actions">
                                 <button type="button" class="btn-secondary" onclick="closeManualSleepModal()">Cancel</button>
                                 <button type="submit" class="btn-primary">💾 Save Session</button>
@@ -21494,7 +21459,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         hour: '2-digit',
                         minute: '2-digit'
                     }),
-                    manual: true
+                    manual: true,
+                    quality: parseInt(document.getElementById('manualSleepQualityVal')?.value || '0'),
+                    notes: document.getElementById('manualSleepNotes')?.value.trim() || ''
                 };
                 
                 // Add to sleep sessions
@@ -21573,6 +21540,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
+        function selectSleepQuality(containerId, value) {
+            const labels = ['Rất tệ','Tệ','Bình thường','Tốt','Rất tốt'];
+            const emojis = ['😫','😞','😐','😊','😄'];
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.querySelectorAll('button').forEach(btn => {
+                const q = parseInt(btn.dataset.q);
+                btn.style.background = q === value ? 'var(--primary)' : 'var(--bg-light)';
+                btn.style.borderColor = q === value ? 'var(--primary)' : 'var(--border-color)';
+                btn.style.transform = q === value ? 'scale(1.15)' : 'scale(1)';
+            });
+            // update hidden input and label
+            const suffix = containerId.replace('SleepQuality','SleepQualityVal');
+            const labelId = containerId.replace('SleepQuality','SleepQualityLabel');
+            const hiddenInput = document.getElementById(suffix);
+            const labelEl = document.getElementById(labelId);
+            if (hiddenInput) hiddenInput.value = value;
+            if (labelEl) labelEl.textContent = `${emojis[value-1]} ${labels[value-1]}`;
+        }
+
         function closeManualSleepModal() {
             const modal = document.getElementById('manualSleepModal');
             if (modal) modal.remove();
@@ -21582,8 +21569,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const session = sleepSessions.find(s => s.id === id);
             if (!session) return;
             
-            const startDate = new Date(session.start).toISOString().slice(0, 16);
-            const endDate = new Date(session.end).toISOString().slice(0, 16);
+            // Fix: use local time (not UTC via toISOString) to avoid 7h timezone shift
+            function toLocalDatetimeString(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            }
+            
+            const startDate = toLocalDatetimeString(new Date(session.start));
+            const endDate = toLocalDatetimeString(new Date(session.end));
             
             const html = `
                 <div id="editSleepModal" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(4px);">
@@ -21602,6 +21599,22 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <input type="datetime-local" id="editSleepEnd" value="${endDate}" required style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-light); color: var(--text-dark);">
                             </div>
                             <div id="editSleepDuration" style="text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">Duration: ${session.duration}h</div>
+                            <div style="margin-bottom:15px;">
+                                <label style="display:block;margin-bottom:6px;font-weight:500;color:var(--text-dark);">Chất lượng giấc ngủ</label>
+                                <div id="editSleepQuality" style="display:flex;gap:8px;justify-content:center;margin-bottom:4px;">
+                                    ${[1,2,3,4,5].map(n => `<button type="button" data-q="${n}" onclick="selectSleepQuality('editSleepQuality',${n})"
+                                        style="width:36px;height:36px;border-radius:50%;border:2px solid ${(session.quality||0)===n?'var(--primary)':'var(--border-color)'};background:${(session.quality||0)===n?'var(--primary)':'var(--bg-light)'};cursor:pointer;font-size:1.1rem;transform:${(session.quality||0)===n?'scale(1.15)':'scale(1)'};transition:all 0.15s;"
+                                        title="${['😫 Rất tệ','😞 Tệ','😐 Bình thường','😊 Tốt','😄 Rất tốt'][n-1]}">${['😫','😞','😐','😊','😄'][n-1]}</button>`).join('')}
+                                </div>
+                                <input type="hidden" id="editSleepQualityVal" value="${session.quality||0}">
+                                <div style="text-align:center;font-size:0.8rem;color:var(--text-muted);" id="editSleepQualityLabel">${session.quality ? ['😫 Rất tệ','😞 Tệ','😐 Bình thường','😊 Tốt','😄 Rất tốt'][(session.quality||1)-1] : 'Chưa chọn'}</div>
+                            </div>
+                            <div style="margin-bottom:15px;">
+                                <label style="display:block;margin-bottom:6px;font-weight:500;color:var(--text-dark);">Ghi chú <span style="font-weight:400;color:var(--text-muted);">(tuỳ chọn)</span></label>
+                                <textarea id="editSleepNotes" rows="2"
+                                    style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-light);color:var(--text-dark);font-size:0.9rem;resize:vertical;font-family:inherit;"
+                                    placeholder="VD: uống cà phê buổi tối, stress công việc...">${session.notes||''}</textarea>
+                            </div>
                             <div style="display: flex; gap: 10px;">
                                 <button type="button" onclick="closeEditSleepModal()" style="flex: 1; padding: 12px; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-weight: 500;">Cancel</button>
                                 <button type="submit" style="flex: 1; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Update</button>
@@ -21659,7 +21672,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         end: end,
                         duration: parseFloat(durationHours.toFixed(2)),
                         startFormatted: new Date(start).toLocaleString('vi-VN'),
-                        endFormatted: new Date(end).toLocaleString('vi-VN')
+                        endFormatted: new Date(end).toLocaleString('vi-VN'),
+                        quality: parseInt(document.getElementById('editSleepQualityVal')?.value || '0'),
+                        notes: document.getElementById('editSleepNotes')?.value.trim() || ''
                     };
                     
                     saveSleepData();
@@ -21700,24 +21715,34 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const recentSessions = sleepSessions.slice(-10).reverse(); // Last 10, newest first
             
-            container.innerHTML = recentSessions.map(session => `
-                <div style="background: var(--bg-light); padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid ${session.duration > 16 ? '#ef4444' : '#3b82f6'};">
+            container.innerHTML = recentSessions.map(session => {
+                const qualityEmojis = ['','😫','😞','😐','😊','😄'];
+                const qualityLabels = ['','Rất tệ','Tệ','Bình thường','Tốt','Rất tốt'];
+                const qualityColors = ['','#ef4444','#f59e0b','#6b7280','#3b82f6','#10b981'];
+                const q = session.quality || 0;
+                const borderColor = session.duration > 16 ? '#ef4444'
+                    : q >= 4 ? '#10b981' : q === 3 ? '#3b82f6' : q > 0 ? '#f59e0b' : '#3b82f6';
+                return `
+                <div style="background: var(--bg-light); padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid ${borderColor};">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
-                        <div>
-                            <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px;">
-                                😴 ${session.duration} hours ${session.manual ? '(Manual)' : ''}
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; display:flex; align-items:center; gap:6px;">
+                                😴 ${session.duration}h
+                                ${session.manual ? '<span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">(Manual)</span>' : ''}
+                                ${q > 0 ? `<span style="font-size:0.85rem;color:${qualityColors[q]};" title="${qualityLabels[q]}">${qualityEmojis[q]}</span>` : ''}
                             </div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted);">
+                            <div style="font-size: 0.82rem; color: var(--text-muted);">
                                 ${session.startFormatted} → ${session.endFormatted}
                             </div>
+                            ${session.notes ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:5px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${session.notes}">📝 ${session.notes}</div>` : ''}
                         </div>
-                        <div style="display: flex; gap: 4px;">
+                        <div style="display: flex; gap: 4px; margin-left:8px; flex-shrink:0;">
                             <button onclick="editSleepSession(${session.id})" style="background: none; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--text-dark); font-size: 0.85rem;">✏️</button>
                             <button onclick="deleteSleepSession(${session.id})" style="background: none; border: 1px solid #ef4444; padding: 4px 8px; border-radius: 6px; cursor: pointer; color: #ef4444; font-size: 0.85rem;">🗑️</button>
                         </div>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         function updateSleepDisplay() {
@@ -21750,7 +21775,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!ctx) return;
             
             const recentSessions = sleepSessions.slice(-7);
-            const labels = recentSessions.map(session => session.startFormatted.split(',')[0]);
+            const labels = recentSessions.map(session => {
+                const d = new Date(session.start);
+                const days = ['CN','T2','T3','T4','T5','T6','T7'];
+                return `${days[d.getDay()]} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+            });
             const durations = recentSessions.map(session => session.duration);
             
             if (sleepChart) {
@@ -36151,7 +36180,6 @@ window.getFlashcardDashboard = getFlashcardDashboard;
             }
             
             container.innerHTML = resources
-                .sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded))
                 .map(resource => renderResourceCard(resource))
                 .join('');
         }
@@ -36299,6 +36327,20 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                         </div>
                     </div>
                 `;
+            } else if (resource.status === 'completed') {
+                const completedDate = resource.completedDate ? new Date(resource.completedDate).toLocaleDateString('vi-VN') : null;
+                const timeText = resource.timeToComplete != null ? ` · ${resource.timeToComplete} ngày` : '';
+                progressHTML = `
+                    <div style="margin: 10px 0;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">
+                            <span>Progress</span>
+                            <span style="color: #10b981; font-weight: 600;">100% ✅${completedDate ? ' · ' + completedDate : ''}${timeText}</span>
+                        </div>
+                        <div style="height: 6px; background: var(--border-color); border-radius: 3px; overflow: hidden;">
+                            <div style="height: 100%; background: #10b981; width: 100%;"></div>
+                        </div>
+                    </div>
+                `;
             }
             
             // ===== STATUS BUTTONS =====
@@ -36345,7 +36387,9 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                         ${progressHTML}
                         ${tagsHTML}
                         <div style="margin-top: 12px;">
-                            <a href="${resource.url}" target="_blank" class="resource-status-btn open-link" title="Open Resource" style="width: 100%; text-align: center; text-decoration: none; padding: 8px 12px; font-size: 0.85rem;">🔗 Open Link</a>
+                            <a href="${resource.url}" target="_blank" class="resource-status-btn open-link" title="Open Resource"
+                                onclick="autoMarkReading('${resource.id}')"
+                                style="width: 100%; text-align: center; text-decoration: none; padding: 8px 12px; font-size: 0.85rem;">🔗 Open Link</a>
                         </div>
                     </div>
                     <div class="resource-buttons-grid">
@@ -36370,6 +36414,21 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                 saveResources();
                 renderResourceCards();
                 showNotification('📖 Started reading: ' + resource.title, 'success');
+            }
+        }
+
+        function autoMarkReading(id) {
+            const resource = resourceLibrary.find(r => r.id == id);
+            if (resource && resource.status === 'to-read') {
+                resource.status = 'reading';
+                resource.startedDate = resource.startedDate || new Date().toISOString();
+                resource.lastViewed = new Date().toISOString();
+                saveResources();
+                renderResourceCards();
+                showNotification('📖 Auto-started: ' + resource.title, 'info');
+            } else if (resource) {
+                resource.lastViewed = new Date().toISOString();
+                saveResources();
             }
         }
 
@@ -36404,17 +36463,13 @@ window.getFlashcardDashboard = getFlashcardDashboard;
         }
 
         function updateResourceProgress(id) {
-            const progress = prompt('Update progress (1-100%):', '50');
-            if (progress && !isNaN(progress)) {
-                const resource = resourceLibrary.find(r => r.id == id);
-                if (resource) {
-                    resource.progress = Math.min(100, Math.max(0, parseInt(progress)));
-                    resource.lastViewed = new Date().toISOString();
-                    saveResources();
-                    renderResourceCards();
-                    showNotification(`📊 Progress updated: ${resource.progress}%`, 'success');
-                }
-            }
+            // Open edit modal pre-set to the resource — user adjusts slider there
+            openResourceModal(id);
+            // Scroll slider into view after modal opens
+            setTimeout(() => {
+                const group = document.getElementById('resourceProgressGroup');
+                if (group) group.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 150);
         }
 
         // ===== TAG FILTERS =====
@@ -36534,14 +36589,28 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                     document.getElementById('resourceTags').value = resource.tags ? resource.tags.join(', ') : '';
                     document.getElementById('resourcePriority').value = resource.priority;
                     document.getElementById('resourceStatus').value = resource.status;
+                    // Populate progress slider
+                    const prog = resource.progress ?? 50;
+                    document.getElementById('resourceProgress').value = prog;
+                    document.getElementById('resourceProgressLabel').textContent = prog + '%';
                 }
             } else {
                 title.textContent = 'Add New Resource';
                 form.reset();
                 idInput.value = '';
+                document.getElementById('resourceProgress').value = 50;
+                document.getElementById('resourceProgressLabel').textContent = '50%';
             }
             
+            toggleProgressField();
             modal.style.display = 'block';
+        }
+
+        // ===== SHOW/HIDE PROGRESS FIELD BASED ON STATUS =====
+        function toggleProgressField() {
+            const status = document.getElementById('resourceStatus').value;
+            const group = document.getElementById('resourceProgressGroup');
+            group.style.display = (status === 'reading') ? 'block' : 'none';
         }
 
         function closeResourceModal() {
@@ -36554,7 +36623,10 @@ window.getFlashcardDashboard = getFlashcardDashboard;
             
             const id = document.getElementById('resourceId').value;
             const isNew = !id;
-            
+            const existing = isNew ? null : resourceLibrary.find(r => r.id == id);
+            const newStatus = document.getElementById('resourceStatus').value;
+            const oldStatus = existing?.status || null;
+
             const resource = {
                 id: isNew ? Date.now().toString() : id,
                 title: document.getElementById('resourceTitle').value,
@@ -36565,10 +36637,21 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                 notes: document.getElementById('resourceNotes').value,
                 tags: document.getElementById('resourceTags').value.split(',').map(tag => tag.trim()).filter(tag => tag),
                 priority: document.getElementById('resourcePriority').value,
-                status: document.getElementById('resourceStatus').value,
-                dateAdded: isNew ? new Date().toISOString() : resourceLibrary.find(r => r.id == id)?.dateAdded,
-                lastViewed: resourceLibrary.find(r => r.id == id)?.lastViewed || null
+                status: newStatus,
+                progress: newStatus === 'reading' ? parseInt(document.getElementById('resourceProgress').value) : (existing?.progress ?? null),
+                dateAdded: isNew ? new Date().toISOString() : existing?.dateAdded,
+                lastViewed: existing?.lastViewed || null,
+                startedDate: (newStatus === 'reading' && oldStatus === 'to-read') ? new Date().toISOString() : (existing?.startedDate || null),
+                completedDate: (newStatus === 'completed' && oldStatus !== 'completed') ? new Date().toISOString() : (existing?.completedDate || null),
             };
+
+            // Calculate timeToComplete if just completed
+            if (newStatus === 'completed' && oldStatus !== 'completed' && resource.startedDate) {
+                const days = Math.floor((new Date() - new Date(resource.startedDate)) / (1000 * 60 * 60 * 24));
+                resource.timeToComplete = days;
+            } else {
+                resource.timeToComplete = existing?.timeToComplete ?? null;
+            }
             
             if (isNew) {
                 resourceLibrary.push(resource);
@@ -36579,7 +36662,9 @@ window.getFlashcardDashboard = getFlashcardDashboard;
             
             saveResources();
             renderResourceCards();
+            renderTagCloud();
             closeResourceModal();
+            showNotification(isNew ? '✅ Resource added!' : '✏️ Resource updated!', 'success');
         });
 
         // ===== CRUD OPERATIONS =====
@@ -36599,18 +36684,11 @@ window.getFlashcardDashboard = getFlashcardDashboard;
             }
         }
 
+        // markResourceViewed is now handled by autoMarkReading (called on Open Link click)
         function markResourceViewed(id) {
-            const resource = resourceLibrary.find(r => r.id == id);
-            if (resource) {
-                resource.lastViewed = new Date().toISOString();
-                if (resource.status === 'to-read') {
-                    resource.status = 'reading';
-                }
-                saveResources();
-                renderResourceCards();
-                showNotification('✅ Marked as viewed!', 'success');
-            }
+            autoMarkReading(id);
         }
+
 
         // ===== RESOURCE LIBRARY STATISTICS =====
         function getResourceStats() {
@@ -36874,13 +36952,20 @@ window.getFlashcardDashboard = getFlashcardDashboard;
         // ===== FILTERING & SEARCH =====
         function filterResources() {
             const filterType = document.getElementById('resourceTypeFilter').value;
-            const searchQuery = document.getElementById('resourceSearch').value.toLowerCase();
+            const filterStatus = document.getElementById('resourceStatusFilter')?.value || 'all';
+            const sortBy = document.getElementById('resourceSortBy')?.value || 'newest';
+            const searchQuery = document.getElementById('resourceSearch').value.toLowerCase().trim();
             
-            let filtered = resourceLibrary;
+            let filtered = [...resourceLibrary];
             
             // Filter by type
             if (filterType !== 'all') {
                 filtered = filtered.filter(r => r.type === filterType);
+            }
+
+            // Filter by status
+            if (filterStatus !== 'all') {
+                filtered = filtered.filter(r => r.status === filterStatus);
             }
             
             // Filter by search query
@@ -36889,6 +36974,7 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                     r.title.toLowerCase().includes(searchQuery) ||
                     r.author?.toLowerCase().includes(searchQuery) ||
                     r.notes?.toLowerCase().includes(searchQuery) ||
+                    r.category?.toLowerCase().includes(searchQuery) ||
                     r.tags?.some(tag => tag.toLowerCase().includes(searchQuery))
                 );
             }
@@ -36900,13 +36986,29 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                     return Array.from(activeTagFilters).every(tag => r.tags.includes(tag));
                 });
             }
+
+            // Sort
+            const priorityOrder = { high: 0, medium: 1, low: 2 };
+            const statusOrder = { 'reading': 0, 'to-read': 1, 'completed': 2 };
+            if (sortBy === 'newest') {
+                filtered.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+            } else if (sortBy === 'oldest') {
+                filtered.sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded));
+            } else if (sortBy === 'priority') {
+                filtered.sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
+            } else if (sortBy === 'title') {
+                filtered.sort((a, b) => a.title.localeCompare(b.title));
+            } else if (sortBy === 'status') {
+                filtered.sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
+            }
             
             renderResourceCards(filtered);
             
-            // Update filter stats
+            // Update filter stats notification
             const statsText = [];
             if (filterType !== 'all') statsText.push(`Type: ${filterType}`);
-            if (searchQuery) statsText.push(`Search: "${searchQuery}"`);
+            if (filterStatus !== 'all') statsText.push(`Status: ${filterStatus}`);
+            if (searchQuery) statsText.push(`"${searchQuery}"`);
             if (activeTagFilters.size > 0) statsText.push(`Tags: ${activeTagFilters.size}`);
             
             if (statsText.length > 0) {
@@ -37124,7 +37226,8 @@ window.getFlashcardDashboard = getFlashcardDashboard;
                     if (data.resourceLibrary) { 
                         localStorage.setItem('resourceLibrary', JSON.stringify(data.resourceLibrary));
                         resourceLibrary = JSON.parse(localStorage.getItem('resourceLibrary')) || [];
-                        if (typeof renderResourceCards === 'function') renderResourceCards();
+                        if (typeof filterResources === 'function') filterResources();
+                        else if (typeof renderResourceCards === 'function') renderResourceCards();
                     }
 
                     // ✅ Reload ALL UI components
