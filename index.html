@@ -10639,7 +10639,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       if (c.deadline) push('c_'+c.id, c.title, c.deadline, CAREER_MAP[c.career]||'📚 Course', '📖 Course');
     });
     (JSON.parse(localStorage.getItem('goals') || '[]')).forEach(g => {
-      if (g.deadline && !g.completed) push('g_'+g.id, g.title, g.deadline, CAREER_MAP[g.career]||'🎯 Goal', '🎯 Goal');
+      if (g.deadline && (g.currentProgress || 0) < (g.target || 1)) push('g_'+g.id, g.title, g.deadline, CAREER_MAP[g.career]||'🎯 Goal', '🎯 Goal');
     });
     (JSON.parse(localStorage.getItem('dealDiary') || '[]')).forEach(d => {
       if (d.date) push('d_'+d.id, d.dealName||'Deal', d.date, '🤝 Deal', '🤝 Deal');
@@ -11219,7 +11219,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       if (!raw) return null;
       const obj = JSON.parse(raw);
       if (obj.date !== todayKey()) return null; // stale — new day
-      return obj.tasks; // array of plain-object task descriptors (no functions)
+      return { tasks: obj.tasks, done: obj.done || [] }; // include persisted done-state
     } catch(e) { return null; }
   }
 
@@ -11227,7 +11227,19 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     // Strip the action functions before serialising
     const serialisable = tasks.map(({ action, ...rest }) => rest);
     try {
-      localStorage.setItem(LP_CACHE_KEY, JSON.stringify({ date: todayKey(), tasks: serialisable }));
+      localStorage.setItem(LP_CACHE_KEY, JSON.stringify({ date: todayKey(), tasks: serialisable, done: [] }));
+    } catch(e) {}
+  }
+
+  // Persist only the done-set into the existing cache entry (called after each markDone)
+  function saveDoneState() {
+    try {
+      const raw = localStorage.getItem(LP_CACHE_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      if (obj.date !== todayKey()) return;
+      obj.done = [...doneSet];
+      localStorage.setItem(LP_CACHE_KEY, JSON.stringify(obj));
     } catch(e) {}
   }
 
@@ -11315,7 +11327,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     return {
       icon: '🎴', tag: 'Flash', tagClass: 'tag-flash',
       title: 'Review: ' + candidate.question.substring(0, 48),
-      meta: `Mastery ${mastery}% · bottom ${poolSize} cards`,
+      meta: `Mastery ${mastery}% · bottom ${poolSize} card${poolSize > 1 ? 's' : ''}`,
       progress: mastery,
       priority: mastery < 30 ? 'high' : 'med',
       reason: mastery < 30 ? '⚠️ Very low mastery' : '📚 Needs review',
@@ -11394,25 +11406,25 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   // ⑤ Goal — most urgent = closest deadline + lowest progress
   function buildGoalTask() {
     const goals = JSON.parse(localStorage.getItem('goals') || '[]');
-    const pending = goals.filter(g => (g.progress||0) < 100);
+    const pending = goals.filter(g => (g.currentProgress || 0) < (g.target || 1));
     if (!pending.length) return null;
     // Score: deadline urgency + low progress
     pending.forEach(g => {
       const daysLeft = daysUntilDeadline(g);
-      const pct = g.progress || 0;
+      const pct = g.target > 0 ? Math.round((g.currentProgress || 0) / g.target * 100) : 0;
       g._score = (100 - pct) + (daysLeft < 7 ? 50 : daysLeft < 14 ? 25 : 0);
     });
     const pick = pending.sort((a,b) => b._score - a._score)[0];
-    const pct = pick.progress || 0;
+    const pct = pick.target > 0 ? Math.round((pick.currentProgress || 0) / pick.target * 100) : 0;
     const dLeft = daysUntilDeadline(pick);
-    const urgencyLabel = dLeft < 7 ? `⚠️ ${dLeft}d left!` : dLeft < 14 ? `📅 ${dLeft}d left` : `${pct}% done`;
+    const urgencyLabel = dLeft <= 0 ? '🚨 Overdue!' : dLeft < 7 ? `⚠️ ${dLeft}d left!` : dLeft < 14 ? `📅 ${dLeft}d left` : `${pct}% done`;
     return {
       icon: '🎯', tag: 'Goal', tagClass: 'tag-goal',
       title: pick.title,
       meta: urgencyLabel,
       progress: pct,
-      priority: dLeft < 7 ? 'high' : pct < 25 ? 'high' : pct < 70 ? 'med' : 'low',
-      reason: dLeft < 7 ? `⏰ Deadline in ${dLeft} days` : '🎯 Needs progress',
+      priority: dLeft <= 0 ? 'high' : dLeft < 7 ? 'high' : pct < 25 ? 'high' : pct < 70 ? 'med' : 'low',
+      reason: dLeft <= 0 ? '🚨 Goal is overdue!' : dLeft < 7 ? `⏰ Deadline in ${dLeft} days` : '🎯 Needs progress',
       actionKey: 'goal',
       _pick: pick
     };
@@ -11427,7 +11439,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     const q = randomPick(motivationalQuotes);
     return {
       icon: '💬', tag: 'Boost', tagClass: 'tag-quote',
-      title: '"' + (q.text||'').substring(0, 58) + (q.text && q.text.length > 58 ? '…' : '"'),
+      title: '"' + (q.text||'').substring(0, 58) + (q.text && q.text.length > 58 ? '…"' : '"'),
       meta: q.author ? `— ${q.author}` : 'Motivation',
       progress: 100,
       priority: 'low',
@@ -11545,17 +11557,31 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 
     let tasks;
     if (!forceRebuild) {
-      tasks = loadCachedTasks();
+      const cached = loadCachedTasks();
+      if (cached) {
+        tasks = cached.tasks;
+        doneSet = new Set(cached.done);
+        // Re-attach actions (functions can't be serialised)
+        attachActions(tasks);
+      }
     }
     if (!tasks) {
       tasks = buildAllTasks();
       saveCachedTasks(tasks);
-    } else {
-      // Re-attach actions (functions can't be serialised)
-      attachActions(tasks);
     }
 
     window._adhdTasks = tasks;
+
+    // Empty state — no data yet
+    if (!tasks.length) {
+      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px 10px;color:var(--text-muted);font-size:0.85rem;line-height:1.7;">
+        🌱 <strong>Chưa có tasks nào!</strong><br>Thêm goals, flashcards hoặc reading list để bắt đầu.
+      </div>`;
+      updateDoneCounts();
+      updateTimerUI();
+      updateContextLabel();
+      return;
+    }
 
     grid.innerHTML = tasks.map((t, idx) => `
       <div class="launch-card" data-priority="${t.priority||'med'}" data-idx="${idx}"
@@ -11576,6 +11602,12 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       </div>
     `).join('');
 
+    // Re-apply done checkmarks restored from cache
+    doneSet.forEach(idx => {
+      const card = grid.querySelector(`.launch-card[data-idx="${idx}"]`);
+      if (card) card.classList.add('lp-done');
+    });
+
     updateDoneCounts();
     updateTimerUI();
     updateContextLabel();
@@ -11585,6 +11617,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     doneSet.add(idx);
     const card = document.querySelector(`.launch-card[data-idx="${idx}"]`);
     if (card) card.classList.add('lp-done');
+    saveDoneState(); // persist immediately so F5 restores tick marks
     updateDoneCounts();
     // If all done, small celebration
     if (doneSet.size === (window._adhdTasks||[]).length) {
@@ -11621,7 +11654,16 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       if (tasks && tasks[idx] && tasks[idx].action) {
         markDone(idx);
         tasks[idx].action();
-        if (!timerRunning && !timerDone) toggleTimer();
+        if (!timerRunning && !timerDone) {
+          toggleTimer();
+          // Flash the timer strip so user notices it auto-started
+          const strip = document.getElementById('lpTimerStrip');
+          if (strip) {
+            strip.style.transition = 'background 0.15s';
+            strip.style.background = 'rgba(245,158,11,0.30)';
+            setTimeout(() => { strip.style.background = ''; strip.style.transition = ''; }, 450);
+          }
+        }
       }
     },
     toggleTimer,
@@ -18934,7 +18976,7 @@ window.DBP={
             container.innerHTML = filteredCourses.map(course => {
                 const progressPercent = Math.min(100, (course.hoursStudied / course.estimatedHours) * 100);
                 const statusClass = getStatusClass(progressPercent);
-                const deadlineClass = getDeadlineClass(course.deadline);
+                const deadlineClass = progressPercent >= 100 ? '' : getDeadlineClass(course.deadline);
                 const deadlineText = course.deadline ? `📅 ${formatDate(course.deadline)}` : '📅 N/A';
             return `<div class="course-item" data-career="${course.career}" data-id="${course.id}">
                 <div class="course-header">
@@ -19231,6 +19273,8 @@ window.DBP={
 
         function getGoalStatus(goal) {
             const now = new Date();
+            // ✅ Completion check FIRST — a finished goal is never overdue
+            if (goal.currentProgress >= goal.target) return 'completed';
             if (goal.deadline) {
                 const deadline = new Date(goal.deadline);
                 if (deadline < now) return 'overdue';
@@ -19238,7 +19282,6 @@ window.DBP={
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 if (diffDays <= 3) return 'soon';
             }
-            if (goal.currentProgress >= goal.target) return 'completed';
             return 'active';
         }
 
