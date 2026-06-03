@@ -11145,6 +11145,9 @@ function generate(){
     _timers = {};
     // Nếu đang có float timer chạy từ plan cũ thì dừng
     if(_activeTimerIdx !== null){ floatStop(); }
+    // Auto-save current plan to temp so it survives modal open/close
+    store.set('dbpCurrentBlocks', blocks.map(b=>({...b, start:b.start.toISOString(), end:b.end.toISOString()})));
+    store.set('dbpCurrentStyle', gel('dbpStyle').value);
     renderSchedule(blocks);
 }
 
@@ -11235,9 +11238,30 @@ function markDone(i){
     if(db){ db.textContent=_blocks[i].done?'✅':'○'; db.classList.toggle('checked',_blocks[i].done); }
     if(_blocks[i].done) toast('✅ Block done!');
 
+    // Sync done states vào temp storage để sống sót qua modal close/open
+    try{
+        store.set('dbpCurrentBlocks', _blocks.map(b=>({...b, start:b.start.toISOString(), end:b.end.toISOString()})));
+    }catch(_){}
+
     const wb=_blocks.filter(b=>!b.isBreak);
-    if(wb.length>0&&wb.every(b=>b.done)){
-        setTimeout(()=>{ beep(); toast('🎉 ALL BLOCKS COMPLETE! Outstanding session! 🔥',4500,'success'); },400);
+    const allDone = wb.length>0 && wb.every(b=>b.done);
+    // Xóa banner cũ nếu có (undo 1 block thì banner biến)
+    const oldBanner = document.getElementById('dbpAllDoneBanner');
+    if(oldBanner && !allDone) oldBanner.remove();
+
+    if(allDone){
+        setTimeout(()=>{
+            beep();
+            toast('🎉 ALL BLOCKS COMPLETE! Outstanding session! 🔥',4500,'success');
+            if(document.getElementById('dbpAllDoneBanner')) return;
+            const banner = document.createElement('div');
+            banner.id = 'dbpAllDoneBanner';
+            banner.style.cssText = 'background:linear-gradient(135deg,#10b981,#3b82f6);color:#fff;border-radius:12px;padding:16px 20px;margin:4px 0 12px;text-align:center;font-weight:800;font-size:1.0rem;letter-spacing:0.01em;box-shadow:0 4px 20px rgba(16,185,129,0.35);';
+            const totalFocus = wb.reduce((s,b)=>s+b.dur,0);
+            banner.innerHTML = `🎉 SESSION COMPLETE!<br><span style="font-size:0.8rem;font-weight:600;opacity:0.92;">${wb.length} blocks · ${(totalFocus/60).toFixed(1)}h focus · Outstanding! 🔥</span>`;
+            const sched = gel('dbpSchedule');
+            if(sched) sched.insertBefore(banner, sched.firstChild);
+        },400);
     }
 }
 
@@ -11315,7 +11339,7 @@ function floatStop(){
 }
 
 function onTimerDone(i){
-    beep(); toast('⏰ Time\'s up! Great work!',3000);
+    beep(); toast('⏰ Time\'s up! Great work!',3500);
     const mr=gel('dbpMR'+i); if(mr)mr.style.display='block';
     if(_blocks[i]&&!_blocks[i].done) markDone(i);
     _activeTimerIdx=null;
@@ -11323,10 +11347,15 @@ function onTimerDone(i){
     const ft=gel('dbpFloatTimer');
     ft.className='done';
     gel('dbpFTName').textContent=_blocks[i]?.name||'Timer';
-    gel('dbpFTTime').textContent='✅ Done!';
+    gel('dbpFTTime').textContent='✅ Xong rồi!';
     gel('dbpFTProg').style.width='100%';
     ft.style.display='block';
-    setTimeout(()=>{ ft.style.display='none'; },3000);
+    // Kéo dài 8 giây để cậu kịp nhìn thấy, click để tắt sớm hơn
+    ft.title = 'Click để đóng';
+    ft.style.cursor = 'pointer';
+    const closeHandler = () => { ft.style.display='none'; ft.removeEventListener('click', closeHandler); };
+    ft.addEventListener('click', closeHandler);
+    setTimeout(()=>{ ft.style.display='none'; ft.removeEventListener('click', closeHandler); },8000);
 }
 
 
@@ -11389,6 +11418,10 @@ function savePlan(){
         blocks:_blocks.map(b=>({...b, start:b.start.toISOString(), end:b.end.toISOString()}))
     });
     store.set('dbpHistory',hist.slice(0,7));
+    // Xóa temp storage vì đã vào history rồi
+    try{ localStorage.removeItem('dbpCurrentBlocks'); localStorage.removeItem('dbpCurrentStyle'); }catch(_){}
+    // Reset _blocks để mở modal lại sẽ bắt đầu fresh
+    _blocks=[]; _timers=[];
     toast('💾 Plan saved!');
 }
 
@@ -11466,8 +11499,15 @@ function switchTab(name,btn){
 /* ─── OPEN / CLOSE ─── */
 function open(){
     gel('dbpDateLabel').textContent=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
-    // Chỉ reset schedule nếu không có timer đang chạy
-    if(_activeTimerIdx === null){
+    // Khôi phục plan từ temp storage nếu chưa có blocks trong memory
+    if(!_blocks.length){
+        const saved = store.get('dbpCurrentBlocks', []);
+        if(saved.length){
+            _blocks = saved.map(b=>({...b, start:new Date(b.start), end:new Date(b.end)}));
+        }
+    }
+    // Chỉ reset schedule nếu không có timer đang chạy VÀ không có plan đang mở
+    if(_activeTimerIdx === null && !_blocks.length){
         gel('dbpSchedule').innerHTML='';
         gel('dbpActionRow').style.display='none';
         _blocks=[]; _timers=[]; _undoStack=[];
@@ -11477,8 +11517,8 @@ function open(){
     switchTab('plan',document.querySelector('.dbp-tab'));
     gel('dbpModal').classList.add('open');
     document.body.style.overflow='hidden';
-    // Nếu đang có timer, re-render schedule để hiện lại các block
-    if(_activeTimerIdx !== null && _blocks.length){
+    // Re-render schedule nếu đang có blocks (dù có timer hay không)
+    if(_blocks.length){
         renderSchedule(_blocks);
     }
 }
@@ -11848,7 +11888,11 @@ window.DBP={
 
         <!-- ===== RESOURCE LIBRARY SIDEBAR CARD ===== -->
         <div class="sidebar-card">
-            <h3 class="sidebar-title">📚 Resource Library</h3>
+            <h3 class="sidebar-title" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="toggleResourceLibrary()">
+                <span>📚 Resource Library</span>
+                <span id="rlCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
+            </h3>
+            <div id="resourceLibraryBody">
             
             <!-- Tag Filter Section -->
             <div class="tag-filter-section">
@@ -11960,9 +12004,10 @@ window.DBP={
             </div>
             
             <!-- Resource Cards Container -->
-            <div id="resourceCardsContainer">
+            <div id="resourceCardsContainer" style="max-height:420px;overflow-y:auto;padding-right:2px;">
                 <!-- Cards will render here -->
             </div>
+            </div><!-- end #resourceLibraryBody -->
         </div>
 
         <!-- ===== RESOURCE LIBRARY MODAL ===== -->
@@ -12075,7 +12120,11 @@ window.DBP={
 
         <!-- ===== INVESTMENT MEMO SIDEBAR CARD ===== -->
         <div class="sidebar-card">
-            <h3 class="sidebar-title">Investment Analyses</h3>
+            <h3 class="sidebar-title" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="toggleInvestmentAnalyses()">
+                <span>Investment Analyses</span>
+                <span id="iaCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
+            </h3>
+            <div id="investmentAnalysesBody">
             
             <!-- Filters & Add Button -->
             <div style="display: flex; gap: 8px; margin-bottom: 15px;">
@@ -12100,9 +12149,10 @@ window.DBP={
             </div>
             
             <!-- Analysis Cards Container -->
-            <div id="analysisCardsContainer">
+            <div id="analysisCardsContainer" style="max-height:420px;overflow-y:auto;padding-right:2px;">
                 <!-- Cards sẽ được render ở đây -->
             </div>
+            </div><!-- end #investmentAnalysesBody -->
         </div>
 
 
@@ -12221,7 +12271,11 @@ window.DBP={
 
         <!-- ===== DEAL DIARY SIDEBAR CARD ===== -->
         <div class="sidebar-card">
-            <h3 class="sidebar-title">DEAL DIARY</h3>
+            <h3 class="sidebar-title" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="toggleDealDiary()">
+                <span>DEAL DIARY</span>
+                <span id="ddCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
+            </h3>
+            <div id="dealDiaryBody">
             
             <!-- Filters & Add Button -->
             <div style="display: flex; gap: 8px; margin-bottom: 15px;">
@@ -12245,9 +12299,10 @@ window.DBP={
             </div>
             
             <!-- Deal Cards Container -->
-            <div id="dealCardsContainer">
+            <div id="dealCardsContainer" style="max-height:420px;overflow-y:auto;padding-right:2px;">
                 <!-- Cards sẽ được render ở đây -->
             </div>
+            </div><!-- end #dealDiaryBody -->
         </div>
 
 
@@ -12385,10 +12440,11 @@ window.DBP={
 
         <!-- ===== READING LIST SIDEBAR CARD ===== -->      
         <div class="sidebar-card" id="readingListCard">
-            <h3 class="sidebar-title">
-                <span class="sidebar-title-icon">📚</span>
-                <span class="sidebar-title-text">Reading List</span>
+            <h3 class="sidebar-title" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="toggleReadingList()">
+                <span><span class="sidebar-title-icon">📚</span><span class="sidebar-title-text"> Reading List</span></span>
+                <span id="rlReadCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
             </h3>
+            <div id="readingListBody">
 
             <button class="add-time-btn" onclick="openAddBookModal()" style="margin-bottom: 15px; width: 100%;">
                 ➕ Add Book
@@ -12446,6 +12502,7 @@ window.DBP={
                     <div class="empty-state">No books added yet. Click 'Add Book' to get started.</div>
                 </div>
             </div>
+            </div><!-- end #readingListBody -->
         </div>
 
 
@@ -12980,19 +13037,22 @@ window.DBP={
 
     <!-- ══════════════════════════════════════════
          🧠 BRAIN DUMP — Floating Button + Panel
+         v2: 5-fix edition
+         FIX1: Review mode — nhắc xử lý notes cũ
+         FIX2: Default cat = distraction
+         FIX3: Auto-save draft khi đóng ngoài ý muốn
+         FIX4: Undo cho Clear All
+         FIX5: "Mark as processed" thay vì chỉ xóa
     ══════════════════════════════════════════ -->
     <style>
     /* ── Floating Button ── */
     #bdFab {
         position: fixed;
-        bottom: 20px;
-        right: 20px;
+        bottom: 20px; right: 20px;
         width: 52px; height: 52px;
         border-radius: 50%;
         background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white;
-        border: none;
-        cursor: pointer;
+        color: white; border: none; cursor: pointer;
         box-shadow: 0 4px 18px rgba(99,102,241,0.45);
         z-index: 200;
         display: flex; align-items: center; justify-content: center;
@@ -13000,20 +13060,10 @@ window.DBP={
         transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s;
         outline: none;
     }
-    #bdFab:hover {
-        transform: scale(1.13);
-        box-shadow: 0 6px 24px rgba(99,102,241,0.55);
-    }
-    #bdFab.bd-open {
-        transform: rotate(45deg) scale(1.05);
-        background: linear-gradient(135deg, #ef4444, #f97316);
-    }
-    /* Pulse ring when there are unseen notes */
+    #bdFab:hover { transform: scale(1.13); box-shadow: 0 6px 24px rgba(99,102,241,0.55); }
+    #bdFab.bd-open { transform: rotate(45deg) scale(1.05); background: linear-gradient(135deg,#ef4444,#f97316); }
     #bdFab.bd-has-notes::after {
-        content: '';
-        position: absolute;
-        inset: -4px;
-        border-radius: 50%;
+        content: ''; position: absolute; inset: -4px; border-radius: 50%;
         border: 2px solid rgba(99,102,241,0.5);
         animation: bd-ring 2s ease-in-out infinite;
     }
@@ -13022,59 +13072,70 @@ window.DBP={
         50%      { transform: scale(1.18); opacity: 0; }
     }
     #bdFab .bd-count {
-        position: absolute;
-        top: -3px; right: -3px;
-        background: #ef4444;
-        color: white;
+        position: absolute; top: -3px; right: -3px;
+        background: #ef4444; color: white;
         font-size: 0.6rem; font-weight: 800;
-        min-width: 17px; height: 17px;
-        border-radius: 10px;
-        display: flex; align-items: center; justify-content: center;
-        padding: 0 4px;
-        border: 2px solid var(--bg-light);
-        display: none;
+        min-width: 17px; height: 17px; border-radius: 10px;
+        display: none; align-items: center; justify-content: center;
+        padding: 0 4px; border: 2px solid var(--bg-light);
     }
 
     /* ── Panel ── */
     #bdPanel {
-        position: fixed;
-        bottom: 84px; right: 20px;
-        width: 340px;
-        max-height: 78vh;
+        position: fixed; bottom: 84px; right: 20px;
+        width: 340px; max-height: 78vh;
         background: var(--bg-white);
         border-radius: 18px;
         box-shadow: 0 12px 48px rgba(0,0,0,0.18), 0 2px 8px rgba(99,102,241,0.12);
         border: 1px solid var(--border-color);
-        z-index: 199;
-        display: flex; flex-direction: column;
-        overflow: hidden;
-        transform: translateY(12px) scale(0.97);
-        opacity: 0;
-        pointer-events: none;
+        z-index: 199; display: flex; flex-direction: column; overflow: hidden;
+        transform: translateY(12px) scale(0.97); opacity: 0; pointer-events: none;
         transition: all 0.22s cubic-bezier(0.34,1.2,0.64,1);
     }
-    #bdPanel.bd-visible {
-        transform: translateY(0) scale(1);
-        opacity: 1;
-        pointer-events: all;
-    }
+    #bdPanel.bd-visible { transform: translateY(0) scale(1); opacity: 1; pointer-events: all; }
 
-    /* Panel header */
-    .bd-header {
-        padding: 14px 16px 10px;
-        border-bottom: 1px solid var(--border-color);
+    /* FIX1 — Review banner */
+    .bd-review-banner {
+        background: linear-gradient(90deg, rgba(245,158,11,0.12), rgba(99,102,241,0.08));
+        border-bottom: 1px solid rgba(245,158,11,0.25);
+        padding: 7px 14px;
         display: flex; align-items: center; justify-content: space-between;
-        flex-shrink: 0;
+        gap: 8px; flex-shrink: 0;
+    }
+    .bd-review-text { font-size: 0.7rem; color: #b45309; font-weight: 700; }
+    .dark-mode .bd-review-text { color: #fbbf24; }
+    .bd-review-btn {
+        font-size: 0.65rem; font-weight: 700; white-space: nowrap;
+        background: rgba(245,158,11,0.18); color: #92400e;
+        border: 1px solid rgba(245,158,11,0.3); border-radius: 6px;
+        padding: 3px 8px; cursor: pointer; transition: background 0.15s;
+    }
+    .bd-review-btn:hover { background: rgba(245,158,11,0.3); }
+    .dark-mode .bd-review-btn { color: #fde68a; }
+
+    .bd-header {
+        padding: 14px 16px 10px; border-bottom: 1px solid var(--border-color);
+        display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
     }
     .bd-header-left { display: flex; align-items: center; gap: 8px; }
-    .bd-title {
-        font-size: 0.95rem; font-weight: 800;
-        color: var(--text-dark); letter-spacing: -0.3px;
+    .bd-title { font-size: 0.95rem; font-weight: 800; color: var(--text-dark); letter-spacing: -0.3px; }
+    .bd-subtitle { font-size: 0.68rem; color: var(--text-muted); margin-top: 1px; }
+    .bd-header-actions { display: flex; gap: 4px; align-items: center; }
+
+    /* FIX4 — Undo toast */
+    .bd-undo-bar {
+        background: #1e293b; color: #f1f5f9;
+        padding: 8px 14px; font-size: 0.75rem; font-weight: 600;
+        display: flex; align-items: center; justify-content: space-between;
+        flex-shrink: 0; gap: 8px;
     }
-    .bd-subtitle {
-        font-size: 0.68rem; color: var(--text-muted);
-        margin-top: 1px;
+    .bd-undo-btn {
+        background: #6366f1; color: white; border: none; border-radius: 6px;
+        padding: 3px 10px; font-size: 0.7rem; font-weight: 700;
+        cursor: pointer; white-space: nowrap;
     }
+    .bd-undo-btn:hover { background: #4f46e5; }
+
     .bd-clear-all {
         font-size: 0.68rem; color: #ef4444; font-weight: 600;
         background: none; border: none; cursor: pointer; padding: 3px 6px;
@@ -13083,47 +13144,34 @@ window.DBP={
     .bd-clear-all:hover { background: rgba(239,68,68,0.08); }
 
     /* Input area */
-    .bd-input-area {
-        padding: 12px 14px;
-        border-bottom: 1px solid var(--border-color);
-        flex-shrink: 0;
-    }
+    .bd-input-area { padding: 12px 14px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
     #bdTextarea {
-        width: 100%;
-        min-height: 72px;
-        max-height: 140px;
-        resize: vertical;
-        border: 1.5px solid var(--border-color);
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-size: 0.88rem;
-        line-height: 1.5;
-        color: var(--text-dark);
-        background: var(--bg-light);
-        transition: border-color 0.2s;
-        font-family: inherit;
-        outline: none;
+        width: 100%; min-height: 72px; max-height: 140px; resize: vertical;
+        border: 1.5px solid var(--border-color); border-radius: 10px;
+        padding: 10px 12px; font-size: 0.88rem; line-height: 1.5;
+        color: var(--text-dark); background: var(--bg-light);
+        transition: border-color 0.2s; font-family: inherit; outline: none;
     }
     #bdTextarea:focus { border-color: #6366f1; }
     .dark-mode #bdTextarea { background: #0f172a; }
     #bdTextarea::placeholder { color: var(--text-muted); font-style: italic; }
 
-    /* Category chips */
-    .bd-cats {
-        display: flex; gap: 5px; flex-wrap: wrap;
-        margin-top: 8px;
+    /* FIX3 — Draft indicator */
+    .bd-draft-hint {
+        font-size: 0.6rem; color: #f59e0b; font-weight: 600;
+        margin-top: 3px; display: none;
     }
+
+    .bd-cats { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
     .bd-cat-chip {
-        font-size: 0.68rem; font-weight: 700;
-        padding: 3px 10px; border-radius: 20px;
-        cursor: pointer; border: 1.5px solid transparent;
-        transition: all 0.15s; user-select: none;
+        font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+        cursor: pointer; border: 1.5px solid transparent; transition: all 0.15s; user-select: none;
     }
-    .bd-cat-chip.cat-distraction { background: rgba(239,68,68,0.1);   color: #dc2626; border-color: rgba(239,68,68,0.2); }
-    .bd-cat-chip.cat-idea        { background: rgba(245,158,11,0.1);   color: #b45309; border-color: rgba(245,158,11,0.2); }
-    .bd-cat-chip.cat-task        { background: rgba(16,185,129,0.1);   color: #047857; border-color: rgba(16,185,129,0.2); }
-    .bd-cat-chip.cat-worry       { background: rgba(99,102,241,0.1);   color: #4338ca; border-color: rgba(99,102,241,0.2); }
-    .bd-cat-chip.cat-random      { background: rgba(107,114,128,0.1);  color: #4b5563; border-color: rgba(107,114,128,0.2); }
+    .bd-cat-chip.cat-distraction { background: rgba(239,68,68,0.1);  color: #dc2626; border-color: rgba(239,68,68,0.2); }
+    .bd-cat-chip.cat-idea        { background: rgba(245,158,11,0.1);  color: #b45309; border-color: rgba(245,158,11,0.2); }
+    .bd-cat-chip.cat-task        { background: rgba(16,185,129,0.1);  color: #047857; border-color: rgba(16,185,129,0.2); }
+    .bd-cat-chip.cat-worry       { background: rgba(99,102,241,0.1);  color: #4338ca; border-color: rgba(99,102,241,0.2); }
+    .bd-cat-chip.cat-random      { background: rgba(107,114,128,0.1); color: #4b5563; border-color: rgba(107,114,128,0.2); }
     .bd-cat-chip.selected        { transform: scale(1.06); filter: brightness(0.9); border-width: 2px; }
     .dark-mode .bd-cat-chip.cat-distraction { color: #f87171; }
     .dark-mode .bd-cat-chip.cat-idea        { color: #fbbf24; }
@@ -13131,50 +13179,39 @@ window.DBP={
     .dark-mode .bd-cat-chip.cat-worry       { color: #a5b4fc; }
     .dark-mode .bd-cat-chip.cat-random      { color: #9ca3af; }
 
-    /* Save row */
-    .bd-save-row {
-        display: flex; gap: 6px; margin-top: 8px; align-items: center;
-    }
+    .bd-save-row { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
     #bdSaveBtn {
-        flex: 1;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        flex: 1; background: linear-gradient(135deg, #6366f1, #8b5cf6);
         color: white; border: none; border-radius: 9px;
         padding: 8px 14px; font-weight: 700; font-size: 0.8rem;
         cursor: pointer; transition: all 0.2s;
         display: flex; align-items: center; justify-content: center; gap: 5px;
     }
-    #bdSaveBtn:hover { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); }
+    #bdSaveBtn:hover { background: linear-gradient(135deg,#4f46e5,#7c3aed); transform: translateY(-1px); }
     #bdSaveBtn:active { transform: translateY(0); }
-    .bd-kbd-hint {
-        font-size: 0.62rem; color: var(--text-muted);
-        white-space: nowrap;
-    }
+    .bd-kbd-hint { font-size: 0.62rem; color: var(--text-muted); white-space: nowrap; }
 
     /* Filter tabs */
     .bd-filter-row {
         display: flex; gap: 4px; padding: 8px 14px;
         border-bottom: 1px solid var(--border-color);
-        overflow-x: auto; flex-shrink: 0;
-        scrollbar-width: none;
+        overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
     }
     .bd-filter-row::-webkit-scrollbar { display: none; }
     .bd-filter-tab {
-        font-size: 0.68rem; font-weight: 700;
-        padding: 3px 10px; border-radius: 20px;
+        font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: 20px;
         cursor: pointer; border: none; white-space: nowrap;
-        background: var(--bg-light); color: var(--text-muted);
-        transition: all 0.15s;
+        background: var(--bg-light); color: var(--text-muted); transition: all 0.15s;
     }
-    .bd-filter-tab.active {
-        background: #6366f1; color: white;
-    }
+    .bd-filter-tab.active { background: #6366f1; color: white; }
     .bd-filter-tab:hover:not(.active) { background: var(--border-color); }
+
+    /* FIX5 — "unprocessed" filter tab style */
+    .bd-filter-tab.tab-unprocessed.active { background: #f59e0b; color: white; }
 
     /* Notes list */
     .bd-list {
-        overflow-y: auto;
-        flex: 1;
-        padding: 8px 10px 12px;
+        overflow-y: auto; flex: 1; padding: 8px 10px 12px;
         display: flex; flex-direction: column; gap: 6px;
     }
     .bd-empty {
@@ -13182,13 +13219,16 @@ window.DBP={
         color: var(--text-muted); font-size: 0.82rem; font-style: italic;
     }
     .bd-note {
-        background: var(--bg-light);
-        border-radius: 10px;
-        padding: 10px 12px;
-        border-left: 3px solid #e2e8f0;
+        background: var(--bg-light); border-radius: 10px;
+        padding: 10px 12px; border-left: 3px solid #e2e8f0;
         position: relative;
         animation: bd-slide-in 0.18s ease;
         transition: opacity 0.2s, transform 0.2s;
+    }
+    /* FIX5 — processed notes look faded */
+    .bd-note.bd-processed {
+        opacity: 0.45; filter: grayscale(0.4);
+        border-left-style: dashed;
     }
     @keyframes bd-slide-in {
         from { opacity: 0; transform: translateX(8px); }
@@ -13200,13 +13240,10 @@ window.DBP={
     .bd-note.cat-worry       { border-left-color: #6366f1; }
     .bd-note.cat-random      { border-left-color: #9ca3af; }
 
-    .bd-note-meta {
-        display: flex; align-items: center; gap: 5px;
-        margin-bottom: 4px;
-    }
+    .bd-note-meta { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
     .bd-note-cat {
-        font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
-        padding: 1px 6px; border-radius: 6px;
+        font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+        letter-spacing: 0.4px; padding: 1px 6px; border-radius: 6px;
     }
     .cat-distraction .bd-note-cat { background: rgba(239,68,68,0.12); color: #dc2626; }
     .cat-idea        .bd-note-cat { background: rgba(245,158,11,0.12); color: #b45309; }
@@ -13219,35 +13256,43 @@ window.DBP={
     .dark-mode .cat-worry       .bd-note-cat { color: #a5b4fc; }
     .dark-mode .cat-random      .bd-note-cat { color: #9ca3af; }
 
-    .bd-note-time {
-        font-size: 0.6rem; color: var(--text-muted); margin-left: auto;
-    }
+    .bd-note-time { font-size: 0.6rem; color: var(--text-muted); margin-left: auto; }
     .bd-note-text {
         font-size: 0.82rem; color: var(--text-dark); line-height: 1.45;
         word-break: break-word; white-space: pre-wrap;
     }
+    /* FIX5 — action buttons row */
+    .bd-note-actions {
+        display: flex; gap: 5px; margin-top: 6px; align-items: center;
+    }
+    .bd-done-btn {
+        font-size: 0.62rem; font-weight: 700;
+        background: rgba(16,185,129,0.08); color: #047857;
+        border: 1px solid rgba(16,185,129,0.2); border-radius: 6px;
+        padding: 2px 7px; cursor: pointer; transition: all 0.15s;
+        display: inline-flex; align-items: center; gap: 2px;
+    }
+    .bd-done-btn:hover { background: rgba(16,185,129,0.18); }
+    .bd-done-btn.is-done { background: rgba(16,185,129,0.15); color: #059669; }
+    .dark-mode .bd-done-btn { color: #34d399; border-color: rgba(52,211,153,0.2); }
+    .bd-promote-btn {
+        font-size: 0.62rem; font-weight: 700;
+        background: rgba(99,102,241,0.08); color: #4338ca;
+        border: 1px solid rgba(99,102,241,0.2);
+        border-radius: 6px; padding: 2px 7px;
+        cursor: pointer; transition: all 0.15s;
+        display: inline-flex; align-items: center; gap: 2px;
+    }
+    .bd-promote-btn:hover { background: rgba(99,102,241,0.18); }
+    .dark-mode .bd-promote-btn { color: #a5b4fc; border-color: rgba(165,180,252,0.2); }
     .bd-note-del {
-        position: absolute; top: 7px; right: 8px;
+        margin-left: auto;
         background: none; border: none; cursor: pointer;
         font-size: 0.75rem; color: var(--text-muted); opacity: 0;
-        transition: opacity 0.15s;
-        padding: 2px 5px; border-radius: 5px;
+        transition: opacity 0.15s; padding: 2px 5px; border-radius: 5px;
     }
     .bd-note:hover .bd-note-del { opacity: 1; }
     .bd-note-del:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
-
-    /* Promote-to-goal button on task notes */
-    .bd-promote-btn {
-        margin-top: 6px;
-        font-size: 0.65rem; font-weight: 700;
-        background: rgba(16,185,129,0.1); color: #047857;
-        border: 1px solid rgba(16,185,129,0.25);
-        border-radius: 6px; padding: 2px 8px;
-        cursor: pointer; transition: all 0.15s;
-        display: inline-flex; align-items: center; gap: 3px;
-    }
-    .bd-promote-btn:hover { background: rgba(16,185,129,0.2); }
-    .dark-mode .bd-promote-btn { color: #34d399; border-color: rgba(52,211,153,0.25); }
     </style>
 
     <!-- FAB button -->
@@ -13258,6 +13303,13 @@ window.DBP={
 
     <!-- Panel -->
     <div id="bdPanel">
+
+        <!-- FIX1 — Review banner (hidden by default, shown when có notes chưa xử lý từ hôm qua trở về trước) -->
+        <div class="bd-review-banner" id="bdReviewBanner" style="display:none;">
+            <span class="bd-review-text" id="bdReviewText">📋 Bạn có notes chưa xử lý từ hôm qua</span>
+            <button class="bd-review-btn" onclick="BrainDump.startReview()">Review now →</button>
+        </div>
+
         <div class="bd-header">
             <div>
                 <div class="bd-header-left">
@@ -13266,12 +13318,23 @@ window.DBP={
                 </div>
                 <div class="bd-subtitle">Ghi ra rồi quên đi — xử lý sau</div>
             </div>
-            <button class="bd-clear-all" onclick="BrainDump.clearAll()" title="Xóa tất cả">🗑 Clear all</button>
+            <div class="bd-header-actions">
+                <button class="bd-clear-all" onclick="BrainDump.clearAll()" title="Xóa tất cả">🗑 Clear all</button>
+            </div>
+        </div>
+
+        <!-- FIX4 — Undo bar (hidden by default) -->
+        <div class="bd-undo-bar" id="bdUndoBar" style="display:none;">
+            <span>🗑 Đã xóa tất cả notes</span>
+            <button class="bd-undo-btn" onclick="BrainDump.undoClear()">↩ Undo</button>
         </div>
 
         <div class="bd-input-area">
+            <!-- FIX3 — Draft indicator -->
+            <div class="bd-draft-hint" id="bdDraftHint">✏️ Draft đã lưu — tiếp tục gõ...</div>
             <textarea id="bdTextarea" placeholder="Cứ gõ vào đây… việc cần làm, ý tưởng chợt nảy, lo lắng, hay bất cứ thứ gì đang chiếm đầu bạn..." rows="3"></textarea>
             <div class="bd-cats" id="bdCats">
+                <!-- FIX2 — default chip sẽ được select bằng JS với cat = 'distraction' -->
                 <span class="bd-cat-chip cat-distraction" data-cat="distraction" onclick="BrainDump.selectCat(this)">😵 Distraction</span>
                 <span class="bd-cat-chip cat-idea"        data-cat="idea"        onclick="BrainDump.selectCat(this)">💡 Idea</span>
                 <span class="bd-cat-chip cat-task"        data-cat="task"        onclick="BrainDump.selectCat(this)">✅ Task</span>
@@ -13285,12 +13348,14 @@ window.DBP={
         </div>
 
         <div class="bd-filter-row" id="bdFilterRow">
-            <button class="bd-filter-tab active" data-filter="all"         onclick="BrainDump.filter(this)">All</button>
-            <button class="bd-filter-tab"        data-filter="distraction" onclick="BrainDump.filter(this)">😵 Distraction</button>
-            <button class="bd-filter-tab"        data-filter="idea"        onclick="BrainDump.filter(this)">💡 Idea</button>
-            <button class="bd-filter-tab"        data-filter="task"        onclick="BrainDump.filter(this)">✅ Task</button>
-            <button class="bd-filter-tab"        data-filter="worry"       onclick="BrainDump.filter(this)">😟 Worry</button>
-            <button class="bd-filter-tab"        data-filter="random"      onclick="BrainDump.filter(this)">💬 Random</button>
+            <button class="bd-filter-tab active"          data-filter="all"         onclick="BrainDump.filter(this)">All</button>
+            <!-- FIX5 — "Unprocessed" filter tab -->
+            <button class="bd-filter-tab tab-unprocessed" data-filter="unprocessed" onclick="BrainDump.filter(this)">⏳ Todo</button>
+            <button class="bd-filter-tab"                 data-filter="distraction" onclick="BrainDump.filter(this)">😵</button>
+            <button class="bd-filter-tab"                 data-filter="idea"        onclick="BrainDump.filter(this)">💡</button>
+            <button class="bd-filter-tab"                 data-filter="task"        onclick="BrainDump.filter(this)">✅</button>
+            <button class="bd-filter-tab"                 data-filter="worry"       onclick="BrainDump.filter(this)">😟</button>
+            <button class="bd-filter-tab"                 data-filter="random"      onclick="BrainDump.filter(this)">💬</button>
         </div>
 
         <div class="bd-list" id="bdList"></div>
@@ -13298,8 +13363,10 @@ window.DBP={
 
     <script>
     (function() {
-        const STORE_KEY = 'brainDumpNotes';
-        const CAT_LABELS = {
+        const STORE_KEY   = 'brainDumpNotes';
+        const DRAFT_KEY   = 'brainDumpDraft';
+        const DRAFT_CAT_KEY = 'brainDumpDraftCat';
+        const CAT_LABELS  = {
             distraction: '😵 Distraction',
             idea:        '💡 Idea',
             task:        '✅ Task',
@@ -13307,9 +13374,11 @@ window.DBP={
             random:      '💬 Random'
         };
 
-        let isOpen = false;
-        let selectedCat = 'random';
+        let isOpen        = false;
+        let selectedCat   = 'distraction';   // FIX2 — default = distraction
         let currentFilter = 'all';
+        let _undoBuffer   = null;            // FIX4 — undo buffer
+        let _undoTimer    = null;
 
         /* ── Storage ── */
         function loadNotes() {
@@ -13320,10 +13389,42 @@ window.DBP={
             localStorage.setItem(STORE_KEY, JSON.stringify(notes));
         }
 
+        /* FIX3 — Draft persistence */
+        function saveDraft() {
+            const ta = document.getElementById('bdTextarea');
+            if (!ta) return;
+            localStorage.setItem(DRAFT_KEY, ta.value);
+            localStorage.setItem(DRAFT_CAT_KEY, selectedCat);
+        }
+        function loadDraft() {
+            return {
+                text: localStorage.getItem(DRAFT_KEY) || '',
+                cat:  localStorage.getItem(DRAFT_CAT_KEY) || 'distraction'
+            };
+        }
+        function clearDraft() {
+            localStorage.removeItem(DRAFT_KEY);
+            localStorage.removeItem(DRAFT_CAT_KEY);
+        }
+        function applyDraft() {
+            const d = loadDraft();
+            if (!d.text) return;
+            const ta = document.getElementById('bdTextarea');
+            if (ta) {
+                ta.value = d.text;
+                const hint = document.getElementById('bdDraftHint');
+                if (hint) hint.style.display = 'block';
+            }
+            // Restore category
+            selectedCat = d.cat;
+            document.querySelectorAll('.bd-cat-chip').forEach(c => {
+                c.classList.toggle('selected', c.dataset.cat === selectedCat);
+            });
+        }
+
         /* ── UI helpers ── */
         function formatTime(iso) {
-            const d = new Date(iso);
-            const now = new Date();
+            const d = new Date(iso), now = new Date();
             const diffMin = Math.floor((now - d) / 60000);
             if (diffMin < 1)  return 'just now';
             if (diffMin < 60) return `${diffMin}m ago`;
@@ -13332,52 +13433,88 @@ window.DBP={
             return d.toLocaleDateString('vi-VN', { month: 'short', day: 'numeric' });
         }
 
+        function escHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        /* FIX1 — Review banner: hiện nếu có notes chưa processed từ hôm qua trở về trước */
+        function updateReviewBanner() {
+            const notes = loadNotes();
+            const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(23,59,59,999);
+            const stale = notes.filter(n => !n.processed && new Date(n.ts) <= yesterday);
+            const banner = document.getElementById('bdReviewBanner');
+            const text   = document.getElementById('bdReviewText');
+            if (!banner) return;
+            if (stale.length > 0) {
+                banner.style.display = 'flex';
+                text.textContent = `📋 ${stale.length} note${stale.length > 1 ? 's' : ''} chưa xử lý từ hôm qua`;
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
         function renderList() {
             const notes = loadNotes();
             const list  = document.getElementById('bdList');
             if (!list) return;
 
-            const filtered = currentFilter === 'all' ? notes : notes.filter(n => n.cat === currentFilter);
+            let filtered;
+            if (currentFilter === 'all') {
+                filtered = notes;
+            } else if (currentFilter === 'unprocessed') {
+                // FIX5 — chỉ hiện notes chưa processed
+                filtered = notes.filter(n => !n.processed);
+            } else {
+                filtered = notes.filter(n => n.cat === currentFilter);
+            }
 
             if (!filtered.length) {
+                const emptyMsgs = {
+                    all:          '🌿 Đầu óc trống rỗng — tốt lắm!<br>Khi nào có gì chiếm đầu thì dump vào đây.',
+                    unprocessed:  '✅ Tất cả đã được xử lý — xuất sắc!',
+                };
                 list.innerHTML = `<div class="bd-empty">${
-                    currentFilter === 'all'
-                        ? '🌿 Đầu óc trống rỗng — tốt lắm!<br>Khi nào có gì chiếm đầu thì dump vào đây.'
-                        : `Không có note nào trong mục "${CAT_LABELS[currentFilter] || currentFilter}"`
+                    emptyMsgs[currentFilter] || `Không có note nào trong mục "${CAT_LABELS[currentFilter] || currentFilter}"`
                 }</div>`;
                 return;
             }
 
             list.innerHTML = filtered.slice().reverse().map(n => `
-                <div class="bd-note cat-${n.cat}" data-id="${n.id}">
+                <div class="bd-note cat-${n.cat}${n.processed ? ' bd-processed' : ''}" data-id="${n.id}">
                     <div class="bd-note-meta">
                         <span class="bd-note-cat">${CAT_LABELS[n.cat] || n.cat}</span>
                         <span class="bd-note-time">${formatTime(n.ts)}</span>
                     </div>
                     <div class="bd-note-text">${escHtml(n.text)}</div>
-                    ${n.cat === 'task' ? `<button class="bd-promote-btn" onclick="BrainDump.promoteToGoal('${n.id}')">➕ Add to Goals</button>` : ''}
-                    <button class="bd-note-del" onclick="BrainDump.deleteNote('${n.id}')" title="Xóa">✕</button>
+                    <div class="bd-note-actions">
+                        <!-- FIX5 — Mark as processed button -->
+                        <button class="bd-done-btn${n.processed ? ' is-done' : ''}"
+                            onclick="BrainDump.toggleProcessed('${n.id}')"
+                            title="${n.processed ? 'Đánh dấu chưa xử lý' : 'Đánh dấu đã xử lý'}">
+                            ${n.processed ? '✅ Done' : '○ Mark done'}
+                        </button>
+                        ${n.cat === 'task' ? `<button class="bd-promote-btn" onclick="BrainDump.promoteToGoal('${n.id}')">➕ To Goal</button>` : ''}
+                        <button class="bd-note-del" onclick="BrainDump.deleteNote('${n.id}')" title="Xóa">✕</button>
+                    </div>
                 </div>
             `).join('');
         }
 
         function updateFab() {
             const notes = loadNotes();
-            const fab   = document.getElementById('bdFab');
-            const cnt   = document.getElementById('bdCount');
+            // Badge chỉ đếm notes CHƯA processed
+            const unprocessed = notes.filter(n => !n.processed);
+            const fab = document.getElementById('bdFab');
+            const cnt = document.getElementById('bdCount');
             if (!fab || !cnt) return;
-            if (notes.length > 0) {
+            if (unprocessed.length > 0) {
                 fab.classList.add('bd-has-notes');
                 cnt.style.display = 'flex';
-                cnt.textContent = notes.length > 99 ? '99+' : notes.length;
+                cnt.textContent = unprocessed.length > 99 ? '99+' : unprocessed.length;
             } else {
                 fab.classList.remove('bd-has-notes');
                 cnt.style.display = 'none';
             }
-        }
-
-        function escHtml(s) {
-            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
         /* ── Category selection ── */
@@ -13385,30 +13522,25 @@ window.DBP={
             document.querySelectorAll('.bd-cat-chip').forEach(c => c.classList.remove('selected'));
             el.classList.add('selected');
             selectedCat = el.dataset.cat;
+            saveDraft(); // persist cat change in draft too
         }
-        // Default select 'random' chip on init
         function initCatChips() {
-            const chips = document.querySelectorAll('.bd-cat-chip');
-            chips.forEach(c => {
-                if (c.dataset.cat === selectedCat) c.classList.add('selected');
+            document.querySelectorAll('.bd-cat-chip').forEach(c => {
+                c.classList.toggle('selected', c.dataset.cat === selectedCat);
             });
         }
 
         /* ── Keyboard shortcut ── */
         function handleKeydown(e) {
-            // Ctrl+Enter to save
             if (isOpen && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                e.preventDefault();
-                BrainDump.save();
+                e.preventDefault(); BrainDump.save();
             }
-            // Escape to close
-            if (isOpen && e.key === 'Escape') {
-                BrainDump.toggle();
-            }
+            if (isOpen && e.key === 'Escape') BrainDump.toggle();
         }
 
         /* ── Public API ── */
         window.BrainDump = {
+
             toggle() {
                 isOpen = !isOpen;
                 const fab   = document.getElementById('bdFab');
@@ -13417,6 +13549,8 @@ window.DBP={
                 fab.classList.toggle('bd-open', isOpen);
                 panel.classList.toggle('bd-visible', isOpen);
                 if (isOpen) {
+                    updateReviewBanner(); // FIX1
+                    applyDraft();         // FIX3
                     renderList();
                     setTimeout(() => document.getElementById('bdTextarea')?.focus(), 180);
                 }
@@ -13434,10 +13568,18 @@ window.DBP={
                     return;
                 }
                 const notes = loadNotes();
-                notes.push({ id: Date.now().toString(), text, cat: selectedCat, ts: new Date().toISOString() });
+                notes.push({
+                    id: Date.now().toString(),
+                    text, cat: selectedCat,
+                    ts: new Date().toISOString(),
+                    processed: false   // FIX5
+                });
                 saveNotes(notes);
                 ta.value = '';
-                // Snap feedback
+                clearDraft(); // FIX3 — xóa draft sau khi lưu thành công
+                const hint = document.getElementById('bdDraftHint');
+                if (hint) hint.style.display = 'none';
+
                 const btn = document.getElementById('bdSaveBtn');
                 if (btn) {
                     btn.textContent = '✅ Dumped!';
@@ -13453,19 +13595,55 @@ window.DBP={
                     showNotification('🧠 Dumped! Now refocus 👊', 'success');
             },
 
+            /* FIX5 — Toggle processed state */
+            toggleProcessed(id) {
+                const notes = loadNotes();
+                const n = notes.find(x => x.id === id);
+                if (!n) return;
+                n.processed = !n.processed;
+                saveNotes(notes);
+                renderList();
+                updateFab();
+                updateReviewBanner();
+            },
+
             deleteNote(id) {
                 let notes = loadNotes().filter(n => n.id !== id);
                 saveNotes(notes);
                 const el = document.querySelector(`.bd-note[data-id="${id}"]`);
                 if (el) { el.style.opacity = '0'; el.style.transform = 'translateX(16px)'; }
-                setTimeout(() => { renderList(); updateFab(); }, 200);
+                setTimeout(() => { renderList(); updateFab(); updateReviewBanner(); }, 200);
             },
 
+            /* FIX4 — Clear All với Undo */
             clearAll() {
-                if (!confirm('Xóa toàn bộ brain dump notes?')) return;
+                const notes = loadNotes();
+                if (!notes.length) return;
+                _undoBuffer = notes; // lưu snapshot
                 saveNotes([]);
-                renderList();
-                updateFab();
+                renderList(); updateFab(); updateReviewBanner();
+
+                // Hiện undo bar 6 giây
+                const bar = document.getElementById('bdUndoBar');
+                if (bar) bar.style.display = 'flex';
+                clearTimeout(_undoTimer);
+                _undoTimer = setTimeout(() => {
+                    if (bar) bar.style.display = 'none';
+                    _undoBuffer = null;
+                }, 6000);
+            },
+
+            /* FIX4 — Undo clear */
+            undoClear() {
+                if (!_undoBuffer) return;
+                saveNotes(_undoBuffer);
+                _undoBuffer = null;
+                clearTimeout(_undoTimer);
+                const bar = document.getElementById('bdUndoBar');
+                if (bar) bar.style.display = 'none';
+                renderList(); updateFab(); updateReviewBanner();
+                if (typeof showNotification === 'function')
+                    showNotification('↩ Notes restored!', 'success');
             },
 
             filter(el) {
@@ -13475,14 +13653,24 @@ window.DBP={
                 renderList();
             },
 
+            /* FIX1 — Review mode: switch sang tab unprocessed */
+            startReview() {
+                currentFilter = 'unprocessed';
+                document.querySelectorAll('.bd-filter-tab').forEach(t => {
+                    t.classList.toggle('active', t.dataset.filter === 'unprocessed');
+                });
+                renderList();
+                document.getElementById('bdReviewBanner').style.display = 'none';
+            },
+
             promoteToGoal(id) {
                 const note = loadNotes().find(n => n.id === id);
                 if (!note) return;
-                // Try to open Add Goal modal and pre-fill title
                 if (typeof openAddGoalModal === 'function') {
                     openAddGoalModal();
                     setTimeout(() => {
-                        const titleInput = document.getElementById('goalTitle') || document.querySelector('#goalForm input[type="text"]');
+                        const titleInput = document.getElementById('goalTitle') ||
+                            document.querySelector('#goalForm input[type="text"]');
                         if (titleInput) {
                             titleInput.value = note.text.substring(0, 120);
                             titleInput.dispatchEvent(new Event('input'));
@@ -13502,13 +13690,30 @@ window.DBP={
             initCatChips();
             updateFab();
             document.addEventListener('keydown', handleKeydown);
-            // Close panel if clicking outside
+
+            // FIX3 — Auto-save draft khi gõ
+            const ta = document.getElementById('bdTextarea');
+            if (ta) {
+                ta.addEventListener('input', () => {
+                    saveDraft();
+                    const hint = document.getElementById('bdDraftHint');
+                    if (hint) hint.style.display = ta.value.trim() ? 'block' : 'none';
+                });
+            }
+
+            // FIX3 — Click outside: KHÔNG đóng nếu textarea có nội dung chưa save
             document.addEventListener('click', (e) => {
                 const panel = document.getElementById('bdPanel');
                 const fab   = document.getElementById('bdFab');
-                if (isOpen && panel && fab && !panel.contains(e.target) && !fab.contains(e.target)) {
-                    BrainDump.toggle();
+                if (!isOpen || !panel || !fab) return;
+                if (panel.contains(e.target) || fab.contains(e.target)) return;
+                const taVal = (document.getElementById('bdTextarea')?.value || '').trim();
+                if (taVal) {
+                    // Có draft — chỉ save, KHÔNG đóng
+                    saveDraft();
+                    return;
                 }
+                BrainDump.toggle();
             });
         });
     })();
@@ -34875,6 +35080,64 @@ window.getFlashcardDashboard = getFlashcardDashboard;
             // Update main counter
             document.getElementById('resourceCount').textContent = stats.total;
         }
+
+
+        // ===== COLLAPSE / EXPAND — INVESTMENT ANALYSES =====
+        (function(){
+            let _iaOpen = true;
+            window.toggleInvestmentAnalyses = function(){
+                _iaOpen = !_iaOpen;
+                const body = document.getElementById('investmentAnalysesBody');
+                const icon = document.getElementById('iaCollapseIcon');
+                if(body) body.style.display = _iaOpen ? '' : 'none';
+                if(icon) icon.textContent = _iaOpen ? '▲' : '▼';
+            };
+        })();
+
+        // ===== COLLAPSE / EXPAND — DEAL DIARY =====
+        (function(){
+            let _ddOpen = true;
+            window.toggleDealDiary = function(){
+                _ddOpen = !_ddOpen;
+                const body = document.getElementById('dealDiaryBody');
+                const icon = document.getElementById('ddCollapseIcon');
+                if(body) body.style.display = _ddOpen ? '' : 'none';
+                if(icon) icon.textContent = _ddOpen ? '▲' : '▼';
+            };
+        })();
+
+        // ===== COLLAPSE / EXPAND — RESOURCE LIBRARY =====
+        (function(){
+            let _rlOpen = true; // default expanded
+            window.toggleResourceLibrary = function(){
+                _rlOpen = !_rlOpen;
+                const body = document.getElementById('resourceLibraryBody');
+                const icon = document.getElementById('rlCollapseIcon');
+                if(body){
+                    body.style.display = _rlOpen ? '' : 'none';
+                }
+                if(icon){
+                    icon.textContent = _rlOpen ? '▲' : '▼';
+                    icon.style.transform = _rlOpen ? 'rotate(0deg)' : 'rotate(0deg)';
+                }
+            };
+        })();
+
+        // ===== COLLAPSE / EXPAND — READING LIST =====
+        (function(){
+            let _rlReadOpen = true;
+            window.toggleReadingList = function(){
+                _rlReadOpen = !_rlReadOpen;
+                const body = document.getElementById('readingListBody');
+                const icon = document.getElementById('rlReadCollapseIcon');
+                if(body){
+                    body.style.display = _rlReadOpen ? '' : 'none';
+                }
+                if(icon){
+                    icon.textContent = _rlReadOpen ? '▲' : '▼';
+                }
+            };
+        })();
 
         // ===== TOGGLE RESOURCE DASHBOARD =====
         function toggleResourceDashboard() {
