@@ -2719,6 +2719,29 @@
             overflow-y: auto; 
         }
 
+        .dark-mode #fullReviewModal .modal-content {
+            background-color: var(--bg-white);
+            border: 1px solid #334155;
+        }
+
+        .dark-mode #fullReviewModal .modal-header {
+            border-bottom-color: #334155;
+        }
+
+        .dark-mode #fullReviewModal .modal-header h3 {
+            color: var(--text-dark);
+        }
+
+        .dark-mode #fullReviewModal .modal-close {
+            color: #94a3b8;
+        }
+
+        .dark-mode #fullReviewModal #fullReviewText {
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            border: 1px solid #334155;
+        }
+
         #bookDetailsModal .modal-content {
             background-color: white;
             margin: 5% auto;
@@ -13539,6 +13562,16 @@ window.DBP={
                 <span id="iaCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
             </h3>
             <div id="investmentAnalysesBody">
+
+            <!-- Use-case clarity label -->
+            <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                📌 <strong style="color:var(--text-dark);">Investment Analyses</strong> = research <em>you</em> produce (stock pitches, DCF, credit memos). For tracking deals others did, use Deal Diary.
+            </div>
+
+            <!-- Search bar -->
+            <div style="margin-bottom: 10px;">
+                <input type="text" id="analysisSearchInput" placeholder="🔍 Search by title, ticker, thesis keyword..." oninput="filterAnalyses()" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-light);color:var(--text-dark);font-size:0.88rem;">
+            </div>
             
             <!-- Filters & Add Button -->
             <div style="display: flex; gap: 8px; margin-bottom: 15px;">
@@ -13549,6 +13582,9 @@ window.DBP={
                     <option value="dcf">📈 DCF Valuation</option>
                     <option value="ma">🤝 M&A Analysis</option>
                     <option value="industry">📑 Industry Report</option>
+                    <option value="credit">🔥 Credit Analysis</option>
+                    <option value="distressed">⚠️ Distressed Debt</option>
+                    <option value="special_sits">🎯 Special Situations</option>
                 </select>
 
                 <button class="add-analysis-btn" onclick="openAnalysisModal()">
@@ -13575,8 +13611,8 @@ window.DBP={
 
 
         <!-- ===== INVESTMENT ANALYSIS MODAL  ===== -->
-        <div id="analysisModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
-            <div class="modal-content" style="background-color: var(--bg-white); margin: 5% auto; padding: 20px; border-radius: var(--radius-lg); width: 90%; max-width: 700px; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-xl); border: 1px solid var(--border-color);">
+        <div id="analysisModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); overflow-y: auto;">
+            <div class="modal-content" style="background-color: var(--bg-white); margin: 40px auto; padding: 20px; border-radius: var(--radius-lg); width: 90%; max-width: 700px; box-shadow: var(--shadow-xl); border: 1px solid var(--border-color);">
                 <!-- Modal Header -->
                 <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color);">
                     <h3 id="analysisModalTitle" style="margin: 0; font-size: 1.2rem; color: var(--text-dark);">Add New Investment Analysis</h3>
@@ -13603,12 +13639,52 @@ window.DBP={
                                     <option value="dcf">📈 DCF Valuation</option>
                                     <option value="ma">🤝 M&A Analysis</option>
                                     <option value="industry">📑 Industry Report</option>
+                                    <option value="credit">🔥 Credit Analysis</option>
+                                    <option value="distressed">⚠️ Distressed Debt</option>
+                                    <option value="special_sits">🎯 Special Situations</option>
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label for="analysisDate" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Date *</label>
                                 <input type="date" id="analysisDate" required style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark); transition: var(--transition);">
                             </div>
+                        </div>
+
+                        <!-- NEW: Conviction + Analysis Status + Time Horizon row -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                            <div class="form-group">
+                                <label for="analysisConviction" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Conviction</label>
+                                <select id="analysisConviction" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                    <option value="">Select</option>
+                                    <option value="High">🔴 High</option>
+                                    <option value="Medium">🟡 Medium</option>
+                                    <option value="Low">🟢 Low</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="analysisStatus" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Thesis Status</label>
+                                <select id="analysisStatus" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                    <option value="active">✅ Active Thesis</option>
+                                    <option value="monitoring">👁️ Monitoring</option>
+                                    <option value="closed">📦 Closed Out</option>
+                                    <option value="stale">⚠️ Needs Update</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="analysisTimeHorizon" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Time Horizon</label>
+                                <select id="analysisTimeHorizon" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                    <option value="">Select</option>
+                                    <option value="Short-term">⚡ Short-term (&lt;3M)</option>
+                                    <option value="Medium-term">📅 Medium-term (3–12M)</option>
+                                    <option value="Long-term">🌱 Long-term (&gt;12M)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- NEW: Catalyst field -->
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label for="analysisCatalyst" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Catalyst <span style="color:var(--text-muted);font-weight:400;">(What triggers the thesis?)</span></label>
+                            <input type="text" id="analysisCatalyst" placeholder="e.g., Covenant breach, earnings miss, spin-off, rating downgrade..." style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark); transition: var(--transition);">
                         </div>
 
                         <div class="form-group" style="margin-bottom: 16px;">
@@ -13633,20 +13709,36 @@ window.DBP={
                                     <input type="text" id="targetPrice" placeholder="e.g., $180.00" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
                                 </div>
                                 <div class="form-group">
-                                    <label for="upside" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Upside</label>
+                                    <label for="upside" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Upside / Return</label>
                                     <input type="text" id="upside" placeholder="e.g., 20%" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
                                 </div>
                                 <div class="form-group">
                                     <label for="peRatio" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">P/E Ratio</label>
                                     <input type="text" id="peRatio" placeholder="e.g., 15x" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
                                 </div>
+                                <!-- DISTRESSED/CREDIT FIELDS -->
                                 <div class="form-group">
+                                    <label for="evEbitda" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">EV/EBITDA</label>
+                                    <input type="text" id="evEbitda" placeholder="e.g., 6.5x" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
+                                </div>
+                                <div class="form-group">
+                                    <label for="netDebtLeverage" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Net Debt / Leverage</label>
+                                    <input type="text" id="netDebtLeverage" placeholder="e.g., 4.2x Net Debt/EBITDA" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
+                                </div>
+                                <div class="form-group" style="grid-column: span 2;">
+                                    <label for="creditRating" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Credit Rating / Watch Status</label>
+                                    <input type="text" id="creditRating" placeholder="e.g., B+ / Negative Watch (S&P)" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
+                                </div>
+                                <div class="form-group" style="grid-column: span 2;">
                                     <label for="recommendation" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Recommendation</label>
                                     <select id="recommendation" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
                                         <option value="">Select</option>
                                         <option value="BUY">BUY</option>
                                         <option value="HOLD">HOLD</option>
                                         <option value="SELL">SELL</option>
+                                        <option value="LONG">LONG (Credit)</option>
+                                        <option value="SHORT">SHORT (Credit)</option>
+                                        <option value="WATCH">WATCH</option>
                                     </select>
                                 </div>
                             </div>
@@ -13691,6 +13783,16 @@ window.DBP={
             </h3>
             <div id="dealDiaryBody">
             
+            <!-- Use-case clarity label -->
+            <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                📌 <strong style="color:var(--text-dark);">Deal Diary</strong> = real deals in the market you study externally (closed, announced, restructuring cases). <em>Not</em> your own analyses — use Investment Analyses for that.
+            </div>
+
+            <!-- Search bar -->
+            <div style="margin-bottom: 10px;">
+                <input type="text" id="dealSearchInput" placeholder="🔍 Search deals by name, buyer, target..." oninput="filterDeals()" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-light);color:var(--text-dark);font-size:0.88rem;">
+            </div>
+
             <!-- Filters & Add Button -->
             <div style="display: flex; gap: 8px; margin-bottom: 15px;">
                 <select id="dealTypeFilter" onchange="filterDeals()" class="filter-select">                
@@ -13699,6 +13801,11 @@ window.DBP={
                     <option value="LBO">💰 LBO</option>
                     <option value="IPO">🚀 IPO</option>
                     <option value="Restructuring">🔄 Restructuring</option>
+                    <option value="Distressed Debt">🔥 Distressed Debt</option>
+                    <option value="Bond Issuance">📋 Bond Issuance</option>
+                    <option value="Spinoff">✂️ Spinoff/Carve-out</option>
+                    <option value="Rights Issue">📜 Rights Issue</option>
+                    <option value="Special Dividend">💵 Special Dividend</option>
                 </select>
 
                 <button class="add-deal-btn" onclick="openDealModal()">
@@ -13722,8 +13829,8 @@ window.DBP={
 
 
         <!-- ===== DEAL DIARY MODAL ===== -->
-        <div id="dealModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
-            <div class="modal-content" style="background-color: var(--bg-white); margin: 5% auto; padding: 20px; border-radius: var(--radius-lg); width: 90%; max-width: 700px; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-xl); border: 1px solid var(--border-color);">
+        <div id="dealModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); overflow-y: auto;">
+            <div class="modal-content" style="background-color: var(--bg-white); margin: 40px auto; padding: 20px; border-radius: var(--radius-lg); width: 90%; max-width: 700px; box-shadow: var(--shadow-xl); border: 1px solid var(--border-color);">
                 <!-- Modal Header -->
                 <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color);">
                     <h3 id="dealModalTitle" style="margin: 0; font-size: 1.2rem; color: var(--text-dark);">Add New Deal</h3>
@@ -13749,6 +13856,11 @@ window.DBP={
                                     <option value="LBO">💰 LBO</option>
                                     <option value="IPO">🚀 IPO</option>
                                     <option value="Restructuring">🔄 Restructuring</option>
+                                    <option value="Distressed Debt">🔥 Distressed Debt</option>
+                                    <option value="Bond Issuance">📋 Bond Issuance</option>
+                                    <option value="Spinoff">✂️ Spinoff/Carve-out</option>
+                                    <option value="Rights Issue">📜 Rights Issue</option>
+                                    <option value="Special Dividend">💵 Special Dividend</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -13784,9 +13896,34 @@ window.DBP={
                             </div>
                         </div>
 
-                        <div class="form-group" style="margin-bottom: 16px;">
-                            <label for="dealLearnings" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Key Learnings *</label>
-                            <textarea id="dealLearnings" rows="4" required placeholder="What did you learn from this deal? What made it succeed/fail?" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark); transition: var(--transition);"></textarea>
+                        <!-- STRUCTURED LEARNINGS (replaces single Key Learnings box) -->
+                        <div style="border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; background: var(--bg-light); margin-bottom: 16px;">
+                            <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-dark); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                                📓 Key Learnings <span style="font-weight: 400; color: var(--text-muted); font-size: 0.8rem;">(structured — for pattern extraction)</span>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label for="dealWhatWorked" style="display: block; margin-bottom: 6px; font-weight: 500; color: #10b981; font-size: 0.88rem;">✅ What went right?</label>
+                                <textarea id="dealWhatWorked" rows="2" placeholder="e.g., Management credibility held, debt maturity runway gave time to restructure..." style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark); font-size: 0.88rem; resize: vertical;"></textarea>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label for="dealWhatWentWrong" style="display: block; margin-bottom: 6px; font-weight: 500; color: #ef4444; font-size: 0.88rem;">❌ What went wrong / failed?</label>
+                                <textarea id="dealWhatWentWrong" rows="2" placeholder="e.g., Covenant breach triggered early default, overlooked cross-default clauses..." style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark); font-size: 0.88rem; resize: vertical;"></textarea>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div class="form-group">
+                                    <label for="dealEarlySpot" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark); font-size: 0.88rem;">🔍 Could I have spotted this early?</label>
+                                    <select id="dealEarlySpot" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
+                                        <option value="">Select</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="Maybe">Maybe</option>
+                                        <option value="No">No</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="dealFramework" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark); font-size: 0.88rem;">🧩 Applicable Framework</label>
+                                    <input type="text" id="dealFramework" placeholder="e.g., Credit analysis, 5Cs, Porter's Five Forces..." style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark); font-size: 0.88rem;">
+                                </div>
+                            </div>
                         </div>
 
                         <details style="margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px; background: var(--bg-light);">
@@ -13891,15 +14028,20 @@ window.DBP={
                         <option value="Science">Science</option>
                         <option value="Technology">Technology</option>
                         <option value="Finance">Finance</option>
+                        <option value="Economics">Economics</option>
+                        <option value="Business">Business</option>
+                        <option value="Investing">Investing</option>
                         <option value="Biography">Biography</option>
                         <option value="History">History</option>
                         <option value="Philosophy">Philosophy</option>
+                        <option value="Psychology">Psychology</option>
                         <option value="Self-Help">Self-Help</option>
+                        <option value="Politics">Politics</option>
+                        <option value="Law">Law</option>
+                        <option value="Sociology">Sociology</option>
+                        <option value="Mathematics">Mathematics</option>
                         <option value="Fantasy">Fantasy</option>
                         <option value="Mystery">Mystery</option>
-                        <option value="Psychology">Psychology</option>
-                        <option value="Business">Business</option>
-                        <option value="Politics">Politics</option>
                         <option value="Other">Other</option>
                     </select>
                     <select id="sortReadingList" title="Sort by">
@@ -14256,14 +14398,21 @@ window.DBP={
                             <option value="Non-Fiction">Non-Fiction</option>
                             <option value="Biography">Biography</option>
                             <option value="Business">Business</option>
+                            <option value="Economics">Economics</option>
                             <option value="Finance">Finance</option>
+                            <option value="Investing">Investing</option>
                             <option value="Technology">Technology</option>
                             <option value="Self-Help">Self-Help</option>
                             <option value="Psychology">Psychology</option>
                             <option value="History">History</option>
                             <option value="Science">Science</option>
+                            <option value="Mathematics">Mathematics</option>
                             <option value="Philosophy">Philosophy</option>
                             <option value="Politics">Politics</option>
+                            <option value="Law">Law</option>
+                            <option value="Sociology">Sociology</option>
+                            <option value="Fantasy">Fantasy</option>
+                            <option value="Mystery">Mystery</option>
                             <option value="Other">Other</option>
                         </select>
                     </div>
@@ -14330,14 +14479,21 @@ window.DBP={
                             <option value="Non-Fiction">Non-Fiction</option>
                             <option value="Biography">Biography</option>
                             <option value="Business">Business</option>
+                            <option value="Economics">Economics</option>
                             <option value="Finance">Finance</option>
+                            <option value="Investing">Investing</option>
                             <option value="Technology">Technology</option>
                             <option value="Self-Help">Self-Help</option>
                             <option value="Psychology">Psychology</option>
                             <option value="History">History</option>
                             <option value="Science">Science</option>
+                            <option value="Mathematics">Mathematics</option>
                             <option value="Philosophy">Philosophy</option>
                             <option value="Politics">Politics</option>
+                            <option value="Law">Law</option>
+                            <option value="Sociology">Sociology</option>
+                            <option value="Fantasy">Fantasy</option>
+                            <option value="Mystery">Mystery</option>
                             <option value="Other">Other</option>
                         </select>
                     </div>
@@ -15279,14 +15435,21 @@ window.DBP={
                         <option value="Non-Fiction">Non-Fiction</option>
                         <option value="Biography">Biography</option>
                         <option value="Business">Business</option>
+                        <option value="Economics">Economics</option>
                         <option value="Finance">Finance</option>
+                        <option value="Investing">Investing</option>
                         <option value="Technology">Technology</option>
                         <option value="Self-Help">Self-Help</option>
                         <option value="Psychology">Psychology</option>
                         <option value="History">History</option>
                         <option value="Science">Science</option>
+                        <option value="Mathematics">Mathematics</option>
                         <option value="Philosophy">Philosophy</option>
                         <option value="Politics">Politics</option>
+                        <option value="Law">Law</option>
+                        <option value="Sociology">Sociology</option>
+                        <option value="Fantasy">Fantasy</option>
+                        <option value="Mystery">Mystery</option>
                         <option value="Other">Other</option>
                     </select>
                 </div>
@@ -15314,7 +15477,7 @@ window.DBP={
                 <button class="modal-close" onclick="closeFullReviewModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <div id="fullReviewText" style="max-height: 500px; overflow-y: auto; padding: 15px; background-color: #f5f5f5; border-radius: 4px; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;"></div>
+                <div id="fullReviewText" style="max-height: 500px; overflow-y: auto; padding: 15px; background-color: var(--bg-light); color: var(--text-dark); border-radius: 4px; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;"></div>
             </div>
         </div>
     </div>
@@ -18064,13 +18227,13 @@ window.DBP={
 
 
             window.addEventListener('click', function(event) {
-                const modals = ['addBookModal', 'editBookModal', 'fullReviewModal', 'bookDetailsModal'];
-                modals.forEach(id => {
+                // Only close fullReviewModal and bookDetailsModal on outside click
+                // addBookModal and editBookModal are intentionally NOT auto-closed to prevent data loss while typing
+                const safeToAutoClose = ['fullReviewModal', 'bookDetailsModal'];
+                safeToAutoClose.forEach(id => {
                     const modal = document.getElementById(id);
                     if (event.target === modal) {
-                        if (id === 'addBookModal') closeAddBookModal();
-                        else if (id === 'editBookModal') closeEditBookModal();
-                        else if (id === 'fullReviewModal') closeFullReviewModal();
+                        if (id === 'fullReviewModal') closeFullReviewModal();
                         else if (id === 'bookDetailsModal') closeBookDetailsModal();
                     }
                 });
@@ -33719,83 +33882,125 @@ document.addEventListener('click', function(e) {
 
 
         function renderAnalysisCard(analysis) {
-            // Color & Icon mapping remains the same
             const typeIcons = {
-                stock_pitch: "📊",
-                lbo: "💰",
-                dcf: "📈",
-                ma: "🤝",
-                industry: "📑"
+                stock_pitch: "📊", lbo: "💰", dcf: "📈", ma: "🤝",
+                industry: "📑", credit: "🔥", distressed: "⚠️", special_sits: "🎯"
             };
             const typeColors = {
-                stock_pitch: '#10b981',
-                lbo: '#f59e0b',
-                dcf: '#8b5cf6',
-                ma: '#ef4444',
-                industry: '#06b6d4'
+                stock_pitch: '#10b981', lbo: '#f59e0b', dcf: '#8b5cf6', ma: '#ef4444',
+                industry: '#06b6d4', credit: '#ef4444', distressed: '#f97316', special_sits: '#8b5cf6'
             };
             const cardColor = typeColors[analysis.type] || '#3b82f6';
 
-            // Recommendation badge
-            const recommendationBadge = analysis.keyMetrics?.recommendation ? `
-                <span class="tag" style="background: ${analysis.keyMetrics.recommendation === 'BUY' ? 'rgba(16, 185, 129, 0.2)' : analysis.keyMetrics.recommendation === 'SELL' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}; color: ${analysis.keyMetrics.recommendation === 'BUY' ? '#10b981' : analysis.keyMetrics.recommendation === 'SELL' ? '#ef4444' : '#f59e0b'};">
-                    ${analysis.keyMetrics.recommendation}
-                </span>
-            ` : '';
+            // Recommendation badge — handles BUY/SELL/HOLD/LONG/SHORT/WATCH
+            const recColors = {
+                'BUY':   { bg: 'rgba(16,185,129,0.2)',  text: '#10b981' },
+                'LONG':  { bg: 'rgba(16,185,129,0.2)',  text: '#10b981' },
+                'SELL':  { bg: 'rgba(239,68,68,0.2)',   text: '#ef4444' },
+                'SHORT': { bg: 'rgba(239,68,68,0.2)',   text: '#ef4444' },
+                'HOLD':  { bg: 'rgba(245,158,11,0.2)',  text: '#f59e0b' },
+                'WATCH': { bg: 'rgba(99,102,241,0.2)',  text: '#6366f1' }
+            };
+            const rec = analysis.keyMetrics?.recommendation;
+            const recommendationBadge = rec ? `
+                <span class="tag" style="background:${(recColors[rec]||{bg:'rgba(100,116,139,0.2)'}).bg};color:${(recColors[rec]||{text:'#64748b'}).text};font-weight:700;">
+                    ${rec}
+                </span>` : '';
+
+            // Conviction badge
+            const convColors = { 'High': '#ef4444', 'Medium': '#f59e0b', 'Low': '#10b981' };
+            const convictionBadge = analysis.conviction ? `
+                <span class="tag" style="background:rgba(0,0,0,0.06);color:${convColors[analysis.conviction]||'#64748b'};font-size:0.75rem;">
+                    ● ${analysis.conviction} Conviction
+                </span>` : '';
+
+            // Thesis Status badge
+            const statusMap = {
+                'active':     { label: '✅ Active',         color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+                'monitoring': { label: '👁️ Monitoring',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+                'closed':     { label: '📦 Closed Out',     color: '#64748b', bg: 'rgba(100,116,139,0.12)' },
+                'stale':      { label: '⚠️ Needs Update',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' }
+            };
+            const st = statusMap[analysis.thesisStatus];
+            const statusBadge = st ? `<span class="tag" style="background:${st.bg};color:${st.color};font-size:0.75rem;">${st.label}</span>` : '';
+
+            // Catalyst
+            const catalystHTML = analysis.catalyst ? `
+                <div style="margin-top:8px;font-size:0.82rem;color:var(--text-muted);">
+                    <span style="color:#f59e0b;font-weight:600;">⚡ Catalyst:</span> ${analysis.catalyst}
+                </div>` : '';
+
+            // Time Horizon
+            const horizonBadge = analysis.timeHorizon ? `
+                <span class="tag" style="background:rgba(0,0,0,0.04);color:var(--text-muted);font-size:0.73rem;">${analysis.timeHorizon}</span>` : '';
 
             // Tags
             const tagsHTML = analysis.tags && analysis.tags.length > 0 ? `
-                <div class="finance-card-tags">
-                    ${analysis.tags.map(tag => `<span class="tag" style="background: rgba(${parseInt(cardColor.slice(1,3), 16)}, ${parseInt(cardColor.slice(3,5), 16)}, ${parseInt(cardColor.slice(5,7), 16)}, 0.15); color: ${cardColor};">${tag}</span>`).join('')}
-                </div>
-            ` : '';
+                <div class="finance-card-tags" style="margin-top:6px;">
+                    ${analysis.tags.map(tag => `<span class="tag" style="background:rgba(${parseInt(cardColor.slice(1,3),16)},${parseInt(cardColor.slice(3,5),16)},${parseInt(cardColor.slice(5,7),16)},0.15);color:${cardColor};">${tag}</span>`).join('')}
+                </div>` : '';
 
-            // Key Metrics
+            // Key Metrics — equity + distressed/credit
             let metricsHTML = '';
             const km = analysis.keyMetrics || {};
-            if (km.currentPrice || km.targetPrice || km.upside || km.peRatio) {
+            const hasMetrics = km.currentPrice || km.targetPrice || km.upside || km.peRatio || km.evEbitda || km.netDebtLeverage || km.creditRating;
+            if (hasMetrics) {
                 metricsHTML = `
-                    <div class="finance-card-metrics">
+                    <div class="finance-card-metrics" style="flex-wrap:wrap;">
                         ${km.currentPrice ? `<div class="metric-item"><span class="metric-label">Current</span><span class="metric-value">${km.currentPrice}</span></div>` : ''}
-                        ${km.targetPrice ? `<div class="metric-item"><span class="metric-label">Target</span><span class="metric-value">${km.targetPrice}</span></div>` : ''}
-                        ${km.upside ? `<div class="metric-item"><span class="metric-label">Upside</span><span class="metric-value" style="color: ${km.upside.includes('-') ? '#ef4444' : '#10b981'};">${km.upside}</span></div>` : ''}
-                        ${km.peRatio ? `<div class="metric-item"><span class="metric-label">P/E</span><span class="metric-value">${km.peRatio}</span></div>` : ''}
-                    </div>
-                `;
+                        ${km.targetPrice  ? `<div class="metric-item"><span class="metric-label">Target</span><span class="metric-value">${km.targetPrice}</span></div>` : ''}
+                        ${km.upside       ? `<div class="metric-item"><span class="metric-label">Upside</span><span class="metric-value" style="color:${km.upside.includes('-')?'#ef4444':'#10b981'};">${km.upside}</span></div>` : ''}
+                        ${km.peRatio      ? `<div class="metric-item"><span class="metric-label">P/E</span><span class="metric-value">${km.peRatio}</span></div>` : ''}
+                        ${km.evEbitda     ? `<div class="metric-item"><span class="metric-label">EV/EBITDA</span><span class="metric-value">${km.evEbitda}</span></div>` : ''}
+                        ${km.netDebtLeverage ? `<div class="metric-item"><span class="metric-label">Net Debt/Lev.</span><span class="metric-value">${km.netDebtLeverage}</span></div>` : ''}
+                        ${km.creditRating ? `<div class="metric-item" style="grid-column:span 2;"><span class="metric-label">Credit Rating</span><span class="metric-value">${km.creditRating}</span></div>` : ''}
+                    </div>`;
             }
 
+            // Last Reviewed
+            const lastReviewedHTML = analysis.lastReviewed ? `
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">
+                    🔄 Last reviewed: ${formatDate(analysis.lastReviewed)}
+                </div>` : '';
+
             // Links
-            const linksHTML = (analysis.links.pitchDeck || analysis.links.excelModel || analysis.links.notes) ? `
-                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">
-                    ${analysis.links.pitchDeck ? `<a href="${analysis.links.pitchDeck}" target="_blank" class="course-action-btn open-link" style="flex: 1; text-align: center; text-decoration: none; padding: 4px 8px; font-size: 0.75rem;">📑 Pitch Deck</a>` : ''}
-                    ${analysis.links.excelModel ? `<a href="${analysis.links.excelModel}" target="_blank" class="course-action-btn open-link" style="flex: 1; text-align: center; text-decoration: none; padding: 4px 8px; font-size: 0.75rem;">📊 Excel Model</a>` : ''}
-                    ${analysis.links.notes ? `<a href="${analysis.links.notes}" target="_blank" class="course-action-btn open-link" style="flex: 1; text-align: center; text-decoration: none; padding: 4px 8px; font-size: 0.75rem;">📝 Notes</a>` : ''}
-                </div>
-            ` : '';
+            const links = analysis.links || {};
+            const linksHTML = (links.pitchDeck || links.excelModel || links.notes) ? `
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">
+                    ${links.pitchDeck  ? `<a href="${links.pitchDeck}"  target="_blank" class="course-action-btn open-link" style="flex:1;text-align:center;text-decoration:none;padding:4px 8px;font-size:0.75rem;">📑 Pitch Deck</a>` : ''}
+                    ${links.excelModel ? `<a href="${links.excelModel}" target="_blank" class="course-action-btn open-link" style="flex:1;text-align:center;text-decoration:none;padding:4px 8px;font-size:0.75rem;">📊 Excel Model</a>` : ''}
+                    ${links.notes      ? `<a href="${links.notes}"      target="_blank" class="course-action-btn open-link" style="flex:1;text-align:center;text-decoration:none;padding:4px 8px;font-size:0.75rem;">📝 Notes</a>` : ''}
+                </div>` : '';
 
             return `
-                <div class="finance-card" style="border-left: 4px solid ${cardColor};">
+                <div class="finance-card" style="border-left:4px solid ${cardColor};">
                     <div class="finance-card-header">
-                        <div>
+                        <div style="flex:1;min-width:0;">
                             <div class="finance-card-title">${analysis.title}</div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px;">
-                                ${typeIcons[analysis.type]} ${formatDate(analysis.date)}
+                            <div style="font-size:0.82rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap;">
+                                ${typeIcons[analysis.type]||'📄'} ${formatDate(analysis.date)}
+                                ${horizonBadge}
                             </div>
                         </div>
-                        ${recommendationBadge}
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+                            ${recommendationBadge}
+                            ${statusBadge}
+                        </div>
                     </div>
                     <div class="finance-card-content">
-                        <div class="finance-card-thesis">"${analysis.thesis}"</div>
+                        ${convictionBadge}
+                        <div class="finance-card-thesis" style="margin-top:6px;">"${analysis.thesis}"</div>
+                        ${catalystHTML}
                         ${metricsHTML}
                         ${tagsHTML}
+                        ${lastReviewedHTML}
                         ${linksHTML}
                     </div>
                     <div class="finance-card-actions">
                         <button onclick="editAnalysis('${analysis.id}')" class="course-action-btn edit">✏️ Edit</button>
                         <button onclick="deleteAnalysis('${analysis.id}')" class="course-action-btn delete">🗑️ Delete</button>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
 
 
@@ -33832,15 +34037,21 @@ document.addEventListener('click', function(e) {
                     document.getElementById('analysisDate').value = analysis.date;
                     document.getElementById('analysisThesis').value = analysis.thesis;
                     document.getElementById('analysisTags').value = analysis.tags ? analysis.tags.join(', ') : '';
-                    
-                    // Populate Key Metrics
+                    // NEW fields
+                    document.getElementById('analysisConviction').value = analysis.conviction || '';
+                    document.getElementById('analysisStatus').value = analysis.thesisStatus || 'active';
+                    document.getElementById('analysisTimeHorizon').value = analysis.timeHorizon || '';
+                    document.getElementById('analysisCatalyst').value = analysis.catalyst || '';
+                    // Key Metrics
                     document.getElementById('currentPrice').value = analysis.keyMetrics?.currentPrice || '';
                     document.getElementById('targetPrice').value = analysis.keyMetrics?.targetPrice || '';
                     document.getElementById('upside').value = analysis.keyMetrics?.upside || '';
                     document.getElementById('peRatio').value = analysis.keyMetrics?.peRatio || '';
+                    document.getElementById('evEbitda').value = analysis.keyMetrics?.evEbitda || '';
+                    document.getElementById('netDebtLeverage').value = analysis.keyMetrics?.netDebtLeverage || '';
+                    document.getElementById('creditRating').value = analysis.keyMetrics?.creditRating || '';
                     document.getElementById('recommendation').value = analysis.keyMetrics?.recommendation || '';
-                    
-                    // Populate Links
+                    // Links
                     document.getElementById('pitchDeckLink').value = analysis.links?.pitchDeck || '';
                     document.getElementById('excelModelLink').value = analysis.links?.excelModel || '';
                     document.getElementById('notesLink').value = analysis.links?.notes || '';
@@ -33850,7 +34061,8 @@ document.addEventListener('click', function(e) {
                 title.textContent = 'Add New Investment Analysis';
                 form.reset();
                 idInput.value = '';
-                document.getElementById('analysisDate').value = new Date().toISOString().split('T')[0]; 
+                document.getElementById('analysisDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('analysisStatus').value = 'active';
             }
             
             modal.style.display = 'block';
@@ -33866,6 +34078,7 @@ document.addEventListener('click', function(e) {
             
             const id = document.getElementById('analysisId').value;
             const isNew = !id;
+            const existing = isNew ? null : investmentAnalyses.find(a => a.id == id);
             
             const analysis = {
                 id: isNew ? Date.now().toString() : id,
@@ -33873,12 +34086,20 @@ document.addEventListener('click', function(e) {
                 type: document.getElementById('analysisType').value,
                 date: document.getElementById('analysisDate').value,
                 thesis: document.getElementById('analysisThesis').value,
-                tags: document.getElementById('analysisTags').value.split(',').map(tag => tag.trim()).filter(tag => tag),
+                tags: document.getElementById('analysisTags').value.split(',').map(t => t.trim()).filter(t => t),
+                // NEW fields
+                conviction: document.getElementById('analysisConviction').value,
+                thesisStatus: document.getElementById('analysisStatus').value,
+                timeHorizon: document.getElementById('analysisTimeHorizon').value,
+                catalyst: document.getElementById('analysisCatalyst').value,
                 keyMetrics: {
                     currentPrice: document.getElementById('currentPrice').value,
                     targetPrice: document.getElementById('targetPrice').value,
                     upside: document.getElementById('upside').value,
                     peRatio: document.getElementById('peRatio').value,
+                    evEbitda: document.getElementById('evEbitda').value,
+                    netDebtLeverage: document.getElementById('netDebtLeverage').value,
+                    creditRating: document.getElementById('creditRating').value,
                     recommendation: document.getElementById('recommendation').value
                 },
                 links: {
@@ -33886,7 +34107,8 @@ document.addEventListener('click', function(e) {
                     excelModel: document.getElementById('excelModelLink').value,
                     notes: document.getElementById('notesLink').value
                 },
-                createdAt: isNew ? new Date().toISOString() : investmentAnalyses.find(a => a.id == id)?.createdAt
+                createdAt: isNew ? new Date().toISOString() : (existing?.createdAt || new Date().toISOString()),
+                lastReviewed: new Date().toISOString()
             };
             
             if (isNew) {
@@ -33921,12 +34143,21 @@ document.addEventListener('click', function(e) {
         // ===== FILTERING =====
         function filterAnalyses() {
             const filterType = document.getElementById('analysisTypeFilter').value;
-            if (filterType === 'all') {
-                renderAnalysisCards();
-            } else {
-                const filtered = investmentAnalyses.filter(a => a.type === filterType);
-                renderAnalysisCards(filtered);
+            const searchQuery = (document.getElementById('analysisSearchInput')?.value || '').toLowerCase().trim();
+            
+            let filtered = investmentAnalyses;
+            if (filterType !== 'all') {
+                filtered = filtered.filter(a => a.type === filterType);
             }
+            if (searchQuery) {
+                filtered = filtered.filter(a =>
+                    a.title?.toLowerCase().includes(searchQuery) ||
+                    a.thesis?.toLowerCase().includes(searchQuery) ||
+                    a.catalyst?.toLowerCase().includes(searchQuery) ||
+                    (a.tags || []).some(t => t.toLowerCase().includes(searchQuery))
+                );
+            }
+            renderAnalysisCards(filtered);
         }
 
         // ===== UTILITY =====
@@ -33987,74 +34218,81 @@ document.addEventListener('click', function(e) {
 
 
         function renderDealCard(deal) {
-            // Color & Icon mapping remains the same
             const typeIcons = {
-                'M&A': '🤝',
-                'LBO': '💰',
-                'IPO': '🚀',
-                'Restructuring': '🔄'
+                'M&A': '🤝', 'LBO': '💰', 'IPO': '🚀', 'Restructuring': '🔄',
+                'Distressed Debt': '🔥', 'Bond Issuance': '📋', 'Spinoff': '✂️',
+                'Rights Issue': '📜', 'Special Dividend': '💵'
             };
             const typeColors = {
-                'M&A': '#ef4444',
-                'LBO': '#f59e0b',
-                'IPO': '#10b981',
-                'Restructuring': '#6366f1'
+                'M&A': '#ef4444', 'LBO': '#f59e0b', 'IPO': '#10b981', 'Restructuring': '#6366f1',
+                'Distressed Debt': '#f97316', 'Bond Issuance': '#06b6d4', 'Spinoff': '#8b5cf6',
+                'Rights Issue': '#3b82f6', 'Special Dividend': '#84cc16'
             };
             const cardColor = typeColors[deal.dealType] || '#8b5cf6';
 
             // Status badge
             const statusBadges = {
-                'closed': '<span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">✅ Closed</span>',
-                'announced': '<span class="tag" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6;">📢 Announced</span>',
-                'rumored': '<span class="tag" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;">🔍 Rumored</span>',
-                'terminated': '<span class="tag" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;">❌ Terminated</span>'
+                'closed':     '<span class="tag" style="background:rgba(16,185,129,0.2);color:#10b981;">✅ Closed</span>',
+                'announced':  '<span class="tag" style="background:rgba(59,130,246,0.2);color:#3b82f6;">📢 Announced</span>',
+                'rumored':    '<span class="tag" style="background:rgba(245,158,11,0.2);color:#f59e0b;">🔍 Rumored</span>',
+                'terminated': '<span class="tag" style="background:rgba(239,68,68,0.2);color:#ef4444;">❌ Terminated</span>'
             };
 
-            // Parties
+            // Parties + value
             const partiesHTML = (deal.parties?.buyer || deal.parties?.target) ? `
                 <div class="finance-card-metrics">
-                    <div class="metric-item"><span class="metric-label">Buyer</span><span class="metric-value">${deal.parties?.buyer || 'N/A'}</span></div>
-                    <div class="metric-item"><span class="metric-label">Target</span><span class="metric-value">${deal.parties?.target || 'N/A'}</span></div>
-                </div>
-            ` : '';
+                    ${deal.parties?.buyer  ? `<div class="metric-item"><span class="metric-label">Buyer/Issuer</span><span class="metric-value">${deal.parties.buyer}</span></div>` : ''}
+                    ${deal.parties?.target ? `<div class="metric-item"><span class="metric-label">Target/Company</span><span class="metric-value">${deal.parties.target}</span></div>` : ''}
+                    ${deal.dealValue       ? `<div class="metric-item"><span class="metric-label">Deal Value</span><span class="metric-value">${deal.dealValue}</span></div>` : ''}
+                </div>` : (deal.dealValue ? `<div class="finance-card-metrics"><div class="metric-item"><span class="metric-label">Deal Value</span><span class="metric-value">${deal.dealValue}</span></div></div>` : '');
 
-            // Deal Value
-            const valueHTML = deal.dealValue ? `<div class="finance-card-metrics"><div class="metric-item"><span class="metric-label">Deal Value</span><span class="metric-value">${deal.dealValue}</span></div></div>` : '';
+            // Structured Learnings
+            let learningsHTML = '';
+            const hasStructured = deal.whatWorked || deal.whatWentWrong || deal.earlySpot || deal.framework;
+            const hasLegacy = deal.learnings;
+            if (hasStructured) {
+                learningsHTML = `<div style="margin-top:10px;border-top:1px solid var(--border-color);padding-top:10px;">
+                    <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">📓 Learnings</div>
+                    ${deal.whatWorked     ? `<div style="font-size:0.82rem;margin-bottom:6px;"><span style="color:#10b981;font-weight:600;">✅ Went right:</span> <span style="color:var(--text-dark);">${deal.whatWorked}</span></div>` : ''}
+                    ${deal.whatWentWrong  ? `<div style="font-size:0.82rem;margin-bottom:6px;"><span style="color:#ef4444;font-weight:600;">❌ Went wrong:</span> <span style="color:var(--text-dark);">${deal.whatWentWrong}</span></div>` : ''}
+                    ${deal.earlySpot      ? `<div style="font-size:0.82rem;margin-bottom:4px;"><span style="color:var(--text-muted);font-weight:600;">🔍 Spottable early?</span> <span style="color:var(--text-dark);">${deal.earlySpot}</span></div>` : ''}
+                    ${deal.framework      ? `<div style="font-size:0.82rem;"><span style="color:var(--text-muted);font-weight:600;">🧩 Framework:</span> <span style="color:var(--text-dark);">${deal.framework}</span></div>` : ''}
+                </div>`;
+            } else if (hasLegacy) {
+                learningsHTML = `<div class="finance-card-learnings"><strong>Key Learning:</strong> ${deal.learnings}</div>`;
+            }
 
             // Links
-            const linksHTML = (deal.links.pressRelease || deal.links.analysis || deal.links.filing) ? `
-                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">
-                    ${deal.links.pressRelease ? `<a href="${deal.links.pressRelease}" target="_blank" class="course-action-btn open-link" style="flex: 1; text-align: center; text-decoration: none; padding: 4px 8px; font-size: 0.75rem;">📄 Press</a>` : ''}
-                    ${deal.links.analysis ? `<a href="${deal.links.analysis}" target="_blank" class="course-action-btn open-link" style="flex: 1; text-align: center; text-decoration: none; padding: 4px 8px; font-size: 0.75rem;">📊 Analysis</a>` : ''}
-                    ${deal.links.filing ? `<a href="${deal.links.filing}" target="_blank" class="course-action-btn open-link" style="flex: 1; text-align: center; text-decoration: none; padding: 4px 8px; font-size: 0.75rem;">📋 Filing</a>` : ''}
-                </div>
-            ` : '';
+            const links = deal.links || {};
+            const linksHTML = (links.pressRelease || links.analysis || links.filing) ? `
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">
+                    ${links.pressRelease ? `<a href="${links.pressRelease}" target="_blank" class="course-action-btn open-link" style="flex:1;text-align:center;text-decoration:none;padding:4px 8px;font-size:0.75rem;">📄 Press</a>` : ''}
+                    ${links.analysis     ? `<a href="${links.analysis}"     target="_blank" class="course-action-btn open-link" style="flex:1;text-align:center;text-decoration:none;padding:4px 8px;font-size:0.75rem;">📊 Analysis</a>` : ''}
+                    ${links.filing       ? `<a href="${links.filing}"       target="_blank" class="course-action-btn open-link" style="flex:1;text-align:center;text-decoration:none;padding:4px 8px;font-size:0.75rem;">📋 Filing</a>` : ''}
+                </div>` : '';
 
             return `
-                <div class="finance-card" style="border-left: 4px solid ${cardColor};">
+                <div class="finance-card" style="border-left:4px solid ${cardColor};">
                     <div class="finance-card-header">
-                        <div>
+                        <div style="flex:1;min-width:0;">
                             <div class="finance-card-title">${deal.dealName}</div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px;">
-                                ${typeIcons[deal.dealType]} ${formatDate(deal.date)}
+                            <div style="font-size:0.82rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;margin-top:4px;">
+                                ${typeIcons[deal.dealType]||'🤝'} ${formatDate(deal.date)}
+                                <span class="tag" style="background:rgba(${parseInt(cardColor.slice(1,3),16)},${parseInt(cardColor.slice(3,5),16)},${parseInt(cardColor.slice(5,7),16)},0.12);color:${cardColor};font-size:0.73rem;">${deal.dealType}</span>
                             </div>
                         </div>
-                        ${statusBadges[deal.status]}
+                        ${statusBadges[deal.status]||''}
                     </div>
                     <div class="finance-card-content">
-                        ${valueHTML}
                         ${partiesHTML}
-                        <div class="finance-card-learnings">
-                            <strong>Key Learning:</strong> ${deal.learnings}
-                        </div>
+                        ${learningsHTML}
                         ${linksHTML}
                     </div>
                     <div class="finance-card-actions">
                         <button onclick="editDeal('${deal.id}')" class="course-action-btn edit">✏️ Edit</button>
                         <button onclick="deleteDeal('${deal.id}')" class="course-action-btn delete">🗑️ Delete</button>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
 
 
@@ -34072,14 +34310,18 @@ document.addEventListener('click', function(e) {
                 if (deal) {
                     title.textContent = 'Edit Deal';
                     idInput.value = deal.id;
-                    document.getElementById('dealName').value = deal.dealName;
-                    document.getElementById('dealType').value = deal.dealType;
-                    document.getElementById('dealValue').value = deal.dealValue;
-                    document.getElementById('dealStatus').value = deal.status;
-                    document.getElementById('dealDate').value = deal.date;
+                    document.getElementById('dealName').value = deal.dealName || '';
+                    document.getElementById('dealType').value = deal.dealType || '';
+                    document.getElementById('dealValue').value = deal.dealValue || '';
+                    document.getElementById('dealStatus').value = deal.status || 'announced';
+                    document.getElementById('dealDate').value = deal.date || '';
                     document.getElementById('dealBuyer').value = deal.parties?.buyer || '';
                     document.getElementById('dealTarget').value = deal.parties?.target || '';
-                    document.getElementById('dealLearnings').value = deal.learnings;
+                    // Structured learnings (new) — fall back to legacy single field
+                    document.getElementById('dealWhatWorked').value = deal.whatWorked || deal.learnings || '';
+                    document.getElementById('dealWhatWentWrong').value = deal.whatWentWrong || '';
+                    document.getElementById('dealEarlySpot').value = deal.earlySpot || 'maybe';
+                    document.getElementById('dealFramework').value = deal.framework || '';
                     document.getElementById('pressReleaseLink').value = deal.links?.pressRelease || '';
                     document.getElementById('analysisLink').value = deal.links?.analysis || '';
                     document.getElementById('filingLink').value = deal.links?.filing || '';
@@ -34116,7 +34358,11 @@ document.addEventListener('click', function(e) {
                     buyer: document.getElementById('dealBuyer').value,
                     target: document.getElementById('dealTarget').value
                 },
-                learnings: document.getElementById('dealLearnings').value,
+                // Structured learnings
+                whatWorked: document.getElementById('dealWhatWorked').value,
+                whatWentWrong: document.getElementById('dealWhatWentWrong').value,
+                earlySpot: document.getElementById('dealEarlySpot').value,
+                framework: document.getElementById('dealFramework').value,
                 links: {
                     pressRelease: document.getElementById('pressReleaseLink').value,
                     analysis: document.getElementById('analysisLink').value,
@@ -34157,12 +34403,27 @@ document.addEventListener('click', function(e) {
         // ===== DEAL FILTERING =====
         function filterDeals() {
             const filterType = document.getElementById('dealTypeFilter').value;
-            if (filterType === 'all') {
-                renderDealCards();
-            } else {
-                const filtered = dealDiary.filter(d => d.dealType === filterType);
-                renderDealCards(filtered);
+            const searchQuery = (document.getElementById('dealSearchInput')?.value || '').toLowerCase().trim();
+            
+            let filtered = dealDiary;
+            
+            if (filterType !== 'all') {
+                filtered = filtered.filter(d => d.dealType === filterType);
             }
+            
+            if (searchQuery) {
+                filtered = filtered.filter(d =>
+                    d.dealName?.toLowerCase().includes(searchQuery) ||
+                    d.parties?.buyer?.toLowerCase().includes(searchQuery) ||
+                    d.parties?.target?.toLowerCase().includes(searchQuery) ||
+                    d.whatWorked?.toLowerCase().includes(searchQuery) ||
+                    d.whatWentWrong?.toLowerCase().includes(searchQuery) ||
+                    d.framework?.toLowerCase().includes(searchQuery) ||
+                    d.learnings?.toLowerCase().includes(searchQuery)
+                );
+            }
+            
+            renderDealCards(filtered);
         }
 
         // ===== INITIALIZATION =====
