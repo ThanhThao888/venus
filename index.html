@@ -14383,10 +14383,18 @@ window.DBP={
             </div>
             
             <!-- Control Buttons -->
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                 <button id="startSleepBtn" class="add-time-btn" onclick="startSleepTracking()" style="flex: 1; background: #27ae60;">▶ Start</button>
                 <button id="stopSleepBtn" class="add-time-btn" onclick="stopSleepTracking()" style="flex: 1; background: #e74c3c; display: none;">⏸ Stop</button>
                 <button class="add-time-btn" onclick="openManualSleepModal()" style="flex: 1; background: #3498db;">➕ Manual</button>
+            </div>
+            <!-- Force Reset — only shown when session is clearly corrupted (>24h) -->
+            <div id="sleepForceResetRow" style="display:none; text-align:center; margin-bottom:10px;">
+                <button onclick="stopSleepTracking(true)"
+                    style="font-size:0.78rem;padding:5px 14px;border-radius:14px;border:1.5px solid #e74c3c;
+                           background:transparent;color:#e74c3c;cursor:pointer;">
+                    🗑️ Clear stuck session (don't save)
+                </button>
             </div>
             
             <!-- Sleep Chart -->
@@ -14574,6 +14582,11 @@ window.DBP={
         </div>
         <div id="flashcardBack" style="display: none;">
             <div id="flashcardAnswer"></div>
+            <div style="display:flex;justify-content:center;margin-top:12px;">
+                <button onclick="event.stopPropagation();getRandomFlashcard();" class="flashcard-btn" style="font-size:0.8rem;padding:6px 16px;background:var(--fc-primary);color:#fff;border:none;cursor:pointer;">
+                    Next →
+                </button>
+            </div>
         </div>
         <div class="flip-indicator">
             👆 Click to flip
@@ -14601,9 +14614,19 @@ window.DBP={
         </a>
     </div>  
     
-    <!-- Stats -->
-    <div class="flashcard-stats">
-        📊 Total Cards: <strong id="flashcardCount">0</strong>
+    <!-- Stats bar -->
+    <div class="flashcard-stats" id="flashcardStatsBar" style="display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📊 Total: <strong id="flashcardCount">0</strong></span>
+            <span>⏰ Due: <strong id="flashcardDueCount" style="color:var(--fc-primary);">0</strong></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:0.8rem;color:var(--fc-text-muted);">Avg mastery</span>
+            <div style="flex:1;height:6px;background:var(--fc-border);border-radius:3px;overflow:hidden;">
+                <div id="flashcardMasteryBar" style="height:100%;width:0%;background:#10b981;transition:width 0.4s ease;border-radius:3px;"></div>
+            </div>
+            <span id="flashcardAvgMastery" style="font-size:0.8rem;font-weight:700;color:#10b981;">0%</span>
+        </div>
     </div>
     
     <!-- Manage button -->
@@ -14662,21 +14685,52 @@ window.DBP={
                 ></textarea>
             </div>
             
-            <!-- Image URL -->
+            <!-- Image Upload / Paste -->
             <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--fc-text); font-size: 0.95rem;">
-                    🖼️ Image URL (Optional)
+                    🖼️ Image (Optional) — paste or upload
                 </label>
-                <input 
-                    type="url" 
-                    id="newFlashcardImage" 
-                    placeholder="https://example.com/image.jpg" 
-                    style="width: 100%; padding: 12px; border: 2px solid var(--fc-border); border-radius: var(--fc-radius); background: var(--fc-bg); color: var(--fc-text); font-size: 0.95rem; transition: all 0.3s ease;"
+                <!-- Hidden real input that stores the final value (URL or base64) -->
+                <input type="hidden" id="newFlashcardImage">
+                <!-- Drop/paste zone -->
+                <div id="fcImageDropZone" style="border:2px dashed var(--fc-border);border-radius:var(--fc-radius);padding:16px;text-align:center;cursor:pointer;transition:border-color 0.2s;position:relative;"
+                     onclick="document.getElementById('fcImageFileInput').click()"
+                     ondragover="event.preventDefault();this.style.borderColor='var(--fc-primary)'"
+                     ondragleave="this.style.borderColor='var(--fc-border)'"
+                     ondrop="fcHandleImageDrop(event)">
+                    <div id="fcImageDropLabel" style="color:var(--fc-text-muted);font-size:0.9rem;">
+                        📋 Ctrl+V to paste · or click to upload · or enter URL below
+                    </div>
+                    <img id="fcImagePreview" style="display:none;max-height:140px;max-width:100%;border-radius:8px;margin-top:8px;object-fit:contain;">
+                    <input type="file" id="fcImageFileInput" accept="image/*" style="display:none" onchange="fcHandleImageFile(this)">
+                </div>
+                <!-- URL fallback -->
+                <input
+                    type="url"
+                    id="fcImageUrlFallback"
+                    placeholder="…or paste an image URL here"
+                    style="width:100%;margin-top:8px;padding:10px;border:2px solid var(--fc-border);border-radius:var(--fc-radius);background:var(--fc-bg);color:var(--fc-text);font-size:0.9rem;box-sizing:border-box;"
                     onfocus="this.style.borderColor='var(--fc-primary)'"
-                    onblur="this.style.borderColor='var(--fc-border)'"
+                    onblur="this.style.borderColor='var(--fc-border)';fcSetImageFromUrl(this.value)"
+                    oninput="fcSetImageFromUrl(this.value)"
                 >
+                <!-- Clear button -->
+                <button type="button" id="fcImageClearBtn" onclick="fcClearImage()" style="display:none;margin-top:6px;font-size:0.8rem;color:#ef4444;background:none;border:none;cursor:pointer;padding:0;">
+                    ✕ Remove image
+                </button>
             </div>
             
+            <!-- Tags -->
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--fc-text); font-size: 0.95rem;">
+                    🏷️ Topic Tags (Optional)
+                </label>
+                <div id="fcTagChips" style="display:flex;flex-wrap:wrap;gap:7px;">
+                    <!-- chips injected by JS -->
+                </div>
+                <input type="hidden" id="newFlashcardTags" value="[]">
+            </div>
+
             <!-- Answer -->
             <div style="margin-bottom: 25px;">
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--fc-text); font-size: 0.95rem;">
@@ -14732,6 +14786,22 @@ window.DBP={
                 >
                     &times;
                 </button>
+            </div>
+        </div>
+
+        <!-- Search + tag filter -->
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+            <input
+                id="manageSearchInput"
+                type="text"
+                placeholder="🔍  Search questions & answers…"
+                oninput="renderManageFlashcards()"
+                style="width:100%;padding:10px 14px;border:2px solid var(--fc-border);border-radius:var(--fc-radius);background:var(--fc-bg);color:var(--fc-text);font-size:0.95rem;box-sizing:border-box;"
+                onfocus="this.style.borderColor='var(--fc-primary)'"
+                onblur="this.style.borderColor='var(--fc-border)'"
+            >
+            <div id="manageTagFilter" style="display:flex;flex-wrap:wrap;gap:6px;">
+                <!-- tag filter chips injected by renderManageFlashcards -->
             </div>
         </div>
         
@@ -21750,18 +21820,30 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('🌙 Sleep tracking started.', 'info');
         }
 
-        function stopSleepTracking() {
+        function stopSleepTracking(forceReset = false) {
             if (!isSleeping) return;
             
             const endTime = Date.now();
             const durationMs = endTime - sleepStartTime;
             const durationHours = (durationMs / (1000 * 60 * 60));
-            
-            // ✅ CẢNH BÁO NẾU QUÁ DÀI
+
+            if (forceReset) {
+                // Force-clear without saving — used when session is clearly corrupted
+                isSleeping = false;
+                sleepStartTime = null;
+                if (sleepInterval) clearInterval(sleepInterval);
+                sleepInterval = null;
+                localStorage.removeItem('sleepStartTime');
+                localStorage.removeItem('isSleeping');
+                updateSleepUI();
+                showNotification('🗑️ Sleep session cleared (not saved).', 'info');
+                return;
+            }
+
+            // ⚠️  Instead of confirm() (which iOS Safari blocks after long background),
+            //     show a toast warning and proceed — user can always delete from history.
             if (durationHours > 16) {
-                if (!confirm(`⚠️ Sleep duration is ${durationHours.toFixed(1)} hours (>16h). This might be a mistake. Continue?`)) {
-                    return;
-                }
+                showNotification(`⚠️ Recorded ${durationHours.toFixed(1)}h session — check history to delete if wrong.`, 'warning');
             }
             
             const session = {
@@ -22438,6 +22520,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const display = document.getElementById('sleepTimerDisplay');
             if (display) display.textContent = formattedTime;
+
+            // Show the force-reset button when session looks stuck (> 24h)
+            const forceRow = document.getElementById('sleepForceResetRow');
+            if (forceRow) forceRow.style.display = hours >= 24 ? 'block' : 'none';
         }
 
         function updateSleepUI() {
@@ -22445,6 +22531,9 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('sleepTimerDisplay').style.display = isSleeping ? 'block' : 'none';
             document.getElementById('startSleepBtn').style.display = isSleeping ? 'none' : 'block';
             document.getElementById('stopSleepBtn').style.display = isSleeping ? 'block' : 'none';
+            // Always hide force-reset row on UI update; updateSleepDisplay will re-show if needed
+            const forceRow = document.getElementById('sleepForceResetRow');
+            if (forceRow) forceRow.style.display = 'none';
         }
 
         function saveSleepData() {
@@ -24087,8 +24176,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             const originalStopSleepTracking = stopSleepTracking;
-            stopSleepTracking = function() {
-                const result = originalStopSleepTracking();
+            stopSleepTracking = function(...args) {
+                const result = originalStopSleepTracking(...args);
                 setTimeout(updateAllRecommendations, 500);
                 return result;
             };
@@ -35932,10 +36021,48 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Notification helper
+// Notification helper — real toast (replaces console-only stub)
 function showNotification(message, type = 'info') {
-    console.log(`[${type.toUpperCase()}] ${message}`);
-    // You can enhance this with a toast notification system
+    // Remove stale toasts beyond 3
+    const existing = document.querySelectorAll('.fc-toast');
+    if (existing.length >= 3) existing[0].remove();
+
+    const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+    const icons  = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+
+    const toast = document.createElement('div');
+    toast.className = 'fc-toast';
+    toast.style.cssText = [
+        'position:fixed;bottom:24px;right:24px;z-index:99999',
+        'display:flex;align-items:center;gap:10px',
+        'padding:12px 18px;border-radius:12px',
+        'background:var(--fc-bg,#fff);color:var(--fc-text,#111)',
+        `border-left:4px solid ${colors[type]||colors.info}`,
+        'box-shadow:0 4px 20px rgba(0,0,0,0.18)',
+        'font-size:0.92rem;font-weight:500;max-width:340px',
+        'animation:fcToastIn 0.25s ease',
+        'cursor:pointer'
+    ].join(';');
+
+    toast.innerHTML = `<span>${icons[type]||icons.info}</span><span style="flex:1">${message}</span>`;
+    toast.onclick = () => toast.remove();
+
+    // Inject keyframe once
+    if (!document.getElementById('fc-toast-style')) {
+        const s = document.createElement('style');
+        s.id = 'fc-toast-style';
+        s.textContent = `
+            @keyframes fcToastIn  { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+            @keyframes fcToastOut { from { opacity:1; transform:translateY(0);   } to { opacity:0; transform:translateY(12px); } }
+        `;
+        document.head.appendChild(s);
+    }
+
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'fcToastOut 0.25s ease forwards';
+        toast.addEventListener('animationend', () => toast.remove());
+    }, 3500);
 }
 
 // Get mastery color
@@ -35971,7 +36098,15 @@ function getRandomFlashcard() {
         return;
     }
     
-    const randomIndex = Math.floor(Math.random() * flashcards.length);
+    // Avoid showing the same card back-to-back when there are multiple cards
+    let randomIndex;
+    if (flashcards.length === 1) {
+        randomIndex = 0;
+    } else {
+        const lastId = currentFlashcard ? currentFlashcard.id : null;
+        let candidates = flashcards.filter(f => f.id !== lastId);
+        randomIndex = flashcards.indexOf(candidates[Math.floor(Math.random() * candidates.length)]);
+    }
     currentFlashcard = flashcards[randomIndex];
     isFlipped = false;
     
@@ -36031,7 +36166,9 @@ function openAddFlashcardModal(flashcardId = null) {
     const title = document.getElementById('flashcardModalTitle');
     const questionInput = document.getElementById('newFlashcardQuestion');
     const answerInput = document.getElementById('newFlashcardAnswer');
-    const imageInput = document.getElementById('newFlashcardImage');
+
+    // Render tag chips every time modal opens
+    fcRenderTagChips([]);
     
     if (flashcardId) {
         const flashcard = flashcards.find(f => f.id === flashcardId);
@@ -36039,14 +36176,18 @@ function openAddFlashcardModal(flashcardId = null) {
             if (title) title.textContent = '✏️ Edit Flashcard';
             if (questionInput) questionInput.value = flashcard.question;
             if (answerInput) answerInput.value = flashcard.answer;
-            if (imageInput) imageInput.value = flashcard.imageUrl || '';
+            // Restore image
+            fcSetImageValue(flashcard.imageUrl || '');
+            // Restore tags
+            fcRenderTagChips(flashcard.tags || []);
             editingFlashcardId = flashcardId;
         }
     } else {
         if (title) title.textContent = '➕ Add New Flashcard';
         if (questionInput) questionInput.value = '';
         if (answerInput) answerInput.value = '';
-        if (imageInput) imageInput.value = '';
+        fcClearImage();
+        fcRenderTagChips([]);
         editingFlashcardId = null;
     }
     
@@ -36065,16 +36206,16 @@ function saveFlashcard() {
     const imageInput = document.getElementById('newFlashcardImage');
     
     if (!questionInput || !answerInput) {
-        alert('❌ Error!');
+        showNotification('❌ Form fields missing — please reload.', 'error');
         return;
     }
     
     const question = questionInput.value.trim();
     const answer = answerInput.value.trim();
-    const imageUrl = imageInput ? imageInput.value.trim() : '';
+    const imageUrl = document.getElementById('newFlashcardImage') ? document.getElementById('newFlashcardImage').value.trim() : '';
     
     if (!question || !answer) {
-        alert('⚠️ Fill Question & Answer!');
+        showNotification('⚠️ Please fill in both Question and Answer.', 'warning');
         return;
     }
     
@@ -36084,8 +36225,9 @@ function saveFlashcard() {
             flashcards[index].question = question;
             flashcards[index].answer = answer;
             flashcards[index].imageUrl = imageUrl;
+            flashcards[index].tags = fcGetSelectedTags();
             flashcards[index].lastReviewed = new Date().toISOString();
-            showNotification('✅ Updated!', 'success');
+            showNotification('✅ Flashcard updated!', 'success');
         }
     } else {
         const now = new Date();
@@ -36094,6 +36236,7 @@ function saveFlashcard() {
             question: question,
             answer: answer,
             imageUrl: imageUrl,
+            tags: fcGetSelectedTags(),
             createdAt: now.toISOString(),
             lastReviewed: now.toISOString(),
             mastery: 0,
@@ -36101,7 +36244,7 @@ function saveFlashcard() {
             reviewCount: 0,
             lastMasteryUpdate: now.toISOString()
         });
-        showNotification('✅ Added!', 'success');
+        showNotification('✅ Flashcard added!', 'success');
     }        
 
     saveFlashcardsToStorage();
@@ -36132,91 +36275,121 @@ function closeManageFlashcardsModal() {
     if (modal) modal.style.display = 'none';
 }
 
+// Manage-modal active tag filter (module-level state)
+let _manageActiveTag = null;
+
 function renderManageFlashcards() {
     const container = document.getElementById('manageFlashcardsContainer');
     if (!container) return;
-    
-    if (flashcards.length === 0) {
+
+    // --- Search query ---
+    const searchEl = document.getElementById('manageSearchInput');
+    const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
+
+    // --- Build the full sorted list ---
+    let cards = [...flashcards].sort((a, b) => new Date(b.lastReviewed) - new Date(a.lastReviewed));
+
+    // --- Collect all tags for filter bar ---
+    const allTags = [...new Set(cards.flatMap(c => c.tags || []))].sort();
+    const filterBar = document.getElementById('manageTagFilter');
+    if (filterBar) {
+        filterBar.innerHTML = allTags.length === 0 ? '' : [
+            `<button onclick="_manageActiveTag=null;renderManageFlashcards()"
+                style="padding:4px 10px;border-radius:20px;border:1.5px solid var(--fc-border);cursor:pointer;font-size:0.8rem;
+                       background:${_manageActiveTag===null?'var(--fc-primary)':'transparent'};
+                       color:${_manageActiveTag===null?'#fff':'var(--fc-text)'}">
+                All
+            </button>`,
+            ...allTags.map(tag => `
+                <button data-mftag="${escapeHtml(tag)}"
+                    onclick="_manageActiveTag=this.dataset.mftag;renderManageFlashcards()"
+                    style="padding:4px 10px;border-radius:20px;border:1.5px solid var(--fc-border);cursor:pointer;font-size:0.8rem;
+                           background:${_manageActiveTag===tag?'var(--fc-primary)':'transparent'};
+                           color:${_manageActiveTag===tag?'#fff':'var(--fc-text)'}">
+                    ${escapeHtml(tag)}
+                </button>`)
+        ].join('');
+    }
+
+    // --- Apply tag filter ---
+    if (_manageActiveTag) {
+        cards = cards.filter(c => (c.tags || []).includes(_manageActiveTag));
+    }
+
+    // --- Apply text search ---
+    if (query) {
+        cards = cards.filter(c =>
+            c.question.toLowerCase().includes(query) ||
+            c.answer.toLowerCase().includes(query) ||
+            (c.tags || []).some(t => t.toLowerCase().includes(query))
+        );
+    }
+
+    // --- Update header count ---
+    const manageCountEl = document.getElementById('manageFlashcardCount');
+    if (manageCountEl) manageCountEl.textContent = flashcards.length;
+
+    if (cards.length === 0) {
         container.innerHTML = `
             <div class="flashcard-empty-state">
-                <div class="flashcard-empty-state-icon">📭</div>
-                <div class="flashcard-empty-state-text">No flashcards yet. Create your first one!</div>
+                <div class="flashcard-empty-state-icon">${query || _manageActiveTag ? '🔍' : '📭'}</div>
+                <div class="flashcard-empty-state-text">${query || _manageActiveTag ? 'No cards match your search.' : 'No flashcards yet. Create your first one!'}</div>
             </div>
         `;
         return;
     }
-    
-    container.innerHTML = flashcards
-        .sort((a, b) => new Date(b.lastReviewed) - new Date(a.lastReviewed))
-        .map(flashcard => `
+
+    container.innerHTML = cards.map(flashcard => {
+        const tagsHtml = (flashcard.tags || []).length > 0
+            ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+                ${flashcard.tags.map(t => `<span style="background:var(--fc-primary-light,rgba(99,102,241,0.15));color:var(--fc-primary);padding:2px 9px;border-radius:20px;font-size:0.75rem;font-weight:600;">${escapeHtml(t)}</span>`).join('')}
+               </div>`
+            : '';
+
+        return `
             <div class="manage-flashcard-item">
-                <div style="display: flex; justify-content: space-between; gap: 15px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; gap: 15px; margin-bottom: 8px;">
                     <div style="flex: 1;">
                         <div class="manage-flashcard-question">
                             ${escapeHtml(flashcard.question.substring(0, 100))}${flashcard.question.length > 100 ? '...' : ''}
                         </div>
+                        ${tagsHtml}
                         <div class="manage-flashcard-date">
-                            📅 Last reviewed: ${new Date(flashcard.lastReviewed).toLocaleDateString('en-US', { 
-                                year: 'numeric', 
-                                month: 'short', 
-                                day: 'numeric' 
-                            })}
+                            📅 Last reviewed: ${new Date(flashcard.lastReviewed).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                         </div>
                     </div>
                     <div class="manage-flashcard-buttons">
-                        <button 
-                            onclick="openAddFlashcardModal('${flashcard.id}')" 
-                            style="background: #3b82f6; color: white;"
-                            title="Edit"
-                        >
-                            ✏️ Edit
-                        </button>
-                        <button 
-                            onclick="deleteFlashcard('${flashcard.id}')" 
-                            style="background: #ef4444; color: white;"
-                            title="Delete"
-                        >
-                            🗑️
-                        </button>
+                        <button onclick="openAddFlashcardModal('${flashcard.id}')" style="background: #3b82f6; color: white;" title="Edit">✏️ Edit</button>
+                        <button onclick="deleteFlashcard('${flashcard.id}')" style="background: #ef4444; color: white;" title="Delete">🗑️</button>
                     </div>
                 </div>
                 
                 ${flashcard.imageUrl ? `
-                    <img 
-                        src="${escapeHtml(flashcard.imageUrl)}" 
-                        style="width: 100%; max-height: 220px; object-fit: contain; border-radius: 10px; margin-bottom: 10px; background: var(--fc-bg);" 
-                        onerror="this.style.display='none'"
-                    >
+                    <img src="${escapeHtml(flashcard.imageUrl)}"
+                         style="width:100%;max-height:220px;object-fit:contain;border-radius:10px;margin-bottom:10px;background:var(--fc-bg);"
+                         onerror="this.style.display='none'">
                 ` : ''}
                 
-                <!-- Mastery Progress Bar -->
-                <div style="margin-top: 12px; margin-bottom: 12px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                        <span style="font-size: 0.85rem; color: var(--fc-text-muted);">
-                            Mastery: ${flashcard.mastery || 0}%
-                        </span>
-                        <span style="font-size: 0.75rem; color: var(--fc-text-muted);">
-                            Reviewed: ${flashcard.reviewCount || 0} times
-                        </span>
+                <div style="margin-top:12px;margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                        <span style="font-size:0.85rem;color:var(--fc-text-muted);">Mastery: ${flashcard.mastery || 0}%</span>
+                        <span style="font-size:0.75rem;color:var(--fc-text-muted);">Reviewed: ${flashcard.reviewCount || 0}×</span>
                     </div>
-                    <div style="width: 100%; height: 8px; background: var(--fc-border); border-radius: 4px; overflow: hidden;">
-                        <div style="width: ${flashcard.mastery || 0}%; height: 100%; background: ${getMasteryColor(flashcard.mastery)}; transition: width 0.3s ease;"></div>
+                    <div style="width:100%;height:8px;background:var(--fc-border);border-radius:4px;overflow:hidden;">
+                        <div style="width:${flashcard.mastery || 0}%;height:100%;background:${getMasteryColor(flashcard.mastery)};transition:width 0.3s ease;"></div>
                     </div>
-                    <div style="font-size: 0.75rem; color: var(--fc-text-muted); margin-top: 4px;">
+                    <div style="font-size:0.75rem;color:var(--fc-text-muted);margin-top:4px;">
                         Next review: ${new Date(flashcard.nextReview || flashcard.lastReviewed).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </div>
                 </div>
                 
                 <details>
-                    <summary style="cursor: pointer; color: #3b82f6; font-size: 0.9rem; font-weight: 600; padding: 8px 0;">
-                        👁️ Show Answer
-                    </summary>
-                    <div class="manage-flashcard-answer-preview">
-                        ${formatFlashcardText(flashcard.answer)}
-                    </div>
+                    <summary style="cursor:pointer;color:#3b82f6;font-size:0.9rem;font-weight:600;padding:8px 0;">👁️ Show Answer</summary>
+                    <div class="manage-flashcard-answer-preview">${formatFlashcardText(flashcard.answer)}</div>
                 </details>
             </div>
-        `).join('');
+        `;
+    }).join('');
     
     // Render LaTeX in all answer previews
     container.querySelectorAll('.manage-flashcard-answer-preview').forEach(el => {
@@ -36355,6 +36528,10 @@ function openFullscreenFlashcard() {
     const modal = document.getElementById('fullscreenFlashcardModal');
     if (!modal) return;
 
+    // Hide floating UI elements so they don't bleed over the modal
+    const floatingUI = document.querySelector('.dark-mode-container');
+    if (floatingUI) floatingUI.style.visibility = 'hidden';
+
     // Reset session stats
     studySessionStats = {
         cardsStudied: [],
@@ -36383,6 +36560,10 @@ function closeFullscreenFlashcard() {
     document.body.style.overflow = '';
     fullscreenFlashcardOpen = false;
     fullscreenFlipped = false;
+
+    // Restore floating UI elements
+    const floatingUI = document.querySelector('.dark-mode-container');
+    if (floatingUI) floatingUI.style.visibility = '';
 
     // Show completion message if cards were studied
     const cardsStudied = studySessionStats.cardsStudied.length;
@@ -36642,10 +36823,28 @@ function getFlashcardDashboard() {
 
 function updateFlashcardDashboard() {
     const dashboard = getFlashcardDashboard();
-    
-    // You can display this in your UI somewhere
-    console.log('Flashcard Dashboard:', dashboard);
-    
+
+    // Sidebar count
+    const countEl = document.getElementById('flashcardCount');
+    if (countEl) countEl.textContent = dashboard.total;
+
+    // Due today
+    const dueEl = document.getElementById('flashcardDueCount');
+    if (dueEl) dueEl.textContent = dashboard.dueToday;
+
+    // Avg mastery bar + label
+    const masteryBarEl = document.getElementById('flashcardMasteryBar');
+    const masteryLabelEl = document.getElementById('flashcardAvgMastery');
+    if (masteryBarEl) masteryBarEl.style.width = `${dashboard.avgMastery}%`;
+    if (masteryLabelEl) {
+        masteryLabelEl.textContent = `${dashboard.avgMastery}%`;
+        // Colour: green ≥80, amber ≥50, red otherwise
+        masteryLabelEl.style.color = dashboard.avgMastery >= 80 ? '#10b981'
+                                   : dashboard.avgMastery >= 50 ? '#f59e0b'
+                                   : '#ef4444';
+        if (masteryBarEl) masteryBarEl.style.background = masteryLabelEl.style.color;
+    }
+
     return dashboard;
 }
 
@@ -36779,6 +36978,128 @@ function setupKeyboardShortcuts() {
     });
 }
 
+// ===================================================================
+//  IMAGE PASTE / UPLOAD HELPERS
+// ===================================================================
+
+// CFA topic tags available in the chip selector
+const FC_CFA_TAGS = [
+    'Fixed Income', 'Equity', 'Derivatives', 'Alternative Investments',
+    'Portfolio Mgmt', 'Economics', 'Ethics', 'Quant Methods',
+    'Corporate Finance', 'Financial Reporting'
+];
+
+/** Set the hidden input + preview from a base64 or URL string */
+function fcSetImageValue(value) {
+    const hidden = document.getElementById('newFlashcardImage');
+    const preview = document.getElementById('fcImagePreview');
+    const label = document.getElementById('fcImageDropLabel');
+    const clearBtn = document.getElementById('fcImageClearBtn');
+    const urlInput = document.getElementById('fcImageUrlFallback');
+
+    if (!hidden) return;
+    hidden.value = value || '';
+
+    if (value) {
+        if (preview) { preview.src = value; preview.style.display = 'block'; }
+        if (label)   label.style.display = 'none';
+        if (clearBtn) clearBtn.style.display = 'inline-block';
+        if (urlInput && !value.startsWith('data:')) urlInput.value = value;
+    } else {
+        if (preview) { preview.src = ''; preview.style.display = 'none'; }
+        if (label)   label.style.display = '';
+        if (clearBtn) clearBtn.style.display = 'none';
+        if (urlInput) urlInput.value = '';
+    }
+}
+
+function fcClearImage() {
+    fcSetImageValue('');
+    const fileInput = document.getElementById('fcImageFileInput');
+    if (fileInput) fileInput.value = '';
+}
+
+function fcSetImageFromUrl(url) {
+    if (url && url.startsWith('http')) fcSetImageValue(url);
+}
+
+/** File input → read as base64 */
+function fcHandleImageFile(input) {
+    const file = input.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = e => fcSetImageValue(e.target.result);
+    reader.readAsDataURL(file);
+}
+
+/** Drag-and-drop */
+function fcHandleImageDrop(event) {
+    event.preventDefault();
+    const zone = document.getElementById('fcImageDropZone');
+    if (zone) zone.style.borderColor = 'var(--fc-border)';
+    const file = event.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = e => fcSetImageValue(e.target.result);
+    reader.readAsDataURL(file);
+}
+
+/** Global paste listener — captures Ctrl+V inside the Add modal */
+document.addEventListener('paste', function(e) {
+    const modal = document.getElementById('addFlashcardModal');
+    if (!modal || modal.style.display === 'none') return;
+    const active = document.activeElement;
+    if (active && (active.tagName === 'TEXTAREA' || (active.tagName === 'INPUT' && active.type !== 'hidden'))) return;
+    const items = e.clipboardData.items;
+    for (const item of items) {
+        if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            const reader = new FileReader();
+            reader.onload = ev => fcSetImageValue(ev.target.result);
+            reader.readAsDataURL(file);
+            e.preventDefault();
+            return;
+        }
+    }
+});
+
+// ===================================================================
+//  TAG CHIPS HELPERS
+// ===================================================================
+
+let _fcSelectedTags = [];
+
+function fcGetSelectedTags() { return [..._fcSelectedTags]; }
+
+function fcRenderTagChips(preSelected = []) {
+    _fcSelectedTags = [...preSelected];
+    const container = document.getElementById('fcTagChips');
+    if (!container) return;
+
+    container.innerHTML = FC_CFA_TAGS.map(tag => {
+        const active = _fcSelectedTags.includes(tag);
+        return `<button type="button"
+                    data-fctag="${escapeHtml(tag)}"
+                    onclick="fcToggleTag(this.dataset.fctag)"
+                    style="
+                        padding:4px 12px;border-radius:20px;font-size:0.8rem;cursor:pointer;
+                        border:1.5px solid ${active ? 'var(--fc-primary)' : 'var(--fc-border)'};
+                        background:${active ? 'var(--fc-primary)' : 'transparent'};
+                        color:${active ? '#fff' : 'var(--fc-text)'};
+                        transition:all 0.15s;font-weight:${active ? '600' : '400'};
+                    ">
+                    ${escapeHtml(tag)}
+                </button>`;
+    }).join('');
+}
+
+function fcToggleTag(tag) {
+    const idx = _fcSelectedTags.indexOf(tag);
+    if (idx === -1) _fcSelectedTags.push(tag);
+    else _fcSelectedTags.splice(idx, 1);
+    fcRenderTagChips(_fcSelectedTags);
+}
+
 // ===== INITIALIZATION =====
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -36817,6 +37138,15 @@ window.nextFullscreenCard = nextFullscreenCard;
 window.previousFullscreenCard = previousFullscreenCard;
 window.rateCard = rateCard;
 window.getFlashcardDashboard = getFlashcardDashboard;
+// Image helpers
+window.fcSetImageValue = fcSetImageValue;
+window.fcClearImage = fcClearImage;
+window.fcSetImageFromUrl = fcSetImageFromUrl;
+window.fcHandleImageFile = fcHandleImageFile;
+window.fcHandleImageDrop = fcHandleImageDrop;
+// Tag helpers
+window.fcToggleTag = fcToggleTag;
+window.fcRenderTagChips = fcRenderTagChips;
 
 
 
