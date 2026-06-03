@@ -13364,6 +13364,26 @@ window.DBP={
                             ➕ Add New Goal
                         </button>
 
+                        <button onclick="copyContextForAI()" style="
+                            width: 100%;
+                            padding: 10px 16px;
+                            margin-bottom: 12px;
+                            background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.1));
+                            color: #6366f1;
+                            border: 1px dashed #6366f1;
+                            border-radius: 10px;
+                            font-weight: 600;
+                            font-size: 0.88rem;
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 6px;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='linear-gradient(135deg,rgba(99,102,241,0.1),rgba(139,92,246,0.1))'">
+                            📋 Copy Context for AI
+                        </button>
+
                         <div class="goal-progress-summary">
                             <h4 class="goal-progress-title">🎯 Goal Completion</h4>
                             <div class="chart-container" style="height: 120px; margin: 12px 0;">
@@ -21588,6 +21608,196 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             return suggestions;
+        }
+
+
+        function copyContextForAI() {
+            const lines = [];
+            const SEP = '═'.repeat(52);
+            const DIV = '─'.repeat(52);
+
+            const dateStr = new Date().toLocaleDateString('en-GB', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            });
+
+            lines.push('📊 Goals Tracker — AI Context Snapshot');
+            lines.push(`Generated: ${dateStr}`);
+            lines.push(SEP);
+
+            // ── STUDY HOURS BY TRACK ──
+            lines.push('');
+            lines.push('🧠 STUDY HOURS BY TRACK');
+            lines.push(DIV);
+
+            const careerOrder = ['pe', 'ib', 'hf', 'sc', 'fintech', 'cfa1', 'english', 'chinese'];
+            let anyCareerHours = false;
+
+            careerOrder.forEach(career => {
+                const careerData = skillsData[career];
+                if (!careerData) return;
+                const careerHoursObj = studyHours[career] || {};
+                const totalHrs = Object.values(careerHoursObj).reduce((s, h) => s + h, 0);
+                if (totalHrs === 0) return;
+                anyCareerHours = true;
+                lines.push('');
+                lines.push(`▸ ${careerData.title}  [Total: ${totalHrs.toFixed(1)}h]`);
+                Object.values(careerData.categories).forEach(cat => {
+                    cat.skills.forEach(skill => {
+                        const hrs = careerHoursObj[skill.name] || 0;
+                        if (hrs <= 0) return;
+                        const target = skill.targetHours || null;
+                        const pct = target ? ` (${Math.round(hrs / target * 100)}%)` : '';
+                        const targetStr = target ? `/ ${target}h target` : '';
+                        lines.push(`    ${skill.name.substring(0, 44).padEnd(44)}  ${hrs.toFixed(1)}h ${targetStr}${pct}`);
+                    });
+                });
+            });
+
+            if (!anyCareerHours) lines.push('  No study hours logged yet.');
+
+            // ── GOALS ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('🎯 GOALS');
+            lines.push(DIV);
+
+            const allGoals = JSON.parse(localStorage.getItem('goals') || '[]');
+            const activeGoals = allGoals.filter(g => {
+                const pct = g.target > 0 ? (g.currentProgress || 0) / g.target * 100 : 0;
+                return pct < 100;
+            });
+            const completedGoals = allGoals.filter(g => {
+                const pct = g.target > 0 ? (g.currentProgress || 0) / g.target * 100 : 0;
+                return pct >= 100;
+            });
+
+            if (activeGoals.length > 0) {
+                lines.push('Active:');
+                activeGoals.forEach(g => {
+                    const careerLabel = skillsData[g.career]?.title || g.career || '?';
+                    const progress = g.currentProgress || 0;
+                    const pct = g.target > 0 ? Math.round(progress / g.target * 100) : 0;
+                    const deadlineStr = g.deadline ? `  ⏳ Due: ${g.deadline}` : '';
+                    const typeIcon = g.type === 'skill_mastery' ? '🎯' : g.type === 'study_hours' ? '📚' : '✅';
+                    lines.push(`  ${typeIcon} ${g.title}  [${careerLabel}]`);
+                    lines.push(`     ${progress.toFixed(1)} / ${g.target} (${pct}%)${deadlineStr}`);
+                });
+            } else {
+                lines.push('  No active goals.');
+            }
+
+            if (completedGoals.length > 0) {
+                lines.push('');
+                lines.push(`Completed: ${completedGoals.length} goal(s) ✅`);
+                completedGoals.forEach(g => {
+                    const careerLabel = skillsData[g.career]?.title || g.career || '?';
+                    lines.push(`  ✅ ${g.title}  [${careerLabel}]`);
+                });
+            }
+
+            // ── READING LIST ──
+            const currentRL = JSON.parse(localStorage.getItem('readingList') || '[]');
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('📚 READING LIST');
+            lines.push(DIV);
+
+            const rlReading  = currentRL.filter(b => b.status === 'reading');
+            const rlFinished = currentRL.filter(b => b.status === 'finished');
+            const rlWant     = currentRL.filter(b => b.status === 'want');
+
+            lines.push(`${rlReading.length} reading · ${rlWant.length} want to read · ${rlFinished.length} finished`);
+
+            const fmtBook = b => {
+                const meta = [b.genre];
+                if (b.pages) meta.push(`${b.pages}pp`);
+                if (b.firstPublished) meta.push(String(b.firstPublished));
+                if (b.currentEdition) meta.push(`Ed.${b.currentEdition}`);
+                return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]`;
+            };
+
+            if (rlReading.length > 0) {
+                lines.push('');
+                lines.push('Currently Reading:');
+                rlReading.forEach(b => lines.push(fmtBook(b)));
+            }
+
+            if (rlFinished.length > 0) {
+                lines.push('');
+                lines.push('Finished:');
+                rlFinished.slice(0, 12).forEach(b => {
+                    const stars = b.rating ? ' ' + '⭐'.repeat(Math.round(b.rating)) : '';
+                    lines.push(fmtBook(b) + stars);
+                });
+                if (rlFinished.length > 12) lines.push(`  ... and ${rlFinished.length - 12} more`);
+            }
+
+            if (rlWant.length > 0) {
+                lines.push('');
+                lines.push(`Want to Read (${rlWant.length}):`);
+                rlWant.slice(0, 10).forEach(b => lines.push(fmtBook(b)));
+                if (rlWant.length > 10) lines.push(`  ... and ${rlWant.length - 10} more`);
+            }
+
+            // ── COURSES ──
+            const allCourses = JSON.parse(localStorage.getItem('courses') || '[]');
+            if (allCourses.length > 0) {
+                lines.push('');
+                lines.push(SEP);
+                lines.push('');
+                lines.push('🎓 COURSES');
+                lines.push(DIV);
+                allCourses.forEach(c => {
+                    const statusStr = c.completed ? '✅ Completed' : (c.hoursStudied > 0 ? '📖 In Progress' : '⏳ Not Started');
+                    const hrsStr = `${(c.hoursStudied || 0).toFixed(1)}h`;
+                    lines.push(`  • ${c.name}  [${statusStr} · ${hrsStr} studied]`);
+                });
+            }
+
+            // ── OVERALL ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('🏆 OVERALL');
+            lines.push(DIV);
+
+            const gam = JSON.parse(localStorage.getItem('gamification') || '{"points":0,"level":1}');
+            lines.push(`Level ${gam.level || 1} · ${gam.points || 0} XP`);
+
+            const totalHoursAll = Object.values(studyHours).reduce((sum, obj) =>
+                sum + Object.values(obj).reduce((s, h) => s + h, 0), 0);
+            lines.push(`Total study hours (all tracks): ${totalHoursAll.toFixed(1)}h`);
+
+            // ── SUGGESTED PROMPT ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('💬 SUGGESTED PROMPT:');
+            lines.push(DIV);
+            lines.push('"Based on my study snapshot above, suggest 5 specific, actionable goals');
+            lines.push(' for the next 30 days. Prioritize skills with the largest gap between');
+            lines.push(' current hours and their targets, flag areas I am neglecting entirely,');
+            lines.push(' and note whether my reading list aligns with my career focus."');
+
+            const fullText = lines.join('\n');
+
+            const doClipboard = text => {
+                navigator.clipboard.writeText(text).then(() => {
+                    showNotification('📋 Context copied! Paste into Claude or ChatGPT.', 'success');
+                }).catch(() => {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    showNotification('📋 Context copied!', 'success');
+                });
+            };
+            doClipboard(fullText);
         }
 
 
