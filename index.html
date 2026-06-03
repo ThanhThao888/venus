@@ -2132,12 +2132,57 @@
         }
 
         .meme-caption {
-            font-size: 1 rem;
-            color: var(--text-muted);
-            margin-top: 10px;
-            font-weight: 500;
+            font-size: 1rem;
+            font-weight: 600;
             line-height: 1.4;
-            padding: 0 5px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            border: 1.5px solid transparent;
+            background:
+                linear-gradient(var(--bg-white), var(--bg-white)) padding-box,
+                linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #a29bfe, #ff6b6b) border-box;
+            background-size: auto, 300% 100%;
+            animation: captionBorderShift 4s linear infinite;
+
+            /* gradient text */
+            background-clip: text, padding-box;
+            -webkit-background-clip: text, padding-box;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+
+            /* dùng multi-background trick để vừa gradient border vừa gradient text */
+            /* override lại bằng cách dùng pseudo-element thay thế */
+            background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #a29bfe, #ff6b6b);
+            background-size: 300% 100%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: captionTextShift 4s linear infinite;
+
+            /* box glow nhẹ */
+            box-shadow: 0 0 0 1.5px rgba(255, 107, 107, 0.25), 0 0 8px rgba(162, 155, 254, 0.2);
+        }
+
+        @keyframes captionTextShift {
+            0%   { background-position: 0% 50%; }
+            50%  { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .dark-mode .meme-caption {
+            background: linear-gradient(90deg, #fb7185, #fbbf24, #38bdf8, #a78bfa, #fb7185);
+            background-size: 300% 100%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: captionTextShift 4s linear infinite;
+            box-shadow: 0 0 0 1.5px rgba(251, 113, 133, 0.3), 0 0 10px rgba(167, 139, 250, 0.25);
+        }
+
+        #editCurrentMemeBtn:hover {
+            background: var(--bg-light) !important;
+            border-color: var(--primary) !important;
+            color: var(--primary) !important;
         }
 
 
@@ -8903,9 +8948,1368 @@
 </head>
 <body>
 
-    <div class="dark-mode-container">
+    <div class="dark-mode-container" style="display:flex;gap:8px;align-items:center;">
         <button class="dark-mode-toggle" onclick="toggleDarkMode()">🌃 Dark Mode</button>
+        <button id="calendarFAB" onclick="openCalendarModal()" title="Visual Planner"
+            class="dark-mode-toggle"
+            style="font-size:1.1rem; padding:8px 13px;">📆</button>
     </div>
+
+<!-- ═══════════════════════════════════════════════════════
+     VISUAL PLANNER MODAL — Day & Week Calendar
+═══════════════════════════════════════════════════════ -->
+<style>
+/* ── Overlay ── */
+#calendarModal {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,.55); z-index:10500;
+    align-items:center; justify-content:center; padding:12px;
+    backdrop-filter:blur(4px);
+}
+#calendarModal.open { display:flex; }
+
+/* ── Box ── */
+#calendarBox {
+    background:var(--bg-white); border-radius:20px;
+    width:100%; max-width:880px; max-height:92vh;
+    display:flex; flex-direction:column;
+    box-shadow:0 24px 64px rgba(0,0,0,.28);
+    overflow:hidden;
+    animation:calSlideIn .3s cubic-bezier(.34,1.36,.64,1);
+}
+@keyframes calSlideIn {
+    from{opacity:0;transform:translateY(22px) scale(.96);}
+    to  {opacity:1;transform:translateY(0)    scale(1);}
+}
+
+/* ── Header ── */
+#calHeader {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 22px 14px; border-bottom:1px solid var(--border-color);
+    flex-shrink:0; flex-wrap:wrap; gap:10px;
+}
+.cal-title { font-size:1.2rem; font-weight:700; color:var(--text-dark); display:flex; align-items:center; gap:8px; }
+.cal-nav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.cal-nav-btn {
+    background:var(--bg-light); border:1px solid var(--border-color);
+    border-radius:8px; padding:6px 12px; cursor:pointer;
+    font-size:.85rem; font-weight:600; color:var(--text-dark);
+    transition:all .15s;
+}
+.cal-nav-btn:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
+.cal-today-btn {
+    background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
+    border:none; border-radius:8px; padding:6px 14px;
+    font-size:.85rem; font-weight:700; cursor:pointer;
+}
+.cal-close-btn {
+    background:none; border:none; font-size:1.4rem; cursor:pointer;
+    color:var(--text-muted); line-height:1; padding:4px;
+}
+.cal-close-btn:hover { color:var(--text-dark); }
+
+/* ── Tabs ── */
+#calTabs {
+    display:flex; padding:12px 22px 0; gap:8px;
+    border-bottom:1px solid var(--border-color); flex-shrink:0;
+}
+.cal-tab {
+    padding:8px 20px; border-radius:10px 10px 0 0;
+    font-size:.88rem; font-weight:700; cursor:pointer;
+    border:1px solid transparent; border-bottom:none;
+    color:var(--text-muted); background:transparent; transition:all .15s;
+}
+.cal-tab.active {
+    background:var(--bg-white); color:#6366f1;
+    border-color:var(--border-color); border-bottom-color:var(--bg-white);
+    margin-bottom:-1px;
+}
+
+/* ── Body ── */
+#calBody { flex:1; overflow-y:auto; padding:18px 22px 22px; }
+
+/* ── Legend ── */
+.cal-legend {
+    display:flex; gap:14px; flex-wrap:wrap;
+    padding:10px 22px; background:var(--bg-light);
+    border-bottom:1px solid var(--border-color);
+    flex-shrink:0;
+}
+.cal-legend-item { display:flex; align-items:center; gap:5px; font-size:.75rem; color:var(--text-muted); }
+.cal-legend-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+
+/* ── Day view ── */
+.cal-day-grid {
+    display:grid;
+    grid-template-columns:52px 1fr;
+    gap:0;
+    position:relative;
+}
+.cal-hour-label {
+    font-size:.72rem; color:var(--text-muted); text-align:right;
+    padding-right:10px; line-height:1; position:relative; top:-7px;
+    height:56px; display:flex; align-items:flex-start; justify-content:flex-end;
+    padding-top:2px;
+}
+.cal-hour-row {
+    border-top:1px solid var(--border-color); height:56px;
+    position:relative; cursor:pointer; transition:background .12s;
+}
+.cal-hour-row:hover { background:rgba(99,102,241,.05); }
+.cal-hour-row.now-row { border-top:2px solid #ef4444; }
+
+/* ── Events ── */
+.cal-event {
+    position:absolute; left:3px; right:3px;
+    border-radius:7px; padding:3px 7px;
+    font-size:.75rem; font-weight:600; color:#fff;
+    overflow:hidden; cursor:pointer; z-index:2;
+    line-height:1.3;
+    box-shadow:0 1px 4px rgba(0,0,0,.18);
+    transition:transform .12s, box-shadow .12s;
+}
+.cal-event:hover { transform:scale(1.02); box-shadow:0 3px 10px rgba(0,0,0,.25); }
+.cal-event-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cal-event-time  { font-size:.68rem; opacity:.85; }
+
+/* ── Now line ── */
+#calNowLine {
+    position:absolute; left:52px; right:0;
+    height:2px; background:#ef4444; z-index:5; pointer-events:none;
+}
+#calNowLine::before {
+    content:''; position:absolute; left:-4px; top:-4px;
+    width:10px; height:10px; border-radius:50%; background:#ef4444;
+}
+
+/* ── Free slot ── */
+.cal-free-slot {
+    position:absolute; left:3px; right:3px;
+    background:rgba(16,185,129,.08); border:1.5px dashed rgba(16,185,129,.4);
+    border-radius:7px; cursor:pointer; z-index:1;
+    display:flex; align-items:center; justify-content:center;
+    font-size:.72rem; color:#059669; font-weight:600;
+    transition:all .15s;
+}
+.cal-free-slot:hover {
+    background:rgba(16,185,129,.18);
+    border-color:rgba(16,185,129,.7);
+}
+
+/* ── Week view ── */
+.cal-week-grid {
+    display:grid;
+    grid-template-columns:44px repeat(7,1fr);
+    border:1px solid var(--border-color);
+    border-radius:12px; overflow:hidden;
+}
+.cal-week-header {
+    display:contents;
+}
+.cal-week-col-head {
+    padding:8px 4px; text-align:center;
+    background:var(--bg-light); border-bottom:1px solid var(--border-color);
+    border-right:1px solid var(--border-color);
+    font-size:.78rem; font-weight:700; color:var(--text-dark);
+}
+.cal-week-col-head.today-col { background:rgba(99,102,241,.1); color:#6366f1; }
+.cal-week-col-head.corner { background:var(--bg-light); }
+.cal-week-row {
+    display:contents;
+}
+.cal-week-hour-label {
+    font-size:.68rem; color:var(--text-muted);
+    padding:4px 6px 0 4px; text-align:right;
+    border-right:1px solid var(--border-color);
+    border-bottom:1px solid rgba(226,232,240,.5);
+    height:40px; background:var(--bg-light);
+    display:flex; align-items:flex-start; justify-content:flex-end;
+}
+.cal-week-cell {
+    border-right:1px solid var(--border-color);
+    border-bottom:1px solid rgba(226,232,240,.5);
+    height:40px; position:relative; cursor:pointer;
+    transition:background .12s;
+}
+.cal-week-cell:hover { background:rgba(99,102,241,.05); }
+.cal-week-cell.today-col { background:rgba(99,102,241,.03); }
+.cal-week-cell.past-cell { background:rgba(0,0,0,.02); }
+.cal-week-event {
+    position:absolute; inset:1px 2px;
+    border-radius:4px; padding:1px 4px;
+    font-size:.65rem; font-weight:700; color:#fff;
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+    cursor:pointer; z-index:2;
+}
+.cal-week-free {
+    position:absolute; inset:1px 2px;
+    background:rgba(16,185,129,.12); border:1px dashed rgba(16,185,129,.35);
+    border-radius:4px;
+}
+
+/* ── Quick-add slot modal ── */
+#calSlotModal {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,.5); z-index:11000;
+    align-items:center; justify-content:center; padding:16px;
+}
+#calSlotModal.open { display:flex; }
+.cal-slot-box {
+    background:var(--bg-white); border-radius:16px; padding:24px;
+    width:100%; max-width:380px;
+    box-shadow:0 20px 50px rgba(0,0,0,.25);
+    animation:calSlideIn .25s ease;
+}
+.cal-slot-box h4 { margin:0 0 16px; font-size:1.05rem; font-weight:700; color:var(--text-dark); }
+.cal-slot-box label { display:block; font-size:.8rem; font-weight:600; color:var(--text-muted); margin-bottom:4px; }
+.cal-slot-box input,
+.cal-slot-box select,
+.cal-slot-box textarea {
+    width:100%; padding:9px 11px; border:1px solid var(--border-color);
+    border-radius:8px; font-size:.9rem; background:var(--bg-light);
+    color:var(--text-dark); margin-bottom:12px;
+}
+.cal-slot-actions { display:flex; gap:8px; }
+.cal-slot-save {
+    flex:1; padding:10px; background:linear-gradient(135deg,#6366f1,#8b5cf6);
+    color:#fff; border:none; border-radius:8px; font-weight:700;
+    font-size:.9rem; cursor:pointer;
+}
+.cal-slot-cancel {
+    padding:10px 16px; background:var(--bg-light); color:var(--text-muted);
+    border:1px solid var(--border-color); border-radius:8px; cursor:pointer; font-size:.9rem;
+}
+
+/* ── Dark mode patches ── */
+.dark-mode #calendarBox { background:#1e293b; }
+.dark-mode .cal-tab.active { background:#1e293b; border-color:#334155; border-bottom-color:#1e293b; }
+.dark-mode .cal-slot-box { background:#1e293b; }
+.dark-mode .cal-week-grid { border-color:#334155; }
+.dark-mode .cal-week-col-head, .dark-mode .cal-week-hour-label { background:#1e293b; }
+.dark-mode .cal-week-cell.past-cell { background:rgba(255,255,255,.02); }
+.dark-mode .cal-hour-row:hover { background:rgba(99,102,241,.08); }
+
+/* ── Responsive ── */
+@media(max-width:640px){
+    #calendarBox { border-radius:14px; }
+    #calHeader { padding:12px 14px 10px; }
+    #calBody    { padding:12px 14px 16px; }
+    .cal-week-grid { grid-template-columns:32px repeat(7,1fr); }
+    .cal-week-col-head { font-size:.65rem; padding:6px 2px; }
+    .cal-week-hour-label { font-size:.6rem; padding:2px 3px 0; }
+}
+</style>
+
+<!-- Calendar Modal HTML -->
+<div id="calendarModal">
+  <div id="calendarBox">
+    <!-- Header -->
+    <div id="calHeader">
+      <div class="cal-title">
+        <span>📆</span>
+        <span id="calTitleText">My Visual Planner</span>
+      </div>
+      <div class="cal-nav">
+        <button class="cal-nav-btn" onclick="CAL.prevPeriod()">‹ Prev</button>
+        <button class="cal-today-btn" onclick="CAL.goToday()">Today</button>
+        <button class="cal-nav-btn" onclick="CAL.nextPeriod()">Next ›</button>
+        <button class="cal-close-btn" onclick="closeCalendarModal()">✕</button>
+      </div>
+    </div>
+    <!-- Tabs -->
+    <div id="calTabs">
+      <button class="cal-tab active" onclick="CAL.switchTab('day')">📅 Day</button>
+      <button class="cal-tab"       onclick="CAL.switchTab('week')">🗓 Week</button>
+    </div>
+    <!-- Legend -->
+    <div class="cal-legend">
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#6366f1"></div>Task/Event</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#3b82f6"></div>Study Session</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#8b5cf6"></div>Deadline</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#0ea5e9"></div>Sleep</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:rgba(16,185,129,.4);border:1.5px dashed #10b981;"></div>Free Slot</div>
+    </div>
+    <!-- Body -->
+    <div id="calBody"><!-- rendered by JS --></div>
+  </div>
+</div>
+
+<!-- Quick-add / edit slot modal -->
+<div id="calSlotModal">
+  <div class="cal-slot-box">
+    <h4 id="calSlotTitle">➕ Add to this slot</h4>
+    <input type="hidden" id="calSlotDate" />
+    <input type="hidden" id="calSlotEventId" value="" />
+    <div>
+      <label>Task / Event name</label>
+      <input type="text" id="calSlotName" placeholder="e.g. Study CFA Ethics…" />
+    </div>
+    <!-- Exact start time picker -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div>
+        <label>Start time</label>
+        <input type="time" id="calSlotStartTime" />
+      </div>
+      <div>
+        <label>End time</label>
+        <input type="time" id="calSlotEndTime" />
+      </div>
+    </div>
+    <div id="calSlotDurDisplay" style="font-size:.78rem;color:#6366f1;font-weight:600;margin:-4px 0 8px;text-align:right;"></div>
+    <div>
+      <label>Category</label>
+      <select id="calSlotCategory">
+        <option value="task">📌 Task</option>
+        <option value="study">📚 Study</option>
+        <option value="review">🔄 Review</option>
+        <option value="exercise">🏃 Exercise</option>
+        <option value="break">☕ Break</option>
+        <option value="other">🗂 Other</option>
+      </select>
+    </div>
+    <div>
+      <label>Notes (optional)</label>
+      <textarea id="calSlotNotes" rows="2" placeholder="What do you want to accomplish?"></textarea>
+    </div>
+    <div class="cal-slot-actions">
+      <button class="cal-slot-cancel" onclick="CAL.closeSlotModal()">Cancel</button>
+      <button id="calSlotDeleteBtn" class="cal-slot-cancel" style="color:#ef4444;border-color:#fca5a5;display:none;" onclick="CAL.deleteSlot()">🗑️ Xóa</button>
+      <button class="cal-slot-save"   onclick="CAL.saveSlot()">✓ Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   VISUAL PLANNER ENGINE — CAL object
+═══════════════════════════════════════════════ */
+const CAL = (() => {
+
+  /* ── State ── */
+  let currentTab  = 'day';
+  let currentDate = new Date();
+
+  /* ── Colors ── */
+  const COLORS = {
+    task:     '#6366f1',
+    study:    '#3b82f6',
+    deadline: '#8b5cf6',
+    sleep:    '#0ea5e9',
+    goal:     '#f59e0b',
+    course:   '#10b981',
+    review:   '#06b6d4',
+    exercise: '#f97316',
+    break:    '#6b7280',
+    other:    '#64748b',
+  };
+
+  /* ── Helpers ── */
+  function dateStr(d) {
+    return d.toISOString().split('T')[0];
+  }
+  function fmt(d, opts) {
+    return d.toLocaleDateString('vi-VN', opts);
+  }
+  function fmtH(h) {
+    const hh = Math.floor(h);
+    const mm = Math.round((h - hh) * 60);
+    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  }
+
+  /* ── Data collectors ── */
+
+  /* 1. User-created calendar events (localStorage) */
+  function getCalEvents() {
+    try { return JSON.parse(localStorage.getItem('calEvents') || '[]'); } catch { return []; }
+  }
+  function saveCalEvents(arr) {
+    localStorage.setItem('calEvents', JSON.stringify(arr));
+  }
+
+  /* 2. Session logs → study blocks */
+  function getSessionBlocks(dateISO) {
+    try {
+      const logs = JSON.parse(localStorage.getItem('studySessionLogs') || '[]');
+      return logs
+        .filter(s => {
+          if (!s.startTime) return false;
+          // Use LOCAL date comparison to avoid UTC offset issues
+          const d = new Date(s.startTime);
+          const localISO = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          return localISO === dateISO;
+        })
+        .map(s => {
+          const start = new Date(s.startTime);
+          // LOCAL hours/minutes — not UTC
+          const startH = start.getHours() + start.getMinutes() / 60;
+          const dur = parseFloat(s.duration) || 1;
+          return {
+            type:'study', title: s.skill || s.career || 'Study',
+            startH, dur, date: dateISO,
+            color: COLORS.study
+          };
+        });
+    } catch { return []; }
+  }
+
+  /* 3. Sleep sessions */
+  function getSleepBlocks(dateISO) {
+    try {
+      const sessions = JSON.parse(localStorage.getItem('sleepSessions') || '[]');
+      const blocks = [];
+      sessions.forEach(s => {
+        if (!s.start || !s.end) return;
+        const startD = new Date(s.start);
+        const endD   = new Date(s.end);
+        const startDate = startD.toISOString().split('T')[0];
+        const endDate   = endD.toISOString().split('T')[0];
+        if (startDate !== dateISO && endDate !== dateISO) return;
+
+        // Handle cross-midnight
+        let startH, dur;
+        if (startDate === dateISO) {
+          startH = startD.getHours() + startD.getMinutes() / 60;
+          dur = Math.min(s.duration, 24 - startH);
+        } else {
+          startH = 0;
+          dur = endD.getHours() + endD.getMinutes() / 60;
+        }
+        if (dur <= 0) return;
+        blocks.push({
+          type:'sleep', title:'😴 Sleep',
+          startH, dur, date: dateISO, color: COLORS.sleep
+        });
+      });
+      return blocks;
+    } catch { return []; }
+  }
+
+
+    /* 4. Goals / deadlines */
+    function getDeadlineBlocks(dateISO) {
+        const blocks = [];
+        // Helper: "HH:MM" string → decimal hour (e.g. "14:30" → 14.5)
+        function parseTime(t) {
+        if (!t) return null;
+        const [hh, mm] = t.split(':').map(Number);
+        return hh + mm / 60;
+        }
+        try {
+        // goals
+        const goals = JSON.parse(localStorage.getItem('goals') || '[]');
+        goals.forEach(g => {
+            if (g.deadline && g.deadline.startsWith(dateISO)) {
+            // Goals store deadline as "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM"
+            let startH = 9; // default 9am if no time
+            if (g.deadline.length > 10) {
+                const timePart = g.deadline.slice(11, 16); // "HH:MM"
+                startH = parseTime(timePart) ?? 9;
+            }
+            blocks.push({
+                type:'deadline', title:'🎯 ' + (g.title || 'Goal deadline'),
+                startH, dur: 0.5, date: dateISO, color: COLORS.deadline
+            });
+            }
+        });
+        // manual deadlines
+        const dlt = JSON.parse(localStorage.getItem('deadlines') || '[]');
+        dlt.forEach(d => {
+            if (d.date && d.date === dateISO) {
+            const startH = parseTime(d.time) ?? 9; // use saved time, fallback 9am
+            blocks.push({
+                type:'deadline', title:'📌 ' + (d.name || 'Deadline'),
+                startH, dur: 0.5, date: dateISO, color: COLORS.deadline
+            });
+            }
+        });
+        } catch {}
+        return blocks;
+    }
+
+  /* 5. Combine all events for a date */
+  function getAllBlocksForDate(dateISO) {
+    const custom = getCalEvents().filter(e => e.date === dateISO).map(e => ({
+      ...e, color: COLORS[e.category] || COLORS.task
+    }));
+    return [
+      ...custom,
+      ...getSessionBlocks(dateISO),
+      ...getSleepBlocks(dateISO),
+      ...getDeadlineBlocks(dateISO),
+    ];
+  }
+
+  /* 6. Detect free slots (≥30 min) */
+  function getFreeSlots(dateISO, blocks) {
+    const busyArr = [];
+    blocks.forEach(b => {
+      const s = b.startH, e = s + b.dur;
+      busyArr.push([Math.max(0,s), Math.min(24,e)]);
+    });
+    busyArr.sort((a,b) => a[0]-b[0]);
+
+    // merge overlaps
+    const merged = [];
+    busyArr.forEach(([s,e]) => {
+      if (!merged.length || s > merged[merged.length-1][1]) merged.push([s,e]);
+      else merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], e);
+    });
+
+    const free = [];
+    let cur = 6; // Start showing free from 6am
+    merged.forEach(([s,e]) => {
+      if (s > cur + 0.5) free.push([cur, s]);
+      cur = Math.max(cur, e);
+    });
+    if (cur < 23) free.push([cur, 23]);
+    return free.filter(([s,e]) => e - s >= 0.5);
+  }
+
+  /* ─── DAY VIEW ─── */
+  function renderDay(dateISO) {
+    const blocks = getAllBlocksForDate(dateISO);
+    const freeSlots = getFreeSlots(dateISO, blocks);
+    const PX_PER_HOUR = 56;
+    const now = new Date();
+    const nowH = now.getHours() + now.getMinutes() / 60;
+    const isToday = dateStr(now) === dateISO;
+
+    let html = `<div id="calDayInner" style="position:relative;">
+      <div class="cal-day-grid" id="calDayGrid">`;
+
+    for (let h = 0; h < 24; h++) {
+      const label = h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h-12}pm`;
+      const isNowRow = isToday && Math.floor(nowH) === h;
+      html += `
+        <div class="cal-hour-label">${label}</div>
+        <div class="cal-hour-row${isNowRow?' now-row':''}"
+             data-date="${dateISO}" data-h="${h}"
+             title="+ Add task at ${label}">
+        </div>`;
+    }
+    html += `</div>`;
+
+    // Overlay layer
+    html += `<div style="position:absolute;top:0;left:52px;right:0;pointer-events:none;">`;
+
+    // Free slot highlights
+    freeSlots.forEach(([s,e]) => {
+      const top = s * PX_PER_HOUR;
+      const height = (e - s) * PX_PER_HOUR;
+      if (height < 10) return;
+      html += `<div class="cal-free-slot" style="top:${top}px;height:${height}px;pointer-events:all;"
+                    data-date="${dateISO}" data-h="${Math.floor(s)}" data-min="${Math.round((s-Math.floor(s))*60)}"
+                    title="Free — click to add task">
+                 ✦ Free — click to fill
+               </div>`;
+    });
+
+    // Event blocks — with delete/edit
+    const cols = layoutColumns(blocks);
+    cols.forEach(({block:b, col, totalCols}) => {
+      const top    = b.startH * PX_PER_HOUR;
+      const height = Math.max(b.dur * PX_PER_HOUR, 22);
+      const w      = `calc(${100/totalCols}% - 4px)`;
+      const left   = `calc(${(col/totalCols)*100}% + 2px)`;
+      const isCustom = b.id != null;
+      html += `<div class="cal-event" style="
+                  top:${top}px; height:${height}px;
+                  width:${w}; left:${left};
+                  background:${b.color};pointer-events:all;"
+               title="${b.title} • ${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}${isCustom?'\nClick để edit/xóa':''}">
+                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;">
+                   <div style="min-width:0;flex:1;">
+                     <div class="cal-event-title">${b.title}</div>
+                     ${height > 32 ? `<div class="cal-event-time">${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}</div>` : ''}
+                   </div>
+                   ${isCustom ? `<button onclick="event.stopPropagation();CAL.editSlot(${b.id})"
+                     style="background:rgba(255,255,255,.25);border:none;border-radius:4px;
+                            width:18px;height:18px;cursor:pointer;font-size:.65rem;
+                            color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;">✏️</button>` : ''}
+                 </div>
+               </div>`;
+    });
+
+    // Now line
+    if (isToday) {
+      html += `<div id="calNowLine" style="top:${nowH*PX_PER_HOUR}px;"></div>`;
+    }
+
+    html += `</div></div>`;
+
+    // Summary bar
+    const totalBusy = blocks.reduce((s,b)=>s+b.dur,0);
+    const totalFree = freeSlots.reduce((s,[a,b])=>s+(b-a),0);
+    html = `
+      <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:120px;background:rgba(99,102,241,.08);border-radius:10px;padding:10px 14px;">
+          <div style="font-size:1.4rem;font-weight:800;color:#6366f1;">${blocks.length}</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">Events/Blocks</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:rgba(16,185,129,.08);border-radius:10px;padding:10px 14px;">
+          <div style="font-size:1.4rem;font-weight:800;color:#10b981;">${totalFree.toFixed(1)}h</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">Free time</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:rgba(239,68,68,.08);border-radius:10px;padding:10px 14px;">
+          <div style="font-size:1.4rem;font-weight:800;color:#ef4444;">${totalBusy.toFixed(1)}h</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">Scheduled</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:rgba(59,130,246,.08);border-radius:10px;padding:10px 14px;">
+          <div style="font-size:1.4rem;font-weight:800;color:#3b82f6;">${freeSlots.length}</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">Free windows</div>
+        </div>
+      </div>
+    ` + html;
+
+    return html;
+  }
+
+  /* ─── WEEK VIEW ─── */
+  function renderWeek(startDate) {
+    const PX = 40;
+    // Build 7 days
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      days.push(d);
+    }
+    const todayStr = dateStr(new Date());
+    const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    let html = `<div class="cal-week-grid">`;
+
+    // Column headers
+    html += `<div class="cal-week-col-head corner"></div>`;
+    days.forEach(d => {
+      const iso = dateStr(d);
+      const isT = iso === todayStr;
+      html += `<div class="cal-week-col-head${isT?' today-col':''}">
+        <div style="font-weight:800;">${DAY_NAMES[d.getDay()]}</div>
+        <div style="font-size:.9em;${isT?'color:#6366f1;':'color:var(--text-muted);'}">${d.getDate()}</div>
+      </div>`;
+    });
+
+    // Hour rows
+    for (let h = 6; h < 24; h++) {
+      const label = h < 12 ? `${h}am` : h===12 ? '12pm' : `${h-12}pm`;
+      html += `<div class="cal-week-hour-label">${label}</div>`;
+
+      days.forEach(d => {
+        const iso = dateStr(d);
+        const isT = iso === todayStr;
+        const isPast = d < new Date(new Date().setHours(0,0,0,0));
+        html += `<div class="cal-week-cell${isT?' today-col':''}${isPast?' past-cell':''}"
+                      onclick="CAL.openSlotModal('${iso}',${h})"
+                      title="+ Add at ${label} on ${d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}">
+                 </div>`;
+      });
+    }
+    html += `</div>`;
+
+    // Overlay events on week grid (rendered as separate positioned layer)
+    // For week view, list events per day in a compact cards section below
+    html += `<div style="margin-top:20px;">
+      <div style="font-size:1rem;font-weight:700;color:var(--text-dark);margin-bottom:12px;">📋 Week Overview</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">`;
+
+    days.forEach(d => {
+      const iso = dateStr(d);
+      const blocks = getAllBlocksForDate(iso);
+      const freeSlots = getFreeSlots(iso, blocks);
+      const totalFree = freeSlots.reduce((s,[a,b])=>s+(b-a),0);
+      const isT = iso === todayStr;
+      const dayName = d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+
+      html += `<div style="background:var(--bg-white);border-radius:12px;padding:12px;
+                border:${isT?'2px solid #6366f1':'1px solid var(--border-color)'};
+                box-shadow:var(--shadow-sm);">
+        <div style="font-weight:700;font-size:.88rem;color:${isT?'#6366f1':'var(--text-dark)'};margin-bottom:8px;
+                    display:flex;justify-content:space-between;align-items:center;">
+          <span>${dayName}${isT?' ⭐':''}</span>
+          <span style="font-size:.72rem;color:#10b981;font-weight:600;">${totalFree.toFixed(0)}h free</span>
+        </div>`;
+
+      if (blocks.length === 0) {
+        html += `<div style="font-size:.78rem;color:var(--text-muted);font-style:italic;">No events — fully free!</div>`;
+      } else {
+        blocks.slice(0,4).forEach(b => {
+          html += `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border-color);">
+            <div style="width:8px;height:8px;border-radius:2px;background:${b.color};flex-shrink:0;"></div>
+            <div style="font-size:.76rem;color:var(--text-dark);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${b.title}</div>
+            <div style="font-size:.68rem;color:var(--text-muted);">${fmtH(b.startH)}</div>
+          </div>`;
+        });
+        if (blocks.length > 4) {
+          html += `<div style="font-size:.72rem;color:var(--text-muted);margin-top:4px;">+${blocks.length-4} more</div>`;
+        }
+      }
+
+      // Free slot suggestions
+      if (freeSlots.length > 0 && totalFree >= 1) {
+        const bestFree = freeSlots.reduce((a,b)=>(b[1]-b[0]>a[1]-a[0]?b:a));
+        html += `<div style="margin-top:8px;padding:5px 8px;background:rgba(16,185,129,.08);
+                      border-radius:6px;font-size:.72rem;color:#059669;font-weight:600;cursor:pointer;"
+                      onclick="CAL.openSlotModal('${iso}',${bestFree[0]})"
+                      title="Click to fill this free window">
+                  ✦ ${fmtH(bestFree[0])}–${fmtH(bestFree[1])} free • click to fill
+                </div>`;
+      }
+
+      html += `</div>`;
+    });
+
+    html += `</div></div>`;
+    return html;
+  }
+
+  /* ── Column layout for overlapping events ── */
+  function layoutColumns(blocks) {
+    const sorted = [...blocks].sort((a,b)=>a.startH-b.startH);
+    const result = [];
+    const cols = [];
+
+    sorted.forEach(b => {
+      let placed = false;
+      for (let c = 0; c < cols.length; c++) {
+        if (cols[c] <= b.startH + 0.05) {
+          cols[c] = b.startH + b.dur;
+          result.push({block:b, col:c, totalCols:0});
+          placed = true; break;
+        }
+      }
+      if (!placed) {
+        cols.push(b.startH + b.dur);
+        result.push({block:b, col:cols.length-1, totalCols:0});
+      }
+    });
+
+    // Set totalCols = actual cols used
+    const maxCols = cols.length;
+    result.forEach(r => r.totalCols = Math.max(1, maxCols));
+    return result;
+  }
+
+  /* ── Update header title ── */
+  function updateTitle() {
+    const el = document.getElementById('calTitleText');
+    if (!el) return;
+    if (currentTab === 'day') {
+      const isToday = dateStr(currentDate) === dateStr(new Date());
+      el.textContent = currentDate.toLocaleDateString('en-GB', {
+        weekday:'long', day:'numeric', month:'long', year:'numeric'
+      }) + (isToday ? '  (Today)' : '');
+    } else {
+      const end = new Date(currentDate);
+      end.setDate(end.getDate() + 6);
+      el.textContent = `Week: ${currentDate.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${end.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`;
+    }
+  }
+
+  /* ── Render ── */
+  function render() {
+    const body = document.getElementById('calBody');
+    if (!body) return;
+    updateTitle();
+    if (currentTab === 'day') {
+      body.innerHTML = renderDay(dateStr(currentDate));
+    } else {
+      // Snap to Monday of current week
+      const mon = new Date(currentDate);
+      const dow = mon.getDay();
+      mon.setDate(mon.getDate() - (dow === 0 ? 6 : dow - 1));
+      body.innerHTML = renderWeek(mon);
+    }
+    // Scroll to 6am on day view
+    if (currentTab === 'day') {
+      setTimeout(() => { body.scrollTop = 6 * 56; }, 50);
+    }
+  }
+
+  /* ── Helpers: time string ← → decimal hour ── */
+  function hToTimeStr(h) {
+    const hh = Math.floor(h);
+    const mm = Math.round((h - hh) * 60);
+    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  }
+  function timeStrToH(t) {
+    const [hh, mm] = t.split(':').map(Number);
+    return hh + mm / 60;
+  }
+
+  /* ── Duration display ── */
+  function updateDurDisplay() {
+    const s = document.getElementById('calSlotStartTime').value;
+    const e = document.getElementById('calSlotEndTime').value;
+    const el = document.getElementById('calSlotDurDisplay');
+    if (!s || !e || !el) return;
+    const diff = timeStrToH(e) - timeStrToH(s);
+    if (diff <= 0) { el.textContent = '⚠️ End must be after start'; el.style.color='#ef4444'; return; }
+    const hrs = Math.floor(diff);
+    const mins = Math.round((diff - hrs) * 60);
+    el.style.color = '#6366f1';
+    el.textContent = `⏱ ${hrs > 0 ? hrs+'h ' : ''}${mins > 0 ? mins+'m' : ''}`;
+  }
+
+  /* ── Public API ── */
+  return {
+    open() {
+      currentDate = new Date();
+      document.getElementById('calendarModal').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      render();
+      // Attach click delegation for precise minute detection (after render)
+      setTimeout(() => this._bindGridClicks(), 80);
+    },
+    _bindGridClicks() {
+      const body = document.getElementById('calBody');
+      if (!body || body._calBound) return;
+      body._calBound = true;
+      const PX = 56;
+      body.addEventListener('click', e => {
+        // Free slot click
+        const freeEl = e.target.closest('.cal-free-slot');
+        if (freeEl) {
+          const rect = freeEl.getBoundingClientRect();
+          const relY = e.clientY - rect.top;
+          const hOffset = relY / PX;
+          const baseH = parseFloat(freeEl.dataset.h || 0);
+          const preciseH = baseH + hOffset;
+          CAL.openSlotModal(freeEl.dataset.date, preciseH);
+          return;
+        }
+        // Hour row click
+        const rowEl = e.target.closest('.cal-hour-row');
+        if (rowEl) {
+          const rect = rowEl.getBoundingClientRect();
+          const relY = e.clientY - rect.top;
+          const minOffset = (relY / PX) * 60;
+          const snapped = Math.round(minOffset / 5) * 5; // snap to 5-min
+          const baseH = parseInt(rowEl.dataset.h || 0);
+          const preciseH = baseH + snapped / 60;
+          CAL.openSlotModal(rowEl.dataset.date, preciseH);
+        }
+      });
+    },
+    close() {
+      document.getElementById('calendarModal').classList.remove('open');
+      document.body.style.overflow = '';
+    },
+    switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.cal-tab').forEach((t,i) => {
+        t.classList.toggle('active', (tab==='day'&&i===0)||(tab==='week'&&i===1));
+      });
+      render();
+      setTimeout(() => this._bindGridClicks(), 80);
+    },
+    prevPeriod() {
+      if (currentTab === 'day') currentDate.setDate(currentDate.getDate() - 1);
+      else currentDate.setDate(currentDate.getDate() - 7);
+      render();
+      setTimeout(() => this._bindGridClicks(), 80);
+    },
+    nextPeriod() {
+      if (currentTab === 'day') currentDate.setDate(currentDate.getDate() + 1);
+      else currentDate.setDate(currentDate.getDate() + 7);
+      render();
+      setTimeout(() => this._bindGridClicks(), 80);
+    },
+    goToday() {
+      currentDate = new Date();
+      render();
+      setTimeout(() => this._bindGridClicks(), 80);
+    },
+    openSlotModal(dateISO, startH, eventId) {
+      // Snap to nearest 5 minutes
+      const snappedH = Math.round(startH * 12) / 12; // nearest 5min
+      const endH = snappedH + 1;
+
+      document.getElementById('calSlotDate').value = dateISO;
+      document.getElementById('calSlotEventId').value = eventId || '';
+      document.getElementById('calSlotStartTime').value = hToTimeStr(snappedH);
+      document.getElementById('calSlotEndTime').value   = hToTimeStr(Math.min(endH, 23.99));
+      document.getElementById('calSlotName').value  = '';
+      document.getElementById('calSlotNotes').value = '';
+      document.getElementById('calSlotCategory').value = 'task';
+
+      // Show/hide delete button
+      const delBtn = document.getElementById('calSlotDeleteBtn');
+      delBtn.style.display = eventId ? 'block' : 'none';
+
+      const d = new Date(dateISO + 'T00:00:00');
+      const dayLabel = d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+      document.getElementById('calSlotTitle').textContent = eventId
+        ? `✏️ Edit — ${dayLabel}`
+        : `➕ Add — ${dayLabel}`;
+
+      updateDurDisplay();
+
+      // Wire up time inputs
+      ['calSlotStartTime','calSlotEndTime'].forEach(id => {
+        document.getElementById(id).oninput = updateDurDisplay;
+      });
+
+      document.getElementById('calSlotModal').classList.add('open');
+      setTimeout(() => document.getElementById('calSlotName').focus(), 100);
+    },
+    editSlot(id) {
+      const events = getCalEvents();
+      const ev = events.find(e => e.id === id);
+      if (!ev) return;
+      this.openSlotModal(ev.date, ev.startH, id);
+      // Pre-fill fields
+      setTimeout(() => {
+        document.getElementById('calSlotName').value     = ev.title;
+        document.getElementById('calSlotNotes').value    = ev.notes || '';
+        document.getElementById('calSlotCategory').value = ev.category || 'task';
+        document.getElementById('calSlotStartTime').value = hToTimeStr(ev.startH);
+        document.getElementById('calSlotEndTime').value   = hToTimeStr(ev.startH + ev.dur);
+        updateDurDisplay();
+      }, 20);
+    },
+    deleteSlot() {
+      const id = parseInt(document.getElementById('calSlotEventId').value);
+      if (!id) return;
+      if (!confirm('🗑️ Xóa event này?')) return;
+      const events = getCalEvents().filter(e => e.id !== id);
+      saveCalEvents(events);
+      this.closeSlotModal();
+      render();
+      if (typeof showNotification === 'function') showNotification('🗑️ Đã xóa!', 'info');
+    },
+    closeSlotModal() {
+      document.getElementById('calSlotModal').classList.remove('open');
+    },
+    saveSlot() {
+      const name  = document.getElementById('calSlotName').value.trim();
+      if (!name) { document.getElementById('calSlotName').style.border='1.5px solid #ef4444'; return; }
+      document.getElementById('calSlotName').style.border='';
+
+      const dateISO  = document.getElementById('calSlotDate').value;
+      const eventId  = document.getElementById('calSlotEventId').value;
+      const startVal = document.getElementById('calSlotStartTime').value;
+      const endVal   = document.getElementById('calSlotEndTime').value;
+      const category = document.getElementById('calSlotCategory').value;
+      const notes    = document.getElementById('calSlotNotes').value.trim();
+
+      if (!startVal || !endVal) { alert('Please set start and end time'); return; }
+      const startH = timeStrToH(startVal);
+      const endH   = timeStrToH(endVal);
+      if (endH <= startH) { alert('End time must be after start time'); return; }
+      const dur = endH - startH;
+
+      let events = getCalEvents();
+      if (eventId) {
+        // Edit existing
+        const idx = events.findIndex(e => e.id === parseInt(eventId));
+        if (idx !== -1) {
+          events[idx] = { ...events[idx], title: name, startH, dur, category, notes, color: COLORS[category] || COLORS.task };
+        }
+      } else {
+        // New event
+        events.push({ id: Date.now(), date: dateISO, startH, dur, title: name, category, notes, color: COLORS[category] || COLORS.task });
+      }
+      saveCalEvents(events);
+      this.closeSlotModal();
+      render();
+      if (typeof showNotification === 'function') {
+        showNotification(`✅ "${name}" ${eventId ? 'updated' : 'added'}!`, 'success');
+      }
+    }
+  };
+})();
+
+/* ── Global helpers ── */
+function openCalendarModal()  { CAL.open(); }
+function closeCalendarModal() { CAL.close(); }
+
+/* ── Keyboard close ── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('calSlotModal').classList.contains('open')) {
+      CAL.closeSlotModal();
+    } else if (document.getElementById('calendarModal').classList.contains('open')) {
+      CAL.close();
+    }
+  }
+});
+
+/* ── Click outside to close ── */
+document.getElementById('calendarModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('calendarModal')) CAL.close();
+});
+document.getElementById('calSlotModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('calSlotModal')) CAL.closeSlotModal();
+});
+</script>
+
+<!-- ═══════════════════════════════════════════════════════
+     🔔 PLANNER REMINDER ENGINE — Toast + Browser Notification
+     15 phút trước mỗi event. Reschedule khi load page.
+═══════════════════════════════════════════════════════ -->
+<style>
+/* ── Reminder Toast Container ── */
+#plannerReminderContainer {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  max-width: 340px;
+}
+
+.planner-reminder-toast {
+  pointer-events: all;
+  background: #1e293b;
+  border-left: 4px solid #6366f1;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(99,102,241,0.3);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  animation: reminderSlideIn 0.4s cubic-bezier(0.34,1.36,0.64,1) forwards;
+  cursor: pointer;
+  max-width: 340px;
+  backdrop-filter: blur(8px);
+}
+
+.dark-mode .planner-reminder-toast {
+  background: #0f172a;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(99,102,241,0.4);
+}
+
+.planner-reminder-toast.dismissing {
+  animation: reminderSlideOut 0.3s ease forwards;
+}
+
+@keyframes reminderSlideIn {
+  from { opacity: 0; transform: translateX(120%) scale(0.9); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes reminderSlideOut {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(120%) scale(0.9); }
+}
+
+.reminder-icon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-top: 2px;
+  filter: drop-shadow(0 0 6px rgba(99,102,241,0.6));
+}
+
+.reminder-body { flex: 1; min-width: 0; }
+
+.reminder-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #a5b4fc;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+
+.reminder-event-name {
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.reminder-time {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.reminder-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.reminder-close:hover { color: #f1f5f9; }
+
+/* ── Permission Banner ── */
+#reminderPermBanner {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 99998;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border-radius: 12px;
+  padding: 14px 18px;
+  max-width: 300px;
+  box-shadow: 0 8px 32px rgba(99,102,241,0.4);
+  display: none;
+  animation: reminderSlideIn 0.4s ease forwards;
+}
+#reminderPermBanner.show { display: block; }
+.reminder-perm-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+.reminder-perm-desc {
+  font-size: 0.78rem;
+  opacity: 0.9;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+.reminder-perm-btns { display: flex; gap: 8px; }
+.reminder-perm-btn {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.reminder-perm-btn:hover { opacity: 0.85; }
+.reminder-perm-btn.allow { background: #fff; color: #6366f1; }
+.reminder-perm-btn.skip  { background: rgba(255,255,255,0.2); color: #fff; }
+</style>
+
+<div id="plannerReminderContainer"></div>
+<div id="reminderPermBanner">
+  <div class="reminder-perm-title">🔔 Bật thông báo sự kiện?</div>
+  <div class="reminder-perm-desc">Cho phép browser notifications để nhận reminder 15 phút trước mỗi task trong planner.</div>
+  <div class="reminder-perm-btns">
+    <button class="reminder-perm-btn allow" onclick="REMINDER.requestPermission()">Cho phép ✓</button>
+    <button class="reminder-perm-btn skip"  onclick="REMINDER.dismissPermBanner()">Để sau</button>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   🔔 REMINDER ENGINE
+   - Schedules toast + browser notif 15 min before each event
+   - Reschedules on page load for all today's future events
+   - Re-runs whenever a new event is saved
+═══════════════════════════════════════════════════ */
+const REMINDER = (() => {
+  const ADVANCE_MS = 15 * 60 * 1000; // 15 minutes
+  const scheduled  = new Map();       // eventId → timeoutId
+
+  /* ── Category icons ── */
+  const CAT_ICONS = {
+    task: '📋', study: '📚', deadline: '⚠️', sleep: '😴',
+    goal: '🎯', course: '🎓', review: '🔄', exercise: '💪',
+    break: '☕', other: '📌'
+  };
+
+  /* ── Show in-web toast ── */
+  function showToast(event) {
+    const container = document.getElementById('plannerReminderContainer');
+    if (!container) return;
+
+    const icon = CAT_ICONS[event.category] || '⏰';
+    const startLabel = fmtH(event.startH);
+
+    const toast = document.createElement('div');
+    toast.className = 'planner-reminder-toast';
+    toast.innerHTML = `
+      <div class="reminder-icon">${icon}</div>
+      <div class="reminder-body">
+        <div class="reminder-title">⏰ Nhắc nhở — còn 15 phút</div>
+        <div class="reminder-event-name">${escHtml(event.title)}</div>
+        <div class="reminder-time">
+          <span>🕐 Bắt đầu lúc ${startLabel}</span>
+        </div>
+      </div>
+      <button class="reminder-close" title="Đóng">✕</button>
+    `;
+
+    // Click anywhere on toast to dismiss
+    toast.addEventListener('click', () => dismissToast(toast));
+
+    container.appendChild(toast);
+
+    // Auto-dismiss after 30s
+    setTimeout(() => {
+      if (toast.parentNode) dismissToast(toast);
+    }, 30000);
+  }
+
+  function dismissToast(toast) {
+    toast.classList.add('dismissing');
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+  }
+
+  /* ── Browser notification ── */
+  function sendBrowserNotif(event) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const icon = '⏰';
+    const startLabel = fmtH(event.startH);
+    try {
+      new Notification(`⏰ ${event.title}`, {
+        body: `Bắt đầu lúc ${startLabel} — còn 15 phút nữa!`,
+        icon: 'https://cdn-icons-png.flaticon.com/512/4213/4213958.png',
+        tag: `planner-reminder-${event.id}`,
+        requireInteraction: false
+      });
+    } catch(e) {}
+  }
+
+  /* ── Fire both ── */
+  function fire(event) {
+    showToast(event);
+    sendBrowserNotif(event);
+    scheduled.delete(event.id);
+  }
+
+  /* ── Schedule one event ── */
+  function scheduleOne(event) {
+    // Clear existing timeout for this event if any
+    if (scheduled.has(event.id)) {
+      clearTimeout(scheduled.get(event.id));
+      scheduled.delete(event.id);
+    }
+
+    // Build target datetime: event.date (YYYY-MM-DD) + startH
+    if (!event.date || event.startH == null) return;
+    const [y, m, d] = event.date.split('-').map(Number);
+    const hh = Math.floor(event.startH);
+    const mm = Math.round((event.startH - hh) * 60);
+    const eventTime = new Date(y, m - 1, d, hh, mm, 0, 0);
+    const remindAt  = eventTime.getTime() - ADVANCE_MS;
+    const msUntil   = remindAt - Date.now();
+
+    // Only schedule future reminders (don't re-notify if < 0)
+    if (msUntil <= 0) return;
+
+    // Cap at ~24h to avoid huge timeouts on distant events
+    if (msUntil > 24 * 60 * 60 * 1000) return;
+
+    const tid = setTimeout(() => fire(event), msUntil);
+    scheduled.set(event.id, tid);
+  }
+
+  /* ── Schedule all today's events ── */
+  function scheduleAll() {
+    const todayISO = (() => {
+      const n = new Date();
+      return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+    })();
+
+    let events = [];
+    try { events = JSON.parse(localStorage.getItem('calEvents') || '[]'); } catch {}
+
+    const todayEvents = events.filter(e => e.date === todayISO);
+    todayEvents.forEach(ev => scheduleOne(ev));
+
+    return todayEvents.length;
+  }
+
+  /* ── Helper: format hour float → HH:MM ── */
+  function fmtH(h) {
+    const hh = Math.floor(h);
+    const mm = Math.round((h - hh) * 60);
+    return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  }
+
+  /* ── Helper: escape HTML ── */
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ── Permission banner ── */
+  function checkPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') return;
+    if (Notification.permission === 'denied') return;
+    // Check if user already dismissed banner this session
+    if (sessionStorage.getItem('reminderPermDismissed')) return;
+    // Show banner after short delay
+    setTimeout(() => {
+      const banner = document.getElementById('reminderPermBanner');
+      if (banner) banner.classList.add('show');
+    }, 2500);
+  }
+
+  return {
+    /* Call after saving a new/edited event */
+    onEventSaved(event) {
+      scheduleOne(event);
+    },
+    /* Call on page load */
+    init() {
+      const n = scheduleAll();
+      checkPermission();
+      if (n > 0) {
+        console.log(`🔔 Reminder: ${n} event(s) scheduled for today.`);
+      }
+    },
+    /* Permission request from banner */
+    requestPermission() {
+      this.dismissPermBanner();
+      if (!('Notification' in window)) return;
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') {
+          showToast({
+            id: 'test', title: 'Thông báo đã bật! 🎉',
+            category: 'task', startH: new Date().getHours() + new Date().getMinutes()/60 + 0.01
+          });
+        }
+      });
+    },
+    dismissPermBanner() {
+      const banner = document.getElementById('reminderPermBanner');
+      if (banner) banner.classList.remove('show');
+      sessionStorage.setItem('reminderPermDismissed', '1');
+    }
+  };
+})();
+
+/* ── Init on page load ── */
+document.addEventListener('DOMContentLoaded', () => REMINDER.init());
+
+/* ── Hook into CAL.saveSlot to schedule reminder for new events ── */
+(function patchCALSaveSlot() {
+  // Wait until CAL is defined (it's already defined above this script)
+  if (typeof CAL === 'undefined') return;
+  const _orig = CAL.saveSlot.bind(CAL);
+  CAL.saveSlot = function() {
+    // Capture data before calling original (form still open)
+    const name     = (document.getElementById('calSlotName')?.value || '').trim();
+    const dateISO  = document.getElementById('calSlotDate')?.value || '';
+    const eventId  = document.getElementById('calSlotEventId')?.value;
+    const startVal = document.getElementById('calSlotStartTime')?.value || '';
+    const category = document.getElementById('calSlotCategory')?.value || 'task';
+
+    _orig(); // runs original save + close
+
+    // After save, schedule reminder for the event
+    if (!name || !dateISO || !startVal) return;
+    const [hh, mm] = startVal.split(':').map(Number);
+    const startH = hh + mm / 60;
+    // Use eventId if editing, else use recent timestamp as id (approximate)
+    const id = eventId ? parseInt(eventId) : Date.now();
+    REMINDER.onEventSaved({ id, date: dateISO, startH, title: name, category });
+  };
+})();
+</script>
+
+<!-- END VISUAL PLANNER -->
 
     <div class="container">
         <header>
@@ -9229,9 +10633,14 @@
       <label>Name</label>
       <input type="text" id="dltName" placeholder="e.g. CFA Exam Registration" maxlength="70" />
     </div>
+
     <div class="dlt-fg">
       <label>Date</label>
       <input type="date" id="dltDate" />
+    </div>
+    <div class="dlt-fg">
+      <label>Time <span style="font-weight:400;color:var(--text-muted);font-size:0.78rem;">(optional — shows at this hour in Planner)</span></label>
+      <input type="time" id="dltTime" />
     </div>
     <div class="dlt-fg">
       <label>Category</label>
@@ -9439,7 +10848,7 @@
         </div>
         <div class="dlt-info">
           <div class="dlt-name" title="${d.name}">${d.name}</div>
-          <div class="dlt-meta">${d.category?d.category+' · ':''}${fmtDate(d.date)}</div>
+          <div class="dlt-meta">${d.category?d.category+' · ':''}${fmtDate(d.date)}${d.time ? ' · ⏰ ' + d.time : ''}</div>
           <div class="dlt-badges">
             <span class="dlt-badge status">${statusTxt(days, done)}</span>
             ${srcBadge}
@@ -9482,22 +10891,24 @@
   window.DLT = {
     sync()   { render(); },
     filter(c){ curFilter = c; render(); },
-
     openModal() {
       document.getElementById('dltName').value = '';
       document.getElementById('dltDate').value = '';
+      document.getElementById('dltTime').value = '';
       document.getElementById('dltCat').value  = '';
       document.getElementById('dltModal').classList.add('open');
       setTimeout(() => document.getElementById('dltName').focus(), 100);
     },
+
     closeModal() { document.getElementById('dltModal').classList.remove('open'); },
 
     save() {
       const name = document.getElementById('dltName').value.trim();
       const date = document.getElementById('dltDate').value;
+      const time = document.getElementById('dltTime').value; // "HH:MM" or ""
       const cat  = document.getElementById('dltCat').value;
       if (!name || !date) { alert('Please fill in name and date!'); return; }
-      manualList.push({ id: Date.now().toString(), name, date, category: cat || '📌 Manual' });
+      manualList.push({ id: Date.now().toString(), name, date, time: time || '', category: cat || '📌 Manual' });
       persist();
       DLT.closeModal();
       render();
@@ -11619,7 +13030,10 @@ window.DBP={
                             <div class="meme-image-container">
                                 <img id="memeImage" src="" alt="Random Meme" style="width: 100%; height: auto; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); cursor: pointer;" />
                             </div>
-                            <div class="meme-caption" id="memeCaption"></div>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px;">
+                                <div class="meme-caption" id="memeCaption" style="margin-top: 0;"></div>
+                                <button id="editCurrentMemeBtn" onclick="event.stopPropagation(); editCurrentMemeCaption();" title="Edit caption" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; transition: all 0.2s ease; flex-shrink: 0; display: none;">✏️</button>
+                            </div>
                         </div>                        
                         <div class="chart-container">
                             <canvas id="progressChart"></canvas>
@@ -32985,10 +34399,15 @@ document.addEventListener('click', function(e) {
 
 
         // ===== DEFAULT MEMES =====
+        let currentMemeUrl = null; // track meme đang hiện để edit caption
+
         function getRandomMeme() {
             if (allMemes.length === 0) {
                 document.getElementById('memeImage').src = 'https://via.placeholder.com/300x200?text=No+Memes';
                 document.getElementById('memeCaption').textContent = 'No memes available. Add some!';
+                currentMemeUrl = null;
+                const editBtn = document.getElementById('editCurrentMemeBtn');
+                if (editBtn) editBtn.style.display = 'none';
                 return;
             }
             
@@ -33002,6 +34421,14 @@ document.addEventListener('click', function(e) {
             const img = document.getElementById('memeImage');
             img.src = url;
             document.getElementById('memeCaption').textContent = caption;
+            currentMemeUrl = url;
+
+            // Chỉ hiện nút edit nếu là custom meme (có thể sửa caption)
+            const editBtn = document.getElementById('editCurrentMemeBtn');
+            if (editBtn) {
+                const isCustom = customMemes.some(m => (typeof m === 'string' ? m : m.url) === url);
+                editBtn.style.display = isCustom ? 'inline-block' : 'none';
+            }
             
             img.onerror = function() {
                 console.warn('Failed to load meme:', url);
@@ -33012,6 +34439,8 @@ document.addEventListener('click', function(e) {
                 customMemes = customMemes.filter(m => m.url !== url);
                 localStorage.setItem('customMemes', JSON.stringify(customMemes));
                 updateCustomMemesCount();
+                currentMemeUrl = null;
+                if (editBtn) editBtn.style.display = 'none';
                 
                 if (allMemes.length > 0) {
                     getRandomMeme();
@@ -33019,6 +34448,26 @@ document.addEventListener('click', function(e) {
                     img.src = 'https://via.placeholder.com/300x200?text=No+Memes';
                 }
             };
+        }
+
+        function editCurrentMemeCaption() {
+            if (!currentMemeUrl) return;
+            const memeIndex = customMemes.findIndex(m => (typeof m === 'string' ? m : m.url) === currentMemeUrl);
+            if (memeIndex === -1) {
+                showNotification('⚠️ Chỉ có thể sửa caption của custom memes!', 'info');
+                return;
+            }
+            const oldCaption = typeof customMemes[memeIndex] === 'string' ? 'No caption' : customMemes[memeIndex].caption;
+            const newCaption = prompt('✏️ Sửa caption:', oldCaption);
+            if (newCaption === null) return; // user cancelled
+            customMemes[memeIndex].caption = newCaption || 'No caption';
+            localStorage.setItem('customMemes', JSON.stringify(customMemes));
+            // Cập nhật allMemes
+            const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === currentMemeUrl);
+            if (allIndex !== -1) allMemes[allIndex] = customMemes[memeIndex];
+            // Cập nhật caption đang hiện ngay lập tức
+            document.getElementById('memeCaption').textContent = newCaption || 'No caption';
+            showNotification('✅ Caption updated!', 'success');
         }
 
         function addCustomMeme() {
