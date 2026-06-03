@@ -21718,27 +21718,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]`;
             };
 
+            // ── Currently Reading (full list) ──
             if (rlReading.length > 0) {
                 lines.push('');
                 lines.push('Currently Reading:');
                 rlReading.forEach(b => lines.push(fmtBook(b)));
             }
 
+            // ── Want to Read — ALL books, grouped by genre ──
+            if (rlWant.length > 0) {
+                lines.push('');
+                lines.push(`Want to Read — ${rlWant.length} books (grouped by genre):`);
+
+                // Group by genre
+                const byGenre = {};
+                rlWant.forEach(b => {
+                    const g = b.genre || 'Other';
+                    if (!byGenre[g]) byGenre[g] = [];
+                    byGenre[g].push(b);
+                });
+
+                Object.keys(byGenre).sort().forEach(genre => {
+                    lines.push(`  [${genre}]`);
+                    byGenre[genre].forEach(b => lines.push(fmtBook(b)));
+                });
+            }
+
+            // ── Finished (capped, already read = less relevant for ordering) ──
             if (rlFinished.length > 0) {
                 lines.push('');
-                lines.push('Finished:');
+                lines.push(`Already Finished (${rlFinished.length}):`);
                 rlFinished.slice(0, 12).forEach(b => {
                     const stars = b.rating ? ' ' + '⭐'.repeat(Math.round(b.rating)) : '';
                     lines.push(fmtBook(b) + stars);
                 });
                 if (rlFinished.length > 12) lines.push(`  ... and ${rlFinished.length - 12} more`);
-            }
-
-            if (rlWant.length > 0) {
-                lines.push('');
-                lines.push(`Want to Read (${rlWant.length}):`);
-                rlWant.slice(0, 10).forEach(b => lines.push(fmtBook(b)));
-                if (rlWant.length > 10) lines.push(`  ... and ${rlWant.length - 10} more`);
             }
 
             // ── COURSES ──
@@ -21776,16 +21790,18 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('');
             lines.push('💬 SUGGESTED PROMPT:');
             lines.push(DIV);
-            lines.push('"Based on my study snapshot above, suggest 5 specific, actionable goals');
-            lines.push(' for the next 30 days. Prioritize skills with the largest gap between');
-            lines.push(' current hours and their targets, flag areas I am neglecting entirely,');
-            lines.push(' and note whether my reading list aligns with my career focus."');
+            lines.push('"Based on my study snapshot above, please:');
+            lines.push(' 1) Suggest a reading order for my Want-to-Read list — from foundational');
+            lines.push('    to advanced, grouped by career relevance (PE, finance, etc.)');
+            lines.push(' 2) Flag any books I should prioritize given my current study hours');
+            lines.push(' 3) Suggest 3–5 specific goals for the next 30 days based on my gaps');
+            lines.push(' 4) Note any skill areas I am neglecting entirely."')
 
             const fullText = lines.join('\n');
 
             const doClipboard = text => {
                 navigator.clipboard.writeText(text).then(() => {
-                    showNotification('📋 Context copied!', 'success');
+                    showNotification('📋 Context copied! Paste into Claude or ChatGPT.', 'success');
                 }).catch(() => {
                     const ta = document.createElement('textarea');
                     ta.value = text;
