@@ -14471,8 +14471,14 @@ window.DBP={
                         <option value="default">Sort: Added</option>
                         <option value="titleAsc">Title (A-Z)</option>
                         <option value="titleDesc">Title (Z-A)</option>
-                        <option value="ratingAsc">Rating (Low-High)</option>
-                        <option value="ratingDesc">Rating (High-Low)</option>
+                        <option value="ratingAsc">Rating (Low→High)</option>
+                        <option value="ratingDesc">Rating (High→Low)</option>
+                        <option value="pagesDesc">📄 Pages (Long→Short)</option>
+                        <option value="pagesAsc">📄 Pages (Short→Long)</option>
+                        <option value="firstPubDesc">📅 First Published (New→Old)</option>
+                        <option value="firstPubAsc">📅 First Published (Old→New)</option>
+                        <option value="editionDesc">🔖 Edition (Highest→Lowest)</option>
+                        <option value="editionAsc">🔖 Edition (Lowest→Highest)</option>
                     </select>
                     <input type="text" id="searchInput" placeholder="🔍 Search books..." style="max-width: 150px;">
                 </div>
@@ -14925,6 +14931,20 @@ window.DBP={
                         <label for="bookReview">Review (Optional)</label>
                         <textarea id="bookReview" rows="3" placeholder="Your thoughts about this book..."></textarea>
                     </div>
+                    <div class="form-group">
+                        <label for="bookPages">📄 Pages (Optional)</label>
+                        <input type="number" id="bookPages" min="1" placeholder="e.g. 350">
+                    </div>
+                    <div class="form-group" style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label for="bookFirstPublished">📅 First Published (Optional)</label>
+                            <input type="number" id="bookFirstPublished" min="1000" max="2099" placeholder="YYYY e.g. 1997">
+                        </div>
+                        <div style="flex:1;">
+                            <label for="bookCurrentEdition">🔖 Current Edition (Optional)</label>
+                            <input type="number" id="bookCurrentEdition" min="1" placeholder="e.g. 3">
+                        </div>
+                    </div>
                     <div class="modal-actions">
                         <button type="button" class="add-time-btn btn-secondary" onclick="closeAddBookModal()">Cancel</button>
                         <button type="submit" class="add-time-btn">➕ Add Book</button>
@@ -15006,8 +15026,20 @@ window.DBP={
                         <label for="editBookReview" style="display: block; margin-bottom: 5px; font-weight: 500;">Review</label>
                         <textarea id="editBookReview" rows="3" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark); resize: vertical;"></textarea>
                     </div>
-                    
-                    <div class="modal-actions">
+                    <div style="margin-bottom: 12px;">
+                        <label for="editBookPages" style="display: block; margin-bottom: 5px; font-weight: 500;">📄 Pages (Optional)</label>
+                        <input type="number" id="editBookPages" min="1" placeholder="e.g. 350" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                    </div>
+                    <div style="margin-bottom: 12px; display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label for="editBookFirstPublished" style="display: block; margin-bottom: 5px; font-weight: 500;">📅 First Published</label>
+                            <input type="number" id="editBookFirstPublished" min="1000" max="2099" placeholder="YYYY e.g. 1997" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                        </div>
+                        <div style="flex:1;">
+                            <label for="editBookCurrentEdition" style="display: block; margin-bottom: 5px; font-weight: 500;">🔖 Current Edition</label>
+                            <input type="number" id="editBookCurrentEdition" min="1" placeholder="e.g. 3" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                        </div>
+                    </div>
                         <button type="button" class="add-time-btn btn-secondary" onclick="closeEditBookModal()">Cancel</button>
                         <button type="submit" class="add-time-btn">💾 Save Changes</button>
                     </div>
@@ -15982,6 +16014,7 @@ window.DBP={
                 <div style="flex-grow: 1;">
                     <p><strong>Genre:</strong> <span id="bookDetailsGenre">Genre</span></p>
                     <p><strong>Status:</strong> <span id="bookDetailsStatus" class="book-status-badge">Status</span></p>
+                    <div id="bookDetailsMeta" style="margin: 6px 0; font-size:0.85rem; color: var(--text-muted,#888); display:none; display:flex; flex-wrap:wrap; gap:8px;"></div>
                     <div id="bookDetailsRating" style="margin: 8px 0; color: #f59e0b; font-size: 1.1rem;"></div> <!-- Ẩn mặc định nếu không có rating -->
                     <div id="bookDetailsReview" style="margin-top: 10px; font-style: italic;"></div> <!-- Ẩn mặc định nếu không có review -->
                 </div>
@@ -18615,6 +18648,28 @@ window.DBP={
                         const rA = a.rating || 0;
                         const rB = b.rating || 0;
                         return (rB - rA) || (a.id - b.id);
+                    case 'pagesDesc':
+                        return ((b.pages || 0) - (a.pages || 0)) || (a.id - b.id);
+                    case 'pagesAsc':
+                        // Books with no pages go to the end
+                        if (!a.pages && !b.pages) return a.id - b.id;
+                        if (!a.pages) return 1;
+                        if (!b.pages) return -1;
+                        return (a.pages - b.pages) || (a.id - b.id);
+                    case 'firstPubDesc':
+                        return ((b.firstPublished || 0) - (a.firstPublished || 0)) || (a.id - b.id);
+                    case 'firstPubAsc':
+                        if (!a.firstPublished && !b.firstPublished) return a.id - b.id;
+                        if (!a.firstPublished) return 1;
+                        if (!b.firstPublished) return -1;
+                        return (a.firstPublished - b.firstPublished) || (a.id - b.id);
+                    case 'editionDesc':
+                        return ((b.currentEdition || 0) - (a.currentEdition || 0)) || (a.id - b.id);
+                    case 'editionAsc':
+                        if (!a.currentEdition && !b.currentEdition) return a.id - b.id;
+                        if (!a.currentEdition) return 1;
+                        if (!b.currentEdition) return -1;
+                        return (a.currentEdition - b.currentEdition) || (a.id - b.id);
                     default: // 'default' = recently added
                         return (new Date(b.addedAt) - new Date(a.addedAt)) || (a.id - b.id);
                 }
@@ -18668,6 +18723,13 @@ window.DBP={
                     ` <span class="book-genre">${escapeHtml(book.genre)}</span>`,
                     ` <span class="book-status-badge ${book.status}">${getStatusText(book.status)}</span>`,
                     `</div>`,
+                    (() => {
+                        const metaParts = [];
+                        if (book.pages) metaParts.push(`📄 ${book.pages} pp`);
+                        if (book.firstPublished) metaParts.push(`📅 ${book.firstPublished}`);
+                        if (book.currentEdition) metaParts.push(`🔖 Ed. ${book.currentEdition}`);
+                        return metaParts.length ? `<div style="font-size:0.75rem; color:var(--text-muted,#888); margin-top:3px; display:flex; flex-wrap:wrap; gap:6px;">${metaParts.map(p => `<span>${p}</span>`).join('')}</div>` : '';
+                    })(),
                     ratingDisplay,
                     reviewDisplay
                 ];
@@ -18721,6 +18783,9 @@ window.DBP={
             document.getElementById('editBookStatus').value = book.status;
             document.getElementById('editBookRating').value = book.rating !== null ? book.rating : '';
             document.getElementById('editBookReview').value = book.review || '';
+            document.getElementById('editBookPages').value = book.pages !== null && book.pages !== undefined ? book.pages : '';
+            document.getElementById('editBookFirstPublished').value = book.firstPublished !== null && book.firstPublished !== undefined ? book.firstPublished : '';
+            document.getElementById('editBookCurrentEdition').value = book.currentEdition !== null && book.currentEdition !== undefined ? book.currentEdition : '';
 
             document.getElementById('editBookModal').style.display = 'flex';
         }
@@ -18742,6 +18807,12 @@ window.DBP={
             const ratingValue = document.getElementById('bookRating').value;
             const rating = ratingValue ? parseInt(ratingValue) : null;
             const review = document.getElementById('bookReview').value.trim();
+            const pagesVal = document.getElementById('bookPages').value;
+            const firstPubVal = document.getElementById('bookFirstPublished').value;
+            const editionVal = document.getElementById('bookCurrentEdition').value;
+            const pages = pagesVal ? parseInt(pagesVal) : null;
+            const firstPublished = firstPubVal ? parseInt(firstPubVal) : null;
+            const currentEdition = editionVal ? parseInt(editionVal) : null;
 
             console.log('Form values:', { title, author, genre, status, rating, review });
 
@@ -18759,7 +18830,10 @@ window.DBP={
                 status,
                 addedAt: new Date().toISOString(),
                 rating,
-                review
+                review,
+                pages,
+                firstPublished,
+                currentEdition
             };
 
             console.log('Adding book:', book);
@@ -18792,6 +18866,12 @@ window.DBP={
             const genre = document.getElementById('editBookGenre').value.trim();
             const ratingValue = document.getElementById('editBookRating').value;
             const review = document.getElementById('editBookReview').value.trim();
+            const pagesVal = document.getElementById('editBookPages').value;
+            const firstPubVal = document.getElementById('editBookFirstPublished').value;
+            const editionVal = document.getElementById('editBookCurrentEdition').value;
+            const pages = pagesVal ? parseInt(pagesVal) : null;
+            const firstPublished = firstPubVal ? parseInt(firstPubVal) : null;
+            const currentEdition = editionVal ? parseInt(editionVal) : null;
 
             console.log('Update form values:', { bookId, title, author, cover, status, genre, ratingValue, review });
 
@@ -18812,7 +18892,10 @@ window.DBP={
                     genre,
                     status,
                     rating,
-                    review
+                    review,
+                    pages,
+                    firstPublished,
+                    currentEdition
                 };
 
                 localStorage.setItem('readingList', JSON.stringify(readingList));
@@ -22634,6 +22717,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const genreEl = document.getElementById('bookDetailsGenre');
             const statusEl = document.getElementById('bookDetailsStatus');
             const coverEl = document.getElementById('bookDetailsCover');
+            const metaEl = document.getElementById('bookDetailsMeta');
             const ratingEl = document.getElementById('bookDetailsRating');
             const reviewEl = document.getElementById('bookDetailsReview');
 
@@ -22651,6 +22735,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     coverEl.style.display = 'block';
                 } else {
                     coverEl.style.display = 'none';
+                }
+
+                // Metadata row (pages, year, edition)
+                if (metaEl) {
+                    const metaParts = [];
+                    if (book.pages) metaParts.push(`📄 <strong>${book.pages}</strong> pages`);
+                    if (book.firstPublished) metaParts.push(`📅 First published: <strong>${book.firstPublished}</strong>`);
+                    if (book.currentEdition) metaParts.push(`🔖 Edition: <strong>${book.currentEdition}</strong>`);
+                    if (metaParts.length) {
+                        metaEl.innerHTML = metaParts.map(p => `<span style="background:var(--bg-light,#f5f5f5); padding:3px 8px; border-radius:4px;">${p}</span>`).join('');
+                        metaEl.style.display = 'flex';
+                    } else {
+                        metaEl.style.display = 'none';
+                    }
                 }
 
                 if (book.rating !== null && !isNaN(book.rating)) {
@@ -22676,7 +22774,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 modal.style.display = 'flex';
             } else {
                 console.error('Book details modal elements not found');
-                alert(`Details for "${book.title}":\nAuthor: ${book.author}\nGenre: ${book.genre}\nStatus: ${getStatusText(book.status)}\nRating: ${book.rating || 'N/A'}\nReview: ${book.review || 'N/A'}`);
+                alert(`Details for "${book.title}":\nAuthor: ${book.author}\nGenre: ${book.genre}\nStatus: ${getStatusText(book.status)}\nPages: ${book.pages || 'N/A'}\nFirst Published: ${book.firstPublished || 'N/A'}\nEdition: ${book.currentEdition || 'N/A'}\nRating: ${book.rating || 'N/A'}\nReview: ${book.review || 'N/A'}`);
             }
         }
 
