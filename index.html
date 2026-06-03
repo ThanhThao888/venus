@@ -1493,6 +1493,98 @@
                 max-width: 48%;
             }
         }
+        /* --- MISSING COURSE CLASSES --- */
+        .course-progress-text {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            text-align: right;
+            margin-top: -4px;
+            margin-bottom: 4px;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .course-description {
+            font-size: 0.84rem;
+            color: var(--text-muted);
+            padding: 8px 10px;
+            background: var(--bg-light);
+            border-radius: 6px;
+            margin: 8px 0 4px;
+            line-height: 1.5;
+            border-left: 3px solid var(--border-color);
+        }
+
+        .dark-mode .course-description {
+            background: rgba(0,0,0,0.2);
+            border-left-color: #475569;
+        }
+
+        /* --- COURSE STATS BAR --- */
+        .course-stats-bar {
+            display: flex;
+            background: var(--bg-light);
+            border-radius: 8px;
+            padding: 8px 0;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .dark-mode .course-stats-bar {
+            background: rgba(0,0,0,0.2);
+        }
+
+        .course-stat-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 4px 8px;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .course-stat-item:last-child { border-right: none; }
+
+        .course-stat-emoji { font-size: 0.95rem; margin-bottom: 2px; }
+
+        .course-stat-label {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .course-stat-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-dark);
+        }
+
+        /* --- COURSE FILTER CONTROLS --- */
+        .course-controls {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .course-controls select {
+            flex: 1;
+            min-width: 90px;
+            padding: 7px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-white);
+            color: var(--text-dark);
+            font-size: 0.82rem;
+        }
+
+        .dark-mode .course-controls select {
+            background: #334155;
+            border-color: #475569;
+            color: #f1f5f9;
+        }
+
         /* --- END COURSE MANAGEMENT --- */
 
         .career-title {
@@ -13170,19 +13262,54 @@ window.DBP={
 
 
         <!-- - Course Manager Section - -->
-        <div id="course-section" class="hidden">
-            <div class="sidebar-card">
-                <h3 class="sidebar-title">
-                    <span> </span>
-                    <span id="courseCareerTitle" class="career-title">Private Equity</span> Courses
-                </h3>
+        <div id="course-section" class="sidebar-card">
+            <h3 class="sidebar-title" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="toggleCourseSection()">
+                <span>📋 <span id="courseCareerTitle" class="career-title">Private Equity</span> Courses</span>
+                <span id="courseCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
+            </h3>
+            <div id="coursesBody">
 
-                <button class="goal-add-btn" onclick="openAddCourseModal()">
-                    ➕ Add New Course
-                </button>
-                <div id="coursesContainer">
-                    <p class="goal-empty-state">No courses added yet for this career. Click 'Add Course' to get started.</p>
+                <!-- Mini stats bar -->
+                <div class="course-stats-bar">
+                    <div class="course-stat-item">
+                        <span class="course-stat-emoji">📋</span>
+                        <span class="course-stat-label">Total</span>
+                        <span class="course-stat-value" id="courseTotalCount">0</span>
+                    </div>
+                    <div class="course-stat-item">
+                        <span class="course-stat-emoji">⚡</span>
+                        <span class="course-stat-label">Active</span>
+                        <span class="course-stat-value" id="courseActiveCount">0</span>
+                    </div>
+                    <div class="course-stat-item">
+                        <span class="course-stat-emoji">✅</span>
+                        <span class="course-stat-label">Done</span>
+                        <span class="course-stat-value" id="courseDoneCount">0</span>
+                    </div>
                 </div>
+
+                <!-- Filter / Sort / Add controls -->
+                <div class="course-controls">
+                    <select id="courseStatusFilter" onchange="renderCourses()">
+                        <option value="all">All Status</option>
+                        <option value="active">⚡ Active</option>
+                        <option value="completed">✅ Completed</option>
+                        <option value="favorites">⭐ Favorites</option>
+                    </select>
+                    <select id="courseSortBy" onchange="renderCourses()">
+                        <option value="newest">🕒 Newest</option>
+                        <option value="priority">🔺 Priority</option>
+                        <option value="progress">📊 Progress</option>
+                        <option value="title">🔤 Title</option>
+                    </select>
+                    <button class="goal-add-btn" onclick="openAddCourseModal()" style="flex:none;padding:7px 12px;font-size:0.82rem;white-space:nowrap;">➕ Add</button>
+                </div>
+
+                <!-- Scrollable courses list -->
+                <div id="coursesContainer" style="max-height:420px;overflow-y:auto;padding-right:2px;">
+                    <p class="goal-empty-state">No courses added yet for this career. Click '➕ Add' to get started.</p>
+                </div>
+
             </div>
         </div>
 
@@ -18966,10 +19093,45 @@ window.DBP={
 
             careerTitleEl.textContent = skillsData[currentCareer].title;
 
-            const filteredCourses = courses.filter(course => course.career === currentCareer);
+            const statusFilter = document.getElementById('courseStatusFilter')?.value || 'all';
+            const sortBy = document.getElementById('courseSortBy')?.value || 'newest';
+
+            const allCareerCourses = courses.filter(course => course.career === currentCareer);
+
+            // --- Update stats counters ---
+            const totalCount = allCareerCourses.length;
+            const activeCount = allCareerCourses.filter(c => (c.hoursStudied / c.estimatedHours) < 1).length;
+            const doneCount  = allCareerCourses.filter(c => (c.hoursStudied / c.estimatedHours) >= 1).length;
+            if (document.getElementById('courseTotalCount')) document.getElementById('courseTotalCount').textContent = totalCount;
+            if (document.getElementById('courseActiveCount')) document.getElementById('courseActiveCount').textContent = activeCount;
+            if (document.getElementById('courseDoneCount'))  document.getElementById('courseDoneCount').textContent  = doneCount;
+
+            // --- Apply status filter ---
+            let filteredCourses = [...allCareerCourses];
+            if (statusFilter === 'active') {
+                filteredCourses = filteredCourses.filter(c => (c.hoursStudied / c.estimatedHours) < 1);
+            } else if (statusFilter === 'completed') {
+                filteredCourses = filteredCourses.filter(c => (c.hoursStudied / c.estimatedHours) >= 1);
+            } else if (statusFilter === 'favorites') {
+                filteredCourses = filteredCourses.filter(c => c.favorite);
+            }
+
+            // --- Apply sort ---
+            const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
+            if (sortBy === 'newest') {
+                filteredCourses.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            } else if (sortBy === 'priority') {
+                filteredCourses.sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
+            } else if (sortBy === 'progress') {
+                filteredCourses.sort((a, b) => (b.hoursStudied / b.estimatedHours) - (a.hoursStudied / a.estimatedHours));
+            } else if (sortBy === 'title') {
+                filteredCourses.sort((a, b) => a.title.localeCompare(b.title));
+            }
+            // Favorites always float to top within the sorted list
+            filteredCourses.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
 
             if (filteredCourses.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">No courses added yet for this career. Click \'Add Course\' to get started.</p>';
+                container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:20px;">No courses found. Try a different filter or add a new course.</p>';
                 return;
             }
 
@@ -18990,9 +19152,9 @@ window.DBP={
                     <div class="course-deadline ${deadlineClass}">${deadlineText}</div>
                 </div>
                 <div class="course-progress-container">
-                    <div class="course-progress-fill" style="width: ${progressPercent}%"></div>
+                    <div class="course-progress-fill ${progressPercent >= 100 ? 'completed' : ''}" style="width: ${progressPercent}%"></div>
                 </div>
-                <div class="course-progress-text">${course.hoursStudied.toFixed(1)} / ${course.estimatedHours.toFixed(1)} hours</div>
+                <div class="course-progress-text">${course.hoursStudied.toFixed(1)} / ${course.estimatedHours.toFixed(1)} hrs &nbsp;·&nbsp; ${progressPercent.toFixed(0)}%</div>
                 ${course.description ? `<div class="course-description">${escapeHtml(course.description)}</div>` : ''}
                 <div class="course-actions">
                     ${course.url && course.url.trim() !== '' ? `<button class="course-action-btn open-link" onclick="window.open('${course.url}', '_blank')">🔗 Open</button>` : ''}                
@@ -36912,6 +37074,18 @@ window.getFlashcardDashboard = getFlashcardDashboard;
             document.getElementById('resourceCount').textContent = stats.total;
         }
 
+
+        // ===== COLLAPSE / EXPAND — COURSES =====
+        (function(){
+            let _csOpen = true;
+            window.toggleCourseSection = function(){
+                _csOpen = !_csOpen;
+                const body = document.getElementById('coursesBody');
+                const icon = document.getElementById('courseCollapseIcon');
+                if(body) body.style.display = _csOpen ? '' : 'none';
+                if(icon) icon.textContent = _csOpen ? '▲' : '▼';
+            };
+        })();
 
         // ===== COLLAPSE / EXPAND — INVESTMENT ANALYSES =====
         (function(){
