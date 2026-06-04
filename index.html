@@ -21718,6 +21718,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
             lines.push(`${rlReading.length} reading · ${rlWant.length} want to read · ${rlFinished.length} finished`);
 
+            // ── helpers ──
+            const starStr = b => {
+                if (!b.rating) return '';
+                const r = Math.round(b.rating * 2) / 2; // round to 0.5
+                const full = Math.floor(r);
+                const half = r % 1 !== 0;
+                return '  ' + '★'.repeat(full) + (half ? '½' : '') + ` (${Number(b.rating).toFixed(1)})`;
+            };
+
             const fmtBook = b => {
                 const meta = [b.genre];
                 if (b.pages) meta.push(`${b.pages}pp`);
@@ -21726,62 +21735,43 @@ document.addEventListener('DOMContentLoaded', function() {
                 return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]`;
             };
 
-            // ── Currently Reading (full list, with review/notes if present) ──
+            const pushBookFull = b => {
+                lines.push(fmtBook(b) + starStr(b));
+                if (b.review && b.review.trim()) {
+                    b.review.trim().split('\n').forEach(line => {
+                        if (line.trim()) lines.push(`      📝 ${line}`);
+                    });
+                }
+            };
+
+            // ── Currently Reading ──
             if (rlReading.length > 0) {
                 lines.push('');
                 lines.push('Currently Reading:');
-                rlReading.forEach(b => {
-                    lines.push(fmtBook(b));
-                    if (b.review && b.review.trim()) {
-                        const reviewText = b.review.trim();
-                        // Indent every line of the review
-                        reviewText.split('\n').forEach(line => {
-                            lines.push(`      📝 ${line}`);
-                        });
-                    }
-                });
+                rlReading.forEach(pushBookFull);
             }
 
-            // ── Want to Read — ALL books, grouped by genre ──
+            // ── Want to Read — grouped by genre ──
             if (rlWant.length > 0) {
                 lines.push('');
                 lines.push(`Want to Read — ${rlWant.length} books (grouped by genre):`);
-
-                // Group by genre
                 const byGenre = {};
                 rlWant.forEach(b => {
                     const g = b.genre || 'Other';
                     if (!byGenre[g]) byGenre[g] = [];
                     byGenre[g].push(b);
                 });
-
                 Object.keys(byGenre).sort().forEach(genre => {
                     lines.push(`  [${genre}]`);
-                    byGenre[genre].forEach(b => {
-                        lines.push(fmtBook(b));
-                        if (b.review && b.review.trim()) {
-                            b.review.trim().split('\n').forEach(line => {
-                                lines.push(`      📝 ${line}`);
-                            });
-                        }
-                    });
+                    byGenre[genre].forEach(pushBookFull);
                 });
             }
 
-            // ── Finished — full list with stars + review ──
+            // ── Finished ──
             if (rlFinished.length > 0) {
                 lines.push('');
                 lines.push(`Already Finished (${rlFinished.length}):`);
-                rlFinished.forEach(b => {
-                    const stars = b.rating ? ' ' + '⭐'.repeat(Math.round(b.rating)) : '';
-                    lines.push(fmtBook(b) + stars);
-                    if (b.review && b.review.trim()) {
-                        const reviewText = b.review.trim();
-                        reviewText.split('\n').forEach(line => {
-                            lines.push(`      📝 ${line}`);
-                        });
-                    }
-                });
+                rlFinished.forEach(pushBookFull);
             }
 
             // ── COURSES ──
