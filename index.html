@@ -20102,13 +20102,7 @@ window.DBP={
             return 'active';
         }
 
-        function getGoalProgressPercent(goal) {
-            const progress = calculateGoalProgress(goal);
-            return goal.target > 0 ? Math.min(100, (progress / goal.target) * 100) : 0;
-        }
-
-
-        function openAddGoalModal() {
+                function openAddGoalModal() {
             document.getElementById('goalModalTitle').textContent = '➕ Add New Goal';
             document.getElementById('goalForm').reset();
             document.getElementById('editGoalId').value = '';
@@ -24593,7 +24587,10 @@ function calculateDifference(weekData, weekdays, weekends, metric) {
 }
 
 function detectWeeklyCycles(weekData) {
-    if (!weekData || Object.keys(weekData).length < 14) {
+    // weekData has 7 fixed keys (Monday–Sunday), each with a .sleep[] array
+    // and optionally .avgSleep. We detect a weekly cycle by checking how
+    // consistent each day-of-week is across multiple weeks.
+    if (!weekData || Object.keys(weekData).length === 0) {
         return {
             hasCycle: false,
             cycleLength: null,
@@ -24601,37 +24598,66 @@ function detectWeeklyCycles(weekData) {
             confidence: 0
         };
     }
-    
+
     try {
-        const days = Object.keys(weekData).sort();
-        const sleepValues = days.map(d => weekData[d].avgSleep || 0);
+        const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-        let cycleMatches = 0;
-        let totalComparisons = 0;
-        
-        for (let i = 7; i < sleepValues.length; i++) {
-            const diff = Math.abs(sleepValues[i] - sleepValues[i - 7]);
-            totalComparisons++;
+        // Need at least 2 observations per day to measure consistency
+        const daysWithData = DAY_ORDER.filter(d =>
+            weekData[d] && Array.isArray(weekData[d].sleep) && weekData[d].sleep.length >= 2
+        );
 
-            if (diff < 1.0) {
-                cycleMatches++;
-            }
+        if (daysWithData.length < 3) {
+            return {
+                hasCycle: false,
+                cycleLength: null,
+                pattern: 'insufficient_data',
+                confidence: 0,
+                reason: `Only ${daysWithData.length}/7 days have ≥2 sleep observations`
+            };
         }
-        
-        const matchRate = totalComparisons > 0 ? cycleMatches / totalComparisons : 0;
-        const hasCycle = matchRate >= 0.6; 
+
+        // For each day, calculate coefficient of variation (CV = stdDev / mean).
+        // Low CV = that day-of-week is consistently the same across weeks = cycle.
+        let totalCV = 0;
+        let daysAnalyzed = 0;
+        const dayStats = {};
+
+        daysWithData.forEach(day => {
+            const values = weekData[day].sleep;
+            const mean = values.reduce((a, b) => a + b, 0) / values.length;
+            if (mean === 0) return;
+            const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+            const stdDev = Math.sqrt(variance);
+            const cv = stdDev / mean; // lower = more consistent
+            totalCV += cv;
+            daysAnalyzed++;
+            dayStats[day] = { mean: parseFloat(mean.toFixed(1)), cv: parseFloat(cv.toFixed(2)), n: values.length };
+        });
+
+        if (daysAnalyzed === 0) {
+            return { hasCycle: false, cycleLength: null, pattern: 'insufficient_data', confidence: 0 };
+        }
+
+        const avgCV = totalCV / daysAnalyzed;
+
+        // CV < 0.15 → strong consistency, CV < 0.25 → moderate, CV >= 0.35 → irregular
+        const consistencyRate = Math.max(0, 1 - (avgCV / 0.4));
+        const hasCycle = consistencyRate >= 0.5;
 
         let cycleStrength = 'weak';
-        if (matchRate >= 0.8) cycleStrength = 'strong';
-        else if (matchRate >= 0.7) cycleStrength = 'moderate';
-        
+        if (consistencyRate >= 0.8) cycleStrength = 'strong';
+        else if (consistencyRate >= 0.65) cycleStrength = 'moderate';
+
         return {
             hasCycle: hasCycle,
             cycleLength: hasCycle ? 7 : null,
             pattern: hasCycle ? 'weekly' : 'irregular',
-            confidence: Math.round(matchRate * 100),
+            confidence: Math.round(consistencyRate * 100),
             strength: hasCycle ? cycleStrength : null,
-            matchRate: matchRate
+            daysAnalyzed: daysAnalyzed,
+            avgCV: parseFloat(avgCV.toFixed(2)),
+            dayStats: dayStats
         };
     } catch (error) {
         console.error('Error in detectWeeklyCycles:', error);
@@ -25466,31 +25492,6 @@ function detectOptimalSleepRange(data) {
     }
 }
 
-function detectInvertedURelationship(data) {
-    if (!data || !data.data || data.data.length < 7) return false;
-    
-    try {
-
-        const sorted = [...data.data].sort((a, b) => a.sleep - b.sleep);
-
-        const third = Math.floor(sorted.length / 3);
-        const lowSleep = sorted.slice(0, third);
-        const midSleep = sorted.slice(third, third * 2);
-        const highSleep = sorted.slice(third * 2);
-        
-        const avgLow = lowSleep.reduce((sum, d) => sum + d.study, 0) / lowSleep.length;
-        const avgMid = midSleep.reduce((sum, d) => sum + d.study, 0) / midSleep.length;
-        const avgHigh = highSleep.reduce((sum, d) => sum + d.study, 0) / highSleep.length;
-
-        return avgMid > avgLow && avgMid > avgHigh && 
-               (avgMid - avgLow) / avgLow > 0.1 && 
-               (avgMid - avgHigh) / avgHigh > 0.1;
-    } catch (error) {
-        console.error('Error in detectInvertedURelationship:', error);
-        return false;
-    }
-}
-
 function calculateSleepImpactOnStudy(data) {
     if (!data || !data.correlation) return 'unknown';
     
@@ -26026,39 +26027,6 @@ function calculateVariance(values) {
     }
 }
 
-function calculateStandardDeviation(values) {
-    return Math.sqrt(calculateVariance(values));
-}
-
-function calculateConsistencyScore(values) {
-    if (!values || values.length < 2) return 0;
-    
-    try {
-        const validValues = values.filter(v => !isNaN(v) && v >= 0);
-        if (validValues.length < 2) return 0;
-        
-        const avg = validValues.reduce((a, b) => a + b, 0) / validValues.length;
-        if (avg === 0) return 0;
-        
-        const stdDev = calculateStandardDeviation(validValues);
-        const cv = (stdDev / avg) * 100; 
-        return Math.max(0, Math.min(100, 100 - cv));
-    } catch (error) {
-        console.error('Error in calculateConsistencyScore:', error);
-        return 0;
-    }
-}
-
-function formatTimeFromDecimal(decimal) {
-    try {
-        const hours = Math.floor(decimal);
-        const minutes = Math.round((decimal - hours) * 60);
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-    } catch (error) {
-        return 'N/A';
-    }
-}
-
 function detectCorrelationThreshold(data) {
     if (!data || !data.data || data.data.length < 5) return false;
     
@@ -26170,7 +26138,7 @@ function detectStudyThresholds(data) {
     }
     
     try {
-        const sorted = [...data.data].sort((a, b) => a.sleep - b.study);
+        const sorted = [...data.data].sort((a, b) => a.study - b.study);
         const studyValues = sorted.map(d => d.study);
         
         const min = Math.min(...studyValues);
@@ -26241,10 +26209,184 @@ function findOptimalCombinations(data) {
 }
 
 function calculateSkillGoalAlignment() {
+    // Measures % of active goals that have a matching skill being tracked
     try {
-        return 75;
+        const activeGoals = (typeof goals !== 'undefined' ? goals : [])
+            .filter(g => getGoalProgressPercent(g) < 100);
+        if (activeGoals.length === 0) return 0;
+
+        if (typeof currentCareer === 'undefined' || typeof skillsData === 'undefined') return 0;
+        const careerData = skillsData[currentCareer];
+        if (!careerData || !careerData.categories) return 0;
+
+        const trackedSkillNames = new Set();
+        Object.values(careerData.categories).forEach(cat => {
+            (cat.skills || []).forEach(s => {
+                if (s && s.name) {
+                    const hrs = (typeof getSkillHours === 'function') ? getSkillHours(currentCareer, s.name) : 0;
+                    if (hrs > 0) trackedSkillNames.add(s.name.toLowerCase());
+                }
+            });
+        });
+
+        if (trackedSkillNames.size === 0) return 0;
+
+        let aligned = 0;
+        activeGoals.forEach(goal => {
+            const titleWords = (goal.title || '').toLowerCase().split(/\s+/);
+            const hasMatch = [...trackedSkillNames].some(skill =>
+                titleWords.some(word => skill.includes(word) || word.includes(skill))
+            );
+            if (hasMatch) aligned++;
+        });
+
+        return Math.round((aligned / activeGoals.length) * 100);
     } catch (error) {
         console.error('Error in calculateSkillGoalAlignment:', error);
+        return 0;
+    }
+}
+
+function analyzeEfficiencyTrend() {
+    // Compare avg study hours last 7 days vs prior 7 days
+    try {
+        if (!dailyStudyData) return 'stable';
+        const sortedDays = Object.keys(dailyStudyData).sort();
+        if (sortedDays.length < 7) return 'insufficient_data';
+
+        const recent = sortedDays.slice(-7);
+        const prior  = sortedDays.slice(-14, -7);
+
+        const avg = arr => arr.length === 0 ? 0
+            : arr.reduce((s, d) => s + (dailyStudyData[d] || 0), 0) / arr.length;
+
+        const recentAvg = avg(recent);
+        const priorAvg  = avg(prior);
+
+        if (priorAvg === 0) return recentAvg > 0 ? 'improving' : 'stable';
+
+        const change = ((recentAvg - priorAvg) / priorAvg) * 100;
+        if (change >  15) return 'improving';
+        if (change < -15) return 'declining';
+        return 'stable';
+    } catch (error) {
+        console.error('Error in analyzeEfficiencyTrend:', error);
+        return 'unknown';
+    }
+}
+
+function estimateDistractionFrequency() {
+    // Proxy: sessions shorter than 30 min are likely interrupted
+    try {
+        if (!sessionLogs || sessionLogs.length === 0) return 'unknown';
+        const shortSessions = sessionLogs.filter(s => (s.duration || 0) < 0.5).length;
+        const rate = shortSessions / sessionLogs.length;
+        if (rate >= 0.5) return 'high';
+        if (rate >= 0.25) return 'medium';
+        return 'low';
+    } catch (error) {
+        console.error('Error in estimateDistractionFrequency:', error);
+        return 'unknown';
+    }
+}
+
+function calculateFocusConsistency() {
+    // CV of session durations, inverted so higher = more consistent
+    try {
+        if (!sessionLogs || sessionLogs.length < 3) return 0;
+        const durations = sessionLogs.map(s => s.duration || 0).filter(d => d > 0);
+        if (durations.length < 2) return 0;
+        return calculateConsistencyScore(durations);
+    } catch (error) {
+        console.error('Error in calculateFocusConsistency:', error);
+        return 0;
+    }
+}
+
+function identifyQuickWins() {
+    // Count in-progress goals that are ≥70% complete (close to finish)
+    try {
+        const activeGoals = (typeof goals !== 'undefined' ? goals : []);
+        if (activeGoals.length === 0) return 0;
+        return activeGoals.filter(g => {
+            const p = getGoalProgressPercent(g);
+            return p >= 70 && p < 100;
+        }).length;
+    } catch (error) {
+        console.error('Error in identifyQuickWins:', error);
+        return 0;
+    }
+}
+
+function suggestSystemicImprovements() {
+    // Generate real suggestions based on actual data patterns
+    try {
+        const suggestions = [];
+
+        if (sleepSessions && sleepSessions.length >= 5) {
+            const durations = sleepSessions.slice(-7).map(s => s.duration || 0);
+            const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+            const consistency = calculateConsistencyScore(durations);
+            if (consistency < 65) suggestions.push('Stabilise bedtime — your sleep duration varies significantly night to night');
+            if (avg < 6.5)        suggestions.push('Increase average sleep to at least 7 h for better cognitive recovery');
+        }
+
+        if (dailyStudyData) {
+            const hours = Object.values(dailyStudyData).map(h => parseFloat(h) || 0);
+            if (hours.length >= 7) {
+                const consistency = calculateConsistencyScore(hours);
+                if (consistency < 60) suggestions.push('Build a fixed daily study block — your hours fluctuate too much week to week');
+            }
+            const recentDays = Object.keys(dailyStudyData).sort().slice(-7);
+            const hasBreak = recentDays.some(d => (dailyStudyData[d] || 0) < 1);
+            if (!hasBreak) suggestions.push('Schedule at least one low-intensity day per week to prevent burnout');
+        }
+
+        if (sessionLogs && sessionLogs.length >= 5) {
+            const avgLen = calculateAverageSessionLength();
+            if (avgLen > 0 && avgLen < 1.5) suggestions.push('Aim for longer, uninterrupted focus blocks (≥90 min) for deep work');
+        }
+
+        if (suggestions.length === 0) suggestions.push('Patterns look healthy — maintain your current routine');
+        return suggestions;
+    } catch (error) {
+        console.error('Error in suggestSystemicImprovements:', error);
+        return ['Consistent sleep schedule', 'Daily study routine'];
+    }
+}
+
+function calculateSustainabilityScore() {
+    // 0-100: penalise overwork, sleep deprivation, zero-break weeks, high CV
+    try {
+        let score = 100;
+
+        if (dailyStudyData) {
+            const recentHours = Object.keys(dailyStudyData).sort().slice(-7)
+                .map(d => dailyStudyData[d] || 0);
+            if (recentHours.length > 0) {
+                const avg = recentHours.reduce((a, b) => a + b, 0) / recentHours.length;
+                if (avg > 12) score -= 30;
+                else if (avg > 10) score -= 15;
+                else if (avg > 8)  score -= 5;
+
+                const hasBreak = recentHours.some(h => h < 1);
+                if (!hasBreak) score -= 10;
+
+                const consistency = calculateConsistencyScore(recentHours);
+                if (consistency < 50) score -= 10;
+            }
+        }
+
+        if (sleepSessions && sleepSessions.length >= 5) {
+            const recentSleep = sleepSessions.slice(-7).map(s => s.duration || 0);
+            const avgSleep = recentSleep.reduce((a, b) => a + b, 0) / recentSleep.length;
+            if (avgSleep < 5.5) score -= 25;
+            else if (avgSleep < 6.5) score -= 10;
+        }
+
+        return Math.max(0, Math.min(100, Math.round(score)));
+    } catch (error) {
+        console.error('Error in calculateSustainabilityScore:', error);
         return 0;
     }
 }
@@ -26314,60 +26456,6 @@ function analyzePriorityDistribution(goals) {
     }
 }
 
-function analyzeEfficiencyTrend() {
-    try {
-        return 'stable';
-    } catch (error) {
-        console.error('Error in analyzeEfficiencyTrend:', error);
-        return 'unknown';
-    }
-}
-
-function estimateDistractionFrequency() {
-    try {
-        return 'low';
-    } catch (error) {
-        console.error('Error in estimateDistractionFrequency:', error);
-        return 'unknown';
-    }
-}
-
-function calculateFocusConsistency() {
-    try {
-        return 75;
-    } catch (error) {
-        console.error('Error in calculateFocusConsistency:', error);
-        return 0;
-    }
-}
-
-function identifyQuickWins() {
-    try {
-        return 3;
-    } catch (error) {
-        console.error('Error in identifyQuickWins:', error);
-        return 0;
-    }
-}
-
-function suggestSystemicImprovements() {
-    try {
-        return ['Consistent sleep schedule', 'Daily study routine'];
-    } catch (error) {
-        console.error('Error in suggestSystemicImprovements:', error);
-        return [];
-    }
-}
-
-function calculateSustainabilityScore() {
-    try {
-        return 75;
-    } catch (error) {
-        console.error('Error in calculateSustainabilityScore:', error);
-        return 0;
-    }
-}
-
 function calculateConfidenceInterval(r, n, confidence = 0.95) {
     const z = 1.96; 
     const se = 1 / Math.sqrt(n - 3);
@@ -26379,95 +26467,6 @@ function calculateConfidenceInterval(r, n, confidence = 0.95) {
 function calculatePValue(r, n) {
     const t = r * Math.sqrt((n - 2) / (1 - r * r));
     return pValue;
-}
-
-// ====== INVERTED-U DETECTION ENSEMBLE ======
-
-function detectInvertedURelationship(data) {
-    if (!data || !data.data || data.data.length < 8) {
-        return {
-            isInvertedU: false,
-            confidence: 0,
-            reason: 'Insufficient data (need at least 8 points)',
-            method: 'none'
-        };
-    }
-    
-    try {
-        // 1. Quadratic Regression Method
-        const quadraticResult = detectInvertedUQuadratic(data);
-        
-        // 2. Piecewise Linear Method  
-        const piecewiseResult = detectInvertedUPiecewise(data);
-        
-        // 3. Simple Method (original)
-        const simpleResult = detectInvertedUSimple(data);
-        
-        // Ensemble Voting với weights
-        const results = [
-            { method: 'quadratic', ...quadraticResult, weight: 0.5 },
-            { method: 'piecewise', ...piecewiseResult, weight: 0.3 },
-            { method: 'simple', ...simpleResult, weight: 0.2 }
-        ];
-        
-        // Weighted voting
-        let weightedYes = 0;
-        let totalWeight = 0;
-        let avgConfidence = 0;
-        
-        results.forEach(r => {
-            if (r.isInvertedU) {
-                weightedYes += r.weight;
-            }
-            totalWeight += r.weight;
-            avgConfidence += (r.confidence || 0) * r.weight;
-        });
-        
-        const finalIsInvertedU = weightedYes / totalWeight >= 0.5;
-        const finalConfidence = avgConfidence / totalWeight;
-        
-        // Tìm phương pháp có confidence cao nhất
-        const bestMethod = results.reduce((best, current) => 
-            (current.confidence || 0) > (best.confidence || 0) ? current : best
-        );
-        
-        return {
-            isInvertedU: finalIsInvertedU,
-            confidence: Math.round(finalConfidence),
-            peak: bestMethod.peak || null,
-            methods: {
-                quadratic: {
-                    isInvertedU: quadraticResult.isInvertedU,
-                    confidence: quadraticResult.confidence,
-                    peak: quadraticResult.peak
-                },
-                piecewise: {
-                    isInvertedU: piecewiseResult.isInvertedU,
-                    confidence: piecewiseResult.confidence,
-                    peak: piecewiseResult.peak
-                },
-                simple: {
-                    isInvertedU: simpleResult.isInvertedU,
-                    confidence: simpleResult.confidence,
-                    peak: simpleResult.peak
-                }
-            },
-            agreement: {
-                yesVotes: results.filter(r => r.isInvertedU).length,
-                totalVotes: results.length,
-                weightedAgreement: parseFloat((weightedYes / totalWeight).toFixed(2))
-            },
-            interpretation: generateInvertedUInterpretation(finalIsInvertedU, finalConfidence, bestMethod)
-        };
-        
-    } catch (error) {
-        console.error('Error in Inverted-U detection:', error);
-        return {
-            isInvertedU: false,
-            confidence: 0,
-            error: error.message
-        };
-    }
 }
 
 // ====== 1. QUADRATIC REGRESSION METHOD ======
@@ -26756,41 +26755,7 @@ function getConfidenceColor(confidence) {
     return '#ef4444';
 }
 
-        
 
-        function detectPatterns() {
-            try {
-                const patterns = {
-                    sleepPatterns: detectSleepPatterns(),
-                    studyPatterns: detectStudyPatterns(),
-                    correlationPatterns: detectCorrelationPatterns(),
-                    weeklyPatterns: detectWeeklyPatterns(),
-                    goalPatterns: detectGoalPatterns(),
-                    productivityPatterns: detectProductivityPatterns()
-                };
-                
-                return {
-                    ...patterns,
-                    insights: generatePatternInsights(patterns),
-                    recommendations: generatePatternRecommendations(patterns),
-                    confidence: calculateConfidenceScores(patterns)
-                };
-            } catch (error) {
-                console.error('Pattern detection failed:', error);
-                return {
-                    sleepPatterns: { error: error.message },
-                    studyPatterns: { error: error.message },
-                    correlationPatterns: { error: error.message },
-                    weeklyPatterns: { error: error.message },
-                    goalPatterns: { error: error.message },
-                    productivityPatterns: { error: error.message },
-                    insights: [],
-                    recommendations: [],
-                    confidence: 0,
-                    hasError: true
-                };
-            }
-        }
 
         function detectSleepPatterns() {
             if (sleepSessions.length < 5) return { insufficientData: true };
@@ -26895,7 +26860,12 @@ function getConfidenceColor(confidence) {
                     missedDays: calculateMissedStudyDays(studyDays),
                     consistencyScore: calculateStudyConsistencyScore(hours),
                     dailyVariance: calculateVariance(hours),
-                    studyDaysPerWeek: Math.round((studyDays.length / (studyDays.length / 7)) * 10) / 10
+                    studyDaysPerWeek: (() => {
+                        const firstDate = new Date(studyDays[0]);
+                        const lastDate  = new Date(studyDays[studyDays.length - 1]);
+                        const totalWeeks = Math.max(1, (lastDate - firstDate) / (7 * 86400000));
+                        return Math.round((studyDays.length / totalWeeks) * 10) / 10;
+                    })()
                 };
                 
                 if (sessionLogs && sessionLogs.length > 0) {
@@ -27097,8 +27067,12 @@ function getConfidenceColor(confidence) {
                     focusConsistency: calculateFocusConsistency()
                 };
                 
+                const _burnoutResult = assessBurnoutRisk();
                 patterns.burnoutRisk = {
-                    currentRisk: assessBurnoutRisk(),
+                    currentRisk: _burnoutResult.level,
+                    burnoutScore: _burnoutResult.score,
+                    burnoutFactors: _burnoutResult.factors,
+                    burnoutRecommendations: _burnoutResult.recommendations,
                     riskFactors: identifyBurnoutRiskFactors(),
                     recoveryIndicators: checkRecoveryIndicators(),
                     sustainabilityScore: calculateSustainabilityScore()
@@ -27117,29 +27091,6 @@ function getConfidenceColor(confidence) {
             }
             
             return patterns;
-        }
-
-        function calculateConsistencyScore(values) {
-            if (values.length < 2) return 0;
-            const avg = values.reduce((a, b) => a + b, 0) / values.length;
-            const variance = values.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / values.length;
-            const stdDev = Math.sqrt(variance);
-            const cv = (stdDev / avg) * 100; 
-            const score = Math.max(0, 100 - Math.min(cv, 100));
-            return Math.round(score);
-        }
-
-        function calculateStandardDeviation(values) {
-            const avg = values.reduce((a, b) => a + b, 0) / values.length;
-            const squareDiffs = values.map(value => Math.pow(value - avg, 2));
-            const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length;
-            return Math.sqrt(avgSquareDiff);
-        }
-
-        function formatTimeFromDecimal(decimalHours) {
-            const hours = Math.floor(decimalHours);
-            const minutes = Math.round((decimalHours - hours) * 60);
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
         }
 
         function getBedtimeRange(bedtimes) {
@@ -27332,7 +27283,7 @@ function getConfidenceColor(confidence) {
         }
 
         function renderPatternInsights() {
-            const container = document.getElementById('patternInsightsContainer');
+            let container = document.getElementById('patternInsightsContainer');
             if (!container) {
                 const section = document.createElement('div');
                 section.id = 'patternInsightsSection';
@@ -28161,10 +28112,7 @@ function getConfidenceColor(confidence) {
             `;
         }
 
-        function refreshPatternInsights() {
-            renderPatternInsights();
-            showNotification('🔄 Pattern insights refreshed', 'success');
-        }
+        
 
         function togglePatternDetails() {
             const container = document.getElementById('patternInsightsContainer');
@@ -28606,7 +28554,7 @@ function getConfidenceColor(confidence) {
             }
             
             try {
-                const sorted = [...sleepStudy.data].sort((a, b) => a.sleep - b.study);
+                const sorted = [...sleepStudy.data].sort((a, b) => a.sleep - b.sleep);
                 const lowerHalf = sorted.slice(0, Math.floor(sorted.length / 2));
                 const upperHalf = sorted.slice(Math.floor(sorted.length / 2));
                 
@@ -29462,13 +29410,6 @@ function hasLowQualityIndicators(session) {
     return potentialAwakenings > 4; // More than 4 potential awakenings
 }
 
-function calculateStandardDeviation(values) {
-    const avg = values.reduce((a, b) => a + b) / values.length;
-    const squareDiffs = values.map(value => Math.pow(value - avg, 2));
-    const avgSquareDiff = squareDiffs.reduce((a, b) => a + b) / squareDiffs.length;
-    return Math.sqrt(avgSquareDiff);
-}
-
 function formatTimeFromDecimal(decimal) {
     const hour = Math.floor(decimal);
     const minute = Math.round((decimal - hour) * 60);
@@ -29546,20 +29487,6 @@ if (typeof addInsomniaSection === 'undefined') {
 }
 
 // 2. Fix pattern detection functions
-if (typeof calculateAveragePace === 'undefined') {
-    function calculateAveragePace() {
-        console.warn('calculateAveragePace not implemented');
-        return 0;
-    }
-}
-
-if (typeof identifyBurnoutRiskFactors === 'undefined') {
-    function identifyBurnoutRiskFactors() {
-        console.warn('identifyBurnoutRiskFactors not implemented');
-        return [];
-    }
-}
-
 if (typeof Patterns === 'undefined') {
     window.Patterns = {
         detectGoalPatterns: function() { return {}; },
@@ -30263,11 +30190,14 @@ function analyzeStudyPatterns(studyData = {}) {
 }
 
 function calculateConsistencyScore(values) {
-    if (values.length < 2) return 100;
-    const avg = values.reduce((a, b) => a + b) / values.length;
-    const deviations = values.map(v => Math.abs(v - avg) / avg);
-    const avgDeviation = deviations.reduce((a, b) => a + b) / deviations.length;
-    return Math.max(0, 100 - (avgDeviation * 100));
+    if (!values || values.length < 2) return 100;
+    const validValues = values.filter(v => !isNaN(v) && v !== null && v !== undefined);
+    if (validValues.length < 2) return 100;
+    const avg = validValues.reduce((a, b) => a + b, 0) / validValues.length;
+    if (avg === 0) return 100; // all zeros = perfectly consistent at zero
+    const deviations = validValues.map(v => Math.abs(v - avg) / avg);
+    const avgDeviation = deviations.reduce((a, b) => a + b, 0) / deviations.length;
+    return Math.max(0, Math.round(100 - (avgDeviation * 100)));
 }
 
 function generateStudyRecommendations(data) {
