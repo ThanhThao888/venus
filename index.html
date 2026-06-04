@@ -21718,11 +21718,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]`;
             };
 
-            // ── Currently Reading (full list) ──
+            // ── Currently Reading (full list, with review/notes if present) ──
             if (rlReading.length > 0) {
                 lines.push('');
                 lines.push('Currently Reading:');
-                rlReading.forEach(b => lines.push(fmtBook(b)));
+                rlReading.forEach(b => {
+                    lines.push(fmtBook(b));
+                    if (b.review && b.review.trim()) {
+                        const reviewText = b.review.trim();
+                        // Indent every line of the review
+                        reviewText.split('\n').forEach(line => {
+                            lines.push(`      📝 ${line}`);
+                        });
+                    }
+                });
             }
 
             // ── Want to Read — ALL books, grouped by genre ──
@@ -21744,15 +21753,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
-            // ── Finished (capped, already read = less relevant for ordering) ──
+            // ── Finished — full list with stars + review ──
             if (rlFinished.length > 0) {
                 lines.push('');
                 lines.push(`Already Finished (${rlFinished.length}):`);
-                rlFinished.slice(0, 12).forEach(b => {
+                rlFinished.forEach(b => {
                     const stars = b.rating ? ' ' + '⭐'.repeat(Math.round(b.rating)) : '';
                     lines.push(fmtBook(b) + stars);
+                    if (b.review && b.review.trim()) {
+                        const reviewText = b.review.trim();
+                        reviewText.split('\n').forEach(line => {
+                            lines.push(`      📝 ${line}`);
+                        });
+                    }
                 });
-                if (rlFinished.length > 12) lines.push(`  ... and ${rlFinished.length - 12} more`);
             }
 
             // ── COURSES ──
@@ -21795,7 +21809,8 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('    to advanced, grouped by career relevance (PE, finance, etc.)');
             lines.push(' 2) Flag any books I should prioritize given my current study hours');
             lines.push(' 3) Suggest 3–5 specific goals for the next 30 days based on my gaps');
-            lines.push(' 4) Note any skill areas I am neglecting entirely."')
+            lines.push(' 4) Note any skill areas I am neglecting entirely.');
+            lines.push(' 5) Based on my book reviews (📝 notes above), identify patterns in what I respond to intellectually and recommend next reads accordingly."')
 
             const fullText = lines.join('\n');
 
