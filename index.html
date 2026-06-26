@@ -11324,6 +11324,8 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   }
 
   /* ─── Navigate to Course / Goal (ADHD Jump Mode) ─── */
+  const KNOWN_CAREERS = ['pe','ib','hf','sc','fintech','english','chinese','tools','cfa1'];
+
   function navigateToItem(itemId) {
     if (itemId.startsWith('c_')) {
       // ── Jump to Course ──
@@ -11331,33 +11333,43 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       const allCourses = JSON.parse(localStorage.getItem('courses') || '[]');
       const course = allCourses.find(c => String(c.id) === courseId);
       if (!course) {
-        if (typeof showNotification === 'function') showNotification('❌ Không tìm thấy course!', 'error');
+        if (typeof showNotification === 'function') showNotification('❌ Không tìm thấy course trong danh sách!', 'error');
         return;
       }
       if (typeof showNotification === 'function') showNotification(`⚡ Đang nhảy đến: ${course.title}`, 'info');
 
-      // 1. Switch career tab
-      if (typeof selectCareer === 'function') selectCareer(course.career);
+      // Only switch career if it's a valid known career
+      const hasValidCareer = course.career && KNOWN_CAREERS.includes(course.career);
+      if (hasValidCareer && typeof selectCareer === 'function') {
+        selectCareer(course.career);
+      } else if (!hasValidCareer) {
+        // Career invalid/missing — warn and bail early with helpful message
+        if (typeof showNotification === 'function') {
+          showNotification(`⚠️ Course "${course.title}" chưa có career. Vào Edit course để chọn career (HF, IB, PE,...).`, 'error');
+        }
+        // Still try to scroll to course section in case it's showing in current career
+      }
 
+      const delay = hasValidCareer ? 680 : 100;
       setTimeout(() => {
-        // 2. Expand course section if collapsed
+        // Expand course section if collapsed
         const coursesBody = document.getElementById('coursesBody');
         if (coursesBody && coursesBody.style.display === 'none') {
           if (typeof toggleCourseSection === 'function') toggleCourseSection();
         }
 
-        // 3. Reset status filter so the course is visible
+        // Reset status filter so the course is visible
         const statusFilter = document.getElementById('courseStatusFilter');
         if (statusFilter && statusFilter.value !== 'all') {
           statusFilter.value = 'all';
           if (typeof renderCourses === 'function') renderCourses();
         }
 
-        // 4. Scroll to course section header first
+        // Scroll to course section header first
         const courseSection = document.getElementById('course-section');
         if (courseSection) courseSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-        // 5. Then highlight the specific course card
+        // Then highlight the specific course card
         setTimeout(() => {
           const courseEl = document.querySelector(`.course-item[data-id="${courseId}"]`);
           if (courseEl) {
@@ -11366,9 +11378,12 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
             courseEl.style.boxShadow = '0 0 0 3px #f59e0b, 0 0 28px rgba(245,158,11,0.55)';
             courseEl.style.transform = 'scale(1.03)';
             setTimeout(() => { courseEl.style.boxShadow = ''; courseEl.style.transform = ''; }, 2800);
+          } else if (hasValidCareer) {
+            if (typeof showNotification === 'function')
+              showNotification(`⚠️ Không tìm thấy "${course.title}" trong career này. Thử check lại filter.`, 'error');
           }
         }, 420);
-      }, 680);
+      }, delay);
 
     } else if (itemId.startsWith('g_')) {
       // ── Jump to Goal ──
