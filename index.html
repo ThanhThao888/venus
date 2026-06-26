@@ -10950,6 +10950,20 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 }
 .dlt-gcal-btn:hover { background: #4285f4; color: #fff; }
 
+/* Clickable info zone for navigable cards */
+.dlt-info.dlt-jumpable { cursor: pointer; }
+.dlt-info.dlt-jumpable:hover .dlt-name {
+  color: #f59e0b;
+  text-decoration: underline dotted;
+}
+.dlt-info.dlt-jumpable::after {
+  content: '⚡ click to jump';
+  font-size: 0.62rem; color: #f59e0b; opacity: 0;
+  display: block; margin-top: 2px; font-style: italic;
+  transition: opacity 0.2s;
+}
+.dlt-info.dlt-jumpable:hover::after { opacity: 0.8; }
+
 .dlt-empty { color: var(--text-muted); font-size: 0.9rem; font-style: italic; }
 
 /* ── Add Modal ── */
@@ -11259,13 +11273,15 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         ? `<span class="dlt-badge src">${d.source}</span>` : '';
       const canDel = !d.source;
       const gcalUrl = googleCalendarUrl(d.name, d.date);
+      // ⚡ ADHD Jump: courses (c_) and goals (g_) can be jumped-to directly
+      const isNavigable = d.id.startsWith('c_') || d.id.startsWith('g_');
 
       return `<div class="dlt-card ${cls}">
         <div class="dlt-days-wrap">
           <div class="dlt-days">${dNum}</div>
           <div class="dlt-days-unit">${dUnit}</div>
         </div>
-        <div class="dlt-info">
+        <div class="dlt-info${isNavigable ? ' dlt-jumpable' : ''}"${isNavigable ? ` onclick="DLT.navigate('${d.id}')" title="⚡ Click để nhảy thẳng tới course/goal này"` : ''}>
           <div class="dlt-name" title="${d.name}">${d.name}</div>
           <div class="dlt-meta">${d.category?d.category+' · ':''}${fmtDate(d.date)}${d.time ? ' · ⏰ ' + d.time : ''}</div>
           <div class="dlt-badges">
@@ -11276,8 +11292,9 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         </div>
         <div class="dlt-card-btns">
           ${!done ? `<button class="dlt-done-btn" onclick="DLT.done('${d.id}',${days})" title="Mark done">✓</button>` : ''}
-          <a class="dlt-gcal-btn" href="${gcalUrl}" target="_blank" title="Add to Google Calendar">📅</a>
-          ${canDel ? `<button class="dlt-del-btn" onclick="DLT.del('${d.id}')" title="Delete">✕</button>` : ''}
+
+          <a class="dlt-gcal-btn" href="${gcalUrl}" target="_blank" title="Add to Google Calendar" onclick="event.stopPropagation()">📅</a>
+          ${canDel ? `<button class="dlt-del-btn" onclick="event.stopPropagation(); DLT.del('${d.id}')" title="Delete">✕</button>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -11306,10 +11323,92 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     setTimeout(() => { document.getElementById('dltPopup').style.display = 'block'; }, 1400);
   }
 
+  /* ─── Navigate to Course / Goal (ADHD Jump Mode) ─── */
+  function navigateToItem(itemId) {
+    if (itemId.startsWith('c_')) {
+      // ── Jump to Course ──
+      const courseId = itemId.slice(2);
+      const allCourses = JSON.parse(localStorage.getItem('courses') || '[]');
+      const course = allCourses.find(c => String(c.id) === courseId);
+      if (!course) {
+        if (typeof showNotification === 'function') showNotification('❌ Không tìm thấy course!', 'error');
+        return;
+      }
+      if (typeof showNotification === 'function') showNotification(`⚡ Đang nhảy đến: ${course.title}`, 'info');
+
+      // 1. Switch career tab
+      if (typeof selectCareer === 'function') selectCareer(course.career);
+
+      setTimeout(() => {
+        // 2. Expand course section if collapsed
+        const coursesBody = document.getElementById('coursesBody');
+        if (coursesBody && coursesBody.style.display === 'none') {
+          if (typeof toggleCourseSection === 'function') toggleCourseSection();
+        }
+
+        // 3. Reset status filter so the course is visible
+        const statusFilter = document.getElementById('courseStatusFilter');
+        if (statusFilter && statusFilter.value !== 'all') {
+          statusFilter.value = 'all';
+          if (typeof renderCourses === 'function') renderCourses();
+        }
+
+        // 4. Scroll to course section header first
+        const courseSection = document.getElementById('course-section');
+        if (courseSection) courseSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // 5. Then highlight the specific course card
+        setTimeout(() => {
+          const courseEl = document.querySelector(`.course-item[data-id="${courseId}"]`);
+          if (courseEl) {
+            courseEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            courseEl.style.transition = '0.4s';
+            courseEl.style.boxShadow = '0 0 0 3px #f59e0b, 0 0 28px rgba(245,158,11,0.55)';
+            courseEl.style.transform = 'scale(1.03)';
+            setTimeout(() => { courseEl.style.boxShadow = ''; courseEl.style.transform = ''; }, 2800);
+          }
+        }, 420);
+      }, 680);
+
+    } else if (itemId.startsWith('g_')) {
+      // ── Jump to Goal ──
+      const goalId = itemId.slice(2);
+      const allGoals = JSON.parse(localStorage.getItem('goals') || '[]');
+      const goal = allGoals.find(g => String(g.id) === goalId);
+      if (!goal) {
+        if (typeof showNotification === 'function') showNotification('❌ Không tìm thấy goal!', 'error');
+        return;
+      }
+      if (typeof showNotification === 'function') showNotification(`⚡ Đang nhảy đến: ${goal.title}`, 'info');
+
+      // 1. Switch career tab
+      if (typeof selectCareer === 'function') selectCareer(goal.career);
+
+      setTimeout(() => {
+        // 2. Scroll to goals sidebar card
+        const goalsSection = document.getElementById('goalsSection');
+        if (goalsSection) goalsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // 3. Highlight the specific goal card
+        setTimeout(() => {
+          const goalEl = document.querySelector(`.goal-item[data-id="${goalId}"]`);
+          if (goalEl) {
+            goalEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            goalEl.style.transition = '0.4s';
+            goalEl.style.boxShadow = '0 0 0 3px #3b82f6, 0 0 28px rgba(59,130,246,0.55)';
+            goalEl.style.transform = 'scale(1.03)';
+            setTimeout(() => { goalEl.style.boxShadow = ''; goalEl.style.transform = ''; }, 2800);
+          }
+        }, 420);
+      }, 680);
+    }
+  }
+
   /* ─── Public API ─── */
   window.DLT = {
     sync()   { render(); },
     filter(c){ curFilter = c; render(); },
+    navigate: navigateToItem,
     openModal() {
       document.getElementById('dltName').value = '';
       document.getElementById('dltDate').value = '';
