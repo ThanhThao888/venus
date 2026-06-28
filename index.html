@@ -10173,9 +10173,44 @@
       </div>
     </div>
     <!-- Tabs -->
+    <!-- Action bar -->
+    <div id="calActionBar" style="display:flex;gap:6px;align-items:center;padding:8px 16px;background:var(--bg-light);border-bottom:1px solid var(--border-color);flex-wrap:wrap;">
+      <button onclick="PLANEXT.whatNow()"
+        style="padding:5px 11px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
+        🧠 What Now?
+      </button>
+      <button onclick="PLANEXT.exportTodayToGCal()"
+        style="padding:5px 11px;background:rgba(66,133,244,.12);color:#4285f4;border:1px solid rgba(66,133,244,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
+        📅 Export→GCal
+      </button>
+      <button onclick="PLANEXT.toggleFilters()"
+        style="padding:5px 11px;background:rgba(245,158,11,.12);color:#b45309;border:1px solid rgba(245,158,11,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
+        🔽 Filters
+      </button>
+      <div style="flex:1;"></div>
+      <label style="font-size:.72rem;color:var(--text-muted);font-weight:600;white-space:nowrap;">Jump to:</label>
+      <input type="date" id="calDateJump"
+        style="padding:4px 8px;border:1px solid var(--border-color);border-radius:6px;font-size:.8rem;background:var(--bg-white);color:var(--text-dark);cursor:pointer;"
+        onchange="PLANEXT.jumpToDate(this.value)">
+      <span style="font-size:.68rem;color:var(--text-muted);white-space:nowrap;">← → T D W M</span>
+    </div>
+    <!-- Category filter panel (hidden by default) -->
+    <div id="calFilterPanel" style="display:none;flex-wrap:wrap;gap:6px;padding:8px 16px;background:rgba(245,158,11,.05);border-bottom:1px solid var(--border-color);">
+      <span style="font-size:.72rem;font-weight:700;color:var(--text-muted);align-self:center;">HIỆN:</span>
+      <button data-filter="task"     onclick="PLANEXT.toggleFilter('task',this)"     style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#6366f1;color:#fff;opacity:1;">📌 Task</button>
+      <button data-filter="study"    onclick="PLANEXT.toggleFilter('study',this)"    style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#3b82f6;color:#fff;opacity:1;">📚 Study</button>
+      <button data-filter="review"   onclick="PLANEXT.toggleFilter('review',this)"   style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#06b6d4;color:#fff;opacity:1;">🔄 Review</button>
+      <button data-filter="exercise" onclick="PLANEXT.toggleFilter('exercise',this)" style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#f97316;color:#fff;opacity:1;">🏃 Exercise</button>
+      <button data-filter="break"    onclick="PLANEXT.toggleFilter('break',this)"    style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#6b7280;color:#fff;opacity:1;">☕ Break</button>
+      <button data-filter="deadline" onclick="PLANEXT.toggleFilter('deadline',this)" style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#8b5cf6;color:#fff;opacity:1;">🎯 Deadline</button>
+      <button data-filter="sleep"    onclick="PLANEXT.toggleFilter('sleep',this)"    style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#0ea5e9;color:#fff;opacity:1;">😴 Sleep</button>
+      <button data-filter="other"    onclick="PLANEXT.toggleFilter('other',this)"    style="padding:3px 10px;border-radius:20px;border:none;cursor:pointer;font-size:.75rem;font-weight:700;background:#64748b;color:#fff;opacity:1;">🗂 Other</button>
+      <button onclick="PLANEXT.resetFilters()" style="padding:3px 10px;border-radius:20px;border:1px solid var(--border-color);cursor:pointer;font-size:.75rem;font-weight:600;background:transparent;color:var(--text-muted);">Reset All</button>
+    </div>
     <div id="calTabs">
       <button class="cal-tab active" onclick="CAL.switchTab('day')">📅 Day</button>
       <button class="cal-tab"       onclick="CAL.switchTab('week')">🗓 Week</button>
+      <button class="cal-tab"       onclick="PLANEXT.openMonthView()">📆 Month</button>
     </div>
     <!-- Legend -->
     <div class="cal-legend">
@@ -10226,6 +10261,43 @@
     <div>
       <label>Notes (optional)</label>
       <textarea id="calSlotNotes" rows="2" placeholder="What do you want to accomplish?"></textarea>
+    </div>
+    <div id="calSlotSeriesBanner">
+      🔁 <strong>Event lặp lại</strong> — chỉnh sửa event này sẽ tách khỏi series.
+    </div>
+    <div id="calSlotRepeatWrap">
+      <label>🔁 Lặp lại</label>
+      <select id="calSlotRepeat" style="width:100%;padding:9px 11px;border:1px solid var(--border-color);border-radius:8px;font-size:.9rem;background:var(--bg-light);color:var(--text-dark);"
+              onchange="document.getElementById('calSlotRepeatCountWrap').style.display=this.value!=='none'?'block':'none'">
+        <option value="none">Không lặp</option>
+        <option value="daily">Mỗi ngày</option>
+        <option value="weekly">Mỗi tuần</option>
+      </select>
+    </div>
+    <div id="calSlotRepeatCountWrap">
+      <label style="font-size:.8rem;font-weight:700;color:#6366f1;display:block;margin-bottom:6px;">Tạo bao nhiêu lần?</label>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" id="calSlotRepeatCount" value="7" min="2" max="90"
+               style="width:80px;padding:8px;border:1px solid var(--border-color);border-radius:8px;font-size:.9rem;background:var(--bg-light);color:var(--text-dark);">
+        <span id="calSlotRepeatPreview" style="font-size:.8rem;color:var(--text-muted);"></span>
+      </div>
+    </div>
+    <div>
+      <label>🔔 Nhắc trước</label>
+      <select id="calSlotReminder" style="width:100%;padding:9px 11px;border:1px solid var(--border-color);border-radius:8px;font-size:.9rem;background:var(--bg-light);color:var(--text-dark);margin-bottom:12px;">
+        <option value="0">Không nhắc</option>
+        <option value="5">5 phút</option>
+        <option value="15" selected>15 phút</option>
+        <option value="30">30 phút</option>
+        <option value="60">1 giờ</option>
+      </select>
+    </div>
+    <div id="calSlotGCalHint" style="display:none;margin-bottom:12px;padding:10px 12px;background:rgba(66,133,244,.08);border-radius:8px;border:1px solid rgba(66,133,244,.25);">
+      <div style="font-size:.72rem;font-weight:700;color:#4285f4;margin-bottom:5px;">📅 Thêm vào Google Calendar?</div>
+      <a id="calSlotGCalLink" href="#" target="_blank" rel="noopener"
+        style="display:inline-block;padding:6px 14px;background:#4285f4;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;">
+        Mở Google Calendar →
+      </a>
     </div>
     <div class="cal-slot-actions">
       <button class="cal-slot-cancel" onclick="CAL.closeSlotModal()">Cancel</button>
@@ -10468,14 +10540,14 @@ const CAL = (() => {
       const w      = `calc(${100/totalCols}% - 4px)`;
       const left   = `calc(${(col/totalCols)*100}% + 2px)`;
       const isCustom = b.id != null;
-      html += `<div class="cal-event" style="
+      html += `<div class="cal-event" data-event-id="${b.id || ''}" style="
                   top:${top}px; height:${height}px;
                   width:${w}; left:${left};
                   background:${b.color};pointer-events:all;"
                title="${b.title} • ${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}${isCustom?'\nClick để edit/xóa':''}">
                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;">
                    <div style="min-width:0;flex:1;">
-                     <div class="cal-event-title">${b.title}</div>
+                     <div class="cal-event-title">${b.title}${b.seriesId ? ' <span class="cal-recur-badge">🔁</span>' : ''}</div>
                      ${height > 32 ? `<div class="cal-event-time">${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}</div>` : ''}
                    </div>
                    ${isCustom ? `<button onclick="event.stopPropagation();CAL.editSlot(${b.id})"
@@ -10483,6 +10555,7 @@ const CAL = (() => {
                             width:18px;height:18px;cursor:pointer;font-size:.65rem;
                             color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;">✏️</button>` : ''}
                  </div>
+                 ${isCustom ? `<div class="cal-resize-handle" data-resize-id="${b.id}"></div>` : ''}
                </div>`;
     });
 
@@ -10709,6 +10782,12 @@ const CAL = (() => {
 
   /* ── Public API ── */
   return {
+    /* ── Exposed state (for extensions) ── */
+    get currentDate() { return currentDate; },
+    set currentDate(d) { currentDate = d; },
+    get currentTab()  { return currentTab; },
+    set currentTab(t) { currentTab = t; },
+    _render: render,
     open() {
       currentDate = new Date();
       document.getElementById('calendarModal').classList.add('open');
@@ -10789,6 +10868,14 @@ const CAL = (() => {
       document.getElementById('calSlotNotes').value = '';
       document.getElementById('calSlotCategory').value = 'task';
 
+      // Reset recurring fields
+      const repeatSel = document.getElementById('calSlotRepeat');
+      const repeatWrap = document.getElementById('calSlotRepeatCountWrap');
+      const seriesBanner = document.getElementById('calSlotSeriesBanner');
+      if (repeatSel)  { repeatSel.value = 'none'; }
+      if (repeatWrap) { repeatWrap.style.display = 'none'; }
+      if (seriesBanner) { seriesBanner.style.display = 'none'; }
+
       // Show/hide delete button
       const delBtn = document.getElementById('calSlotDeleteBtn');
       delBtn.style.display = eventId ? 'block' : 'none';
@@ -10822,17 +10909,49 @@ const CAL = (() => {
         document.getElementById('calSlotStartTime').value = hToTimeStr(ev.startH);
         document.getElementById('calSlotEndTime').value   = hToTimeStr(ev.startH + ev.dur);
         updateDurDisplay();
+        // Show series banner if this belongs to a series
+        if (ev.seriesId) {
+          const banner = document.getElementById('calSlotSeriesBanner');
+          const seriesCount = getCalEvents().filter(e => e.seriesId === ev.seriesId).length;
+          if (banner) {
+            banner.innerHTML = `🔁 <strong>Event lặp lại</strong> (series ${seriesCount} events) — chỉnh sửa sẽ chỉ ảnh hưởng event này.`;
+            banner.style.display = 'block';
+          }
+          // Hide repeat selector when editing
+          const rw = document.getElementById('calSlotRepeatWrap');
+          if (rw) rw.style.display = 'none';
+        }
       }, 20);
     },
     deleteSlot() {
       const id = parseInt(document.getElementById('calSlotEventId').value);
       if (!id) return;
-      if (!confirm('🗑️ Xóa event này?')) return;
-      const events = getCalEvents().filter(e => e.id !== id);
-      saveCalEvents(events);
+      const allEvents = getCalEvents();
+      const ev = allEvents.find(e => e.id === id);
+      if (!ev) return;
+
+      if (ev.seriesId) {
+        // Series event — ask what to delete
+        const seriesCount = allEvents.filter(e => e.seriesId === ev.seriesId).length;
+        const deleteAll = confirm(
+          `🔁 Event này thuộc series "${ev.title}" (${seriesCount} events).\n\n` +
+          `OK = Xóa TẤT CẢ ${seriesCount} events trong series\n` +
+          `Cancel = Chỉ xóa event này`
+        );
+        if (deleteAll) {
+          saveCalEvents(allEvents.filter(e => e.seriesId !== ev.seriesId));
+          if (typeof showNotification === 'function') showNotification(`🗑️ Đã xóa cả series (${seriesCount} events)!`, 'info');
+        } else {
+          saveCalEvents(allEvents.filter(e => e.id !== id));
+          if (typeof showNotification === 'function') showNotification('🗑️ Đã xóa event này!', 'info');
+        }
+      } else {
+        if (!confirm('🗑️ Xóa event này?')) return;
+        saveCalEvents(allEvents.filter(e => e.id !== id));
+        if (typeof showNotification === 'function') showNotification('🗑️ Đã xóa!', 'info');
+      }
       this.closeSlotModal();
       render();
-      if (typeof showNotification === 'function') showNotification('🗑️ Đã xóa!', 'info');
     },
     closeSlotModal() {
       document.getElementById('calSlotModal').classList.remove('open');
@@ -39504,5 +39623,847 @@ window.fcRenderTagChips = fcRenderTagChips;
 
 
 
-    
+
+<!-- ═══════════════════════════════════════════════════════
+     📆 PLANNER EXTENSIONS v3.0
+     ✅ Month view         ✅ Keyboard shortcuts (← → T D W M N)
+     ✅ Jump-to-date       ✅ Category filter
+     ✅ GCal per event     ✅ Export Day → GCal (batch)
+     ✅ Custom reminder    ✅ "What should I do NOW?"
+     ✅ Quick-fill skill   ✅ Daily planning ritual
+     ✅ Recurring events   ✅ Drag-to-resize events
+═══════════════════════════════════════════════════════ -->
+<style>
+/* Month view cell */
+.pxt-month-cell {
+  min-height:82px;border-radius:9px;padding:6px 7px;cursor:pointer;
+  border:1px solid var(--border-color);background:var(--bg-white);
+  transition:all .14s;box-shadow:var(--shadow-sm);
+}
+.pxt-month-cell:hover { background:rgba(99,102,241,.06);border-color:rgba(99,102,241,.3); }
+.pxt-month-cell.today { border:2px solid #6366f1;background:rgba(99,102,241,.07); }
+.pxt-month-cell.past  { background:rgba(0,0,0,.02);opacity:.75; }
+.pxt-month-dot { width:8px;height:8px;border-radius:2px;display:inline-block; }
+/* WhatNow / Ritual modal */
+/* ── Drag-to-resize handle ── */
+.cal-resize-handle {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 10px;
+  cursor: ns-resize;
+  border-radius: 0 0 7px 7px;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 10;
+  background: rgba(0,0,0,0.18);
+}
+.cal-resize-handle::after {
+  content: '━ ━ ━';
+  font-size: 7px;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 2px;
+}
+.cal-event:hover .cal-resize-handle { opacity: 1; }
+.cal-event.is-resizing { opacity: 0.75; user-select: none; cursor: ns-resize; }
+.cal-event.is-resizing .cal-resize-handle { opacity: 1; }
+
+/* ── Recurring badge ── */
+.cal-recur-badge {
+  display: inline-block;
+  font-size: .6rem;
+  padding: 1px 5px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.28);
+  color: #fff;
+  font-weight: 700;
+  margin-top: 2px;
+  vertical-align: middle;
+}
+
+/* ── Recurring modal fields ── */
+#calSlotRepeatWrap {
+  margin-bottom: 12px;
+}
+#calSlotRepeatCountWrap {
+  display: none;
+  margin-bottom: 12px;
+  padding: 10px;
+  background: rgba(99,102,241,.07);
+  border-radius: 8px;
+  border: 1px solid rgba(99,102,241,.18);
+}
+#calSlotSeriesBanner {
+  display: none;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(245,158,11,.08);
+  border: 1px solid rgba(245,158,11,.3);
+  border-radius: 8px;
+  font-size: .82rem;
+  color: #b45309;
+}
+.dark-mode #calSlotSeriesBanner { color: #fbbf24; background: rgba(245,158,11,.12); }
+
+.pxt-modal-bg {
+  position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:12000;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  backdrop-filter:blur(5px);animation:calSlideIn .3s ease;
+}
+.pxt-modal-box {
+  background:var(--bg-white);border-radius:20px;padding:26px;
+  max-width:480px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.3);
+}
+.dark-mode .pxt-modal-box { background:#1e293b; }
+/* GCal toast */
+.pxt-gcal-toast {
+  position:fixed;bottom:90px;right:20px;z-index:10001;
+  background:var(--bg-white);border-radius:12px;padding:14px 18px;
+  box-shadow:0 8px 32px rgba(0,0,0,.22);border:1px solid rgba(66,133,244,.3);
+  display:flex;align-items:center;gap:12px;
+  animation:reminderSlideIn .3s ease;max-width:320px;
+}
+</style>
+<script>
+/* ═══════════════════════════════════════════════
+   PLANEXT — Planner Extensions v2.0
+═══════════════════════════════════════════════ */
+const PLANEXT = (() => {
+'use strict';
+
+/* ── State ── */
+const FILTERS = new Set(['task','study','review','exercise','break','other','deadline','sleep','goal','course']);
+let _monthYear  = new Date().getFullYear();
+let _monthMonth = new Date().getMonth();
+let _inMonthView = false;
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const CAL_COLORS = {
+  task:'#6366f1', study:'#3b82f6', deadline:'#8b5cf6', sleep:'#0ea5e9',
+  goal:'#f59e0b', course:'#10b981', review:'#06b6d4', exercise:'#f97316', break:'#6b7280', other:'#64748b'
+};
+
+/* ── Helper: format hour float → HH:MM ── */
+function fmtH(h) {
+  const hh = Math.floor(h), mm = Math.round((h-hh)*60);
+  return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+}
+
+/* ── Get all events for a date (public, mirrors CAL internals) ── */
+function getBlocks(dateISO) {
+  let blocks = [];
+  // 1. Custom cal events
+  try {
+    const evts = JSON.parse(localStorage.getItem('calEvents') || '[]');
+    evts.filter(e => e.date === dateISO).forEach(e => {
+      blocks.push({ ...e, color: CAL_COLORS[e.category] || CAL_COLORS.task });
+    });
+  } catch {}
+  // 2. Study session logs
+  try {
+    const logs = JSON.parse(localStorage.getItem('studySessionLogs') || '[]');
+    logs.filter(s => {
+      if (!s.startTime) return false;
+      const d = new Date(s.startTime);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` === dateISO;
+    }).forEach(s => {
+      const start = new Date(s.startTime);
+      const startH = start.getHours() + start.getMinutes()/60;
+      blocks.push({ type:'study', title: s.skill || 'Study', startH, dur: parseFloat(s.duration)||1, color: CAL_COLORS.study });
+    });
+  } catch {}
+  // 3. Sleep
+  try {
+    JSON.parse(localStorage.getItem('sleepSessions') || '[]').forEach(s => {
+      if (!s.start || !s.end) return;
+      const sd = new Date(s.start), ed = new Date(s.end);
+      const sISO = sd.toISOString().split('T')[0], eISO = ed.toISOString().split('T')[0];
+      if (sISO !== dateISO && eISO !== dateISO) return;
+      const startH = sISO === dateISO ? sd.getHours()+sd.getMinutes()/60 : 0;
+      const dur    = sISO === dateISO ? Math.min(s.duration||0, 24-startH) : ed.getHours()+ed.getMinutes()/60;
+      if (dur > 0) blocks.push({ type:'sleep', title:'😴 Sleep', startH, dur, color: CAL_COLORS.sleep });
+    });
+  } catch {}
+  // 4. Deadlines / goals
+  try {
+    JSON.parse(localStorage.getItem('goals') || '[]').forEach(g => {
+      if (!g.deadline?.startsWith(dateISO)) return;
+      const startH = g.deadline.length > 10 ? parseInt(g.deadline.slice(11,13)) + parseInt(g.deadline.slice(14,16))/60 : 9;
+      blocks.push({ type:'deadline', title:'🎯 '+g.title, startH, dur:0.5, color: CAL_COLORS.deadline });
+    });
+    JSON.parse(localStorage.getItem('deadlines') || '[]').forEach(d => {
+      if (d.date !== dateISO) return;
+      const startH = d.time ? parseInt(d.time.split(':')[0])+parseInt(d.time.split(':')[1])/60 : 9;
+      blocks.push({ type:'deadline', title:'📌 '+d.name, startH, dur:0.5, color: CAL_COLORS.deadline });
+    });
+  } catch {}
+  // Apply filter
+  return blocks.filter(b => FILTERS.has(b.category || b.type || 'task'));
+}
+
+/* ── Free slot finder ── */
+function freeSlots(dateISO) {
+  const busy = getBlocks(dateISO).map(b => [Math.max(0,b.startH), Math.min(24,b.startH+(b.dur||0))]);
+  busy.sort((a,b)=>a[0]-b[0]);
+  const merged = [];
+  busy.forEach(([s,e]) => {
+    if (!merged.length || s > merged[merged.length-1][1]) merged.push([s,e]);
+    else merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], e);
+  });
+  const free = []; let cur = 6;
+  merged.forEach(([s,e]) => { if (s > cur+0.5) free.push([cur,s]); cur = Math.max(cur,e); });
+  if (cur < 23) free.push([cur,23]);
+  return free.filter(([s,e]) => e-s >= 0.5);
+}
+
+/* ── Build Google Calendar URL ── */
+function gcalUrl(name, dateISO, startH, endH) {
+  const [y,m,d] = dateISO.split('-').map(Number);
+  const fmt = h => `${String(Math.floor(h)).padStart(2,'0')}${String(Math.round((h-Math.floor(h))*60)).padStart(2,'0')}00`;
+  const ds = `${y}${String(m).padStart(2,'0')}${String(d).padStart(2,'0')}T${fmt(startH)}`;
+  const de = `${y}${String(m).padStart(2,'0')}${String(d).padStart(2,'0')}T${fmt(endH)}`;
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(name)}&dates=${ds}/${de}`;
+}
+
+/* ── Month View Renderer ── */
+function renderMonth(year, month) {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const DAY_HDR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:4px;">`;
+  DAY_HDR.forEach(d => html += `<div style="text-align:center;font-size:.72rem;font-weight:700;color:var(--text-muted);padding:5px 0;">${d}</div>`);
+  html += `</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
+  for (let i=0;i<firstDow;i++) html += `<div></div>`;
+
+  for (let day=1; day<=daysInMonth; day++) {
+    const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const isToday = iso === todayStr;
+    const isPast  = new Date(iso+'T23:59:59') < new Date();
+    const blks    = getBlocks(iso);
+    const free    = freeSlots(iso);
+    const totalFree = free.reduce((s,[a,b])=>s+(b-a),0);
+    const uniqueColors = [...new Set(blks.map(b=>b.color))].slice(0,4);
+
+    html += `
+      <div class="pxt-month-cell${isToday?' today':''}${isPast&&!isToday?' past':''}"
+           onclick="PLANEXT.jumpToDay('${iso}')"
+           title="${isToday?'Today — ':''}${blks.length} events · ${totalFree.toFixed(1)}h free">
+        <div style="font-weight:${isToday?'800':'600'};font-size:.85rem;color:${isToday?'#6366f1':'var(--text-dark)'};">
+          ${day}${isToday?' ⭐':''}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:2px;margin:3px 0;">
+          ${uniqueColors.map(c=>`<span class="pxt-month-dot" style="background:${c};"></span>`).join('')}
+        </div>
+        ${blks.length>0 ? `<div style="font-size:.62rem;color:var(--text-muted);">${blks.length} evt</div>` : ''}
+        ${totalFree>=1 ? `<div style="font-size:.62rem;color:#10b981;font-weight:700;">${totalFree.toFixed(0)}h free</div>` : ''}
+      </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+/* ── Public API ── */
+return {
+
+  /* ── Month view ── */
+  openMonthView() {
+    _inMonthView = true;
+    _monthYear  = CAL.currentDate.getFullYear();
+    _monthMonth = CAL.currentDate.getMonth();
+    document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===2));
+    const body = document.getElementById('calBody');
+    if (body) body.innerHTML = renderMonth(_monthYear, _monthMonth);
+    const title = document.getElementById('calTitleText');
+    if (title) title.textContent = `${MONTH_NAMES[_monthMonth]} ${_monthYear}  (click a day to open it)`;
+    // Patch nav for month mode
+    this._patchMonthNav();
+  },
+
+  _patchMonthNav() {
+    const self = this;
+    if (CAL._monthNavPatched) return;
+    CAL._monthNavPatched = true;
+    const origPrev = CAL.prevPeriod.bind(CAL);
+    const origNext = CAL.nextPeriod.bind(CAL);
+    const origToday = CAL.goToday.bind(CAL);
+    CAL.prevPeriod = function() {
+      if (_inMonthView) {
+        _monthMonth--; if (_monthMonth<0){_monthMonth=11;_monthYear--;}
+        self.openMonthView();
+      } else origPrev();
+    };
+    CAL.nextPeriod = function() {
+      if (_inMonthView) {
+        _monthMonth++; if (_monthMonth>11){_monthMonth=0;_monthYear++;}
+        self.openMonthView();
+      } else origNext();
+    };
+    CAL.goToday = function() {
+      _inMonthView = false;
+      origToday();
+      document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+    };
+  },
+
+  jumpToDay(iso) {
+    _inMonthView = false;
+    CAL.currentDate = new Date(iso+'T12:00:00');
+    CAL.switchTab('day');
+    document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  },
+
+  jumpToDate(val) {
+    if (!val) return;
+    _inMonthView = false;
+    CAL.currentDate = new Date(val+'T12:00:00');
+    CAL.switchTab('day');
+    document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  },
+
+  /* ── Category Filter ── */
+  toggleFilters() {
+    const p = document.getElementById('calFilterPanel');
+    if (p) p.style.display = p.style.display==='none' ? 'flex' : 'none';
+  },
+  toggleFilter(cat, btn) {
+    if (FILTERS.has(cat)) { FILTERS.delete(cat); btn.style.opacity='0.35'; }
+    else                  { FILTERS.add(cat);    btn.style.opacity='1'; }
+    this._rerender();
+  },
+  resetFilters() {
+    ['task','study','review','exercise','break','other','deadline','sleep','goal','course'].forEach(c=>FILTERS.add(c));
+    document.querySelectorAll('[data-filter]').forEach(b=>b.style.opacity='1');
+    this._rerender();
+  },
+  _rerender() {
+    if (_inMonthView) this.openMonthView();
+    else CAL._render();
+  },
+
+  /* ── Export today → GCal ── */
+  exportTodayToGCal() {
+    const iso = new Date().toISOString().split('T')[0];
+    let evts = [];
+    try { evts = JSON.parse(localStorage.getItem('calEvents')||'[]').filter(e=>e.date===iso); } catch{}
+
+    const existing = document.getElementById('pxtGCalExport');
+    if (existing) existing.remove();
+    const m = document.createElement('div');
+    m.id = 'pxtGCalExport'; m.className = 'pxt-modal-bg';
+
+    if (!evts.length) {
+      m.innerHTML = `
+        <div class="pxt-modal-box" style="max-width:360px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;font-size:1.1rem;color:var(--text-dark);">📅 Export → Google Calendar</h3>
+            <button onclick="document.getElementById('pxtGCalExport').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);">✕</button>
+          </div>
+          <div style="text-align:center;padding:20px;color:var(--text-muted);">
+            <div style="font-size:2rem;margin-bottom:10px;">📭</div>
+            <div>Hôm nay chưa có events nào được thêm vào Planner.</div>
+          </div>
+          <button onclick="document.getElementById('pxtGCalExport').remove()"
+            style="width:100%;padding:10px;background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border-color);border-radius:10px;cursor:pointer;font-size:.88rem;margin-top:8px;">Đóng</button>
+        </div>`;
+      document.body.appendChild(m);
+      m.addEventListener('click', e => { if(e.target===m) m.remove(); });
+      return;
+    }
+
+    const d = new Date(iso+'T00:00:00');
+    const dateLabel = d.toLocaleDateString('vi-VN',{weekday:'long',day:'numeric',month:'long'});
+    const catColors = {task:'#6366f1',study:'#3b82f6',review:'#06b6d4',exercise:'#f97316',break:'#6b7280',deadline:'#8b5cf6',sleep:'#0ea5e9',other:'#64748b'};
+    const rows = evts.map(ev => {
+      const url = gcalUrl(ev.title, ev.date, ev.startH, ev.startH+(ev.dur||1));
+      const color = catColors[ev.category||'task'] || '#6366f1';
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-light);border-radius:10px;margin-bottom:7px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:.88rem;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ev.title}</div>
+            <div style="font-size:.76rem;color:var(--text-muted);">${fmtH(ev.startH)} – ${fmtH(ev.startH+(ev.dur||1))}</div>
+          </div>
+          <a href="${url}" target="_blank" rel="noopener"
+             style="flex-shrink:0;padding:5px 11px;background:#4285f4;color:#fff;border-radius:8px;font-size:.78rem;font-weight:700;text-decoration:none;white-space:nowrap;"
+             onclick="this.style.background='#34a853';this.textContent='✓ Mở rồi'">
+            Mở GCal →
+          </a>
+        </div>`;
+    }).join('');
+
+    m.innerHTML = `
+      <div class="pxt-modal-box" style="max-width:420px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <h3 style="margin:0;font-size:1.1rem;color:var(--text-dark);">📅 Export → Google Calendar</h3>
+          <button onclick="document.getElementById('pxtGCalExport').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);">✕</button>
+        </div>
+        <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:14px;">${dateLabel} · ${evts.length} event</div>
+        <div style="max-height:320px;overflow-y:auto;">${rows}</div>
+        <div style="margin-top:12px;padding:10px;background:rgba(66,133,244,.07);border-radius:8px;font-size:.76rem;color:#4285f4;">
+          💡 Click "Mở GCal →" từng event để thêm vào Google Calendar. Mỗi link mở 1 tab GCal mới.
+        </div>
+        <button onclick="document.getElementById('pxtGCalExport').remove()"
+          style="width:100%;padding:10px;background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border-color);border-radius:10px;cursor:pointer;font-size:.88rem;margin-top:10px;">Đóng</button>
+      </div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if(e.target===m) m.remove(); });
+  },
+
+  /* ── Show GCal toast after save ── */
+  showGCalToast(name, dateISO, startH, endH) {
+    const url = gcalUrl(name, dateISO, startH, endH);
+    const t = document.createElement('div');
+    t.className = 'pxt-gcal-toast';
+    t.innerHTML = `
+      <div style="font-size:1.4rem;">📅</div>
+      <div style="flex:1;">
+        <div style="font-size:.8rem;font-weight:700;color:var(--text-dark);margin-bottom:3px;">Thêm vào Google Calendar?</div>
+        <a href="${url}" target="_blank" rel="noopener" style="font-size:.8rem;color:#4285f4;font-weight:700;text-decoration:none;">Mở GCal →</a>
+      </div>
+      <button onclick="this.closest('.pxt-gcal-toast').remove()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1rem;">✕</button>
+    `;
+    document.body.appendChild(t);
+    setTimeout(()=>{if(t.parentNode)t.remove();}, 8000);
+  },
+
+  /* ── "What should I do NOW?" ── */
+  whatNow() {
+    const now = new Date();
+    const nowH = now.getHours() + now.getMinutes()/60;
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const free = freeSlots(todayISO);
+    const curFree  = free.find(([s,e]) => s<=nowH && e>nowH);
+    const nextFree = free.find(([s,e]) => s>nowH);
+    const slot = curFree || nextFree;
+
+    // Find best skill from skillsData
+    let bestSkill = null, bestScore = -1;
+    const hour = now.getHours();
+    const tod = hour<12 ? 'morning' : hour<17 ? 'afternoon' : 'evening';
+
+    if (typeof skillsData !== 'undefined') {
+      Object.entries(skillsData).forEach(([ck, cd]) => {
+        if (!cd?.categories) return;
+        Object.values(cd.categories).forEach(cat => {
+          cat.skills.forEach(sk => {
+            const done = window.studyHours?.[ck]?.[sk.name] || 0;
+            const target = sk.targetHours || 10;
+            if (done >= target) return;
+            const pct = done/target;
+            const score = (sk.importance||3) * (1-pct) * (sk.time===tod?1.5:1);
+            if (score > bestScore) {
+              bestScore = score;
+              bestSkill = { name:sk.name, career:cd.title, done, target, pct, time:sk.time };
+            }
+          });
+        });
+      });
+    }
+
+    // Also check masteryData
+    if (typeof masteryData !== 'undefined' && !bestSkill) {
+      masteryData.phases.forEach(ph => {
+        ph.skills.forEach(sk => {
+          const done = window.studyHours?.['mastery']?.[sk.name] || 0;
+          const target = sk.targetHours || 10;
+          if (done >= target) return;
+          const score = 3 * (1 - done/target);
+          if (score > bestScore) {
+            bestScore = score;
+            bestSkill = { name:sk.name, career:'Mastery Roadmap', done, target, pct:done/target, time:'morning' };
+          }
+        });
+      });
+    }
+
+    const slotLine = slot
+      ? (curFree
+          ? `🟢 Free ngay bây giờ! (${fmtH(slot[0])}–${fmtH(slot[1])} · ${(slot[1]-slot[0]).toFixed(1)}h)`
+          : `⏰ Free slot tiếp theo: ${fmtH(slot[0])}–${fmtH(slot[1])} · còn ${Math.round((slot[0]-nowH)*60)}m`)
+      : '❌ Không còn free slot hôm nay';
+
+    const existing = document.getElementById('pxtWhatNow');
+    if (existing) existing.remove();
+    const m = document.createElement('div');
+    m.id = 'pxtWhatNow'; m.className = 'pxt-modal-bg';
+    m.innerHTML = `
+      <div class="pxt-modal-box">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+          <h3 style="margin:0;font-size:1.2rem;color:var(--text-dark);">🧠 Nên làm gì bây giờ?</h3>
+          <button onclick="document.getElementById('pxtWhatNow').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);">✕</button>
+        </div>
+        <div style="background:rgba(99,102,241,.08);border-radius:10px;padding:13px;margin-bottom:14px;">
+          <div style="font-size:.72rem;font-weight:700;color:#6366f1;margin-bottom:5px;">⏰ BÂY GIỜ — ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}</div>
+          <div style="font-size:.88rem;color:var(--text-muted);">${slotLine}</div>
+        </div>
+        ${bestSkill ? `
+          <div style="background:rgba(16,185,129,.08);border-radius:10px;padding:14px;margin-bottom:14px;border-left:4px solid #10b981;">
+            <div style="font-size:.72rem;font-weight:700;color:#059669;margin-bottom:6px;">🎯 TASK ĐỀ XUẤT (${tod})</div>
+            <div style="font-size:.98rem;font-weight:700;color:var(--text-dark);margin-bottom:4px;">${bestSkill.name}</div>
+            <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px;">${bestSkill.career} · ${bestSkill.done.toFixed(1)}/${bestSkill.target}h (${(bestSkill.pct*100).toFixed(0)}%)</div>
+            <div style="height:5px;background:var(--border-color);border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${Math.min(100,(bestSkill.pct*100)).toFixed(0)}%;background:#10b981;border-radius:3px;"></div>
+            </div>
+          </div>
+          <button onclick="PLANEXT.fillFreeSlot('${bestSkill.name.replace(/'/g,'\\\'')}',${slot?JSON.stringify(slot):'null'});document.getElementById('pxtWhatNow').remove();"
+            style="width:100%;padding:11px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:.9rem;cursor:pointer;margin-bottom:8px;">
+            ✦ Fill free slot với task này
+          </button>
+        ` : `<div style="text-align:center;padding:16px;color:var(--text-muted);">🎉 All skills completed! Nghỉ ngơi đi.</div>`}
+        <button onclick="document.getElementById('pxtWhatNow').remove()"
+          style="width:100%;padding:10px;background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border-color);border-radius:10px;cursor:pointer;font-size:.88rem;">
+          Đóng
+        </button>
+      </div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if(e.target===m) m.remove(); });
+  },
+
+  /* Fill free slot with a skill name */
+  fillFreeSlot(skillName, slot) {
+    const now = new Date();
+    const iso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const startH = slot ? slot[0] : (now.getHours()+now.getMinutes()/60);
+    const endH   = slot ? Math.min(slot[1], startH+2) : startH+1;
+    // Make sure day view is open
+    if (!document.getElementById('calendarModal').classList.contains('open')) CAL.open();
+    setTimeout(() => {
+      CAL.openSlotModal(iso, startH);
+      setTimeout(() => {
+        const n = document.getElementById('calSlotName'); if(n) n.value = skillName;
+        const s = document.getElementById('calSlotStartTime'); if(s) s.value = fmtH(startH);
+        const e = document.getElementById('calSlotEndTime'); if(e) e.value = fmtH(endH);
+        const c = document.getElementById('calSlotCategory'); if(c) c.value = 'study';
+        const dur = document.getElementById('calSlotDurDisplay');
+        if (dur) { const d = endH-startH; const h=Math.floor(d),mn=Math.round((d-h)*60); dur.style.color='#6366f1'; dur.textContent=`⏱ ${h>0?h+'h ':''}${mn>0?mn+'m':''}`; }
+      }, 80);
+    }, 200);
+  },
+
+  /* ── Daily Planning Ritual (morning popup) ── */
+  dailyRitual() {
+    const now = new Date();
+    const iso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    if (localStorage.getItem('pxt-ritual-'+iso)) return;
+    localStorage.setItem('pxt-ritual-'+iso, '1');
+
+    const free = freeSlots(iso);
+    if (!free.length) return;
+    const totalFree = free.reduce((s,[a,b])=>s+(b-a),0);
+
+    const existing = document.getElementById('pxtRitual');
+    if (existing) existing.remove();
+    const m = document.createElement('div');
+    m.id = 'pxtRitual'; m.className = 'pxt-modal-bg';
+    m.innerHTML = `
+      <div class="pxt-modal-box">
+        <div style="text-align:center;margin-bottom:18px;">
+          <div style="font-size:2.4rem;margin-bottom:8px;">🌅</div>
+          <h3 style="margin:0 0 6px;font-size:1.2rem;color:var(--text-dark);">Lên kế hoạch cho hôm nay!</h3>
+          <p style="margin:0;color:var(--text-muted);font-size:.88rem;">
+            Hôm nay có <strong style="color:#10b981;">${free.length} free slot</strong>
+            (tổng <strong>${totalFree.toFixed(1)}h</strong>). Muốn fill gì?
+          </p>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;">⏰ FREE SLOTS HÔM NAY:</div>
+          ${free.slice(0,5).map(([s,e]) => `
+            <div onclick="PLANEXT.fillFreeSlot('',${JSON.stringify([s,e])});document.getElementById('pxtRitual').remove();"
+                 style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;
+                        background:rgba(16,185,129,.07);border-radius:8px;margin-bottom:5px;cursor:pointer;
+                        border:1px solid rgba(16,185,129,.18);">
+              <div>
+                <span style="font-weight:700;color:var(--text-dark);font-size:.9rem;">${fmtH(s)} – ${fmtH(e)}</span>
+                <span style="font-size:.8rem;color:#059669;margin-left:8px;">${(e-s).toFixed(1)}h</span>
+              </div>
+              <span style="color:#6366f1;font-size:.82rem;font-weight:600;">+ Fill →</span>
+            </div>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="PLANEXT.whatNow();document.getElementById('pxtRitual').remove();"
+            style="flex:1;padding:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:.88rem;">
+            🧠 Gợi ý task
+          </button>
+          <button onclick="document.getElementById('pxtRitual').remove()"
+            style="flex:1;padding:10px;background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border-color);border-radius:10px;cursor:pointer;font-size:.88rem;">
+            Để sau
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if(e.target===m) m.remove(); });
+  },
+
+  /* ── Init ── */
+  init() {
+    // Patch CAL.saveSlot to show GCal toast + handle custom reminders
+    const _origSave = CAL.saveSlot.bind(CAL);
+    CAL.saveSlot = function() {
+      const name     = document.getElementById('calSlotName')?.value.trim();
+      const dateISO  = document.getElementById('calSlotDate')?.value;
+      const startVal = document.getElementById('calSlotStartTime')?.value;
+      const endVal   = document.getElementById('calSlotEndTime')?.value;
+      const remMin   = parseInt(document.getElementById('calSlotReminder')?.value || '15');
+
+      if (!name || !dateISO || !startVal || !endVal) { _origSave(); return; }
+      const startH = parseInt(startVal.split(':')[0]) + parseInt(startVal.split(':')[1])/60;
+      const endH   = parseInt(endVal.split(':')[0])   + parseInt(endVal.split(':')[1])/60;
+
+      _origSave(); // saves event, closes modal
+
+      // Show GCal toast
+      PLANEXT.showGCalToast(name, dateISO, startH, endH);
+
+      // Custom reminder (override the default 15-min one)
+      if (remMin > 0) {
+        const evts = JSON.parse(localStorage.getItem('calEvents')||'[]');
+        const newest = evts[evts.length-1];
+        if (newest) PLANEXT._scheduleCustomReminder(newest, remMin);
+      }
+    };
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
+      if (!document.getElementById('calendarModal')?.classList.contains('open')) return;
+      if (document.getElementById('calSlotModal')?.classList.contains('open')) return;
+      switch(e.key) {
+        case 'ArrowLeft':  e.preventDefault(); CAL.prevPeriod(); break;
+        case 'ArrowRight': e.preventDefault(); CAL.nextPeriod(); break;
+        case 't': case 'T': e.preventDefault(); CAL.goToday(); break;
+        case 'd': case 'D': e.preventDefault(); _inMonthView=false; CAL.switchTab('day'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===0)); break;
+        case 'w': case 'W': e.preventDefault(); _inMonthView=false; CAL.switchTab('week'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===1)); break;
+        case 'm': case 'M': e.preventDefault(); PLANEXT.openMonthView(); break;
+        case 'n': case 'N': e.preventDefault(); PLANEXT.whatNow(); break;
+      }
+    });
+
+    // Daily ritual — show if it's morning 6am-12pm
+    const h = new Date().getHours();
+    if (h >= 6 && h < 12) {
+      setTimeout(() => PLANEXT.dailyRitual(), 4000);
+    }
+
+    // Patch month view into CAL.switchTab
+    const _origSwitch = CAL.switchTab.bind(CAL);
+    CAL.switchTab = function(tab) {
+      if (tab === 'month') { PLANEXT.openMonthView(); return; }
+      _inMonthView = false;
+      _origSwitch(tab);
+    };
+
+    // Init month nav patching
+    PLANEXT._patchMonthNav();
+
+    console.log('✅ PLANEXT v3.0 — Recurring + Drag-Resize loaded');
+
+    // ── Recurring events: patch saveSlot ──
+    const _pxtSaveOrig = CAL.saveSlot.bind(CAL);
+    CAL.saveSlot = function() {
+      const repeatType  = document.getElementById('calSlotRepeat')?.value  || 'none';
+      const repeatCount = parseInt(document.getElementById('calSlotRepeatCount')?.value || '7');
+      const eventId     = document.getElementById('calSlotEventId')?.value;
+      _pxtSaveOrig();  // saves base event, closes modal
+      if (repeatType === 'none' || eventId) return; // no repeat for edits
+      // Get base event (last saved)
+      const events = JSON.parse(localStorage.getItem('calEvents') || '[]');
+      if (!events.length) return;
+      const base = events[events.length - 1];
+      if (!base) return;
+      const seriesId = `s${base.id}`;
+      base.seriesId = seriesId;
+      base.repeatType = repeatType;
+      const copies = [];
+      for (let i = 1; i < Math.min(repeatCount, 90); i++) {
+        const d = new Date(base.date + 'T00:00:00');
+        if (repeatType === 'daily')  d.setDate(d.getDate() + i);
+        else                         d.setDate(d.getDate() + i * 7);
+        const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        copies.push({
+          id: base.id + i, date: iso,
+          startH: base.startH, dur: base.dur,
+          title: base.title, category: base.category,
+          notes: base.notes, color: base.color,
+          seriesId, repeatType,
+        });
+      }
+      events[events.length - 1] = base;
+      events.push(...copies);
+      localStorage.setItem('calEvents', JSON.stringify(events));
+      // Re-render + notify
+      if (typeof render === 'function') render();
+      if (typeof showNotification === 'function') {
+        const label = repeatType === 'daily' ? 'mỗi ngày' : 'mỗi tuần';
+        showNotification(`🔁 Đã tạo series ${repeatCount} events (${label})!`, 'success');
+      }
+    };
+
+    // ── Recurring repeat preview update ──
+    const repCount = document.getElementById('calSlotRepeatCount');
+    const repSel   = document.getElementById('calSlotRepeat');
+    function updateRepeatPreview() {
+      const n = parseInt(repCount?.value||'7');
+      const t = repSel?.value;
+      const preview = document.getElementById('calSlotRepeatPreview');
+      if (!preview||!t||t==='none') return;
+      const baseDate = document.getElementById('calSlotDate')?.value;
+      if (baseDate && n >= 2) {
+        const d = new Date(baseDate + 'T00:00:00');
+        if (t === 'daily')  d.setDate(d.getDate() + n - 1);
+        else                d.setDate(d.getDate() + (n-1)*7);
+        preview.textContent = `→ kết thúc ${d.toLocaleDateString('vi-VN',{day:'numeric',month:'long'})}`;
+      }
+    }
+    if (repCount) repCount.addEventListener('input', updateRepeatPreview);
+    if (repSel)   repSel.addEventListener('change', updateRepeatPreview);
+
+    // ── Drag-to-resize system ──
+    PLANEXT._initDragResize();
+  },
+
+  /* ── Drag-to-resize events ── */
+  _initDragResize() {
+    const PX_PER_HOUR = 56;
+    const MIN_DUR = 0.25; // 15 minutes minimum
+    let dragState = null; // { eventId, startY, origDur, startH, el, origH }
+
+    function getCalEvents() {
+      try { return JSON.parse(localStorage.getItem('calEvents') || '[]'); } catch { return []; }
+    }
+    function saveCalEvents(arr) { localStorage.setItem('calEvents', JSON.stringify(arr)); }
+
+    document.addEventListener('mousedown', e => {
+      const handle = e.target.closest('.cal-resize-handle');
+      if (!handle) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const id = parseInt(handle.dataset.resizeId);
+      if (!id) return;
+      const ev = getCalEvents().find(ev => ev.id === id);
+      if (!ev) return;
+      const el = handle.closest('.cal-event');
+      if (!el) return;
+      el.classList.add('is-resizing');
+      dragState = { eventId: id, startY: e.clientY, origDur: ev.dur, startH: ev.startH, el, origH: el.offsetHeight };
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!dragState) return;
+      const dy = e.clientY - dragState.startY;
+      const durDelta = dy / PX_PER_HOUR;
+      const newDur = Math.max(MIN_DUR, parseFloat((dragState.origDur + durDelta).toFixed(2)));
+      const newH = Math.max(22, Math.round(newDur * PX_PER_HOUR));
+      dragState.el.style.height = newH + 'px';
+      // Update time label live
+      const timeEl = dragState.el.querySelector('.cal-event-time');
+      if (timeEl) {
+        const endH = dragState.startH + newDur;
+        const hh = Math.floor(endH), mm = Math.round((endH-hh)*60);
+        timeEl.textContent = `${String(Math.floor(dragState.startH)).padStart(2,'0')}:${String(Math.round((dragState.startH-Math.floor(dragState.startH))*60)).padStart(2,'0')}–${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+      }
+    });
+
+    document.addEventListener('mouseup', e => {
+      if (!dragState) return;
+      const dy = e.clientY - dragState.startY;
+      const durDelta = dy / PX_PER_HOUR;
+      // Snap to nearest 5 min (1/12 hour)
+      const rawDur = dragState.origDur + durDelta;
+      const snapped = Math.max(MIN_DUR, Math.round(rawDur * 12) / 12);
+      const events = getCalEvents();
+      const idx = events.findIndex(ev => ev.id === dragState.eventId);
+      if (idx !== -1) {
+        events[idx].dur = parseFloat(snapped.toFixed(4));
+        saveCalEvents(events);
+        if (typeof showNotification === 'function') {
+          const h = Math.floor(snapped), m = Math.round((snapped-h)*60);
+          showNotification(`⏱ Đã resize: ${h>0?h+'h ':''}${m>0?m+'m':''}`, 'info');
+        }
+      }
+      dragState.el.classList.remove('is-resizing');
+      dragState = null;
+      // Re-render to get accurate layout
+      setTimeout(() => { if (typeof render === 'function') render(); }, 100);
+    });
+
+    // Touch support for mobile
+    document.addEventListener('touchstart', e => {
+      const handle = e.target.closest('.cal-resize-handle');
+      if (!handle) return;
+      const touch = e.touches[0];
+      const id = parseInt(handle.dataset.resizeId);
+      if (!id) return;
+      const ev = getCalEvents().find(ev => ev.id === id);
+      if (!ev) return;
+      const el = handle.closest('.cal-event');
+      if (!el) return;
+      el.classList.add('is-resizing');
+      dragState = { eventId: id, startY: touch.clientY, origDur: ev.dur, startH: ev.startH, el, origH: el.offsetHeight };
+    }, { passive: true });
+
+    document.addEventListener('touchmove', e => {
+      if (!dragState) return;
+      const touch = e.touches[0];
+      const dy = touch.clientY - dragState.startY;
+      const durDelta = dy / PX_PER_HOUR;
+      const newDur = Math.max(MIN_DUR, dragState.origDur + durDelta);
+      dragState.el.style.height = Math.max(22, Math.round(newDur * PX_PER_HOUR)) + 'px';
+    }, { passive: true });
+
+    document.addEventListener('touchend', e => {
+      if (!dragState) return;
+      // Read current height to determine new duration
+      const newH = dragState.el.offsetHeight;
+      const newDur = Math.max(MIN_DUR, Math.round((newH / PX_PER_HOUR) * 12) / 12);
+      const events = getCalEvents();
+      const idx = events.findIndex(ev => ev.id === dragState.eventId);
+      if (idx !== -1) { events[idx].dur = parseFloat(newDur.toFixed(4)); saveCalEvents(events); }
+      dragState.el.classList.remove('is-resizing');
+      dragState = null;
+      setTimeout(() => { if (typeof render === 'function') render(); }, 100);
+    });
+  },
+
+  _scheduleCustomReminder(event, mins) {
+    if (!event?.date || event.startH == null) return;
+    const [y,mo,d] = event.date.split('-').map(Number);
+    const hh = Math.floor(event.startH), mm = Math.round((event.startH-hh)*60);
+    const eventTime = new Date(y, mo-1, d, hh, mm, 0, 0);
+    const remindAt = eventTime.getTime() - mins*60*1000;
+    const msUntil  = remindAt - Date.now();
+    if (msUntil <= 0 || msUntil > 24*3600*1000) return;
+    setTimeout(() => {
+      const container = document.getElementById('plannerReminderContainer');
+      if (!container) return;
+      const toast = document.createElement('div');
+      toast.className = 'planner-reminder-toast';
+      toast.innerHTML = `
+        <div class="reminder-icon">⏰</div>
+        <div class="reminder-body">
+          <div class="reminder-title">🔔 Nhắc — còn ${mins} phút</div>
+          <div class="reminder-event-name">${event.title}</div>
+          <div class="reminder-time">🕐 Bắt đầu lúc ${fmtH(event.startH)}</div>
+        </div>
+        <button class="reminder-close" onclick="this.closest('.planner-reminder-toast').remove()">✕</button>
+      `;
+      container.appendChild(toast);
+      // Browser notif
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try { new Notification(`⏰ ${event.title}`, { body: `Còn ${mins} phút · bắt đầu lúc ${fmtH(event.startH)}`, tag:'pxt-'+event.id }); } catch {}
+      }
+      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 30000);
+    }, msUntil);
+  }
+};
+
+})();
+
+/* ── Init on DOM ready ── */
+document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
+</script>
+<!-- END PLANEXT -->
+
 </body>
