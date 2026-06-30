@@ -2881,6 +2881,7 @@
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
+                padding-top: calc(64px + env(safe-area-inset-top));
             }
             
             .main-content {
@@ -2932,7 +2933,7 @@
             }
             
             .gamification-stats {
-                padding: 20px 15px;
+                padding: 20px 15px !important;
             }
             
             .level-text, .points-text, .streak-text {
@@ -3938,6 +3939,15 @@
             right: 20px;
             z-index: 1000; 
             pointer-events: auto; 
+        }
+
+        /* iOS / mobile fix: keep the floating Dark Mode + Calendar buttons
+           clear of the notch/status bar so they don't sit on top of it. */
+        @media (max-width: 768px) {
+            .dark-mode-container {
+                top: calc(10px + env(safe-area-inset-top));
+                right: calc(10px + env(safe-area-inset-right));
+            }
         }
 
         .dark-mode-toggle {
@@ -9899,6 +9909,37 @@
         .dark-mode .phase-body { background: var(--bg-white); }
         .dark-mode .bp-legend  { background: var(--bg-white); }
 
+        /* ═══════════════════════════════════════════════════════════
+           iOS / mobile fix: "Your Progress" sidebar card (gamification
+           stats, total-hours, charts) was never given mobile sizing,
+           so it rendered at full desktop padding/font-size and looked
+           noticeably larger than the sections above it. Placed last so
+           it correctly overrides the unconditional desktop rules above.
+           ═══════════════════════════════════════════════════════════ */
+        @media (max-width: 768px) {
+            .sidebar-card {
+                padding: 16px;
+            }
+            .progress-overview {
+                padding: 18px;
+            }
+            .total-hours {
+                font-size: 1.5rem;
+                margin-bottom: 14px;
+            }
+            .level-icon, .points-icon, .streak-icon {
+                font-size: 1.4rem;
+            }
+            .level-container, .points-container, .streak-container {
+                font-size: 1rem;
+                margin: 8px 0;
+            }
+            .chart-container {
+                height: 220px;
+                padding: 10px;
+            }
+        }
+
         /* ═══════════════════════════════════════════════════════════ */
 </style>
 </head>
@@ -10179,6 +10220,11 @@
         style="padding:5px 11px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
         🧠 What Now?
       </button>
+      <button onclick="PLANEXT.undo()"
+        style="padding:5px 11px;background:rgba(156,163,175,.12);color:#6b7280;border:1px solid rgba(156,163,175,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;"
+        title="Undo last change (Ctrl+Z)">
+        ↩ Undo
+      </button>
       <button onclick="PLANEXT.exportTodayToGCal()"
         style="padding:5px 11px;background:rgba(66,133,244,.12);color:#4285f4;border:1px solid rgba(66,133,244,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
         📅 Export→GCal
@@ -10302,6 +10348,7 @@
     <div class="cal-slot-actions">
       <button class="cal-slot-cancel" onclick="CAL.closeSlotModal()">Cancel</button>
       <button id="calSlotDeleteBtn" class="cal-slot-cancel" style="color:#ef4444;border-color:#fca5a5;display:none;" onclick="CAL.deleteSlot()">🗑️ Xóa</button>
+      <button id="calSlotDuplicateBtn" onclick="PLANEXT.duplicateSlot()">📋 Duplicate +1d</button>
       <button class="cal-slot-save"   onclick="CAL.saveSlot()">✓ Save</button>
     </div>
   </div>
@@ -10540,11 +10587,14 @@ const CAL = (() => {
       const w      = `calc(${100/totalCols}% - 4px)`;
       const left   = `calc(${(col/totalCols)*100}% + 2px)`;
       const isCustom = b.id != null;
-      html += `<div class="cal-event" data-event-id="${b.id || ''}" style="
+      const isPastEvt = (dateISO < dateStr(now)) || (isToday && (b.startH + b.dur) < nowH);
+      const pastClass = isPastEvt ? ' is-past-event' : '';
+      const dragAttr  = isCustom ? ' data-draggable="true"' : '';
+      html += `<div class="cal-event${pastClass}" data-event-id="${b.id || ''}"${dragAttr} style="
                   top:${top}px; height:${height}px;
                   width:${w}; left:${left};
                   background:${b.color};pointer-events:all;"
-               title="${b.title} • ${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}${isCustom?'\nClick để edit/xóa':''}">
+               title="${b.title} • ${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}${isCustom?'\nDrag to move · resize from bottom':''}">
                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;">
                    <div style="min-width:0;flex:1;">
                      <div class="cal-event-title">${b.title}${b.seriesId ? ' <span class="cal-recur-badge">🔁</span>' : ''}</div>
@@ -10566,28 +10616,59 @@ const CAL = (() => {
 
     html += `</div></div>`;
 
-    // Summary bar
+    // Summary bar + Daily Time Stats
     const totalBusy = blocks.reduce((s,b)=>s+b.dur,0);
     const totalFree = freeSlots.reduce((s,[a,b])=>s+(b-a),0);
+
+    // Compute per-category hours
+    const CAT_ORDER = ['study','task','review','exercise','break','sleep','deadline','goal','course','other'];
+    const CAT_LABELS = {study:'Study',task:'Task',review:'Review',exercise:'Exercise',break:'Break',sleep:'Sleep',deadline:'Deadline',goal:'Goal',course:'Course',other:'Other'};
+    const catTotals = {};
+    blocks.forEach(b => {
+      const cat = b.category || b.type || 'task';
+      catTotals[cat] = (catTotals[cat] || 0) + (b.dur || 0);
+    });
+    const totalScheduled = Object.values(catTotals).reduce((a,b)=>a+b,0) || 1;
+    const statsSegs = CAT_ORDER.filter(c => catTotals[c] > 0).map(c => {
+      const pct = (catTotals[c] / totalScheduled * 100).toFixed(1);
+      const color = COLORS[c] || '#64748b';
+      return `<div class="pxt-stats-bar-seg" style="width:${pct}%;background:${color};"
+                   title="${CAT_LABELS[c]}: ${catTotals[c].toFixed(1)}h"></div>`;
+    }).join('');
+    const statsLegend = CAT_ORDER.filter(c => catTotals[c] > 0).map(c => {
+      const color = COLORS[c] || '#64748b';
+      return `<div class="pxt-stats-legend-item">
+        <div class="pxt-stats-legend-dot" style="background:${color};"></div>
+        <span><strong>${CAT_LABELS[c]}</strong> ${catTotals[c].toFixed(1)}h</span>
+      </div>`;
+    }).join('');
+    const statsBar = totalBusy > 0 ? `
+      <div class="pxt-stats-bar-wrap">
+        <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">⏱ Phân bổ thời gian hôm nay</div>
+        <div class="pxt-stats-bar-track">${statsSegs || '<div style="width:100%;background:var(--border-color);height:100%;border-radius:9px;"></div>'}</div>
+        <div class="pxt-stats-legend">${statsLegend}</div>
+      </div>` : '';
+
     html = `
-      <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:120px;background:rgba(99,102,241,.08);border-radius:10px;padding:10px 14px;">
+      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:100px;background:rgba(99,102,241,.08);border-radius:10px;padding:10px 14px;">
           <div style="font-size:1.4rem;font-weight:800;color:#6366f1;">${blocks.length}</div>
-          <div style="font-size:.75rem;color:var(--text-muted);">Events/Blocks</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">Events</div>
         </div>
-        <div style="flex:1;min-width:120px;background:rgba(16,185,129,.08);border-radius:10px;padding:10px 14px;">
+        <div style="flex:1;min-width:100px;background:rgba(16,185,129,.08);border-radius:10px;padding:10px 14px;">
           <div style="font-size:1.4rem;font-weight:800;color:#10b981;">${totalFree.toFixed(1)}h</div>
-          <div style="font-size:.75rem;color:var(--text-muted);">Free time</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">Free</div>
         </div>
-        <div style="flex:1;min-width:120px;background:rgba(239,68,68,.08);border-radius:10px;padding:10px 14px;">
+        <div style="flex:1;min-width:100px;background:rgba(239,68,68,.08);border-radius:10px;padding:10px 14px;">
           <div style="font-size:1.4rem;font-weight:800;color:#ef4444;">${totalBusy.toFixed(1)}h</div>
           <div style="font-size:.75rem;color:var(--text-muted);">Scheduled</div>
         </div>
-        <div style="flex:1;min-width:120px;background:rgba(59,130,246,.08);border-radius:10px;padding:10px 14px;">
+        <div style="flex:1;min-width:100px;background:rgba(59,130,246,.08);border-radius:10px;padding:10px 14px;">
           <div style="font-size:1.4rem;font-weight:800;color:#3b82f6;">${freeSlots.length}</div>
-          <div style="font-size:.75rem;color:var(--text-muted);">Free windows</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">Free slots</div>
         </div>
       </div>
+      ${statsBar}
     ` + html;
 
     return html;
@@ -10879,6 +10960,8 @@ const CAL = (() => {
       // Show/hide delete button
       const delBtn = document.getElementById('calSlotDeleteBtn');
       delBtn.style.display = eventId ? 'block' : 'none';
+      const dupBtn = document.getElementById('calSlotDuplicateBtn');
+      if (dupBtn) dupBtn.style.display = eventId ? 'block' : 'none';
 
       const d = new Date(dateISO + 'T00:00:00');
       const dayLabel = d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
@@ -10930,8 +11013,10 @@ const CAL = (() => {
       const ev = allEvents.find(e => e.id === id);
       if (!ev) return;
 
+      // Save undo snapshot before deleting
+      PLANEXT.saveUndo(`Xóa "${ev.title}"`);
+
       if (ev.seriesId) {
-        // Series event — ask what to delete
         const seriesCount = allEvents.filter(e => e.seriesId === ev.seriesId).length;
         const deleteAll = confirm(
           `🔁 Event này thuộc series "${ev.title}" (${seriesCount} events).\n\n` +
@@ -10940,15 +11025,15 @@ const CAL = (() => {
         );
         if (deleteAll) {
           saveCalEvents(allEvents.filter(e => e.seriesId !== ev.seriesId));
-          if (typeof showNotification === 'function') showNotification(`🗑️ Đã xóa cả series (${seriesCount} events)!`, 'info');
+          PLANEXT.showUndoToast(`Đã xóa series ${seriesCount} events`);
         } else {
           saveCalEvents(allEvents.filter(e => e.id !== id));
-          if (typeof showNotification === 'function') showNotification('🗑️ Đã xóa event này!', 'info');
+          PLANEXT.showUndoToast(`Đã xóa "${ev.title}"`);
         }
       } else {
         if (!confirm('🗑️ Xóa event này?')) return;
         saveCalEvents(allEvents.filter(e => e.id !== id));
-        if (typeof showNotification === 'function') showNotification('🗑️ Đã xóa!', 'info');
+        PLANEXT.showUndoToast(`Đã xóa "${ev.title}"`);
       }
       this.closeSlotModal();
       render();
@@ -13208,9 +13293,9 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     .dbp-history-date { font-size: 0.7rem; }
     .dbp-history-tasks { font-size: 0.78rem; }
     .dbp-history-load, .dbp-history-del { padding: 4px 10px; font-size: 0.68rem; }
-    #dbpTriggerBtn { bottom: 16px; right: 16px; padding: 10px 16px; font-size: 0.8rem; }
+    #dbpTriggerBtn { bottom: calc(16px + env(safe-area-inset-bottom)); right: 16px; padding: 10px 16px; font-size: 0.8rem; }
     #dbpToast { bottom: 80px; right: 16px; left: 16px; max-width: none; }
-    #dbpFloatTimer { bottom: 16px; left: 16px; min-width: 200px; padding: 12px 14px; }
+    #dbpFloatTimer { bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; min-width: 200px; padding: 12px 14px; }
     .dbpft-time { font-size: 1.8rem; }
     .dbpft-btn { padding: 6px 8px; font-size: 0.7rem; }
 }
@@ -16170,6 +16255,22 @@ window.DBP={
         min-width: 17px; height: 17px; border-radius: 10px;
         display: none; align-items: center; justify-content: center;
         padding: 0 4px; border: 2px solid var(--bg-light);
+    }
+
+    /* iOS / mobile fix: Battle Plan drops to bottom:16px/right:16px under
+       640px, which used to land right on top of this button. Push Brain
+       Dump up clear of it and respect the home-indicator safe area. */
+    @media (max-width: 640px) {
+        #bdFab {
+            bottom: calc(78px + env(safe-area-inset-bottom));
+            right: 16px;
+            width: 46px; height: 46px;
+            font-size: 1.15rem;
+        }
+        #bdPanel {
+            bottom: calc(132px + env(safe-area-inset-bottom));
+            right: 16px;
+        }
     }
 
     /* ── Panel ── */
@@ -39625,13 +39726,16 @@ window.fcRenderTagChips = fcRenderTagChips;
 
 
 <!-- ═══════════════════════════════════════════════════════
-     📆 PLANNER EXTENSIONS v3.0
+     📆 PLANNER EXTENSIONS v4.0
      ✅ Month view         ✅ Keyboard shortcuts (← → T D W M N)
      ✅ Jump-to-date       ✅ Category filter
-     ✅ GCal per event     ✅ Export Day → GCal (batch)
+     ✅ GCal per event     ✅ Export Day → GCal modal
      ✅ Custom reminder    ✅ "What should I do NOW?"
      ✅ Quick-fill skill   ✅ Daily planning ritual
      ✅ Recurring events   ✅ Drag-to-resize events
+     ✅ Drag-to-move       ✅ Undo (Ctrl+Z)
+     ✅ Daily Time Stats   ✅ Duplicate event +1 day
+     ✅ Past events dim
 ═══════════════════════════════════════════════════════ -->
 <style>
 /* Month view cell */
@@ -39645,6 +39749,68 @@ window.fcRenderTagChips = fcRenderTagChips;
 .pxt-month-cell.past  { background:rgba(0,0,0,.02);opacity:.75; }
 .pxt-month-dot { width:8px;height:8px;border-radius:2px;display:inline-block; }
 /* WhatNow / Ritual modal */
+/* ── Drag-to-move events ── */
+.cal-event[data-draggable="true"] { cursor: grab; }
+.cal-event.is-dragging {
+  cursor: grabbing !important; opacity: 0.82;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.32);
+  z-index: 100 !important; transition: none !important;
+}
+.cal-drag-ghost {
+  position: absolute; background: rgba(99,102,241,0.12);
+  border: 2px dashed rgba(99,102,241,0.4); border-radius: 8px;
+  pointer-events: none; z-index: 0; transition: top .08s;
+}
+.cal-drag-snap-label {
+  position: absolute; left: 52px; background: #6366f1; color: #fff;
+  font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+  z-index: 200; pointer-events: none; white-space: nowrap;
+}
+
+/* ── Past events auto-dim ── */
+.cal-event.is-past-event { opacity: 0.42; filter: saturate(0.5); }
+.cal-event.is-past-event:hover { opacity: 0.7; filter: saturate(0.8); }
+
+/* ── Daily Time Stats bar ── */
+.pxt-stats-bar-wrap { margin-bottom: 14px; padding: 12px 14px;
+  background: var(--bg-light); border-radius: 12px; border: 1px solid var(--border-color); }
+.pxt-stats-bar-track { height: 18px; border-radius: 9px; overflow: hidden;
+  display: flex; background: var(--bg-white); margin-bottom: 8px; gap: 1px; }
+.pxt-stats-bar-seg { height: 100%; transition: filter .15s; cursor: default; }
+.pxt-stats-bar-seg:first-child { border-radius: 9px 0 0 9px; }
+.pxt-stats-bar-seg:last-child  { border-radius: 0 9px 9px 0; }
+.pxt-stats-bar-seg:hover { filter: brightness(1.18); }
+.pxt-stats-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.pxt-stats-legend-item { display: flex; align-items: center; gap: 5px;
+  font-size: .72rem; color: var(--text-muted); }
+.pxt-stats-legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+
+/* ── Undo toast ── */
+.pxt-undo-toast {
+  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+  background: #1e293b; color: #fff; padding: 10px 20px; border-radius: 24px;
+  font-size: .85rem; font-weight: 600; z-index: 99997;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.3); animation: pxtUndoIn .2s ease;
+}
+@keyframes pxtUndoIn {
+  from { opacity:0; transform: translateX(-50%) translateY(10px); }
+  to   { opacity:1; transform: translateX(-50%) translateY(0); }
+}
+.pxt-undo-toast button {
+  background: rgba(255,255,255,.15); border: none; border-radius: 14px;
+  color: #fff; padding: 3px 10px; font-size: .8rem; font-weight: 700; cursor: pointer;
+}
+.pxt-undo-toast button:hover { background: rgba(255,255,255,.25); }
+
+/* ── Duplicate btn in slot modal ── */
+#calSlotDuplicateBtn {
+  width: 100%; padding: 9px; background: rgba(99,102,241,.08); color: #6366f1;
+  border: 1px dashed rgba(99,102,241,.35); border-radius: 10px; cursor: pointer;
+  font-size: .85rem; font-weight: 600; margin-bottom: 8px; display: none;
+}
+#calSlotDuplicateBtn:hover { background: rgba(99,102,241,.14); }
+
 /* ── Drag-to-resize handle ── */
 .cal-resize-handle {
   position: absolute;
@@ -39742,6 +39908,9 @@ const CAL_COLORS = {
   task:'#6366f1', study:'#3b82f6', deadline:'#8b5cf6', sleep:'#0ea5e9',
   goal:'#f59e0b', course:'#10b981', review:'#06b6d4', exercise:'#f97316', break:'#6b7280', other:'#64748b'
 };
+
+/* ── Undo state ── */
+let _undoSnapshot = null; // { events: [...], label: string }
 
 /* ── Helper: format hour float → HH:MM ── */
 function fmtH(h) {
@@ -40227,6 +40396,10 @@ return {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
+      // Ctrl+Z / Cmd+Z — Undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault(); PLANEXT.undo(); return;
+      }
       if (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
       if (!document.getElementById('calendarModal')?.classList.contains('open')) return;
       if (document.getElementById('calSlotModal')?.classList.contains('open')) return;
@@ -40322,6 +40495,191 @@ return {
 
     // ── Drag-to-resize system ──
     PLANEXT._initDragResize();
+    PLANEXT._initDragMove();
+  },
+
+  /* ── Undo system ── */
+  saveUndo(label) {
+    _undoSnapshot = {
+      events: JSON.parse(localStorage.getItem('calEvents') || '[]'),
+      label: label || 'thay đổi'
+    };
+  },
+
+  undo() {
+    if (!_undoSnapshot) {
+      this.showUndoToast('Không có gì để undo', false);
+      return;
+    }
+    localStorage.setItem('calEvents', JSON.stringify(_undoSnapshot.events));
+    const label = _undoSnapshot.label;
+    _undoSnapshot = null;
+    if (typeof render === 'function') render();
+    this.showUndoToast(`↩️ Đã undo: ${label}`, true);
+  },
+
+  showUndoToast(msg, withUndo) {
+    document.querySelectorAll('.pxt-undo-toast').forEach(t => t.remove());
+    const t = document.createElement('div');
+    t.className = 'pxt-undo-toast';
+    t.innerHTML = `
+      <span>${msg}</span>
+      ${withUndo === false ? '' : `<button onclick="PLANEXT.undo();this.closest('.pxt-undo-toast').remove()">Undo ↩</button>`}
+      <button onclick="this.closest('.pxt-undo-toast').remove()" style="background:none;opacity:.6;">✕</button>
+    `;
+    document.body.appendChild(t);
+    setTimeout(() => { if (t.parentNode) t.remove(); }, 6000);
+  },
+
+  /* ── Duplicate event to next day ── */
+  duplicateSlot() {
+    const id = parseInt(document.getElementById('calSlotEventId')?.value);
+    if (!id) return;
+    const all = JSON.parse(localStorage.getItem('calEvents') || '[]');
+    const ev = all.find(e => e.id === id);
+    if (!ev) return;
+    this.saveUndo(`Duplicate "${ev.title}"`);
+    const d = new Date(ev.date + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    const nextDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const copy = { ...ev, id: Date.now(), date: nextDate };
+    delete copy.seriesId; delete copy.repeatType; // copies are standalone
+    all.push(copy);
+    localStorage.setItem('calEvents', JSON.stringify(all));
+    CAL.closeSlotModal();
+    if (typeof render === 'function') render();
+    this.showUndoToast(`📋 Đã copy "${ev.title}" → ${nextDate}`, false);
+  },
+
+  /* ── Drag-to-move events ── */
+  _initDragMove() {
+    const PX_PER_HOUR = 56;
+    const MIN_SNAP = 1 / 12; // 5 min
+    let drag = null;
+    // drag = { id, origStartH, origTop, curStartH, el, ghostEl, labelEl, offsetY, gridRect }
+
+    function getCalEvents() {
+      try { return JSON.parse(localStorage.getItem('calEvents') || '[]'); } catch { return []; }
+    }
+    function saveCalEvents(arr) { localStorage.setItem('calEvents', JSON.stringify(arr)); }
+
+    function getGrid() {
+      return document.getElementById('calDayGrid') || document.getElementById('calDayInner');
+    }
+
+    document.addEventListener('mousedown', e => {
+      const evEl = e.target.closest('.cal-event[data-draggable="true"]');
+      if (!evEl) return;
+      if (e.target.closest('.cal-resize-handle') || e.target.closest('button') || e.target.closest('a')) return;
+      const id = parseInt(evEl.dataset.eventId);
+      if (!id) return;
+      const ev = getCalEvents().find(ev => ev.id === id);
+      if (!ev) return;
+
+      e.preventDefault();
+      const grid = getGrid();
+      if (!grid) return;
+      const gridRect = grid.getBoundingClientRect();
+      const evRect  = evEl.getBoundingClientRect();
+      const offsetY  = e.clientY - evRect.top;
+
+      // Save undo before moving
+      PLANEXT.saveUndo(`Di chuyển "${ev.title}"`);
+
+      // Ghost
+      const ghost = document.createElement('div');
+      ghost.className = 'cal-drag-ghost';
+      ghost.style.cssText = `top:${evEl.offsetTop}px;height:${evEl.offsetHeight}px;left:${evEl.style.left};width:${evEl.style.width};`;
+      evEl.parentElement.appendChild(ghost);
+
+      // Snap label
+      const label = document.createElement('div');
+      label.className = 'cal-drag-snap-label';
+      label.textContent = fmtH(ev.startH);
+      label.style.top = evEl.offsetTop + 'px';
+      evEl.parentElement.appendChild(label);
+
+      evEl.classList.add('is-dragging');
+      drag = { id, origStartH: ev.startH, curStartH: ev.startH, el: evEl, ghostEl: ghost, labelEl: label, offsetY, gridRect };
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const grid = getGrid();
+      if (!grid) return;
+      const gridTop = grid.getBoundingClientRect().top;
+      const relY = e.clientY - gridTop - drag.offsetY;
+      const rawH = relY / PX_PER_HOUR;
+      const snapped = Math.max(0, Math.min(23, Math.round(rawH / MIN_SNAP) * MIN_SNAP));
+      drag.curStartH = snapped;
+      const newTop = snapped * PX_PER_HOUR;
+      drag.el.style.top = newTop + 'px';
+      drag.labelEl.style.top = newTop + 'px';
+      drag.labelEl.textContent = fmtH(snapped);
+    });
+
+    document.addEventListener('mouseup', e => {
+      if (!drag) return;
+      const { id, origStartH, curStartH, el, ghostEl, labelEl } = drag;
+      drag = null;
+      el.classList.remove('is-dragging');
+      ghostEl.remove();
+      labelEl.remove();
+
+      if (Math.abs(curStartH - origStartH) < MIN_SNAP / 2) return; // no real move
+
+      const all = getCalEvents();
+      const idx = all.findIndex(ev => ev.id === id);
+      if (idx !== -1) {
+        all[idx].startH = parseFloat(curStartH.toFixed(4));
+        saveCalEvents(all);
+        PLANEXT.showUndoToast(`⏰ Đã move → ${fmtH(curStartH)}`, false);
+      }
+      setTimeout(() => { if (typeof render === 'function') render(); }, 80);
+    });
+
+    // Touch support
+    document.addEventListener('touchstart', e => {
+      const evEl = e.target.closest('.cal-event[data-draggable="true"]');
+      if (!evEl) return;
+      if (e.target.closest('.cal-resize-handle') || e.target.closest('button')) return;
+      const id = parseInt(evEl.dataset.eventId);
+      if (!id) return;
+      const ev = getCalEvents().find(ev => ev.id === id);
+      if (!ev) return;
+      const touch = e.touches[0];
+      const grid = getGrid();
+      if (!grid) return;
+      const evRect = evEl.getBoundingClientRect();
+      const offsetY = touch.clientY - evRect.top;
+      PLANEXT.saveUndo(`Di chuyển "${ev.title}"`);
+      evEl.classList.add('is-dragging');
+      drag = { id, origStartH: ev.startH, curStartH: ev.startH, el: evEl, ghostEl: null, labelEl: null, offsetY, gridRect: grid.getBoundingClientRect() };
+    }, { passive: true });
+
+    document.addEventListener('touchmove', e => {
+      if (!drag) return;
+      const touch = e.touches[0];
+      const grid = getGrid();
+      if (!grid) return;
+      const gridTop = grid.getBoundingClientRect().top;
+      const relY = touch.clientY - gridTop - drag.offsetY;
+      const snapped = Math.max(0, Math.min(23, Math.round((relY / PX_PER_HOUR) / MIN_SNAP) * MIN_SNAP));
+      drag.curStartH = snapped;
+      drag.el.style.top = (snapped * PX_PER_HOUR) + 'px';
+    }, { passive: true });
+
+    document.addEventListener('touchend', e => {
+      if (!drag) return;
+      const { id, origStartH, curStartH, el } = drag;
+      drag = null;
+      el.classList.remove('is-dragging');
+      if (Math.abs(curStartH - origStartH) < MIN_SNAP / 2) return;
+      const all = getCalEvents();
+      const idx = all.findIndex(ev => ev.id === id);
+      if (idx !== -1) { all[idx].startH = parseFloat(curStartH.toFixed(4)); saveCalEvents(all); }
+      setTimeout(() => { if (typeof render === 'function') render(); }, 80);
+    });
   },
 
   /* ── Drag-to-resize events ── */
@@ -40376,6 +40734,7 @@ return {
       const events = getCalEvents();
       const idx = events.findIndex(ev => ev.id === dragState.eventId);
       if (idx !== -1) {
+        PLANEXT.saveUndo(`Resize "${events[idx].title || 'event'}"`);
         events[idx].dur = parseFloat(snapped.toFixed(4));
         saveCalEvents(events);
         if (typeof showNotification === 'function') {
