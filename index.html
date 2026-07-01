@@ -9950,6 +9950,12 @@
         <button id="calendarFAB" onclick="openCalendarModal()" title="Visual Planner"
             class="dark-mode-toggle"
             style="font-size:1.1rem; padding:8px 13px;">📆</button>
+        <a href="https://thanhthao888.github.io/finance-valuation-tools/" target="_blank" rel="noopener noreferrer"
+            id="calculatorFAB" title="Finance Calculators"
+            class="dark-mode-toggle"
+            style="font-size:1.1rem; padding:8px 13px; text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">
+            <i class="fa-solid fa-calculator"></i>
+        </a>
     </div>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -38946,43 +38952,40 @@ window.fcRenderTagChips = fcRenderTagChips;
         // --- DATA MANAGEMENT (EXPORT/IMPORT) ---
         function exportProgress() {
             try {
-                // Parse resourceLibrary once — reused for both raw data and stats
-                const resourceLibrary = JSON.parse(localStorage.getItem('resourceLibrary') || '[]');
+                // ✅ FULL BACKUP — quét TOÀN BỘ localStorage, không liệt kê tay từng key.
+                // Nhờ vậy mọi tính năng mới thêm sau này (Brain Dump, Deadlines,
+                // Daily Battle Plan, Launchpad...) tự động được backup, không cần sửa code nữa.
+                const raw = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    raw[key] = localStorage.getItem(key);
+                }
 
-                const data = {
-                    studyHours: JSON.parse(localStorage.getItem('studyHours') || '{}'),
-                    gamification: JSON.parse(localStorage.getItem('gamification') || '{}'),
-                    readingList: JSON.parse(localStorage.getItem('readingList') || '[]'),
-                    courses: JSON.parse(localStorage.getItem('courses') || '[]'),
-                    goals: JSON.parse(localStorage.getItem('goals') || '[]'),
-                    archivedGoals: JSON.parse(localStorage.getItem('archivedGoals') || '[]'),
-                    dailyStudyData: JSON.parse(localStorage.getItem('dailyStudyData') || '{}'),
-                    sessionLogs: JSON.parse(localStorage.getItem('sessionLogs') || '[]'),
-                    customQuotes: JSON.parse(localStorage.getItem('customQuotes') || '[]'),
-                    customMemes: JSON.parse(localStorage.getItem('customMemes') || '[]'),
-                    sleepSessions: JSON.parse(localStorage.getItem('sleepSessions') || '[]'),
-                    investmentAnalyses: JSON.parse(localStorage.getItem('investmentAnalyses') || '[]'),
-                    dealDiary: JSON.parse(localStorage.getItem('dealDiary') || '[]'),
-                    flashcards: JSON.parse(localStorage.getItem('flashcards') || '[]'),
-                    resourceLibrary,
-                    resourceStats: getResourceStats(),
-                    exportDate: new Date().toISOString(),
-                    version: "2.3"
+                const backup = {
+                    __meta: {
+                        app: "Finance Career Skills Tracker",
+                        exportDate: new Date().toISOString(),
+                        version: "3.0-full-backup",
+                        keyCount: Object.keys(raw).length
+                    },
+                    // resourceStats giữ lại để tương thích ngược, không bắt buộc khi import
+                    resourceStats: (typeof getResourceStats === 'function') ? getResourceStats() : null,
+                    data: raw
                 };
 
-                const dataStr = JSON.stringify(data, null, 2);
+                const dataStr = JSON.stringify(backup, null, 2);
                 const dataBlob = new Blob([dataStr], { type: 'application/json' });
                 const url = URL.createObjectURL(dataBlob);
-                
+
                 const link = document.createElement('a');
                 link.href = url;
-                link.download = `finance-skills-tracker-${new Date().toISOString().split('T')[0]}.json`;
+                link.download = `finance-skills-tracker-FULLBACKUP-${new Date().toISOString().split('T')[0]}.json`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
-                
-                showNotification('✅ Data exported successfully!', 'success');
+
+                showNotification(`✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu!`, 'success');
             } catch (err) {
                 console.error("Export failed:", err);
                 showNotification('❌ Export failed: ' + err.message, 'error');
@@ -38992,139 +38995,57 @@ window.fcRenderTagChips = fcRenderTagChips;
         function importProgress(event) {
             const file = event.target.files[0];
             if (!file) return;
-            
+
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
-                    const data = JSON.parse(e.target.result);
-                    if (data.studyHours) { 
-                        localStorage.setItem('studyHours', JSON.stringify(data.studyHours));
-                        studyHours = JSON.parse(localStorage.getItem('studyHours')) || {};
-                    }
-                    if (data.gamification) { 
-                        localStorage.setItem('gamification', JSON.stringify(data.gamification));
-                        gamification = JSON.parse(localStorage.getItem('gamification')) || {};
-                    }
-                    if (data.readingList) { 
-                        localStorage.setItem('readingList', JSON.stringify(data.readingList));
-                        readingList = JSON.parse(localStorage.getItem('readingList')) || [];
-                    }
-                    if (data.courses) { 
-                        localStorage.setItem('courses', JSON.stringify(data.courses));
-                        courses = JSON.parse(localStorage.getItem('courses')) || [];
-                    }
-                    if (data.goals) { 
-                        localStorage.setItem('goals', JSON.stringify(data.goals));
-                        goals = JSON.parse(localStorage.getItem('goals')) || [];
-                    }
-                    if (data.archivedGoals) { 
-                        localStorage.setItem('archivedGoals', JSON.stringify(data.archivedGoals));
-                        archivedGoals = JSON.parse(localStorage.getItem('archivedGoals')) || [];
-                    }
-                    if (data.dailyStudyData) { 
-                        localStorage.setItem('dailyStudyData', JSON.stringify(data.dailyStudyData));
-                        dailyStudyData = JSON.parse(localStorage.getItem('dailyStudyData')) || {};
-                    }
-                    if (data.sessionLogs) { 
-                        localStorage.setItem('sessionLogs', JSON.stringify(data.sessionLogs));
-                        sessionLogs = JSON.parse(localStorage.getItem('sessionLogs')) || [];
-                    }
-                    
-                    // ✅ Custom Quotes Import 
-                    if (data.customQuotes) { 
-                        localStorage.setItem('customQuotes', JSON.stringify(data.customQuotes));
-                        // Force reload from localStorage instead of using variables
-                        customQuotes = JSON.parse(localStorage.getItem('customQuotes')) || [];
-                        
-                        if (typeof defaultQuotes !== 'undefined') {
-                            motivationalQuotes = [...defaultQuotes, ...customQuotes];
-                        }
-                        
-                        if (typeof updateCustomQuotesCount === 'function') {
-                            updateCustomQuotesCount();
-                        }
-                    }
-                    
-                    // ✅ Custom Memes Import
-                    if (data.customMemes) { 
-                        localStorage.setItem('customMemes', JSON.stringify(data.customMemes));
-                        // Force reload from localStorage instead of using variables
-                        customMemes = JSON.parse(localStorage.getItem('customMemes')) || [];
-                        
-                        if (typeof defaultMemes !== 'undefined') {
-                            const defaultMemesArray = defaultMemes.map(url => 
-                                typeof url === 'string' ? { url, caption: 'Built-in meme' } : url
-                            );
-                            allMemes = [...defaultMemesArray, ...customMemes];
-                        }
-                        
-                        if (typeof updateCustomMemesCount === 'function') {
-                            updateCustomMemesCount();
-                        }
-                    }
-                    
-                    if (data.sleepSessions) { 
-                        localStorage.setItem('sleepSessions', JSON.stringify(data.sleepSessions));
-                        sleepSessions = JSON.parse(localStorage.getItem('sleepSessions')) || [];
-                    }
-                    if (data.investmentAnalyses) { 
-                        localStorage.setItem('investmentAnalyses', JSON.stringify(data.investmentAnalyses));
-                        investmentAnalyses = JSON.parse(localStorage.getItem('investmentAnalyses')) || [];
-                    }
-                    if (data.dealDiary) { 
-                        localStorage.setItem('dealDiary', JSON.stringify(data.dealDiary));
-                        dealDiary = JSON.parse(localStorage.getItem('dealDiary')) || [];
-                    }
-                    if (data.flashcards) { 
-                        localStorage.setItem('flashcards', JSON.stringify(data.flashcards));
-                        flashcards = JSON.parse(localStorage.getItem('flashcards')) || [];
-                        if (typeof updateFlashcardStats === 'function') {
-                            updateFlashcardStats();
-                        }
-                    }
-                    
-                    // ✅ Resource Library Import 
-                    if (data.resourceLibrary) { 
-                        localStorage.setItem('resourceLibrary', JSON.stringify(data.resourceLibrary));
-                        resourceLibrary = JSON.parse(localStorage.getItem('resourceLibrary')) || [];
-                        if (typeof filterResources === 'function') filterResources();
-                        else if (typeof renderResourceCards === 'function') renderResourceCards();
+                    const parsed = JSON.parse(e.target.result);
+
+                    // ✅ Nhận diện 2 loại file:
+                    // - File backup MỚI (có __meta + data)  → restore thẳng từng key
+                    // - File backup CŨ (export bản trước, phẳng, mỗi field là 1 key)
+                    const isFullBackup = parsed.__meta && parsed.data;
+                    const entries = isFullBackup ? parsed.data : parsed;
+
+                    const keys = Object.keys(entries).filter(k => k !== 'exportDate' && k !== 'version' && k !== 'resourceStats');
+                    if (keys.length === 0) {
+                        showNotification('❌ File không có dữ liệu hợp lệ.', 'error');
+                        event.target.value = '';
+                        return;
                     }
 
-                    // ✅ Reload ALL UI components
-                    if (typeof loadCareer === 'function') loadCareer(currentCareer);
-                    if (typeof updateStats === 'function') updateStats();
-                    if (typeof updateGamificationStats === 'function') updateGamificationStats();
-                    if (typeof renderReadingList === 'function') renderReadingList();
-                    if (typeof updateReadingCounts === 'function') updateReadingCounts();
-                    if (typeof renderCourses === 'function') renderCourses();
-                    if (typeof renderGoals === 'function') renderGoals();
-                    if (typeof renderSessionLogs === 'function') renderSessionLogs();
-                    if (typeof renderSleepHistory === 'function') renderSleepHistory();
-                    if (typeof renderSleepChart === 'function') renderSleepChart();
-                    if (typeof renderAnalysisCards === 'function') renderAnalysisCards();
-                    if (typeof renderDealCards === 'function') renderDealCards();
-                    if (typeof getRandomQuote === 'function') getRandomQuote();
-                    if (typeof getRandomMeme === 'function') getRandomMeme();
-                    if (typeof updateDailyStudyDisplay === 'function') updateDailyStudyDisplay();
-                    if (typeof updateCorrelationAnalytics === 'function') updateCorrelationAnalytics();
-                    
-                    showNotification('✅ Data imported successfully! All data restored.', 'success');
-                    
-                    // ✅ Force page reload after 2 seconds to ensure everything syncs
-                    setTimeout(() => {
-                        if (confirm('Data imported! Reload page to ensure everything syncs properly?')) {
-                            location.reload();
+                    const ok = confirm(
+                        `Sắp khôi phục ${keys.length} mục dữ liệu từ file backup.\n` +
+                        `Dữ liệu hiện tại trong app sẽ bị GHI ĐÈ bởi dữ liệu trong file.\n` +
+                        `Tiếp tục?`
+                    );
+                    if (!ok) { event.target.value = ''; return; }
+
+                    let restored = 0;
+                    keys.forEach(key => {
+                        let value = entries[key];
+                        // File backup mới lưu sẵn dạng string (đúng như localStorage gốc).
+                        // File backup cũ lưu dạng object/array đã parse → cần stringify lại.
+                        if (typeof value !== 'string') {
+                            value = JSON.stringify(value);
                         }
-                    }, 2000);
-                    
+                        localStorage.setItem(key, value);
+                        restored++;
+                    });
+
+                    showNotification(`✅ Đã khôi phục ${restored} mục. Đang tải lại trang...`, 'success');
+
+                    // Reload để mọi phần của app đọc lại dữ liệu mới từ localStorage —
+                    // an toàn hơn nhiều so với việc tự tay đồng bộ từng biến JS trong bộ nhớ.
+                    setTimeout(() => location.reload(), 1200);
+
                 } catch (err) {
                     console.error("Import failed:", err);
                     showNotification('❌ Import failed: ' + err.message, 'error');
                 }
             };
             reader.readAsText(file);
-            event.target.value = ''; 
+            event.target.value = '';
         }
 
 
