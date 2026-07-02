@@ -2280,6 +2280,28 @@
             color: var(--primary) !important;
         }
 
+        /* ===== SLEEP STATS SUMMARY BOXES ===== */
+        .sleep-stat-box {
+            background: var(--bg-light);
+            border-radius: 10px;
+            padding: 8px 6px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+        .sleep-stat-box .sleep-stat-value {
+            font-size: 1.05rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .sleep-stat-box .sleep-stat-label {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+
 
         /* --- READING LIST STYLES --- */
         :root {
@@ -15432,13 +15454,24 @@ window.DBP={
 
         <!-- ===== SLEEP TRACKER SIDEBAR CARD ===== -->
         <div class="sidebar-card">
-            <h3 class="sidebar-title">⏱️ Sleep Tracker</h3>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                <h3 class="sidebar-title" style="margin-bottom:0;">⏱️ Sleep Tracker</h3>
+                <div style="display:flex; align-items:center; gap:5px; font-size:0.78rem; color:var(--text-muted);">
+                    🎯 Goal
+                    <input type="number" id="sleepGoalInput" min="4" max="12" step="0.5"
+                        onchange="setSleepGoal(this.value)"
+                        style="width:52px; padding:3px 5px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-light); color:var(--text-dark); font-size:0.78rem; text-align:center;">h
+                </div>
+            </div>
             <div id="sleepStatus" style="text-align: center; font-size: 1.1rem; margin: 10px 0;">
                 😴 Ready to sleep
             </div>
             <div id="sleepTimerDisplay" style="font-size: 2rem; text-align: center; font-weight: bold; color: var(--primary); margin: 10px 0; display: none;">
                 00:00:00
             </div>
+
+            <!-- Sleep Stats Summary -->
+            <div id="sleepStatsRow" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 12px 0;"></div>
             
             <!-- Control Buttons -->
             <div style="display: flex; gap: 10px; margin-bottom: 10px;">
@@ -15468,6 +15501,7 @@ window.DBP={
                 </div>
             </div>
         </div>
+
 
 
         <!-- ===== 🗺️ STRATEGIC ROADMAP MODULE ===== -->
@@ -23616,6 +23650,30 @@ document.addEventListener('DOMContentLoaded', function() {
         sleepSessions = JSON.parse(localStorage.getItem('sleepSessions')) || [];
         let sleepChart = null;
 
+        // ✅ Mục tiêu giờ ngủ (mặc định 8h, lưu riêng cho từng user trong localStorage)
+        const SLEEP_GOAL_KEY = 'sleepGoalHours';
+        function getSleepGoal() {
+            const v = parseFloat(localStorage.getItem(SLEEP_GOAL_KEY));
+            return (!isNaN(v) && v >= 4 && v <= 12) ? v : 8;
+        }
+        function setSleepGoal(value) {
+            let v = parseFloat(value);
+            if (isNaN(v) || v < 4) v = 4;
+            if (v > 12) v = 12;
+            localStorage.setItem(SLEEP_GOAL_KEY, v);
+            const input = document.getElementById('sleepGoalInput');
+            if (input) input.value = v;
+            renderSleepStats();
+            renderSleepChart();
+            showNotification(`🎯 Sleep goal set to ${v}h`, 'info');
+        }
+
+        // ✅ Luôn trả về danh sách phiên ngủ sắp theo thời gian bắt đầu (fix lỗi
+        // thứ tự sai khi thêm/sửa session thủ công không theo đúng thứ tự đã lưu)
+        function getSortedSleepSessions() {
+            return [...sleepSessions].sort((a, b) => a.start - b.start);
+        }
+
         function startSleepTracking() {
             if (isSleeping) return;
             sleepStartTime = Date.now();
@@ -23681,6 +23739,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateSleepUI();
             renderSleepHistory();
             renderSleepChart();
+            renderSleepStats();
             updateCorrelationAnalytics();
             
             showNotification(`☀️ Woke up! You slept for ${session.duration} hours.`, 'success');
@@ -24046,6 +24105,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Update all UI components
                 renderSleepHistory();
                 renderSleepChart();
+                renderSleepStats();
                 updateCorrelationAnalytics();
                 
                 // Clean up and close modal
@@ -24255,6 +24315,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     saveSleepData();
                     renderSleepHistory();
                     renderSleepChart();
+                    renderSleepStats();
                     updateCorrelationAnalytics();
                     closeEditSleepModal();
                     
@@ -24274,6 +24335,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 saveSleepData();
                 renderSleepHistory();
                 renderSleepChart();
+                renderSleepStats();
                 updateCorrelationAnalytics();
                 showNotification('Session deleted', 'info');
             }
@@ -24288,7 +24350,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            const recentSessions = sleepSessions.slice(-10).reverse(); // Last 10, newest first
+            const goal = getSleepGoal();
+            const recentSessions = getSortedSleepSessions().slice(-10).reverse(); // Last 10, newest first, luôn đúng thứ tự
+
+            const today = new Date(); today.setHours(0,0,0,0);
+            const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+            const dayNames = ['CN','T2','T3','T4','T5','T6','T7'];
+            function relativeDay(ts) {
+                const d = new Date(ts); const d0 = new Date(d); d0.setHours(0,0,0,0);
+                if (d0.getTime() === today.getTime()) return 'Hôm nay';
+                if (d0.getTime() === yesterday.getTime()) return 'Hôm qua';
+                return `${dayNames[d.getDay()]} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+            }
             
             container.innerHTML = recentSessions.map(session => {
                 const qualityEmojis = ['','😫','😞','😐','😊','😄'];
@@ -24297,19 +24370,35 @@ document.addEventListener('DOMContentLoaded', function() {
                 const q = session.quality || 0;
                 const borderColor = session.duration > 16 ? '#ef4444'
                     : q >= 4 ? '#10b981' : q === 3 ? '#3b82f6' : q > 0 ? '#f59e0b' : '#3b82f6';
+
+                // ✅ So sánh với mục tiêu ngủ để người dùng biết đêm đó đủ/thiếu bao nhiêu
+                const diff = session.duration - goal;
+                let goalBadge;
+                if (diff >= -0.25) {
+                    goalBadge = `<span style="font-size:0.72rem;color:#10b981;background:rgba(16,185,129,0.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">✅ Đủ giấc</span>`;
+                } else if (diff >= -1.5) {
+                    goalBadge = `<span style="font-size:0.72rem;color:#f59e0b;background:rgba(245,158,11,0.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">−${Math.abs(diff).toFixed(1)}h</span>`;
+                } else {
+                    goalBadge = `<span style="font-size:0.72rem;color:#ef4444;background:rgba(239,68,68,0.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">−${Math.abs(diff).toFixed(1)}h thiếu</span>`;
+                }
+
+                const safeNotes = session.notes ? escapeHtml(session.notes) : '';
+
                 return `
                 <div style="background: var(--bg-light); padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid ${borderColor};">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
                         <div style="flex:1; min-width:0;">
-                            <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; display:flex; align-items:center; gap:6px;">
+                            <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                                 😴 ${session.duration}h
+                                <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">· ${relativeDay(session.start)}</span>
                                 ${session.manual ? '<span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">(Manual)</span>' : ''}
                                 ${q > 0 ? `<span style="font-size:0.85rem;color:${qualityColors[q]};" title="${qualityLabels[q]}">${qualityEmojis[q]}</span>` : ''}
+                                ${goalBadge}
                             </div>
                             <div style="font-size: 0.82rem; color: var(--text-muted);">
                                 ${session.startFormatted} → ${session.endFormatted}
                             </div>
-                            ${session.notes ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:5px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${session.notes}">📝 ${session.notes}</div>` : ''}
+                            ${safeNotes ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:5px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${safeNotes}">📝 ${safeNotes}</div>` : ''}
                         </div>
                         <div style="display: flex; gap: 4px; margin-left:8px; flex-shrink:0;">
                             <button onclick="editSleepSession(${session.id})" style="background: none; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--text-dark); font-size: 0.85rem;">✏️</button>
@@ -24350,35 +24439,67 @@ document.addEventListener('DOMContentLoaded', function() {
 
         function saveSleepData() {
             localStorage.setItem('sleepSessions', JSON.stringify(sleepSessions));
+            // Giữ đồng bộ với window.sleepSessions để Sleep Debt Card (module riêng) luôn thấy dữ liệu mới nhất
+            window.sleepSessions = sleepSessions;
+            if (typeof refreshSleepDebtCard === 'function') refreshSleepDebtCard();
+            if (typeof refreshOptimalSleepWindow === 'function') refreshOptimalSleepWindow();
         }
 
         function renderSleepChart() {
             const ctx = document.getElementById('sleepChart');
             if (!ctx) return;
             
-            const recentSessions = sleepSessions.slice(-7);
+            const goal = getSleepGoal();
+            const recentSessions = getSortedSleepSessions().slice(-7); // 7 phiên gần nhất, đúng thứ tự thời gian
             const labels = recentSessions.map(session => {
                 const d = new Date(session.start);
                 const days = ['CN','T2','T3','T4','T5','T6','T7'];
                 return `${days[d.getDay()]} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
             });
             const durations = recentSessions.map(session => session.duration);
+            const qualities = recentSessions.map(session => session.quality || 0);
+
+            // ✅ Tô màu từng cột theo mức độ đạt mục tiêu, không còn 1 màu xanh cố định
+            const qualityLabels = ['Chưa đánh giá','😫 Rất tệ','😞 Tệ','😐 Bình thường','😊 Tốt','😄 Rất tốt'];
+            function colorForDuration(duration) {
+                if (duration > 16 || duration < 3) return { bg: 'rgba(239,68,68,0.7)', border: '#ef4444' };
+                if (duration < goal - 1.5) return { bg: 'rgba(245,158,11,0.7)', border: '#f59e0b' };
+                if (duration >= goal - 0.25 && duration <= goal + 1.5) return { bg: 'rgba(16,185,129,0.7)', border: '#10b981' };
+                return { bg: 'rgba(59,130,246,0.7)', border: '#3b82f6' };
+            }
+            const barColors = durations.map(colorForDuration);
             
             if (sleepChart) {
                 sleepChart.destroy();
             }
             
             sleepChart = new Chart(ctx, {
-                type: 'bar',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        label: 'Hours Slept',
-                        data: durations,
-                        backgroundColor: 'rgba(52, 152, 219, 0.6)',
-                        borderColor: 'rgba(52, 152, 219, 1)',
-                        borderWidth: 1
-                    }]
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: 'Hours Slept',
+                            data: durations,
+                            backgroundColor: barColors.map(c => c.bg),
+                            borderColor: barColors.map(c => c.border),
+                            borderWidth: 1,
+                            borderRadius: 4,
+                            order: 2
+                        },
+                        {
+                            // ✅ Đường mục tiêu ngủ (goal line) để so sánh trực quan từng đêm với mục tiêu
+                            type: 'line',
+                            label: `Goal (${goal}h)`,
+                            data: labels.map(() => goal),
+                            borderColor: 'rgba(148, 163, 184, 0.9)',
+                            borderDash: [6, 4],
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            order: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -24387,22 +24508,81 @@ document.addEventListener('DOMContentLoaded', function() {
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return `Duration: ${context.parsed.y} hours`;
+                                    if (context.dataset.type === 'line') {
+                                        return `Goal: ${goal} hours`;
+                                    }
+                                    const q = qualities[context.dataIndex];
+                                    const base = `Duration: ${context.parsed.y} hours`;
+                                    return q > 0 ? `${base} · ${qualityLabels[q]}` : base;
                                 }
                             }
                         }
                     },
                     scales: {
+                        x: {
+                            ticks: { color: '#666' }
+                        },
                         y: {
                             beginAtZero: true,
                             title: {
                                 display: true,
                                 text: 'Hours'
-                            }
+                            },
+                            ticks: { color: '#666' }
                         }
                     }
                 }
             });
+
+            // Giữ đúng màu chữ khi đang ở dark mode (đồng bộ với toggleDarkMode)
+            if (document.body.classList.contains('dark-mode')) {
+                sleepChart.options.scales.y.ticks.color = '#cbd5e1';
+                sleepChart.options.scales.x.ticks.color = '#cbd5e1';
+                sleepChart.update();
+            }
+        }
+
+        // ✅ Bảng thống kê nhanh: trung bình 7 đêm gần nhất, chuỗi ngày đủ giấc liên tiếp, và "nợ ngủ" so với mục tiêu
+        function renderSleepStats() {
+            const row = document.getElementById('sleepStatsRow');
+            if (!row) return;
+
+            const goalInput = document.getElementById('sleepGoalInput');
+            const goal = getSleepGoal();
+            if (goalInput) goalInput.value = goal;
+
+            if (sleepSessions.length === 0) {
+                row.innerHTML = `
+                    <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Trung bình</div></div>
+                    <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Chuỗi đủ giấc</div></div>
+                    <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
+                `;
+                return;
+            }
+
+            const sorted = getSortedSleepSessions();
+            const last7 = sorted.slice(-7);
+            const avg7 = last7.reduce((sum, s) => sum + s.duration, 0) / last7.length;
+
+            // Chuỗi đêm liên tiếp gần nhất đạt >= mục tiêu (tính từ đêm gần nhất lùi về trước)
+            let streak = 0;
+            for (let i = sorted.length - 1; i >= 0; i--) {
+                if (sorted[i].duration >= goal - 0.25) streak++;
+                else break;
+            }
+
+            // Nợ ngủ: tổng số giờ thiếu so với mục tiêu trong 7 đêm gần nhất (chỉ tính phần thiếu, không cộng dư)
+            const debt = last7.reduce((sum, s) => sum + Math.max(0, goal - s.duration), 0);
+
+            const avgColor = avg7 >= goal - 0.25 ? '#10b981' : avg7 >= goal - 1.5 ? '#f59e0b' : '#ef4444';
+            const streakColor = streak >= 3 ? '#10b981' : streak > 0 ? '#3b82f6' : 'var(--text-muted)';
+            const debtColor = debt <= 1 ? '#10b981' : debt <= 5 ? '#f59e0b' : '#ef4444';
+
+            row.innerHTML = `
+                <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${avgColor};">${avg7.toFixed(1)}h</div><div class="sleep-stat-label">TB ${last7.length} đêm</div></div>
+                <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${streakColor};">${streak} 🔥</div><div class="sleep-stat-label">Chuỗi đủ giấc</div></div>
+                <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${debtColor};">${debt.toFixed(1)}h</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
+            `;
         }
 
         function loadSleepData() {
@@ -24422,6 +24602,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             renderSleepHistory();
             renderSleepChart();
+            renderSleepStats();
         }
 
 
@@ -35777,8 +35958,11 @@ console.log('   • 🚀 Actionable Sleep Schedule');
 
 // ===== FIX: Load Sleep Data & Daily Study Data into Global Variables =====
 document.addEventListener('DOMContentLoaded', function() {
-    // ✅ Load sleep sessions into global variable
-    window.sleepSessions = JSON.parse(localStorage.getItem('sleepSessions') || '[]');
+    // ✅ Load sleep sessions into the real global variable (not just window.*,
+    // which was previously disconnected from the `sleepSessions` used by
+    // renderSleepHistory/renderSleepChart since it's declared with `let`).
+    sleepSessions = JSON.parse(localStorage.getItem('sleepSessions') || '[]');
+    window.sleepSessions = sleepSessions;
     
     // ✅ Load daily study data into global variable
     window.dailyStudyData = JSON.parse(localStorage.getItem('dailyStudyData') || '{}');
@@ -35797,6 +35981,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (typeof renderSleepChart === 'function') {
             renderSleepChart();
         }
+
+        // Render Sleep Stats summary (avg / streak / debt)
+        if (typeof renderSleepStats === 'function') {
+            renderSleepStats();
+        }
         
         // Refresh Sleep Debt Card
         if (typeof refreshSleepDebtCard === 'function') {
@@ -35812,57 +36001,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 500);
 });
 
-function saveSleepSessions() {
-    localStorage.setItem('sleepSessions', JSON.stringify(sleepSessions));
-    window.sleepSessions = sleepSessions;
-    if (typeof refreshSleepDebtCard === 'function') {
-        refreshSleepDebtCard();
-    }
-    if (typeof refreshOptimalSleepWindow === 'function') {
-        refreshOptimalSleepWindow();
-    }
-}
-
 function saveDailyStudyData() {
     localStorage.setItem('dailyStudyData', JSON.stringify(dailyStudyData));
     window.dailyStudyData = dailyStudyData;
     if (typeof updateCorrelationAnalytics === 'function') {
         updateCorrelationAnalytics();
     }
-}
-
-function addSleepSession() {
-    const date = document.getElementById('sleepDate').value;
-    const startTime = document.getElementById('sleepStartTime').value;
-    const endTime = document.getElementById('sleepEndTime').value;
-    
-    if (!date || !startTime || !endTime) {
-        alert('Please fill all fields');
-        return;
-    }
-    
-    const start = new Date(`${date}T${startTime}`);
-    let end = new Date(`${date}T${endTime}`);
-    
-    if (end <= start) {
-        end.setDate(end.getDate() + 1);
-    }
-    
-    const duration = (end - start) / (1000 * 60 * 60);
-    sleepSessions.push({
-        id: Date.now().toString(),
-        start: start.toISOString(),
-        end: end.toISOString(),
-        duration: parseFloat(duration.toFixed(1)),
-        date: date
-    });
-    saveSleepSessions();
-    
-    renderSleepHistory();
-    renderSleepChart();
-    document.getElementById('sleepForm').reset();
-    
-    showNotification('Sleep session added!', 'success');
 }
 
 
