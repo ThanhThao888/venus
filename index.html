@@ -11666,6 +11666,28 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dlt-stat.s-warn   .dlt-stat-n  { color: #f59e0b; }
 .dlt-stat.s-ok     .dlt-stat-n  { color: #10b981; }
 
+/* ── Search bar ── */
+.dlt-search-wrap { position: relative; margin-bottom: 10px; }
+.dlt-search {
+  width: 100%; box-sizing: border-box; padding: 9px 34px 9px 13px;
+  border-radius: 10px; border: 1px solid var(--border-color);
+  background: var(--bg-white); color: var(--text-dark);
+  font-size: 0.85rem; font-family: inherit; transition: all 0.15s;
+}
+.dlt-search:focus {
+  outline: none; border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139,92,246,.14);
+}
+.dlt-search::placeholder { color: var(--text-muted); }
+.dlt-search-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px; border: none; border-radius: 50%;
+  background: var(--bg-light); color: var(--text-muted);
+  font-size: 0.68rem; cursor: pointer; display: flex;
+  align-items: center; justify-content: center; touch-action: manipulation;
+}
+.dlt-search-clear:hover { background: #e5e7eb; color: var(--text-dark); }
+
 /* ── Filter tabs ── */
 .dlt-tabs {
   display: flex; gap: 6px; margin-bottom: 14px;
@@ -11902,6 +11924,10 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     </div>
   </div>
   <div class="dlt-stats" id="dltStats"></div>
+  <div class="dlt-search-wrap">
+    <input type="text" id="dltSearch" class="dlt-search" placeholder="🔎 Search deadlines..." oninput="DLT.search(this.value)" />
+    <button type="button" class="dlt-search-clear" id="dltSearchClear" onclick="DLT.search(''); document.getElementById('dltSearch').value=''; document.getElementById('dltSearch').focus();" style="display:none;" title="Clear search">✕</button>
+  </div>
   <div class="dlt-tabs"  id="dltTabs"></div>
   <div class="dlt-list"  id="dltList"><span class="dlt-empty">No deadlines yet.</span></div>
 </div>
@@ -11963,6 +11989,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   let manualList = JSON.parse(localStorage.getItem('deadlines') || '[]');
   let doneIds    = JSON.parse(localStorage.getItem('dltDoneIds') || '[]');
   let curFilter  = 'all';
+  let curSearch  = '';
 
   function persist() {
     localStorage.setItem('deadlines',  JSON.stringify(manualList));
@@ -12008,6 +12035,10 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     const h = Math.floor(ms / 3600000);
     const m = Math.floor((ms % 3600000) / 60000);
     return `⏱ ${h}h ${m}m left`;
+  }
+
+  function d_escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   }
 
   function fmtDate(s) {
@@ -12083,9 +12114,15 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   /* ─── Render ─── */
   function render() {
     const all = allItems();
-    const shown = curFilter === 'all'
+    let shown = curFilter === 'all'
       ? all
       : all.filter(d => d.category && d.category.includes(curFilter));
+
+    const q = curSearch.trim().toLowerCase();
+    if (q) shown = shown.filter(d => d.name && d.name.toLowerCase().includes(q));
+
+    const clearBtn = document.getElementById('dltSearchClear');
+    if (clearBtn) clearBtn.style.display = q ? 'flex' : 'none';
 
     shown.sort((a, b) => {
       const aDone = doneIds.includes(a.id), bDone = doneIds.includes(b.id);
@@ -12114,7 +12151,12 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 
     /* Cards */
     const list = document.getElementById('dltList');
-    if (!shown.length) { list.innerHTML = '<span class="dlt-empty">Nothing here — add or sync.</span>'; return; }
+    if (!shown.length) {
+      list.innerHTML = q
+        ? `<span class="dlt-empty">No deadlines match "${d_escapeHtml(curSearch.trim())}".</span>`
+        : '<span class="dlt-empty">Nothing here — add or sync.</span>';
+      return;
+    }
 
     function cardHTML(d) {
       const days = doneIds.includes(d.id) ? 999 : daysLeft(d.date);
@@ -12144,7 +12186,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
           <div class="dlt-days">${dNum}</div>
           <div class="dlt-days-unit">${dUnit}</div>
         </div>
-        <div class="dlt-info${isNavigable ? ' dlt-jumpable' : ''}"${isNavigable ? ` onclick="DLT.navigate('${d.id}')" title="⚡ Click để nhảy thẳng tới course/goal này"` : ''}>
+        <div class="dlt-info${isNavigable ? ' dlt-jumpable' : ''}"${isNavigable ? ` onclick="DLT.navigate('${d.id}')" title="⚡ Click to jump straight to this course/goal"` : ''}>
           <div class="dlt-name" title="${d.name}">${d.name}</div>
           <div class="dlt-meta">${d.category?d.category+' · ':''}${fmtDate(d.date)}${d.time ? ' · ⏰ ' + d.time : ''}</div>
           ${badgesHtml}
@@ -12162,11 +12204,11 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 
     // ── Group by urgency (chunking = less to scan at once) ──
     const groups = [
-      { key:'overdue', label:'🔴 Quá hạn',              cls:'g-overdue', items: [] },
-      { key:'urgent',  label:'🔥 Trong 3 ngày',          cls:'g-urgent',  items: [] },
-      { key:'week',    label:'🟡 Tuần này (4–7 ngày)',   cls:'g-week',    items: [] },
-      { key:'later',   label:'🟢 Sắp tới',               cls:'g-later',   items: [] },
-      { key:'done',    label:'✅ Đã hoàn thành',         cls:'g-done',    items: [] },
+      { key:'overdue', label:'🔴 Overdue',               cls:'g-overdue', items: [] },
+      { key:'urgent',  label:'🔥 Next 3 Days',           cls:'g-urgent',  items: [] },
+      { key:'week',    label:'🟡 This Week (4–7 Days)',  cls:'g-week',    items: [] },
+      { key:'later',   label:'🟢 Upcoming',              cls:'g-later',   items: [] },
+      { key:'done',    label:'✅ Completed',             cls:'g-done',    items: [] },
     ];
     shown.forEach(d => {
       const done = doneIds.includes(d.id);
@@ -12219,10 +12261,10 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       const allCourses = JSON.parse(localStorage.getItem('courses') || '[]');
       const course = allCourses.find(c => String(c.id) === courseId);
       if (!course) {
-        if (typeof showNotification === 'function') showNotification('❌ Không tìm thấy course trong danh sách!', 'error');
+        if (typeof showNotification === 'function') showNotification('❌ Course not found in the list!', 'error');
         return;
       }
-      if (typeof showNotification === 'function') showNotification(`⚡ Đang nhảy đến: ${course.title}`, 'info');
+      if (typeof showNotification === 'function') showNotification(`⚡ Jumping to: ${course.title}`, 'info');
 
       // Only switch career if it's a valid known career
       const hasValidCareer = course.career && KNOWN_CAREERS.includes(course.career);
@@ -12231,7 +12273,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       } else if (!hasValidCareer) {
         // Career invalid/missing — warn and bail early with helpful message
         if (typeof showNotification === 'function') {
-          showNotification(`⚠️ Course "${course.title}" chưa có career. Vào Edit course để chọn career (HF, IB, PE,...).`, 'error');
+          showNotification(`⚠️ Course "${course.title}" has no career set. Edit the course to choose one (HF, IB, PE,...).`, 'error');
         }
         // Still try to scroll to course section in case it's showing in current career
       }
@@ -12266,7 +12308,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
             setTimeout(() => { courseEl.style.boxShadow = ''; courseEl.style.transform = ''; }, 2800);
           } else if (hasValidCareer) {
             if (typeof showNotification === 'function')
-              showNotification(`⚠️ Không tìm thấy "${course.title}" trong career này. Thử check lại filter.`, 'error');
+              showNotification(`⚠️ "${course.title}" not found in this career. Try checking the filter.`, 'error');
           }
         }, 420);
       }, delay);
@@ -12277,10 +12319,10 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       const allGoals = JSON.parse(localStorage.getItem('goals') || '[]');
       const goal = allGoals.find(g => String(g.id) === goalId);
       if (!goal) {
-        if (typeof showNotification === 'function') showNotification('❌ Không tìm thấy goal!', 'error');
+        if (typeof showNotification === 'function') showNotification('❌ Goal not found!', 'error');
         return;
       }
-      if (typeof showNotification === 'function') showNotification(`⚡ Đang nhảy đến: ${goal.title}`, 'info');
+      if (typeof showNotification === 'function') showNotification(`⚡ Jumping to: ${goal.title}`, 'info');
 
       // 1. Switch career tab
       if (typeof selectCareer === 'function') selectCareer(goal.career);
@@ -12309,6 +12351,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   window.DLT = {
     sync()   { render(); },
     filter(c){ curFilter = c; render(); },
+    search(v){ curSearch = v || ''; render(); },
     navigate: navigateToItem,
     openModal() {
       document.getElementById('dltName').value = '';
