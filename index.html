@@ -11820,6 +11820,44 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 }
 .dlt-gcal-btn:hover { background: #4285f4; color: #fff; }
 
+/* ── Quick Reschedule button + popover ── */
+.dlt-rsc-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1.5px solid #8b5cf6; color: #8b5cf6; background: none;
+  cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; touch-action: manipulation;
+}
+.dlt-rsc-btn:hover { background: #8b5cf6; color: #fff; }
+.dlt-rsc-pop {
+  position: fixed; z-index: 9999; background: var(--bg-white, #fff);
+  border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 10px 32px rgba(0,0,0,0.18);
+  padding: 8px; display: none; min-width: 168px;
+}
+.dark-mode .dlt-rsc-pop { background: #1f2430; border-color: #333a4a; }
+.dlt-rsc-pop.open { display: block; }
+.dlt-rsc-pop-title {
+  font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.4px; padding: 2px 6px 6px;
+}
+.dlt-rsc-opt {
+  display: block; width: 100%; text-align: left; padding: 7px 8px; border-radius: 7px;
+  border: none; background: none; color: var(--text-dark, #111827); font-size: 0.82rem;
+  cursor: pointer; transition: background 0.12s;
+}
+.dlt-rsc-opt:hover { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+.dlt-rsc-pop input[type="date"] {
+  width: 100%; margin-top: 4px; padding: 6px 7px; border-radius: 7px;
+  border: 1px solid #e5e7eb; font-size: 0.8rem; box-sizing: border-box;
+  background: var(--bg-white, #fff); color: var(--text-dark, #111827);
+}
+.dark-mode .dlt-rsc-pop input[type="date"] { border-color: #333a4a; background: #171b24; color: #eee; }
+.dlt-rsc-pop-cancel {
+  display: block; width: 100%; text-align: center; margin-top: 6px; padding: 6px;
+  border-radius: 7px; border: none; background: rgba(107,114,128,0.1); color: var(--text-muted);
+  font-size: 0.76rem; cursor: pointer;
+}
+.dlt-rsc-pop-cancel:hover { background: rgba(107,114,128,0.18); }
+
 /* Clickable info zone for navigable cards */
 .dlt-info.dlt-jumpable { cursor: pointer; }
 .dlt-info.dlt-jumpable:hover .dlt-name {
@@ -11974,6 +12012,17 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     <button class="dlt-popup-skip" onclick="DLT.dismissPopup(true)">Skip today</button>
     <button class="dlt-popup-ok"   onclick="DLT.dismissPopup(false)">Got it ✓</button>
   </div>
+</div>
+
+<!-- Quick Reschedule Popover -->
+<div class="dlt-rsc-pop" id="dltRscPop">
+  <div class="dlt-rsc-pop-title">Reschedule to</div>
+  <button type="button" class="dlt-rsc-opt" onclick="DLT.rescheduleQuick('today')">📍 Today</button>
+  <button type="button" class="dlt-rsc-opt" onclick="DLT.rescheduleQuick(1)">＋1 Day</button>
+  <button type="button" class="dlt-rsc-opt" onclick="DLT.rescheduleQuick(3)">＋3 Days</button>
+  <button type="button" class="dlt-rsc-opt" onclick="DLT.rescheduleQuick(7)">＋7 Days</button>
+  <input type="date" id="dltRscDate" onchange="DLT.rescheduleCustom(this.value)" />
+  <button type="button" class="dlt-rsc-pop-cancel" onclick="DLT.closeReschedule()">Cancel</button>
 </div>
 
 <script>
@@ -12195,7 +12244,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         </div>
         <div class="dlt-card-btns">
           ${!done ? `<button class="dlt-done-btn" onclick="DLT.done('${d.id}',${days})" title="Mark done">✓</button>` : ''}
-
+          ${!done ? `<button class="dlt-rsc-btn" onclick="event.stopPropagation(); DLT.openReschedule(event,'${d.id}')" title="Quick reschedule">🔁</button>` : ''}
           <a class="dlt-gcal-btn" href="${gcalUrl}" target="_blank" title="Add to Google Calendar" onclick="event.stopPropagation()">📅</a>
           ${canDel ? `<button class="dlt-del-btn" onclick="event.stopPropagation(); DLT.del('${d.id}')" title="Delete">✕</button>` : ''}
         </div>
@@ -12347,12 +12396,123 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     }
   }
 
+  /* ─── Quick Reschedule ─── */
+  let rscOpenId = null;
+
+  function isoOffset(days) {
+    const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0,10);
+  }
+
+  // Writes a new date back to whichever store the item actually lives in
+  // (manual custom deadline, or an auto-scanned course/goal/deal/analysis).
+  function applyNewDate(id, newDateISO) {
+    if (!newDateISO) return false;
+
+    if (id.startsWith('c_')) {
+      const courseId = id.slice(2);
+      const courses = JSON.parse(localStorage.getItem('courses') || '[]');
+      const c = courses.find(x => String(x.id) === courseId);
+      if (!c) return false;
+      c.deadline = newDateISO;
+      localStorage.setItem('courses', JSON.stringify(courses));
+      if (typeof renderCourses === 'function') { try { renderCourses(); } catch(e) {} }
+    } else if (id.startsWith('g_')) {
+      const goalId = id.slice(2);
+      const goals = JSON.parse(localStorage.getItem('goals') || '[]');
+      const g = goals.find(x => String(x.id) === goalId);
+      if (!g) return false;
+      g.deadline = newDateISO;
+      localStorage.setItem('goals', JSON.stringify(goals));
+      if (typeof renderGoals === 'function') { try { renderGoals(); } catch(e) {} }
+    } else if (id.startsWith('d_')) {
+      const dealId = id.slice(2);
+      const deals = JSON.parse(localStorage.getItem('dealDiary') || '[]');
+      const dl = deals.find(x => String(x.id) === dealId);
+      if (!dl) return false;
+      dl.date = newDateISO;
+      localStorage.setItem('dealDiary', JSON.stringify(deals));
+    } else if (id.startsWith('a_')) {
+      const analysisId = id.slice(2);
+      const analyses = JSON.parse(localStorage.getItem('investmentAnalyses') || '[]');
+      const a = analyses.find(x => String(x.id) === analysisId);
+      if (!a) return false;
+      a.date = newDateISO;
+      localStorage.setItem('investmentAnalyses', JSON.stringify(analyses));
+    } else {
+      const m = manualList.find(x => x.id === id);
+      if (!m) return false;
+      m.date = newDateISO;
+      persist();
+    }
+    return true;
+  }
+
+  function closeRescheduleUI() {
+    const pop = document.getElementById('dltRscPop');
+    pop.classList.remove('open');
+    rscOpenId = null;
+    document.removeEventListener('click', outsideRescheduleClick, true);
+  }
+
+  function outsideRescheduleClick(e) {
+    const pop = document.getElementById('dltRscPop');
+    if (pop && !pop.contains(e.target) && !e.target.closest('.dlt-rsc-btn')) {
+      closeRescheduleUI();
+    }
+  }
+
+  function openRescheduleUI(evt, id) {
+    const pop = document.getElementById('dltRscPop');
+    rscOpenId = id;
+    document.getElementById('dltRscDate').value = '';
+
+    // Position near the clicked button, keeping it on-screen
+    const rect = evt.currentTarget.getBoundingClientRect();
+    pop.classList.add('open');
+    const popW = pop.offsetWidth || 180;
+    const popH = pop.offsetHeight || 210;
+    let left = rect.right - popW;
+    let top  = rect.bottom + 6;
+    if (left < 8) left = 8;
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+    if (top + popH > window.innerHeight - 8) top = rect.top - popH - 6;
+    pop.style.left = `${left}px`;
+    pop.style.top  = `${top}px`;
+
+    setTimeout(() => document.addEventListener('click', outsideRescheduleClick, true), 0);
+  }
+
+  function doReschedule(newDateISO) {
+    if (!rscOpenId || !newDateISO) return;
+    const id = rscOpenId;
+    const ok = applyNewDate(id, newDateISO);
+    closeRescheduleUI();
+    if (ok) {
+      if (typeof showNotification === 'function') showNotification(`🔁 Moved to ${fmtDate(newDateISO)}`, 'success');
+      render();
+    } else if (typeof showNotification === 'function') {
+      showNotification('❌ Could not reschedule — item not found.', 'error');
+    }
+  }
+
   /* ─── Public API ─── */
   window.DLT = {
     sync()   { render(); },
     filter(c){ curFilter = c; render(); },
     search(v){ curSearch = v || ''; render(); },
     navigate: navigateToItem,
+
+    openReschedule(evt, id) {
+      if (rscOpenId === id) { closeRescheduleUI(); return; }
+      openRescheduleUI(evt, id);
+    },
+    closeReschedule() { closeRescheduleUI(); },
+    rescheduleQuick(offset) {
+      const newDate = offset === 'today' ? isoOffset(0) : isoOffset(offset);
+      doReschedule(newDate);
+    },
+    rescheduleCustom(v) { doReschedule(v); },
     openModal() {
       document.getElementById('dltName').value = '';
       document.getElementById('dltDate').value = '';
