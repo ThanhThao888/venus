@@ -36548,10 +36548,25 @@ document.addEventListener('click', function(e) {
         // ===== DEFAULT MEMES =====
         let currentMemeUrl = null; // track meme đang hiện để edit caption
 
+        // ✅ Escape HTML để tránh lỗi hiển thị / injection khi chèn caption bằng innerHTML
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // ✅ Bọc emoji trong <span class="emoji-raw"> để giữ màu gốc của emoji,
+        // không bị gradient text (background-clip:text) của caption "nuốt" mất màu.
+        function renderMemeCaption(text) {
+            if (!text) return '';
+            const escaped = escapeHtml(text);
+            return escaped.replace(/\p{Extended_Pictographic}/gu, (m) => `<span class="emoji-raw">${m}</span>`);
+        }
+
         function getRandomMeme() {
             if (allMemes.length === 0) {
                 document.getElementById('memeImage').src = 'https://via.placeholder.com/300x200?text=No+Memes';
-                document.getElementById('memeCaption').textContent = 'No memes available. Add some!';
+                document.getElementById('memeCaption').innerHTML = renderMemeCaption('No memes available. Add some!');
                 currentMemeUrl = null;
                 const editBtn = document.getElementById('editCurrentMemeBtn');
                 if (editBtn) editBtn.style.display = 'none';
@@ -36567,7 +36582,7 @@ document.addEventListener('click', function(e) {
             
             const img = document.getElementById('memeImage');
             img.src = url;
-            document.getElementById('memeCaption').textContent = caption;
+            document.getElementById('memeCaption').innerHTML = renderMemeCaption(caption);
             currentMemeUrl = url;
 
             // Chỉ hiện nút edit nếu là custom meme (có thể sửa caption)
@@ -36613,7 +36628,7 @@ document.addEventListener('click', function(e) {
             const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === currentMemeUrl);
             if (allIndex !== -1) allMemes[allIndex] = customMemes[memeIndex];
             // Cập nhật caption đang hiện ngay lập tức
-            document.getElementById('memeCaption').textContent = newCaption || 'No caption';
+            document.getElementById('memeCaption').innerHTML = renderMemeCaption(newCaption || 'No caption');
             showNotification('✅ Caption updated!', 'success');
         }
 
