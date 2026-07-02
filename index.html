@@ -11683,8 +11683,44 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   color: #fff; border-color: transparent;
 }
 
+/* ── Group Headers (ADHD chunking) ── */
+.dlt-list { display: flex; flex-direction: column; gap: 4px; }
+.dlt-group:not(:first-child) { margin-top: 10px; }
+.dlt-group-header {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.76rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-muted);
+  padding: 2px 2px 8px;
+}
+.dlt-group-count {
+  background: var(--bg-light); color: var(--text-dark);
+  border-radius: 10px; padding: 1px 8px; font-size: 0.7rem; font-weight: 700;
+}
+.dlt-group-header.g-overdue { color: #6b7280; }
+.dlt-group-header.g-urgent  { color: #ef4444; }
+.dlt-group-header.g-week    { color: #d97706; }
+.dlt-group-header.g-later   { color: #059669; }
+.dlt-group-header.g-done    { color: #059669; opacity: .65; }
+.dlt-group-cards { display: flex; flex-wrap: wrap; gap: 11px; }
+
+/* ── Urgency Gauge Bar ── */
+.dlt-gauge {
+  width: 100%; height: 4px; border-radius: 3px;
+  background: var(--bg-light); margin-top: 7px; overflow: hidden;
+}
+.dlt-gauge-fill {
+  height: 100%; border-radius: 3px; transition: width .4s ease;
+  background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444);
+}
+
+/* ── Urgent Pulse ── */
+.dlt-card.c-urgent { animation: dltPulseBorder 1.8s ease-in-out infinite; }
+@keyframes dltPulseBorder {
+  0%, 100% { box-shadow: var(--shadow-sm), 0 0 0 0 rgba(239,68,68,.32); }
+  50%      { box-shadow: var(--shadow-sm), 0 0 0 6px rgba(239,68,68,0); }
+}
+
 /* ── Cards ── */
-.dlt-list { display: flex; flex-wrap: wrap; gap: 11px; }
 .dlt-card {
   background: var(--bg-white); border: 1px solid var(--border-color);
   border-radius: 12px; padding: 13px 14px;
@@ -11993,8 +12029,15 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     if (days === 0) return 'TODAY!';
     if (days === 1) return 'Tomorrow!';
     if (days <= 3)  return `${days}d left ⚡`;
-    if (days <= 7)  return 'This week';
-    return `${days} days`;
+    // 4+ days: the big day-counter + group header already say this — no redundant pill
+    return '';
+  }
+
+  /* Urgency gauge: fills up as deadline approaches (30-day horizon) */
+  function gaugePct(days, done) {
+    if (done) return 100;
+    if (days < 0) return 100;
+    return Math.max(4, Math.min(100, 100 - (days / 30) * 100));
   }
 
   /* ─── XP ─── */
@@ -12073,7 +12116,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     const list = document.getElementById('dltList');
     if (!shown.length) { list.innerHTML = '<span class="dlt-empty">Nothing here — add or sync.</span>'; return; }
 
-    list.innerHTML = shown.map(d => {
+    function cardHTML(d) {
       const days = doneIds.includes(d.id) ? 999 : daysLeft(d.date);
       const done = doneIds.includes(d.id);
       const cls  = cardCls(days, done);
@@ -12083,10 +12126,18 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         ? `<div class="dlt-countdown" data-date="${d.date}"></div>` : '';
       const srcBadge = d.source
         ? `<span class="dlt-badge src">${d.source}</span>` : '';
+      const statusLabel = statusTxt(days, done);
+      // Only render the badges row if there's actually something non-redundant to say
+      const badgesHtml = (statusLabel || srcBadge)
+        ? `<div class="dlt-badges">${statusLabel ? `<span class="dlt-badge status">${statusLabel}</span>` : ''}${srcBadge}</div>`
+        : '';
       const canDel = !d.source;
       const gcalUrl = googleCalendarUrl(d.name, d.date);
       // ⚡ ADHD Jump: courses (c_) and goals (g_) can be jumped-to directly
       const isNavigable = d.id.startsWith('c_') || d.id.startsWith('g_');
+      const gaugeHtml = !done
+        ? `<div class="dlt-gauge"><div class="dlt-gauge-fill" style="width:${gaugePct(days, done)}%"></div></div>`
+        : '';
 
       return `<div class="dlt-card ${cls}">
         <div class="dlt-days-wrap">
@@ -12096,11 +12147,9 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         <div class="dlt-info${isNavigable ? ' dlt-jumpable' : ''}"${isNavigable ? ` onclick="DLT.navigate('${d.id}')" title="⚡ Click để nhảy thẳng tới course/goal này"` : ''}>
           <div class="dlt-name" title="${d.name}">${d.name}</div>
           <div class="dlt-meta">${d.category?d.category+' · ':''}${fmtDate(d.date)}${d.time ? ' · ⏰ ' + d.time : ''}</div>
-          <div class="dlt-badges">
-            <span class="dlt-badge status">${statusTxt(days, done)}</span>
-            ${srcBadge}
-          </div>
+          ${badgesHtml}
           ${cdHtml}
+          ${gaugeHtml}
         </div>
         <div class="dlt-card-btns">
           ${!done ? `<button class="dlt-done-btn" onclick="DLT.done('${d.id}',${days})" title="Mark done">✓</button>` : ''}
@@ -12109,7 +12158,32 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
           ${canDel ? `<button class="dlt-del-btn" onclick="event.stopPropagation(); DLT.del('${d.id}')" title="Delete">✕</button>` : ''}
         </div>
       </div>`;
-    }).join('');
+    }
+
+    // ── Group by urgency (chunking = less to scan at once) ──
+    const groups = [
+      { key:'overdue', label:'🔴 Quá hạn',              cls:'g-overdue', items: [] },
+      { key:'urgent',  label:'🔥 Trong 3 ngày',          cls:'g-urgent',  items: [] },
+      { key:'week',    label:'🟡 Tuần này (4–7 ngày)',   cls:'g-week',    items: [] },
+      { key:'later',   label:'🟢 Sắp tới',               cls:'g-later',   items: [] },
+      { key:'done',    label:'✅ Đã hoàn thành',         cls:'g-done',    items: [] },
+    ];
+    shown.forEach(d => {
+      const done = doneIds.includes(d.id);
+      const days = daysLeft(d.date);
+      if (done) groups[4].items.push(d);
+      else if (days < 0) groups[0].items.push(d);
+      else if (days <= 3) groups[1].items.push(d);
+      else if (days <= 7) groups[2].items.push(d);
+      else groups[3].items.push(d);
+    });
+
+    list.innerHTML = groups.filter(g => g.items.length).map(g => `
+      <div class="dlt-group">
+        <div class="dlt-group-header ${g.cls}">${g.label} <span class="dlt-group-count">${g.items.length}</span></div>
+        <div class="dlt-group-cards">${g.items.map(cardHTML).join('')}</div>
+      </div>
+    `).join('');
 
     tickCountdowns();
   }
