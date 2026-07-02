@@ -9559,6 +9559,24 @@
         background: rgba(16,185,129,0.1); border-radius: 8px;
         padding: 1px 6px; white-space: nowrap;
     }
+    /* ── Per-skill hours progress (smarter completion gate) ── */
+    .rdm-hrs-progress { margin-top: 6px; max-width: 220px; }
+    .rdm-hrs-progress-track {
+        position: relative; height: 5px; border-radius: 3px;
+        background: var(--border-color); overflow: visible;
+    }
+    .rdm-hrs-progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+    .rdm-hrs-progress-threshold {
+        position: absolute; top: -2px; bottom: -2px; width: 2px;
+        background: rgba(0,0,0,0.35);
+    }
+    .dark-mode .rdm-hrs-progress-threshold { background: rgba(255,255,255,0.5); }
+    .rdm-hrs-progress-label { font-size: 0.66rem; color: var(--text-muted); margin-top: 3px; display: block; }
+    .rdm-focus-card .rdm-hrs-progress-track { background: rgba(255,255,255,0.25); }
+    .rdm-focus-card .rdm-hrs-progress-threshold { background: rgba(255,255,255,0.6); }
+    .rdm-focus-card .rdm-hrs-progress-label { color: rgba(255,255,255,0.85); }
+    .rdm-check-btn.rdm-check-hrs { border-color: #3b82f6; color: #3b82f6; font-size: 0.68rem; }
+    .rdm-check-btn.rdm-check-hrs:hover { background: rgba(59,130,246,0.12); border-color: #3b82f6; color: #3b82f6; }
     /* ── End Roadmap Module ─────────────────────────────────── */
 
     
@@ -39530,6 +39548,41 @@ window.fcRenderTagChips = fcRenderTagChips;
                 } catch (e) { return []; }
             }
 
+            // ── Hours read/write bridge (powers the "smarter completion" flow) ──
+            // Reads the highest hours value logged across the skill's studyHoursKeys.
+            function getRoadmapSkillHours(track, skill) {
+                if (!skill.studyHoursKeys || skill.studyHoursKeys.length === 0) return 0;
+                try {
+                    const sh = JSON.parse(localStorage.getItem('studyHours') || '{}');
+                    const careerHrs = sh[track] || {};
+                    return Math.max(0, ...skill.studyHoursKeys.map(k => careerHrs[k] || 0));
+                } catch (e) { return 0; }
+            }
+            // Writes hours both to localStorage AND to the live `studyHours` object
+            // used by the main Study Hours tracker, so a value entered here is never
+            // silently overwritten the next time hours are logged through that screen.
+            function setRoadmapSkillHours(track, skill, hours) {
+                const key = skill.studyHoursKeys[0];
+                try {
+                    if (typeof studyHours !== 'undefined' && studyHours) {
+                        if (!studyHours[track]) studyHours[track] = {};
+                        studyHours[track][key] = hours;
+                        localStorage.setItem('studyHours', JSON.stringify(studyHours));
+                    } else {
+                        const sh = JSON.parse(localStorage.getItem('studyHours') || '{}');
+                        if (!sh[track]) sh[track] = {};
+                        sh[track][key] = hours;
+                        localStorage.setItem('studyHours', JSON.stringify(sh));
+                    }
+                } catch (e) { console.warn('[Roadmap] Failed to save skill hours', e); return; }
+                // Best-effort refresh of the main Study Hours UI, if present on this page/track
+                ['loadSkills','updateStats','updateChart'].forEach(fn => {
+                    if (typeof window[fn] === 'function') {
+                        try { window[fn](track); } catch (e) { try { window[fn](); } catch(e2) {} }
+                    }
+                });
+            }
+
             // Returns merged set of manually + auto-completed skill IDs
             function getCompleted(track) {
                 const manual = loadManual(track);
@@ -39646,6 +39699,11 @@ window.fcRenderTagChips = fcRenderTagChips;
                 // ── Focus Now card ──
                 if (focusSkill) {
                     const fWks = Math.ceil(focusSkill.hours / hpw);
+                    const fTrackable = focusSkill.studyHoursKeys && focusSkill.studyHoursKeys.length > 0;
+                    const fHrs = fTrackable ? getRoadmapSkillHours(track, focusSkill) : 0;
+                    const fThreshold = Math.round(focusSkill.hours * 0.75 * 10) / 10;
+                    const fPct = fTrackable ? Math.min(100, Math.round((fHrs / focusSkill.hours) * 100)) : 0;
+                    const fFillColor = fPct >= 75 ? '#fff' : 'rgba(255,255,255,0.85)';
                     html += `
                         <div class="rdm-focus-card">
                             <div class="rdm-focus-label">🎯 Focus Now</div>
@@ -39654,7 +39712,15 @@ window.fcRenderTagChips = fcRenderTagChips;
                                 <span class="rdm-time-badge">${fWks}w · ${focusSkill.hours}h</span>
                                 <span class="rdm-stars">${starRating(focusSkill.imp)}</span>
                             </div>
-                            <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">✓ Mark complete</button>
+                            ${fTrackable ? `
+                            <div class="rdm-hrs-progress">
+                                <div class="rdm-hrs-progress-track">
+                                    <div class="rdm-hrs-progress-fill" style="width:${fPct}%;background:${fFillColor}"></div>
+                                    <div class="rdm-hrs-progress-threshold" style="left:75%"></div>
+                                </div>
+                                <span class="rdm-hrs-progress-label">${fHrs}h / ${focusSkill.hours}h đã học · cần ${fThreshold}h để hoàn thành</span>
+                            </div>` : ''}
+                            <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">${fTrackable ? '🕐 Cập nhật giờ đã học' : '✓ Xác nhận hoàn thành'}</button>
                         </div>`;
                     if (upNext.length > 0) {
                         html += `<div class="rdm-upnext">⏭ Up next: ${upNext.map(s => escapeHtml(s.name.split(' (')[0])).join('  ·  ')}</div>`;
@@ -39707,15 +39773,42 @@ window.fcRenderTagChips = fcRenderTagChips;
                         const autoHtml = autoIds.has(skill.id) ? `<span class="rdm-auto-label">auto ✓</span>` : '';
                         const lockIcon = locked ? `<span class="rdm-lock-badge">🔒</span>` : '';
 
+                        // ✅ Smarter completion gate: skills tracked via studyHoursKeys show
+                        // a live hours progress bar; the check button opens an hours-entry
+                        // flow instead of instantly marking done (see StrategicRoadmap.markDone).
+                        const trackable = skill.studyHoursKeys && skill.studyHoursKeys.length > 0;
+                        let hrsProgressHtml = '';
+                        let checkBtnClass = 'rdm-check-btn';
+                        let checkBtnLabel = '✓';
+                        let checkBtnTitle = 'Xác nhận hoàn thành (không tự động theo dõi giờ học)';
+                        if (trackable && !locked) {
+                            const skHrs = getRoadmapSkillHours(track, skill);
+                            const skThreshold = Math.round(skill.hours * 0.75 * 10) / 10;
+                            const skPct = Math.min(100, Math.round((skHrs / skill.hours) * 100));
+                            const fillColor = skPct >= 75 ? '#10b981' : skPct >= 40 ? '#f59e0b' : '#3b82f6';
+                            hrsProgressHtml = `
+                                <div class="rdm-hrs-progress">
+                                    <div class="rdm-hrs-progress-track">
+                                        <div class="rdm-hrs-progress-fill" style="width:${skPct}%;background:${fillColor}"></div>
+                                        <div class="rdm-hrs-progress-threshold" style="left:75%"></div>
+                                    </div>
+                                    <span class="rdm-hrs-progress-label">${skHrs}h / ${skill.hours}h · cần ${skThreshold}h để hoàn thành</span>
+                                </div>`;
+                            checkBtnClass += ' rdm-check-hrs';
+                            checkBtnLabel = '🕐';
+                            checkBtnTitle = 'Nhập số giờ đã học để cập nhật tiến độ';
+                        }
+
                         html += `
                             <div class="rdm-skill-node ${stateClass}${focusClass}" id="rdm-node-${skill.id}">
                                 <div class="rdm-skill-left">
-                                    <button class="rdm-check-btn"
+                                    <button class="${checkBtnClass}"
                                         onclick="StrategicRoadmap.markDone('${track}','${skill.id}')"
-                                        title="Mark as completed">✓</button>
+                                        title="${checkBtnTitle}">${checkBtnLabel}</button>
                                     <div class="rdm-skill-info">
                                         <div class="rdm-skill-name">${lockIcon}${globalOrder}. ${escapeHtml(skill.name)}</div>
                                         ${lineageHtml}
+                                        ${hrsProgressHtml}
                                     </div>
                                 </div>
                                 <div class="rdm-skill-meta">
@@ -39743,21 +39836,71 @@ window.fcRenderTagChips = fcRenderTagChips;
             }
 
             // ── PUBLIC API ───────────────────────────────────────────────────
+            function flashBadge() {
+                const badge = document.getElementById('rdmBadge');
+                if (badge) {
+                    badge.classList.add('rdm-badge-flash');
+                    setTimeout(() => badge.classList.remove('rdm-badge-flash'), 600);
+                }
+            }
+
             return {
                 generate() {
                     const track = document.getElementById('rdmTrackSelect')?.value;
                     if (track) render(track);
                 },
+                // ✅ SMARTER COMPLETION GATE — replaces the old 1-click instant-complete.
+                //   • Skills with studyHoursKeys (trackable): clicking opens an hours-entry
+                //     prompt. The entered value is saved to the real studyHours tracker.
+                //     Completion only happens once logged hours reach 75% of the target —
+                //     same threshold the auto-detector already uses elsewhere in the app.
+                //   • Skills with no studyHoursKeys (rare, e.g. capstone exams — nothing to
+                //     measure hours against): still require an explicit confirm() instead
+                //     of a bare click, so it can't be done by accident.
                 markDone(track, skillId) {
-                    toggleManual(track, skillId);
-                    render(track);
-                    const badge = document.getElementById('rdmBadge');
-                    if (badge) {
-                        badge.classList.add('rdm-badge-flash');
-                        setTimeout(() => badge.classList.remove('rdm-badge-flash'), 600);
+                    const curriculum = getCurriculum(track);
+                    const skill = curriculum && curriculum.find(s => s.id === skillId);
+                    if (!skill) return;
+
+                    const trackable = skill.studyHoursKeys && skill.studyHoursKeys.length > 0;
+
+                    if (!trackable) {
+                        if (!confirm(`Xác nhận bạn đã thực sự hoàn thành:\n"${skill.name}"?\n\nKỹ năng này không có dữ liệu giờ học để tự động kiểm tra, nên chỉ đánh dấu khi bạn chắc chắn.`)) return;
+                        toggleManual(track, skillId);
+                        render(track);
+                        flashBadge();
+                        if (typeof showNotification === 'function')
+                            showNotification('✅ Skill marked complete — roadmap updated!', 'success');
+                        return;
                     }
-                    if (typeof showNotification === 'function')
-                        showNotification('✅ Skill marked complete — roadmap updated!', 'success');
+
+                    const current = getRoadmapSkillHours(track, skill);
+                    const threshold = Math.round(skill.hours * 0.75 * 10) / 10;
+                    const input = prompt(
+                        `Bạn đã học bao nhiêu giờ cho:\n"${skill.name}"?\n\nCần tối thiểu ${threshold}h (75% của mục tiêu ${skill.hours}h) để được tính là hoàn thành.`,
+                        current > 0 ? String(current) : ''
+                    );
+                    if (input === null) return; // user cancelled
+                    let hrs = parseFloat(input.replace(',', '.'));
+                    if (isNaN(hrs) || hrs < 0) {
+                        if (typeof showNotification === 'function')
+                            showNotification('⚠️ Vui lòng nhập một số giờ hợp lệ.', 'error');
+                        return;
+                    }
+                    if (hrs > skill.hours * 2) hrs = skill.hours * 2; // sanity clamp against fat-finger entries
+
+                    setRoadmapSkillHours(track, skill, hrs);
+                    render(track);
+
+                    if (hrs >= threshold) {
+                        flashBadge();
+                        if (typeof showNotification === 'function')
+                            showNotification(`🎉 Đạt ${hrs}h (≥${threshold}h) — "${skill.name}" đã hoàn thành!`, 'achievement');
+                    } else {
+                        const remaining = Math.max(0, threshold - hrs).toFixed(1);
+                        if (typeof showNotification === 'function')
+                            showNotification(`📈 Đã ghi ${hrs}h / ${skill.hours}h. Cần thêm ${remaining}h nữa để hoàn thành.`, 'info');
+                    }
                 },
                 resetTrack(track) {
                     if (!confirm('Reset manual roadmap completions for this track? (Auto-detected completions from study hours remain.)')) return;
