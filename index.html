@@ -39718,9 +39718,9 @@ window.fcRenderTagChips = fcRenderTagChips;
                                     <div class="rdm-hrs-progress-fill" style="width:${fPct}%;background:${fFillColor}"></div>
                                     <div class="rdm-hrs-progress-threshold" style="left:75%"></div>
                                 </div>
-                                <span class="rdm-hrs-progress-label">${fHrs}h / ${focusSkill.hours}h đã học · cần ${fThreshold}h để hoàn thành</span>
+                                <span class="rdm-hrs-progress-label">${fHrs}h / ${focusSkill.hours}h logged · need ${fThreshold}h to complete</span>
                             </div>` : ''}
-                            <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">${fTrackable ? '🕐 Cập nhật giờ đã học' : '✓ Xác nhận hoàn thành'}</button>
+                            <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">${fTrackable ? '🕐 Update hours studied' : '✓ Confirm complete'}</button>
                         </div>`;
                     if (upNext.length > 0) {
                         html += `<div class="rdm-upnext">⏭ Up next: ${upNext.map(s => escapeHtml(s.name.split(' (')[0])).join('  ·  ')}</div>`;
@@ -39780,7 +39780,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         let hrsProgressHtml = '';
                         let checkBtnClass = 'rdm-check-btn';
                         let checkBtnLabel = '✓';
-                        let checkBtnTitle = 'Xác nhận hoàn thành (không tự động theo dõi giờ học)';
+                        let checkBtnTitle = 'Confirm complete (hours not auto-tracked)';
                         if (trackable && !locked) {
                             const skHrs = getRoadmapSkillHours(track, skill);
                             const skThreshold = Math.round(skill.hours * 0.75 * 10) / 10;
@@ -39792,11 +39792,11 @@ window.fcRenderTagChips = fcRenderTagChips;
                                         <div class="rdm-hrs-progress-fill" style="width:${skPct}%;background:${fillColor}"></div>
                                         <div class="rdm-hrs-progress-threshold" style="left:75%"></div>
                                     </div>
-                                    <span class="rdm-hrs-progress-label">${skHrs}h / ${skill.hours}h · cần ${skThreshold}h để hoàn thành</span>
+                                    <span class="rdm-hrs-progress-label">${skHrs}h / ${skill.hours}h · need ${skThreshold}h to complete</span>
                                 </div>`;
                             checkBtnClass += ' rdm-check-hrs';
                             checkBtnLabel = '🕐';
-                            checkBtnTitle = 'Nhập số giờ đã học để cập nhật tiến độ';
+                            checkBtnTitle = 'Enter hours studied to update progress';
                         }
 
                         html += `
@@ -39865,7 +39865,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const trackable = skill.studyHoursKeys && skill.studyHoursKeys.length > 0;
 
                     if (!trackable) {
-                        if (!confirm(`Xác nhận bạn đã thực sự hoàn thành:\n"${skill.name}"?\n\nKỹ năng này không có dữ liệu giờ học để tự động kiểm tra, nên chỉ đánh dấu khi bạn chắc chắn.`)) return;
+                        if (!confirm(`Confirm that you have genuinely completed:\n"${skill.name}"?\n\nThis skill has no hours data to auto-verify, so only mark it when you're sure.`)) return;
                         toggleManual(track, skillId);
                         render(track);
                         flashBadge();
@@ -39877,14 +39877,14 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const current = getRoadmapSkillHours(track, skill);
                     const threshold = Math.round(skill.hours * 0.75 * 10) / 10;
                     const input = prompt(
-                        `Bạn đã học bao nhiêu giờ cho:\n"${skill.name}"?\n\nCần tối thiểu ${threshold}h (75% của mục tiêu ${skill.hours}h) để được tính là hoàn thành.`,
+                        `How many hours have you studied for:\n"${skill.name}"?\n\nNeed at least ${threshold}h (75% of the ${skill.hours}h target) to be counted as complete.`,
                         current > 0 ? String(current) : ''
                     );
                     if (input === null) return; // user cancelled
                     let hrs = parseFloat(input.replace(',', '.'));
                     if (isNaN(hrs) || hrs < 0) {
                         if (typeof showNotification === 'function')
-                            showNotification('⚠️ Vui lòng nhập một số giờ hợp lệ.', 'error');
+                            showNotification('⚠️ Please enter a valid number of hours.', 'error');
                         return;
                     }
                     if (hrs > skill.hours * 2) hrs = skill.hours * 2; // sanity clamp against fat-finger entries
@@ -39895,11 +39895,11 @@ window.fcRenderTagChips = fcRenderTagChips;
                     if (hrs >= threshold) {
                         flashBadge();
                         if (typeof showNotification === 'function')
-                            showNotification(`🎉 Đạt ${hrs}h (≥${threshold}h) — "${skill.name}" đã hoàn thành!`, 'achievement');
+                            showNotification(`🎉 Reached ${hrs}h (≥${threshold}h) — "${skill.name}" is now complete!`, 'achievement');
                     } else {
                         const remaining = Math.max(0, threshold - hrs).toFixed(1);
                         if (typeof showNotification === 'function')
-                            showNotification(`📈 Đã ghi ${hrs}h / ${skill.hours}h. Cần thêm ${remaining}h nữa để hoàn thành.`, 'info');
+                            showNotification(`📈 Logged ${hrs}h / ${skill.hours}h. Need ${remaining}h more to complete.`, 'info');
                     }
                 },
                 resetTrack(track) {
