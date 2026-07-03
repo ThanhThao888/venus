@@ -41422,4 +41422,390 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 </script>
 <!-- END PLANEXT -->
 
+<!-- ============================================================
+     SECURE VAULT MODULE
+     - Trigger ẩn: chạm 5 lần nhanh vào góc dưới-phải màn hình
+       (vùng 46x46px, trong suốt, không có gì hiện ra để nhìn thấy)
+       Fallback cho laptop: gõ chữ  vaultopen  khi không focus vào ô input nào.
+     - Dữ liệu mã hoá AES-256-GCM, key rút từ mật khẩu chính qua PBKDF2-SHA256
+       250,000 vòng lặp + salt ngẫu nhiên. Chỉ ciphertext được lưu, không bao
+       giờ lưu mật khẩu hay dữ liệu gốc.
+     - Blob mã hoá được lưu dưới key localStorage trung tính "_uiCacheV3"
+       (không có chữ nào gợi "password"/"vault") và tự động được nhét vào
+       autoBackup() để đi kèm luôn trong JSON export "bình thường" của bạn.
+     ============================================================ -->
+<style>
+  #vlt-hit {
+    position: fixed; bottom: 0; right: 0; width: 46px; height: 46px;
+    z-index: 999999; background: transparent; -webkit-tap-highlight-color: transparent;
+  }
+  .vlt-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000000;
+    background: rgba(0,0,0,0.55); align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .vlt-overlay.open { display: flex; }
+  .vlt-box {
+    background: var(--bg-white, #fff); color: var(--text-dark, #1e293b);
+    border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-lg, 0 10px 30px rgba(0,0,0,.3));
+    width: 100%; max-width: 420px; max-height: 86vh; overflow-y: auto;
+    padding: 22px; position: relative;
+  }
+  .vlt-box h3 { margin: 0 0 4px; font-size: 18px; }
+  .vlt-sub { color: var(--text-muted, #64748b); font-size: 12.5px; margin-bottom: 16px; }
+  .vlt-box input, .vlt-box select, .vlt-box textarea {
+    width: 100%; box-sizing: border-box; padding: 9px 10px; margin-bottom: 10px;
+    border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-sm, 6px);
+    font-size: 14px; background: var(--bg-light, #f3f4f6); color: inherit;
+  }
+  .vlt-box textarea { resize: vertical; min-height: 50px; }
+  .vlt-row { display: flex; gap: 8px; }
+  .vlt-row > * { flex: 1; }
+  .vlt-btn {
+    padding: 9px 14px; border: none; border-radius: var(--radius-sm, 6px);
+    background: var(--primary, #3b82f6); color: #fff; font-size: 13.5px; font-weight: 600;
+    cursor: pointer;
+  }
+  .vlt-btn.secondary { background: var(--border-color, #e2e8f0); color: var(--text-dark, #1e293b); }
+  .vlt-btn.danger { background: #dc2626; }
+  .vlt-btn:active { opacity: .8; }
+  .vlt-close { position: absolute; top: 12px; right: 14px; cursor: pointer; font-size: 18px; background:none; border:none; color: var(--text-muted); }
+  .vlt-entry {
+    border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-sm, 6px);
+    padding: 10px; margin-bottom: 8px; font-size: 13.5px;
+  }
+  .vlt-entry .vlt-e-top { display: flex; justify-content: space-between; align-items: center; }
+  .vlt-entry .vlt-e-name { font-weight: 600; }
+  .vlt-entry .vlt-e-meta { color: var(--text-muted, #64748b); font-size: 12px; margin-top: 2px; word-break: break-all; }
+  .vlt-entry .vlt-e-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .vlt-entry .vlt-e-actions button {
+    font-size: 12px; padding: 4px 8px; border-radius: 5px; border: 1px solid var(--border-color);
+    background: transparent; color: inherit; cursor: pointer;
+  }
+  .vlt-err { color: #dc2626; font-size: 13px; margin: -4px 0 10px; min-height: 16px; }
+  .vlt-tag { display:inline-block; font-size:10.5px; padding:1px 6px; border-radius:10px; background:var(--primary,#3b82f6); color:#fff; margin-left:6px; }
+  .vlt-footer { display:flex; gap:8px; margin-top:14px; flex-wrap: wrap; }
+  .vlt-footer .vlt-btn { flex: 1; min-width: 110px; }
+</style>
+
+<!-- invisible trigger corner -->
+<div id="vlt-hit"></div>
+
+<div class="vlt-overlay" id="vltOverlay">
+  <div class="vlt-box" id="vltBox"><!-- injected --></div>
+</div>
+
+<script>
+(function() {
+  const LS_KEY = '_uiCacheV3';           // tên trung tính, không gợi ý gì
+  const IDLE_MS = 90 * 1000;             // tự khoá sau 90s không thao tác
+  const TAP_COUNT = 5;
+  const TAP_WINDOW = 1600;
+
+  let tapTimes = [];
+  let unlockedData = null;               // mảng entry đã giải mã, CHỈ tồn tại trong RAM
+  let idleTimer = null;
+  let failStreak = 0;
+
+  const overlay = document.getElementById('vltOverlay');
+  const box = document.getElementById('vltBox');
+
+  /* ---------- crypto helpers ---------- */
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+
+  function b64(buf) {
+    return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  }
+  function unb64(str) {
+    return Uint8Array.from(atob(str), c => c.charCodeAt(0)).buffer;
+  }
+  async function deriveKey(passphrase, saltBuf) {
+    const baseKey = await crypto.subtle.importKey(
+      'raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: saltBuf, iterations: 250000, hash: 'SHA-256' },
+      baseKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+  async function encryptPayload(obj, passphrase, existingSalt) {
+    const salt = existingSalt || crypto.getRandomValues(new Uint8Array(16)).buffer;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(passphrase, salt);
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(obj)));
+    return { s: b64(salt), iv: b64(iv), c: b64(ct), v: 1 };
+  }
+  async function decryptPayload(blob, passphrase) {
+    const salt = unb64(blob.s);
+    const iv = new Uint8Array(unb64(blob.iv));
+    const key = await deriveKey(passphrase, salt);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, unb64(blob.c));
+    return JSON.parse(dec.decode(pt));
+  }
+
+  function getBlob() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
+  }
+  function saveBlob(blob) {
+    localStorage.setItem(LS_KEY, JSON.stringify(blob));
+  }
+
+  /* expose read-only ciphertext blob so it can ride along inside autoBackup() */
+  window.VAULT_getCipherForBackup = function() {
+    const b = getBlob();
+    return b || null; // pure ciphertext, safe to embed anywhere
+  };
+  // hook into existing autoBackup backupData if that function exists later
+  const _origAutoBackup = window.autoBackup;
+  if (typeof _origAutoBackup === 'function') {
+    window.autoBackup = function() {
+      _origAutoBackup();
+      try {
+        const raw = JSON.parse(localStorage.getItem('autoBackup') || 'null');
+        if (raw) {
+          raw._cache = window.VAULT_getCipherForBackup();
+          localStorage.setItem('autoBackup', JSON.stringify(raw));
+        }
+      } catch {}
+    };
+  }
+
+  /* ---------- idle / auto-lock ---------- */
+  function resetIdle() {
+    clearTimeout(idleTimer);
+    if (unlockedData) idleTimer = setTimeout(lock, IDLE_MS);
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) lock(); });
+
+  function lock() {
+    unlockedData = null;
+    clearTimeout(idleTimer);
+    overlay.classList.remove('open');
+    box.innerHTML = '';
+  }
+
+  /* ---------- trigger: 5 taps in corner ---------- */
+  const hit = document.getElementById('vlt-hit');
+  function registerTap() {
+    const now = Date.now();
+    tapTimes = tapTimes.filter(t => now - t < TAP_WINDOW);
+    tapTimes.push(now);
+    if (tapTimes.length >= TAP_COUNT) {
+      tapTimes = [];
+      openVault();
+    }
+  }
+  hit.addEventListener('click', registerTap);
+  hit.addEventListener('touchstart', (e) => { registerTap(); }, { passive: true });
+
+  /* ---------- trigger fallback: type "vaultopen" on laptop ---------- */
+  let keyBuf = '';
+  document.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement.isContentEditable) return;
+    if (e.key.length === 1) {
+      keyBuf = (keyBuf + e.key).slice(-9).toLowerCase();
+      if (keyBuf === 'vaultopen') { keyBuf = ''; openVault(); }
+    }
+  });
+
+  /* ---------- UI rendering ---------- */
+  function openVault() {
+    overlay.classList.add('open');
+    const blob = getBlob();
+    if (!blob) renderSetup();
+    else renderUnlock(blob);
+  }
+
+  function renderSetup() {
+    box.innerHTML = `
+      <button class="vlt-close" id="vltCloseBtn">✕</button>
+      <h3>🔒 Tạo mật khẩu chính</h3>
+      <div class="vlt-sub">Mật khẩu này KHÔNG được lưu ở đâu cả. Nếu quên, dữ liệu trong vault sẽ không thể khôi phục — hãy nhớ kỹ hoặc ghi ở nơi an toàn khác.</div>
+      <input type="password" id="vltP1" placeholder="Mật khẩu chính (tối thiểu 8 ký tự)">
+      <input type="password" id="vltP2" placeholder="Nhập lại mật khẩu">
+      <div class="vlt-err" id="vltErr"></div>
+      <button class="vlt-btn" id="vltCreateBtn" style="width:100%">Tạo vault</button>
+    `;
+    document.getElementById('vltCloseBtn').onclick = lock;
+    document.getElementById('vltCreateBtn').onclick = async () => {
+      const p1 = document.getElementById('vltP1').value;
+      const p2 = document.getElementById('vltP2').value;
+      const err = document.getElementById('vltErr');
+      if (p1.length < 8) { err.textContent = 'Mật khẩu cần tối thiểu 8 ký tự.'; return; }
+      if (p1 !== p2) { err.textContent = 'Hai mật khẩu không khớp.'; return; }
+      const blob = await encryptPayload([], p1);
+      saveBlob(blob);
+      unlockedData = [];
+      renderList(p1);
+      resetIdle();
+    };
+  }
+
+  function renderUnlock(blob) {
+    box.innerHTML = `
+      <button class="vlt-close" id="vltCloseBtn">✕</button>
+      <h3>🔒 Nhập mật khẩu chính</h3>
+      <div class="vlt-sub">&nbsp;</div>
+      <input type="password" id="vltPass" placeholder="Mật khẩu chính" autofocus>
+      <div class="vlt-err" id="vltErr"></div>
+      <button class="vlt-btn" id="vltUnlockBtn" style="width:100%">Mở khoá</button>
+    `;
+    document.getElementById('vltCloseBtn').onclick = lock;
+    const submit = async () => {
+      const pass = document.getElementById('vltPass').value;
+      const err = document.getElementById('vltErr');
+      try {
+        const data = await decryptPayload(blob, pass);
+        failStreak = 0;
+        unlockedData = data;
+        renderList(pass);
+        resetIdle();
+      } catch {
+        failStreak++;
+        err.textContent = 'Sai mật khẩu.';
+        if (failStreak >= 3) {
+          err.textContent = `Sai mật khẩu. Thử lại sau ${failStreak * 2}s.`;
+          document.getElementById('vltUnlockBtn').disabled = true;
+          setTimeout(() => { document.getElementById('vltUnlockBtn').disabled = false; }, failStreak * 2000);
+        }
+      }
+    };
+    document.getElementById('vltUnlockBtn').onclick = submit;
+    document.getElementById('vltPass').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  }
+
+  function renderList(passphrase) {
+    const rows = unlockedData.map((e, i) => `
+      <div class="vlt-entry">
+        <div class="vlt-e-top">
+          <span class="vlt-e-name">${escapeHtml(e.label)}<span class="vlt-tag">${e.category === 'bank' ? 'Ngân hàng' : 'Đăng nhập'}</span></span>
+        </div>
+        <div class="vlt-e-meta">Tài khoản/STK: ${escapeHtml(e.account || '-')}</div>
+        <div class="vlt-e-meta" id="vlt-secret-${i}">Mật khẩu/PIN: •••••••• <button data-i="${i}" class="vlt-toggle-btn" style="font-size:11px;">hiện</button></div>
+        ${e.note ? `<div class="vlt-e-meta">Ghi chú: ${escapeHtml(e.note)}</div>` : ''}
+        <div class="vlt-e-actions">
+          <button data-i="${i}" class="vlt-copy-btn">Copy mk</button>
+          <button data-i="${i}" class="vlt-del-btn" style="color:#dc2626;">Xoá</button>
+        </div>
+      </div>
+    `).join('') || `<div class="vlt-sub">Chưa có mục nào.</div>`;
+
+    box.innerHTML = `
+      <button class="vlt-close" id="vltCloseBtn">✕</button>
+      <h3>🔓 Vault (${unlockedData.length})</h3>
+      <div class="vlt-sub">Tự khoá sau 90s không thao tác hoặc khi rời tab.</div>
+      <div id="vltList">${rows}</div>
+      <hr style="margin:14px 0;border-color:var(--border-color,#e2e8f0)">
+      <select id="vltCat">
+        <option value="login">Đăng nhập (app/website)</option>
+        <option value="bank">Ngân hàng</option>
+      </select>
+      <input id="vltLabel" placeholder="Tên (vd: Maybank Securities, Vietcombank...)">
+      <input id="vltAccount" placeholder="Username / Số tài khoản">
+      <input id="vltSecret" type="password" placeholder="Mật khẩu / PIN">
+      <textarea id="vltNote" placeholder="Ghi chú (tuỳ chọn)"></textarea>
+      <button class="vlt-btn" id="vltAddBtn" style="width:100%">+ Thêm mục</button>
+      <div class="vlt-footer">
+        <button class="vlt-btn secondary" id="vltExportBtn">Export vault (mã hoá)</button>
+        <button class="vlt-btn secondary" id="vltImportBtn">Import vault</button>
+        <button class="vlt-btn danger" id="vltLockBtn">Khoá ngay</button>
+      </div>
+      <input type="file" id="vltImportFile" accept=".json" style="display:none">
+    `;
+
+    document.getElementById('vltCloseBtn').onclick = lock;
+    document.getElementById('vltLockBtn').onclick = lock;
+
+    box.querySelectorAll('.vlt-toggle-btn').forEach(btn => btn.onclick = () => {
+      const i = +btn.dataset.i;
+      const el = document.getElementById(`vlt-secret-${i}`);
+      const shown = btn.textContent === 'ẩn';
+      el.innerHTML = `Mật khẩu/PIN: ${shown ? '••••••••' : escapeHtml(unlockedData[i].secret)} <button data-i="${i}" class="vlt-toggle-btn" style="font-size:11px;">${shown ? 'hiện' : 'ẩn'}</button>`;
+      el.querySelector('.vlt-toggle-btn').onclick = btn.onclick;
+      resetIdle();
+    });
+    box.querySelectorAll('.vlt-copy-btn').forEach(btn => btn.onclick = async () => {
+      const i = +btn.dataset.i;
+      try { await navigator.clipboard.writeText(unlockedData[i].secret); btn.textContent = 'Đã copy'; setTimeout(() => btn.textContent = 'Copy mk', 1200); } catch {}
+      resetIdle();
+    });
+    box.querySelectorAll('.vlt-del-btn').forEach(btn => btn.onclick = async () => {
+      const i = +btn.dataset.i;
+      if (!confirm(`Xoá "${unlockedData[i].label}"?`)) return;
+      unlockedData.splice(i, 1);
+      await persist(passphrase);
+      renderList(passphrase);
+    });
+
+    document.getElementById('vltAddBtn').onclick = async () => {
+      const label = document.getElementById('vltLabel').value.trim();
+      const account = document.getElementById('vltAccount').value.trim();
+      const secret = document.getElementById('vltSecret').value;
+      const note = document.getElementById('vltNote').value.trim();
+      const category = document.getElementById('vltCat').value;
+      if (!label || !secret) { alert('Cần ít nhất Tên và Mật khẩu/PIN.'); return; }
+      unlockedData.push({ id: Date.now(), category, label, account, secret, note, updatedAt: new Date().toISOString() });
+      await persist(passphrase);
+      renderList(passphrase);
+    };
+
+    document.getElementById('vltExportBtn').onclick = () => {
+      const blob = getBlob();
+      const dataStr = JSON.stringify(blob);
+      const blobFile = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blobFile);
+      const a = document.createElement('a');
+      a.href = url; a.download = `sync-cache-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      resetIdle();
+    };
+    document.getElementById('vltImportBtn').onclick = () => document.getElementById('vltImportFile').click();
+    document.getElementById('vltImportFile').onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const blob = JSON.parse(reader.result);
+          if (!blob.s || !blob.iv || !blob.c) throw new Error('invalid');
+          const data = await decryptPayload(blob, passphrase);
+          unlockedData = data;
+          saveBlob(blob);
+          renderList(passphrase);
+        } catch {
+          alert('File không hợp lệ hoặc mật khẩu hiện tại không khớp với file này.');
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    // theo dõi hoạt động để reset idle
+    box.addEventListener('input', resetIdle);
+    box.addEventListener('click', resetIdle);
+  }
+
+  async function persist(passphrase) {
+    const existing = getBlob();
+    const salt = existing ? unb64(existing.s) : null;
+    const blob = await encryptPayload(unlockedData, passphrase, salt);
+    saveBlob(blob);
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  if (!window.crypto || !window.crypto.subtle) {
+    console.warn('Web Crypto API không khả dụng trên trang này — Vault sẽ không hoạt động. Hãy mở file qua http/https thay vì file:// nếu gặp lỗi.');
+  }
+})();
+</script>
+<!-- END SECURE VAULT MODULE -->
+
 </body>
