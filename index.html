@@ -14673,6 +14673,17 @@ window.DBP={
                             <a href="https://cool-timer.com/" target="_blank" class="ft-ext-link" title="Open Cool-Timer.com">🌐</a>
                         </div>
 
+                        <!-- Goal lock: bắt buộc chọn 1 mục tiêu trước khi Start -->
+                        <div class="ft-goal-select-wrap" style="margin-bottom:10px;">
+                            <select id="ftGoalSelect" class="ft-goal-select"
+                                style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);font-size:0.85rem;">
+                                <option value="">🎯 Chọn 1 mục tiêu trước khi bắt đầu…</option>
+                            </select>
+                            <div id="ftGoalHint" style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;display:none;">
+                                Chọn một mục tiêu duy nhất — đây là session single-tasking.
+                            </div>
+                        </div>
+
                         <!-- Timer Ring + Display -->
                         <div class="ft-ring-wrap">
                             <svg class="ft-ring" viewBox="0 0 120 120">
@@ -14711,6 +14722,26 @@ window.DBP={
                                 <svg id="ftPauseIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
                                 <span id="ftBtnLabel">Start</span>
                             </button>
+                            <button class="ft-btn" id="ftSwitchBtn" onclick="switchFocusGoal()" title="Đổi mục tiêu giữa chừng (sẽ ghi log)" style="display:none;">
+                                <span style="font-size:15px;">🔀</span>
+                            </button>
+                        </div>
+                        <div id="ftCurrentGoalLabel" style="text-align:center;font-size:0.75rem;color:var(--text-muted);margin-top:6px;display:none;"></div>
+                    </div>
+
+                    <div class="sidebar-card" id="focusFragmentationCard">
+                        <h3 class="sidebar-title">📊 Focus Fragmentation (7 ngày)</h3>
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;">
+                            Số lần đổi mục tiêu giữa chừng & phút tập trung thực tế theo từng mục tiêu.
+                        </div>
+                        <div class="chart-container" style="position:relative;height:150px;margin-bottom:14px;">
+                            <canvas id="focusSwitchChart"></canvas>
+                        </div>
+                        <div class="chart-container" style="position:relative;height:170px;">
+                            <canvas id="focusGoalMinutesChart"></canvas>
+                        </div>
+                        <div id="focusFragEmptyState" style="font-size:0.78rem;color:var(--text-muted);text-align:center;padding:10px 0;display:none;">
+                            Chưa có session nào được ghi log tuần này. Bắt đầu Focus Timer với 1 mục tiêu để bắt đầu thấy dữ liệu ở đây.
                         </div>
                     </div>
 
@@ -21303,6 +21334,8 @@ window.DBP={
             remainingAtStart = null;
             remainingSeconds = 0; // show done state first
             persistTimerState();
+            closeFocusSessionLog('completed');
+            updateFtGoalLockUI();
             updateTimerDisplay();
             ftUpdateRing(); // shows green ring + "Done 🎉"
             beepAlarm();
@@ -21449,13 +21482,240 @@ window.DBP={
             inp.value = '';
         }
 
+        // ══════════════════════════════════════════════════════════════
+        // FOCUS LOCK SESSION — ghi log theo goal để phát hiện task-switching
+        // ══════════════════════════════════════════════════════════════
+        const FOCUS_CAREER_LIST = ['pe','ib','hf','sc','fintech','english','chinese','tools','cfa1'];
+        let focusCurrentGoal = localStorage.getItem('focusCurrentGoal') || '';
+        let focusOpenLogId = localStorage.getItem('focusOpenLogId') || null;
+
+        function getFocusSessionLogs() {
+            try { return JSON.parse(localStorage.getItem('focusSessionLogs') || '[]'); } catch { return []; }
+        }
+        function saveFocusSessionLogs(logs) {
+            localStorage.setItem('focusSessionLogs', JSON.stringify(logs));
+        }
+
+        function populateFtGoalSelect() {
+            const sel = document.getElementById('ftGoalSelect');
+            if (!sel) return;
+            const existing = new Set(Array.from(sel.options).map(o => o.value));
+            FOCUS_CAREER_LIST.forEach(c => {
+                if (existing.has(c)) return;
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = `${getCareerIcon(c)} ${getCareerDisplayName(c)}`;
+                sel.appendChild(opt);
+            });
+            if (focusCurrentGoal) sel.value = focusCurrentGoal;
+            sel.addEventListener('change', () => {
+                focusCurrentGoal = sel.value;
+                localStorage.setItem('focusCurrentGoal', focusCurrentGoal);
+                const hint = document.getElementById('ftGoalHint');
+                if (hint) hint.style.display = focusCurrentGoal ? 'none' : 'block';
+            });
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            populateFtGoalSelect();
+            renderFocusFragmentationChart();
+        });
+
+        function updateFtGoalLockUI() {
+            const sel = document.getElementById('ftGoalSelect');
+            const switchBtn = document.getElementById('ftSwitchBtn');
+            const label = document.getElementById('ftCurrentGoalLabel');
+            if (sel) sel.disabled = timerRunning;
+            if (switchBtn) switchBtn.style.display = timerRunning ? 'inline-flex' : 'none';
+            if (label) {
+                if (timerRunning && focusCurrentGoal) {
+                    label.style.display = 'block';
+                    label.textContent = `${getCareerIcon(focusCurrentGoal)} Đang khoá vào: ${getCareerDisplayName(focusCurrentGoal)}`;
+                } else {
+                    label.style.display = 'none';
+                }
+            }
+        }
+
+        function openFocusSessionLog(goal, switchedFrom) {
+            const logs = getFocusSessionLogs();
+            const entry = {
+                id: 'fs_' + Date.now(),
+                goal,
+                plannedMin: Math.round(timerDuration / 60),
+                start: Date.now(),
+                end: null,
+                actualSec: 0,
+                switchedFrom: switchedFrom || null,
+                outcome: null // 'completed' | 'switched' | 'abandoned'
+            };
+            logs.push(entry);
+            saveFocusSessionLogs(logs);
+            focusOpenLogId = entry.id;
+            localStorage.setItem('focusOpenLogId', focusOpenLogId);
+        }
+
+        function closeFocusSessionLog(outcome) {
+            if (!focusOpenLogId) return;
+            const logs = getFocusSessionLogs();
+            const idx = logs.findIndex(l => l.id === focusOpenLogId);
+            if (idx !== -1) {
+                const entry = logs[idx];
+                entry.end = Date.now();
+                entry.actualSec = Math.max(0, Math.round((entry.end - entry.start) / 1000));
+                entry.outcome = outcome;
+                logs[idx] = entry;
+                saveFocusSessionLogs(logs);
+            }
+            focusOpenLogId = null;
+            localStorage.removeItem('focusOpenLogId');
+            renderFocusFragmentationChart();
+        }
+
+        function switchFocusGoal() {
+            if (!timerRunning) return;
+            const distraction = prompt('Điều gì vừa kéo em ra khỏi việc đang làm? (viết 1 dòng ngắn — có thể để trống)') || '';
+            const prevGoal = focusCurrentGoal;
+
+            // đóng session hiện tại, đánh dấu là bị switch
+            const logs = getFocusSessionLogs();
+            const idx = logs.findIndex(l => l.id === focusOpenLogId);
+            if (idx !== -1) {
+                logs[idx].end = Date.now();
+                logs[idx].actualSec = Math.max(0, Math.round((logs[idx].end - logs[idx].start) / 1000));
+                logs[idx].outcome = 'switched';
+                logs[idx].distractionNote = distraction.trim();
+                saveFocusSessionLogs(logs);
+            }
+            focusOpenLogId = null;
+
+            // chọn goal mới
+            const sel = document.getElementById('ftGoalSelect');
+            sel.disabled = false;
+            const choices = FOCUS_CAREER_LIST.map(c => `${getCareerDisplayName(c)} (${c})`).join('\n');
+            let next = prompt(`Mục tiêu MỚI muốn chuyển sang là gì? Gõ đúng mã:\n${choices}`, prevGoal);
+            if (!next || !FOCUS_CAREER_LIST.includes(next.trim())) {
+                // huỷ, quay lại goal cũ để không mất trạng thái khoá
+                next = prevGoal;
+                alert('Không nhận diện được mục tiêu — giữ nguyên mục tiêu cũ.');
+            }
+            focusCurrentGoal = next.trim();
+            localStorage.setItem('focusCurrentGoal', focusCurrentGoal);
+            sel.value = focusCurrentGoal;
+            sel.disabled = true;
+
+            // reset timer về full duration cho session mới, tiếp tục chạy
+            remainingSeconds = timerDuration;
+            focusStartTimestamp = Date.now();
+            remainingAtStart = remainingSeconds;
+            persistTimerState();
+            openFocusSessionLog(focusCurrentGoal, prevGoal);
+            updateFtGoalLockUI();
+            renderFocusFragmentationChart();
+        }
+
+        function renderFocusFragmentationChart() {
+            const logs = getFocusSessionLogs();
+            const now = Date.now();
+            const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+            const recent = logs.filter(l => l.start >= sevenDaysAgo);
+
+            const emptyState = document.getElementById('focusFragEmptyState');
+            const hasData = recent.length > 0;
+            if (emptyState) emptyState.style.display = hasData ? 'none' : 'block';
+
+            // --- Chart 1: switches theo ngày (7 ngày gần nhất) ---
+            const dayLabels = [];
+            const dayKeys = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(now - i * 24 * 60 * 60 * 1000);
+                dayKeys.push(d.toDateString());
+                dayLabels.push(d.toLocaleDateString('vi-VN', { weekday: 'short' }));
+            }
+            const switchCounts = dayKeys.map(key =>
+                recent.filter(l => l.outcome === 'switched' && new Date(l.start).toDateString() === key).length
+            );
+
+            // --- Chart 2: phút tập trung thực tế theo goal ---
+            const minutesByGoal = {};
+            FOCUS_CAREER_LIST.forEach(c => minutesByGoal[c] = 0);
+            recent.forEach(l => {
+                if (!minutesByGoal.hasOwnProperty(l.goal)) minutesByGoal[l.goal] = 0;
+                minutesByGoal[l.goal] += (l.actualSec || 0) / 60;
+            });
+            const goalKeys = Object.keys(minutesByGoal).filter(k => minutesByGoal[k] > 0);
+            const goalLabels = goalKeys.map(k => `${getCareerIcon(k)} ${getCareerDisplayName(k)}`);
+            const goalMinutes = goalKeys.map(k => Math.round(minutesByGoal[k]));
+            const goalColorVars = {
+                pe: '--pe-color', ib: '--ib-color', hf: '--hf-color', sc: '--sc-color',
+                fintech: '--fintech-color', english: '--english-color', chinese: '--chinese-color',
+                tools: '--tools-color', cfa1: '--cfa1-color'
+            };
+            const rootStyles = getComputedStyle(document.documentElement);
+            const goalColors = goalKeys.map(k => rootStyles.getPropertyValue(goalColorVars[k] || '--primary').trim() || '#3b82f6');
+
+            if (window.__focusSwitchChart) window.__focusSwitchChart.destroy();
+            if (window.__focusGoalMinutesChart) window.__focusGoalMinutesChart.destroy();
+
+            const ctx1 = document.getElementById('focusSwitchChart');
+            if (ctx1 && window.Chart) {
+                window.__focusSwitchChart = new Chart(ctx1, {
+                    type: 'bar',
+                    data: {
+                        labels: dayLabels,
+                        datasets: [{
+                            label: 'Số lần switch',
+                            data: switchCounts,
+                            backgroundColor: '#ef4444',
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, title: { display: true, text: 'Task-switching theo ngày', font: { size: 11 } } },
+                        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                    }
+                });
+            }
+
+            const ctx2 = document.getElementById('focusGoalMinutesChart');
+            if (ctx2 && window.Chart) {
+                window.__focusGoalMinutesChart = new Chart(ctx2, {
+                    type: 'bar',
+                    data: {
+                        labels: goalLabels,
+                        datasets: [{
+                            label: 'Phút tập trung thực tế',
+                            data: goalMinutes,
+                            backgroundColor: goalColors,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, title: { display: true, text: 'Phút tập trung / mục tiêu (7 ngày)', font: { size: 11 } } },
+                        scales: { x: { beginAtZero: true } }
+                    }
+                });
+            }
+        }
+
         function focusStartTimer() {
             if (timerRunning) return;
+            if (!focusCurrentGoal) {
+                const sel = document.getElementById('ftGoalSelect');
+                const hint = document.getElementById('ftGoalHint');
+                if (sel) { sel.style.borderColor = '#ef4444'; sel.focus(); setTimeout(() => sel.style.borderColor = '', 1500); }
+                if (hint) hint.style.display = 'block';
+                return; // ép buộc chọn goal trước khi cho Start
+            }
             if (remainingSeconds <= 0) remainingSeconds = timerDuration;
             timerRunning = true;
             focusStartTimestamp = Date.now();
             remainingAtStart = remainingSeconds;
             persistTimerState();
+            openFocusSessionLog(focusCurrentGoal, null);
+            updateFtGoalLockUI();
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(tick, 1000);
             updateTimerDisplay();
@@ -21472,14 +21732,18 @@ window.DBP={
             focusStartTimestamp = null;
             remainingAtStart = null;
             persistTimerState();
+            updateFtGoalLockUI();
             updateTimerDisplay();
             ftUpdateRing();
         }
 
         function focusResetTimer() {
+            const wasOpen = !!focusOpenLogId;
             focusPauseTimer();
+            if (wasOpen) closeFocusSessionLog('abandoned');
             remainingSeconds = timerDuration;
             persistTimerState();
+            updateFtGoalLockUI();
             updateTimerDisplay();
             ftUpdateRing();
         }
