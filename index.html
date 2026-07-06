@@ -34800,12 +34800,12 @@ function findOptimalSleepWindow(sleepSessions = [], studyData = {}) {
         if (!sleepSessions || sleepSessions.length < 5) {
             return {
                 error: true,
-                message: 'Need at least 5 sleep sessions for ML analysis',
+                message: 'Need at least 5 sleep sessions for heuristic scoring analysis',
                 dataPoints: sleepSessions?.length || 0
             };
         }
         
-        console.log('🤖 ML Sleep Window Analysis: Processing', sleepSessions.length, 'sessions');
+        console.log('📊 Heuristic Sleep Window Scoring: Processing', sleepSessions.length, 'sessions');
         
         // ========== STEP 1: Feature Engineering ==========
         const features = extractSleepFeatures(sleepSessions, studyData);
@@ -34964,13 +34964,20 @@ function scorePerformance(features, studyData) {
         
         // 3. Next-day study performance (20% weight)
         // Always apply (including 0h) to avoid selection bias — skipping 0h inflates scores
+        // CAVEAT: this treats next-day study hours as a proxy for sleep quality, but the
+        // relationship can run the other way (e.g. exam/deadline pressure can cause both
+        // less sleep AND more forced study hours the next day). Kept at a modest 20% weight
+        // for this reason — do not increase without also decoupling it from deadline-driven days.
         const studyScore = Math.min(100, feature.nextDayStudy * 15);
         performanceScore += (studyScore - 50) * 0.2;
         
         // 4. Sleep debt penalty (15% weight)
         performanceScore -= feature.sleepDebt * 8;
         
-        // 5. Weekend consistency bonus (10% weight)
+        // 5. Weekday adequate-sleep bonus (10% weight)
+        // Note: this rewards hitting 7-9h specifically on weekdays (school/work nights),
+        // not "weekend consistency" — weekend consistency is measured separately via
+        // calculateConsistency() on the cluster's performance scores.
         if (!feature.isWeekend && feature.duration >= 7 && feature.duration <= 9) {
             performanceScore += 10;
         }
@@ -35114,6 +35121,8 @@ function generateEfficiencyHeatmap(scoredSessions) {
     const wakeHours = [4, 5, 6, 7, 8, 9, 10]; // 4am-10am
     
     // Initialize heatmap matrix
+    // scoreSum/matchCount track the running total and number of sessions that landed in
+    // this cell, so we can normalize by an actual average instead of a fixed constant.
     wakeHours.forEach(wakeHour => {
         const row = { wakeHour: wakeHour, cells: [] };
         bedtimeHours.forEach(bedHour => {
@@ -35121,6 +35130,8 @@ function generateEfficiencyHeatmap(scoredSessions) {
                 bedHour: bedHour,
                 wakeHour: wakeHour,
                 score: 0,
+                scoreSum: 0,
+                matchCount: 0,
                 level: 'empty',
                 duration: bedHour >= 20 ? (24 - bedHour) + wakeHour : wakeHour - bedHour
             });
@@ -35139,10 +35150,12 @@ function generateEfficiencyHeatmap(scoredSessions) {
                 for (let j = 0; j < bedtimeHours.length; j++) {
                     if (Math.abs(bedtime - bedtimeHours[j]) <= 1) {
                         const cell = heatmap[i].cells[j];
-                        // Add score weighted by duration match
+                        // Add score weighted by duration match; accumulate into scoreSum
+                        // and track matchCount so we can average correctly below.
                         const durationMatch = 100 - Math.abs(cell.duration - session.duration) * 10;
                         const performanceWeight = session.performanceScore / 100;
-                        cell.score = Math.min(100, cell.score + (durationMatch * performanceWeight * 0.8));
+                        cell.scoreSum += durationMatch * performanceWeight * 0.8;
+                        cell.matchCount += 1;
                         break;
                     }
                 }
@@ -35151,11 +35164,11 @@ function generateEfficiencyHeatmap(scoredSessions) {
         }
     });
     
-    // Normalize and classify cells
+    // Normalize (true average per cell, not a fixed divisor) and classify cells
     heatmap.forEach(row => {
         row.cells.forEach(cell => {
-            if (cell.score > 0) {
-                cell.score = Math.round(cell.score / 3); // Normalize
+            if (cell.matchCount > 0) {
+                cell.score = Math.min(100, Math.round(cell.scoreSum / cell.matchCount));
                 cell.level = cell.score < 60 ? 'low' :
                             cell.score < 75 ? 'medium' :
                             cell.score < 90 ? 'good' : 'excellent';
@@ -35239,7 +35252,7 @@ function generateOptimalityInsights(optimalWindow, clusters, scoredSessions) {
             priority: 'medium',
             icon: '📚',
             title: `+${optimalWindow.stats.avgNextDayStudy.toFixed(1)}h Next-Day Study`,
-            message: `When sleeping in your optimal window, you study ${optimalWindow.stats.avgNextDayStudy.toFixed(1)} hours more the next day on average.`,
+            message: `When sleeping in your optimal window, you study ${optimalWindow.stats.avgNextDayStudy.toFixed(1)} hours more the next day on average. This is a correlation, not proven cause-and-effect — deadlines can independently drive both sleep timing and study hours.`,
             impact: 'medium'
         });
     }
@@ -35292,6 +35305,29 @@ function generateOptimalityInsights(optimalWindow, clusters, scoredSessions) {
     return insights;
 }
 
+// ========== CONFIDENCE-AWARE LANGUAGE ==========
+// Maps a 0-100 dataConfidence score to wording so recommendation copy doesn't
+// sound equally certain regardless of how many sessions actually support it.
+function getConfidenceQualifier(dataConfidence) {
+    if (dataConfidence >= 70) {
+        return { level: 'high', verb: 'shows', actionVerb: 'SET', caveat: '' };
+    }
+    if (dataConfidence >= 40) {
+        return {
+            level: 'moderate',
+            verb: 'suggests',
+            actionVerb: 'TRY',
+            caveat: ' Treat this as a working hypothesis, not a settled result — keep logging sleep to firm it up.'
+        };
+    }
+    return {
+        level: 'low',
+        verb: 'tentatively suggests (small sample — interpret with caution)',
+        actionVerb: 'EXPERIMENT WITH',
+        caveat: ' This is based on very few sessions, so confidence is low. Log more nights before treating this as your fixed schedule.'
+    };
+}
+
 // ========== PERSONALIZED SCHEDULE ==========
 function generatePersonalizedSchedule(optimalWindow, currentPattern) {
     const recommendations = [];
@@ -35300,13 +35336,14 @@ function generatePersonalizedSchedule(optimalWindow, currentPattern) {
     const targetBedtime = optimalWindow.stats.avgBedtime;
     const targetDuration = optimalWindow.stats.avgDuration;
     const targetWaketime = (targetBedtime + targetDuration) % 24;
+    const confidence = getConfidenceQualifier(optimalWindow.dataConfidence);
     
     // Primary recommendation
     recommendations.push({
-        priority: 'P0',
+        priority: confidence.level === 'low' ? 'P1' : 'P0',
         timeframe: 'Starting tonight',
-        action: `SET BEDTIME: ${formatHour(targetBedtime)}`,
-        rationale: `ML analysis shows ${optimalWindow.stats.avgPerformance}% performance in this window (vs your current ${currentPattern.performance}%).`,
+        action: `${confidence.actionVerb} BEDTIME: ${formatHour(targetBedtime)}`,
+        rationale: `Heuristic scoring ${confidence.verb} ${optimalWindow.stats.avgPerformance}% performance in this window (vs your current ${currentPattern.performance}%).${confidence.caveat}`,
         steps: [
             `Set alarm for ${formatHour(targetBedtime - 0.5)} (30min wind-down)`,
             `Complete dinner by ${formatHour(targetBedtime - 3)}`,
@@ -35315,7 +35352,7 @@ function generatePersonalizedSchedule(optimalWindow, currentPattern) {
             `Target ${targetDuration.toFixed(1)}h sleep → Wake at ${formatHour(targetWaketime)}`
         ],
         expectedImpact: `Improve sleep performance by ${Math.round(optimalWindow.stats.avgPerformance - currentPattern.performance)}%`,
-        scientificBasis: `Based on ${optimalWindow.stats.count} sessions with ${optimalWindow.dataConfidence}% data confidence`
+        scientificBasis: `Based on ${optimalWindow.stats.count} sessions with ${optimalWindow.dataConfidence}% data confidence (${confidence.level})`
     });
     
     // Consistency recommendation
@@ -35500,7 +35537,7 @@ function renderOptimalSleepWindow() {
                     <p>Need at least 3 sleep sessions for analysis</p>
                     <div style="margin-top: 20px; font-size: 0.9rem; color: rgba(255,255,255,0.5);">
                         <p>📊 You have: ${sleepSessions.length} sleep sessions</p>
-                        <p>🎯 Required: 5+ for ML analysis, 3+ for basic analysis</p>
+                        <p>🎯 Required: 5+ for full heuristic scoring, 3+ for basic analysis</p>
                     </div>
                     <button onclick="location.reload()" style="
                         margin-top: 24px;
