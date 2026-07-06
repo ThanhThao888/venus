@@ -9198,6 +9198,25 @@
     }
     .ft-ext-link:hover { opacity: 1; }
 
+    /* Streak display */
+    .ft-streak {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        background: var(--bg-light);
+        border-radius: 20px;
+        padding: 5px 10px;
+        margin-bottom: 14px;
+        min-height: 15px;
+    }
+    .ft-streak .ft-streak-fire { font-size: 0.9rem; }
+    .ft-streak.has-streak { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+    .ft-streak .ft-streak-best { color: var(--text-muted); font-weight: 500; margin-left: 2px; }
+
     /* Ring */
     .ft-ring-wrap {
         position: relative;
@@ -14671,6 +14690,10 @@ window.DBP={
                         <div class="ft-header">
                             <h3 class="sidebar-title" style="margin:0">⏱️ Focus Timer</h3>
                             <a href="https://cool-timer.com/" target="_blank" class="ft-ext-link" title="Open Cool-Timer.com">🌐</a>
+                        </div>
+
+                        <div id="ftStreakDisplay" class="ft-streak" title="Số ngày liên tiếp hoàn thành ít nhất 1 phiên Focus Timer">
+                            <!-- filled by renderFocusStreak() -->
                         </div>
 
                         <!-- Goal lock: must pick one goal before Start is allowed -->
@@ -21317,6 +21340,7 @@ window.DBP={
         let timerRunning = localStorage.getItem('focusRunning') === 'true';
         let focusStartTimestamp = parseInt(localStorage.getItem('focusStartTimestamp')) || null;
         let remainingAtStart = parseInt(localStorage.getItem('focusRemainingAtStart')) || null;
+        let ft60Warned = false; // đã bắn cảnh báo "còn 1 phút" cho phiên hiện tại chưa
 
         function formatTime(sec) {
             const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -21342,6 +21366,41 @@ window.DBP={
                 localStorage.setItem('focusRemainingAtStart', remainingAtStart);
             } else {
                 localStorage.removeItem('focusRemainingAtStart');
+            }
+        }
+
+        function beep60Warning() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                function tone(freq, start, dur, vol) {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.frequency.value = freq;
+                    osc.type = 'sine';
+                    const t = ctx.currentTime + start;
+                    gain.gain.setValueAtTime(0, t);
+                    gain.gain.linearRampToValueAtTime(vol, t + 0.02);
+                    gain.gain.setValueAtTime(vol, t + dur - 0.05);
+                    gain.gain.linearRampToValueAtTime(0, t + dur);
+                    osc.start(t);
+                    osc.stop(t + dur + 0.05);
+                }
+                // 2 tiếng "tinh tinh" ngắn, nhẹ hơn nhiều so với chuông hết giờ
+                tone(880, 0.00, 0.14, 0.30);
+                tone(880, 0.20, 0.14, 0.30);
+            } catch (e) { console.warn('beep60 failed', e); }
+        }
+
+        function fireOneMinuteWarning() {
+            beep60Warning();
+            showNotification('⏳ Còn 1 phút nữa thôi — sắp xong rồi!', 'warning');
+            if ("Notification" in window && Notification.permission === "granted") {
+                new Notification("⏳ Còn 1 phút!", {
+                    body: "Phiên Focus sắp kết thúc, ráng tí nữa nha.",
+                    icon: "https://cdn-icons-png.flaticon.com/512/1828/1828976.png"
+                });
             }
         }
 
@@ -21441,6 +21500,10 @@ window.DBP={
                     onTimerComplete();
                     return;
                 }
+            }
+            if (timerRunning && !ft60Warned && remainingSeconds <= 60 && timerDuration > 60) {
+                ft60Warned = true;
+                fireOneMinuteWarning();
             }
             updateTimerDisplay();
             ftUpdateRing();
@@ -21553,6 +21616,53 @@ window.DBP={
             localStorage.setItem('focusSessionLogs', JSON.stringify(logs));
         }
 
+        // ── Focus Streak (số ngày liên tiếp hoàn thành >=1 phiên) ───────
+        function computeFocusStreak() {
+            const logs = getFocusSessionLogs().filter(l => l.outcome === 'completed');
+            if (!logs.length) return { current: 0, best: 0 };
+
+            // Lấy tập các "ngày" (theo giờ địa phương) đã có ít nhất 1 phiên completed
+            const dayMs = 86400000;
+            const dayKeys = new Set(logs.map(l => {
+                const d = new Date(l.end || l.start);
+                d.setHours(0, 0, 0, 0);
+                return d.getTime();
+            }));
+            const sortedDays = Array.from(dayKeys).sort((a, b) => a - b);
+
+            // Best streak: chuỗi dài nhất trong toàn bộ lịch sử
+            let best = 1, run = 1;
+            for (let i = 1; i < sortedDays.length; i++) {
+                const diff = Math.round((sortedDays[i] - sortedDays[i - 1]) / dayMs);
+                run = (diff === 1) ? run + 1 : 1;
+                if (run > best) best = run;
+            }
+
+            // Current streak: đếm ngược từ hôm nay (cho phép hôm nay chưa có phiên nào,
+            // miễn là hôm qua có — tránh streak bị "gãy" ngay lúc mở app buổi sáng)
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            let cursor = today.getTime();
+            if (!dayKeys.has(cursor)) cursor -= dayMs;
+            let current = 0;
+            while (dayKeys.has(cursor)) { current++; cursor -= dayMs; }
+
+            return { current, best };
+        }
+
+        function renderFocusStreak() {
+            const el = document.getElementById('ftStreakDisplay');
+            if (!el) return;
+            const { current, best } = computeFocusStreak();
+            if (current <= 0) {
+                el.classList.remove('has-streak');
+                el.innerHTML = `<span style="opacity:.75">Chưa có streak — hoàn thành 1 phiên hôm nay để bắt đầu 🔥</span>`;
+                return;
+            }
+            el.classList.add('has-streak');
+            el.innerHTML = `<span class="ft-streak-fire">🔥</span> ${current} ngày liên tiếp` +
+                (best > current ? `<span class="ft-streak-best">· Kỷ lục: ${best}</span>` : '');
+        }
+
         function populateFtGoalSelect() {
             const sel = document.getElementById('ftGoalSelect');
             if (!sel) return;
@@ -21575,6 +21685,7 @@ window.DBP={
         document.addEventListener('DOMContentLoaded', () => {
             populateFtGoalSelect();
             renderFocusFragmentationChart();
+            renderFocusStreak();
             document.querySelectorAll('.fsm-chip').forEach(chip => {
                 chip.addEventListener('click', () => chip.classList.toggle('selected'));
             });
@@ -21630,6 +21741,7 @@ window.DBP={
             focusOpenLogId = null;
             localStorage.removeItem('focusOpenLogId');
             renderFocusFragmentationChart();
+            renderFocusStreak();
         }
 
         // ── Focus Switch Modal (replaces prompt()/alert()) ──────────────
@@ -21699,6 +21811,7 @@ window.DBP={
             remainingSeconds = timerDuration;
             focusStartTimestamp = Date.now();
             remainingAtStart = remainingSeconds;
+            ft60Warned = (remainingSeconds <= 60);
             persistTimerState();
             openFocusSessionLog(focusCurrentGoal, prevGoal);
             updateFtGoalLockUI();
@@ -21808,6 +21921,7 @@ window.DBP={
             timerRunning = true;
             focusStartTimestamp = Date.now();
             remainingAtStart = remainingSeconds;
+            ft60Warned = (remainingSeconds <= 60); // nếu vào phiên mà còn <=60s sẵn thì khỏi cảnh báo lại
             persistTimerState();
             openFocusSessionLog(focusCurrentGoal, null);
             updateFtGoalLockUI();
@@ -21837,6 +21951,7 @@ window.DBP={
             focusPauseTimer();
             if (wasOpen) closeFocusSessionLog('abandoned');
             remainingSeconds = timerDuration;
+            ft60Warned = false;
             persistTimerState();
             updateFtGoalLockUI();
             updateTimerDisplay();
