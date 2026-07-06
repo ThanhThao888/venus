@@ -14767,6 +14767,51 @@ window.DBP={
                         <div id="focusFragEmptyState" style="font-size:0.78rem;color:var(--text-muted);text-align:center;padding:10px 0;display:none;">
                             No sessions logged this week yet. Start the Focus Timer with a goal selected to see data here.
                         </div>
+                        <button class="ft-history-btn" onclick="openFocusHistoryModal()" title="Xem, sửa hoặc xoá các phiên đã ghi nhận">
+                            🗂️ Quản lý lịch sử phiên
+                        </button>
+                    </div>
+
+                    <!-- ══ FOCUS HISTORY MODAL ══ -->
+                    <style>
+                        .ft-history-btn{width:100%;margin-top:12px;padding:8px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-light);color:var(--text-muted);font-size:0.78rem;font-weight:600;cursor:pointer;transition:var(--transition);}
+                        .ft-history-btn:hover{background:var(--border-color);color:var(--text-dark);}
+                        .fhm-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.55);backdrop-filter:blur(3px);z-index:9999;display:none;align-items:center;justify-content:center;padding:16px;}
+                        .fhm-overlay.open{display:flex;}
+                        .fhm-box{background:var(--bg-white);color:var(--text-dark);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:460px;width:100%;max-height:80vh;display:flex;flex-direction:column;padding:20px 20px 16px;}
+                        .fhm-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+                        .fhm-title{font-size:1.05rem;font-weight:700;}
+                        .fhm-close{background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--text-muted);}
+                        .fhm-sub{font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;}
+                        .fhm-list{overflow-y:auto;flex:1;margin:0 -6px;padding:0 6px;}
+                        .fhm-row{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px;border:1px solid var(--border-color);margin-bottom:8px;}
+                        .fhm-row-icon{font-size:1.2rem;flex-shrink:0;}
+                        .fhm-row-main{flex:1;min-width:0;}
+                        .fhm-row-goal{font-size:0.85rem;font-weight:600;}
+                        .fhm-row-meta{font-size:0.72rem;color:var(--text-muted);margin-top:1px;}
+                        .fhm-badge{font-size:0.65rem;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;}
+                        .fhm-badge.completed{background:rgba(16,185,129,.12);color:#10b981;}
+                        .fhm-badge.switched{background:rgba(245,158,11,.12);color:#f59e0b;}
+                        .fhm-badge.abandoned{background:rgba(239,68,68,.12);color:#ef4444;}
+                        .fhm-del-btn{background:none;border:none;color:var(--text-muted);font-size:0.95rem;cursor:pointer;padding:4px 6px;flex-shrink:0;}
+                        .fhm-del-btn:hover{color:#ef4444;}
+                        .fhm-empty{font-size:0.82rem;color:var(--text-muted);text-align:center;padding:24px 0;}
+                        .fhm-footer{margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);}
+                        .fhm-clear-btn{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06);color:#ef4444;font-size:0.78rem;font-weight:600;cursor:pointer;}
+                        .fhm-clear-btn:hover{background:rgba(239,68,68,.12);}
+                    </style>
+                    <div class="fhm-overlay" id="fhmOverlay">
+                        <div class="fhm-box">
+                            <div class="fhm-head">
+                                <div class="fhm-title">🗂️ Lịch sử phiên Focus</div>
+                                <button class="fhm-close" onclick="closeFocusHistoryModal()">✕</button>
+                            </div>
+                            <div class="fhm-sub">Xoá phiên bị ghi nhầm — streak &amp; biểu đồ sẽ tự cập nhật lại.</div>
+                            <div class="fhm-list" id="fhmList"></div>
+                            <div class="fhm-footer">
+                                <button class="fhm-clear-btn" onclick="clearAllFocusHistory()">🗑️ Xoá toàn bộ lịch sử</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- ══ FOCUS SWITCH MODAL ══ -->
@@ -21907,6 +21952,73 @@ window.DBP={
                 });
             }
         }
+
+        // ── Focus History Modal: xem / xoá từng phiên đã log ────────────
+        const FHM_OUTCOME_LABEL = {
+            completed: { text: '✅ Hoàn thành', cls: 'completed' },
+            switched: { text: '🔀 Đã chuyển', cls: 'switched' },
+            abandoned: { text: '⏹️ Bỏ dở', cls: 'abandoned' }
+        };
+
+        function openFocusHistoryModal() {
+            renderFhmList();
+            document.getElementById('fhmOverlay').classList.add('open');
+        }
+
+        function closeFocusHistoryModal() {
+            document.getElementById('fhmOverlay').classList.remove('open');
+        }
+
+        function renderFhmList() {
+            const listEl = document.getElementById('fhmList');
+            if (!listEl) return;
+            const logs = getFocusSessionLogs().slice().sort((a, b) => b.start - a.start);
+
+            if (!logs.length) {
+                listEl.innerHTML = `<div class="fhm-empty">Chưa có phiên nào được ghi nhận.</div>`;
+                return;
+            }
+
+            listEl.innerHTML = logs.map(l => {
+                const outcome = FHM_OUTCOME_LABEL[l.outcome] || { text: '⏳ Đang chạy', cls: 'switched' };
+                const dt = new Date(l.start);
+                const dateStr = dt.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const timeStr = dt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                const actualMin = Math.round((l.actualSec || 0) / 60);
+                return `
+                    <div class="fhm-row" data-id="${l.id}">
+                        <span class="fhm-row-icon">${getCareerIcon(l.goal)}</span>
+                        <div class="fhm-row-main">
+                            <div class="fhm-row-goal">${getCareerDisplayName(l.goal)}</div>
+                            <div class="fhm-row-meta">${dateStr} · ${timeStr} · ${actualMin}/${l.plannedMin} phút</div>
+                        </div>
+                        <span class="fhm-badge ${outcome.cls}">${outcome.text}</span>
+                        <button class="fhm-del-btn" onclick="deleteFocusLog('${l.id}')" title="Xoá phiên này">🗑️</button>
+                    </div>`;
+            }).join('');
+        }
+
+        function deleteFocusLog(id) {
+            if (!confirm('Xoá phiên này khỏi lịch sử? Streak và biểu đồ sẽ được tính lại.')) return;
+            const logs = getFocusSessionLogs().filter(l => l.id !== id);
+            saveFocusSessionLogs(logs);
+            renderFhmList();
+            renderFocusFragmentationChart();
+            renderFocusStreak();
+        }
+
+        function clearAllFocusHistory() {
+            if (!getFocusSessionLogs().length) return;
+            if (!confirm('Xoá TOÀN BỘ lịch sử phiên Focus? Hành động này không thể hoàn tác.')) return;
+            saveFocusSessionLogs([]);
+            renderFhmList();
+            renderFocusFragmentationChart();
+            renderFocusStreak();
+        }
+
+        document.getElementById('fhmOverlay')?.addEventListener('click', (e) => {
+            if (e.target.id === 'fhmOverlay') closeFocusHistoryModal();
+        });
 
         function focusStartTimer() {
             if (timerRunning) return;
