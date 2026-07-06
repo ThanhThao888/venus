@@ -10281,6 +10281,37 @@
     .cal-week-col-head { font-size:.65rem; padding:6px 2px; }
     .cal-week-hour-label { font-size:.6rem; padding:2px 3px 0; }
 }
+
+/* ── To-Do List (ABCDE priority) ── */
+.todo-wrap{padding:4px 2px 20px;}
+.todo-add-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.todo-add-input{flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;font-size:.88rem;background:var(--bg-white);color:var(--text-dark);}
+.todo-add-select{padding:10px 8px;border:1px solid var(--border-color);border-radius:8px;font-size:.85rem;background:var(--bg-white);color:var(--text-dark);}
+.todo-add-btn{padding:10px 16px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer;white-space:nowrap;}
+.todo-add-btn:hover{opacity:.9;}
+.todo-hint{font-size:.72rem;color:var(--text-muted);margin:-10px 0 16px;}
+.todo-group{margin-bottom:14px;}
+.todo-group-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:4px 2px;}
+.todo-group-badge{font-size:.7rem;font-weight:800;padding:2px 9px;border-radius:20px;color:#fff;white-space:nowrap;}
+.todo-group-desc{font-size:.72rem;color:var(--text-muted);}
+.todo-row{display:flex;align-items:center;gap:9px;padding:8px 9px;border:1px solid var(--border-color);border-radius:9px;margin-bottom:6px;background:var(--bg-white);}
+.todo-row.done{opacity:.55;}
+.todo-check{width:18px;height:18px;flex-shrink:0;cursor:pointer;accent-color:#10b981;}
+.todo-text{flex:1;font-size:.86rem;color:var(--text-dark);min-width:0;word-break:break-word;}
+.todo-row.done .todo-text{text-decoration:line-through;}
+.todo-prio-select{font-size:.68rem;font-weight:700;padding:2px 4px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-light);color:var(--text-dark);flex-shrink:0;}
+.todo-move-btn,.todo-edit-btn,.todo-del-btn{background:none;border:none;font-size:.85rem;cursor:pointer;color:var(--text-muted);padding:2px 4px;flex-shrink:0;line-height:1;}
+.todo-move-btn:disabled{opacity:.25;cursor:default;}
+.todo-move-btn:hover,.todo-edit-btn:hover{color:#6366f1;}
+.todo-del-btn:hover{color:#ef4444;}
+.todo-empty{font-size:.82rem;color:var(--text-muted);text-align:center;padding:26px 0;}
+.todo-done-section{margin-top:18px;padding-top:12px;border-top:1px solid var(--border-color);}
+.todo-done-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;cursor:pointer;}
+.todo-done-head span{font-size:.8rem;font-weight:700;color:var(--text-muted);}
+.todo-clear-btn{padding:5px 11px;background:rgba(239,68,68,.08);color:#ef4444;border:1px solid rgba(239,68,68,.25);border-radius:7px;font-size:.72rem;font-weight:700;cursor:pointer;}
+.todo-clear-btn:hover{background:rgba(239,68,68,.15);}
+.dark-mode .todo-row{background:#1e293b;}
+.dark-mode .todo-prio-select{background:#0f172a;}
 </style>
 
 <!-- Calendar Modal HTML -->
@@ -10343,9 +10374,10 @@
       <button class="cal-tab active" onclick="CAL.switchTab('day')">📅 Day</button>
       <button class="cal-tab"       onclick="CAL.switchTab('week')">🗓 Week</button>
       <button class="cal-tab"       onclick="PLANEXT.openMonthView()">📆 Month</button>
+      <button class="cal-tab"       onclick="PLANEXT.openTodoView()">✅ To-Do</button>
     </div>
     <!-- Legend -->
-    <div class="cal-legend">
+    <div class="cal-legend" id="calLegend">
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#6366f1"></div>Task/Event</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#3b82f6"></div>Study Session</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#8b5cf6"></div>Deadline</div>
@@ -41122,6 +41154,18 @@ const FILTERS = new Set(['task','study','review','exercise','break','other','dea
 let _monthYear  = new Date().getFullYear();
 let _monthMonth = new Date().getMonth();
 let _inMonthView = false;
+let _inTodoView = false;
+let _todoDoneCollapsed = true;
+
+/* ── To-Do (ABCDE priority — Brian Tracy) ── */
+const TODO_ORDER = ['A','B','C','D','E'];
+const TODO_INFO = {
+  A: { label: 'A — Phải làm',   desc: 'Hậu quả nghiêm trọng nếu không làm', color: '#ef4444' },
+  B: { label: 'B — Nên làm',    desc: 'Hậu quả nhẹ nếu không làm',          color: '#f97316' },
+  C: { label: 'C — Có thì tốt', desc: 'Làm được thì tốt, không có hậu quả', color: '#eab308' },
+  D: { label: 'D — Giao việc',  desc: 'Người khác có thể làm thay',         color: '#3b82f6' },
+  E: { label: 'E — Loại bỏ',    desc: 'Không thực sự cần thiết',            color: '#6b7280' },
+};
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const CAL_COLORS = {
@@ -41253,6 +41297,95 @@ function renderMonth(year, month) {
   return html;
 }
 
+/* ── To-Do: storage helpers ── */
+function escTodo(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function getTodos() {
+  try { return JSON.parse(localStorage.getItem('todoTasks') || '[]'); } catch { return []; }
+}
+function saveTodos(list) {
+  localStorage.setItem('todoTasks', JSON.stringify(list));
+}
+function nextTodoOrder(list, priority) {
+  const inGroup = list.filter(t => t.priority === priority);
+  return inGroup.length ? Math.max(...inGroup.map(t => t.order || 0)) + 1 : 0;
+}
+
+/* ── To-Do: renderer ── */
+function renderTodoList() {
+  const all = getTodos();
+  const open = all.filter(t => !t.done).sort((a,b) => {
+    const pa = TODO_ORDER.indexOf(a.priority), pb = TODO_ORDER.indexOf(b.priority);
+    return pa !== pb ? pa - pb : (a.order||0) - (b.order||0);
+  });
+  const done = all.filter(t => t.done).sort((a,b) => (b.doneAt||0) - (a.doneAt||0));
+
+  let html = `
+    <div class="todo-wrap">
+      <div class="todo-add-row">
+        <input type="text" id="todoNewText" class="todo-add-input" placeholder="Thêm việc cần làm..."
+          onkeydown="if(event.key==='Enter'){PLANEXT.todoAdd();}">
+        <select id="todoNewPriority" class="todo-add-select" title="Mức ưu tiên ABCDE">
+          ${TODO_ORDER.map(p => `<option value="${p}">${TODO_INFO[p].label}</option>`).join('')}
+        </select>
+        <button class="todo-add-btn" onclick="PLANEXT.todoAdd()">+ Thêm</button>
+      </div>
+      <div class="todo-hint">Ưu tiên theo ABCDE (Brian Tracy): A = phải làm, B = nên làm, C = có thì tốt, D = giao việc, E = bỏ.</div>`;
+
+  if (!open.length) {
+    html += `<div class="todo-empty">🎉 Không còn việc nào đang mở. Thêm việc mới ở trên nhé!</div>`;
+  } else {
+    TODO_ORDER.forEach(p => {
+      const group = open.filter(t => t.priority === p);
+      if (!group.length) return;
+      const info = TODO_INFO[p];
+      html += `
+        <div class="todo-group">
+          <div class="todo-group-head">
+            <span class="todo-group-badge" style="background:${info.color};">${p}</span>
+            <span class="todo-group-desc">${info.desc}</span>
+          </div>`;
+      group.forEach((t, idx) => {
+        html += `
+          <div class="todo-row${t.done?' done':''}">
+            <input type="checkbox" class="todo-check" ${t.done?'checked':''} onchange="PLANEXT.todoToggle('${t.id}')">
+            <select class="todo-prio-select" onchange="PLANEXT.todoSetPriority('${t.id}', this.value)" title="Đổi mức ưu tiên">
+              ${TODO_ORDER.map(pp => `<option value="${pp}" ${pp===p?'selected':''}>${pp}</option>`).join('')}
+            </select>
+            <span class="todo-text" ondblclick="PLANEXT.todoEdit('${t.id}')" title="Nhấp đúp để sửa">${escTodo(t.text)}</span>
+            <button class="todo-move-btn" ${idx===0?'disabled':''} onclick="PLANEXT.todoMove('${t.id}','up')" title="Lên">▲</button>
+            <button class="todo-move-btn" ${idx===group.length-1?'disabled':''} onclick="PLANEXT.todoMove('${t.id}','down')" title="Xuống">▼</button>
+            <button class="todo-edit-btn" onclick="PLANEXT.todoEdit('${t.id}')" title="Sửa">✎</button>
+            <button class="todo-del-btn" onclick="PLANEXT.todoDelete('${t.id}')" title="Xoá">🗑</button>
+          </div>`;
+      });
+      html += `</div>`;
+    });
+  }
+
+  html += `
+      <div class="todo-done-section">
+        <div class="todo-done-head" onclick="PLANEXT.todoToggleDoneCollapse()">
+          <span>✅ Đã hoàn thành (${done.length})${_todoDoneCollapsed && done.length ? ' — nhấp để xem' : ''}</span>
+          ${done.length ? `<button class="todo-clear-btn" onclick="event.stopPropagation();PLANEXT.todoClearDone()">Xoá hết</button>` : ''}
+        </div>`;
+  if (done.length && !_todoDoneCollapsed) {
+    done.forEach(t => {
+      const info = TODO_INFO[t.priority] || TODO_INFO.C;
+      html += `
+        <div class="todo-row done">
+          <input type="checkbox" class="todo-check" checked onchange="PLANEXT.todoToggle('${t.id}')">
+          <span class="todo-group-badge" style="background:${info.color};">${t.priority}</span>
+          <span class="todo-text">${escTodo(t.text)}</span>
+          <button class="todo-del-btn" onclick="PLANEXT.todoDelete('${t.id}')" title="Xoá">🗑</button>
+        </div>`;
+    });
+  }
+  html += `</div></div>`;
+  return html;
+}
+
 /* ── Public API ── */
 return {
 
@@ -41291,6 +41424,7 @@ return {
     };
     CAL.goToday = function() {
       _inMonthView = false;
+      if (_inTodoView) self._closeTodoView();
       origToday();
       document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===0));
     };
@@ -41309,6 +41443,114 @@ return {
     CAL.currentDate = new Date(val+'T12:00:00');
     CAL.switchTab('day');
     document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  },
+
+  /* ── To-Do view ── */
+  openTodoView() {
+    _inTodoView = true;
+    _inMonthView = false;
+    document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===3));
+    const body = document.getElementById('calBody');
+    if (body) body.innerHTML = renderTodoList();
+    const title = document.getElementById('calTitleText');
+    if (title) title.textContent = `✅ To-Do list — ưu tiên theo ABCDE`;
+    const bar = document.getElementById('calActionBar');
+    if (bar) bar.style.display = 'none';
+    const panel = document.getElementById('calFilterPanel');
+    if (panel) panel.style.display = 'none';
+    const legend = document.getElementById('calLegend');
+    if (legend) legend.style.display = 'none';
+  },
+
+  _closeTodoView() {
+    _inTodoView = false;
+    const bar = document.getElementById('calActionBar');
+    if (bar) bar.style.display = '';
+    const legend = document.getElementById('calLegend');
+    if (legend) legend.style.display = '';
+  },
+
+  todoAdd() {
+    const input = document.getElementById('todoNewText');
+    const select = document.getElementById('todoNewPriority');
+    const text = (input?.value || '').trim();
+    if (!text) { input?.focus(); return; }
+    const priority = select?.value || 'A';
+    const list = getTodos();
+    list.push({
+      id: 't' + Date.now() + Math.random().toString(36).slice(2,6),
+      text, priority, done: false,
+      order: nextTodoOrder(list, priority),
+      createdAt: Date.now()
+    });
+    saveTodos(list);
+    if (input) input.value = '';
+    this.openTodoView();
+  },
+
+  todoToggle(id) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    t.done = !t.done;
+    t.doneAt = t.done ? Date.now() : null;
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoDelete(id) {
+    if (!confirm('Xoá việc này?')) return;
+    saveTodos(getTodos().filter(t => t.id !== id));
+    this.openTodoView();
+  },
+
+  todoEdit(id) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    const val = prompt('Sửa nội dung việc:', t.text);
+    if (val === null) return;
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    t.text = trimmed;
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoSetPriority(id, priority) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    t.priority = priority;
+    t.order = nextTodoOrder(list, priority);
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoMove(id, dir) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    const group = list.filter(x => x.priority === t.priority && !x.done)
+      .sort((a,b) => (a.order||0) - (b.order||0));
+    const idx = group.findIndex(x => x.id === id);
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= group.length) return;
+    const other = group[swapIdx];
+    const tmp = t.order; t.order = other.order; other.order = tmp;
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoClearDone() {
+    if (!confirm('Xoá tất cả việc đã hoàn thành?')) return;
+    saveTodos(getTodos().filter(t => !t.done));
+    this.openTodoView();
+  },
+
+  todoToggleDoneCollapse() {
+    _todoDoneCollapsed = !_todoDoneCollapsed;
+    this.openTodoView();
   },
 
   /* ── Category Filter ── */
@@ -41627,8 +41869,8 @@ return {
         case 'ArrowLeft':  e.preventDefault(); CAL.prevPeriod(); break;
         case 'ArrowRight': e.preventDefault(); CAL.nextPeriod(); break;
         case 't': case 'T': e.preventDefault(); CAL.goToday(); break;
-        case 'd': case 'D': e.preventDefault(); _inMonthView=false; CAL.switchTab('day'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===0)); break;
-        case 'w': case 'W': e.preventDefault(); _inMonthView=false; CAL.switchTab('week'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===1)); break;
+        case 'd': case 'D': e.preventDefault(); _inMonthView=false; if(_inTodoView) PLANEXT._closeTodoView(); CAL.switchTab('day'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===0)); break;
+        case 'w': case 'W': e.preventDefault(); _inMonthView=false; if(_inTodoView) PLANEXT._closeTodoView(); CAL.switchTab('week'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===1)); break;
         case 'm': case 'M': e.preventDefault(); PLANEXT.openMonthView(); break;
         case 'n': case 'N': e.preventDefault(); PLANEXT.whatNow(); break;
       }
@@ -41643,8 +41885,10 @@ return {
     // Patch month view into CAL.switchTab
     const _origSwitch = CAL.switchTab.bind(CAL);
     CAL.switchTab = function(tab) {
-      if (tab === 'month') { PLANEXT.openMonthView(); return; }
+      if (tab === 'month') { PLANEXT._closeTodoView(); PLANEXT.openMonthView(); return; }
+      if (tab === 'todo')  { PLANEXT.openTodoView(); return; }
       _inMonthView = false;
+      if (_inTodoView) PLANEXT._closeTodoView();
       _origSwitch(tab);
     };
 
