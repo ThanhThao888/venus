@@ -16578,6 +16578,10 @@ window.DBP={
                         <input type="text" id="bookCoverUrl" placeholder="https://example.com/book.jpg">
                     </div>
                     <div class="form-group">
+                        <label for="bookDriveLink">🔗 Link sách (Drive / PDF, không bắt buộc)</label>
+                        <input type="text" id="bookDriveLink" placeholder="https://drive.google.com/...">
+                    </div>
+                    <div class="form-group">
                         <label for="bookGenre">Genre *</label>
                         <select id="bookGenre" required>
                             <option value="">Select a Genre</option>
@@ -16631,6 +16635,10 @@ window.DBP={
                         <label for="bookPages">📄 Pages (Optional)</label>
                         <input type="number" id="bookPages" min="1" placeholder="e.g. 350">
                     </div>
+                    <div class="form-group">
+                        <label for="bookCurrentPage">📖 Đang đọc đến trang (Optional)</label>
+                        <input type="number" id="bookCurrentPage" min="0" placeholder="e.g. 120">
+                    </div>
                     <div class="form-group" style="display:flex; gap:10px;">
                         <div style="flex:1;">
                             <label for="bookFirstPublished">📅 First Published (Optional)</label>
@@ -16671,6 +16679,10 @@ window.DBP={
                     <div class="form-group">
                         <label for="editBookCoverUrl">Cover Image URL (Optional)</label>
                         <input type="text" id="editBookCoverUrl" placeholder="https://example.com/book.jpg">
+                    </div>
+                    <div class="form-group">
+                        <label for="editBookDriveLink">🔗 Link sách (Drive / PDF, không bắt buộc)</label>
+                        <input type="text" id="editBookDriveLink" placeholder="https://drive.google.com/...">
                     </div>
                     <div class="form-group">
                         <label for="editBookGenre">Genre *</label>
@@ -16725,6 +16737,10 @@ window.DBP={
                     <div style="margin-bottom: 12px;">
                         <label for="editBookPages" style="display: block; margin-bottom: 5px; font-weight: 500;">📄 Pages (Optional)</label>
                         <input type="number" id="editBookPages" min="1" placeholder="e.g. 350" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label for="editBookCurrentPage" style="display: block; margin-bottom: 5px; font-weight: 500;">📖 Đang đọc đến trang (Optional)</label>
+                        <input type="number" id="editBookCurrentPage" min="0" placeholder="e.g. 120" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
                     </div>
                     <div style="margin-bottom: 12px; display:flex; gap:10px;">
                         <div style="flex:1;">
@@ -17731,6 +17747,16 @@ window.DBP={
                     <p><strong>Genre:</strong> <span id="bookDetailsGenre">Genre</span></p>
                     <p><strong>Status:</strong> <span id="bookDetailsStatus" class="book-status-badge">Status</span></p>
                     <div id="bookDetailsMeta" style="margin: 6px 0; font-size:0.85rem; color: var(--text-muted,#888); display:none; display:flex; flex-wrap:wrap; gap:8px;"></div>
+                    <div id="bookDetailsProgress" style="margin: 8px 0; display:none;">
+                        <div class="goal-progress-container" style="margin:4px 0;">
+                            <div id="bookDetailsProgressFill" class="goal-progress-fill" style="width:0%;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span id="bookDetailsProgressLabel" style="font-size:0.78rem; color:var(--text-muted,#888);"></span>
+                            <button id="bookDetailsProgressBtn" class="book-action-btn" style="font-size:0.7rem; padding:2px 8px;" title="Cập nhật trang đang đọc">📖 Cập nhật</button>
+                        </div>
+                    </div>
+                    <a id="bookDetailsLink" href="#" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:none; margin:8px 0; font-size:0.85rem; color:var(--primary); text-decoration:none; font-weight:600; align-items:center; gap:4px;">🔗 Mở link sách (Drive/PDF)</a>
                     <div id="bookDetailsRating" style="margin: 8px 0; color: #f59e0b; font-size: 1.1rem;"></div> <!-- Ẩn mặc định nếu không có rating -->
                     <div id="bookDetailsReview" style="margin-top: 10px;"></div> <!-- Ẩn mặc định nếu không có review -->
                 </div>
@@ -21204,6 +21230,21 @@ window.DBP={
                         if (book.currentEdition) metaParts.push(`🔖 Ed. ${book.currentEdition}`);
                         return metaParts.length ? `<div style="font-size:0.75rem; color:var(--text-muted,#888); margin-top:3px; display:flex; flex-wrap:wrap; gap:6px;">${metaParts.map(p => `<span>${p}</span>`).join('')}</div>` : '';
                     })(),
+                    (() => {
+                        const cp = book.currentPage || 0;
+                        if (!book.pages && !cp) return '';
+                        const pct = book.pages ? Math.min(100, Math.round((cp / book.pages) * 100)) : 0;
+                        const label = book.pages ? `Trang ${cp}/${book.pages} (${pct}%)` : `Trang ${cp}`;
+                        return `<div style="margin-top:6px;" onclick="event.stopPropagation();">
+                                    <div class="goal-progress-container" style="margin:4px 0;">
+                                        <div class="goal-progress-fill${pct >= 100 ? ' completed' : ''}" style="width:${pct}%;"></div>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="font-size:0.72rem; color:var(--text-muted,#888);">${label}</span>
+                                        <button class="book-action-btn" style="font-size:0.7rem; padding:2px 8px;" onclick="bookProgressModal(${book.id})" title="Cập nhật trang đang đọc">📖 Cập nhật</button>
+                                    </div>
+                                </div>`;
+                    })(),
                     ratingDisplay,
                     reviewDisplay
                 ];
@@ -21215,6 +21256,8 @@ window.DBP={
                                 ${detailsHTML}
                             </div>
                             <div class="book-actions">
+                                ${book.driveLink ? `<button class="book-action-btn" onclick="openBookLink('${book.driveLink.replace(/'/g, "\\'")}'); event.stopPropagation();" title="Mở link sách (Drive/PDF)">🔗</button>` : ''}
+                                <button class="book-action-btn" onclick="bookProgressModal(${book.id}); event.stopPropagation();" title="Cập nhật trang đang đọc">📖</button>
                                 <button class="book-action-btn" onclick="openEditBookModal(${book.id}); event.stopPropagation();" title="Edit Book">✏️</button>
                                 <button class="book-action-btn" onclick="removeBook(${book.id}); event.stopPropagation();" title="Delete Book">🗑️</button>
                                 <button class="book-action-btn" onclick="toggleBookStatus(${book.id}); event.stopPropagation();" title="Toggle Status">🔄</button>
@@ -21253,6 +21296,7 @@ window.DBP={
             document.getElementById('editBookTitle').value = book.title;
             document.getElementById('editBookAuthor').value = book.author;
             document.getElementById('editBookCoverUrl').value = book.cover || '';
+            document.getElementById('editBookDriveLink').value = book.driveLink || '';
             document.getElementById('editBookGenre').value = book.genre || 'Other';
             document.getElementById('editBookStatus').value = book.status;
             document.getElementById('editBookRating').value = book.rating !== null ? book.rating : '';
@@ -21260,6 +21304,7 @@ window.DBP={
             document.getElementById('editBookPages').value = book.pages !== null && book.pages !== undefined ? book.pages : '';
             document.getElementById('editBookFirstPublished').value = book.firstPublished !== null && book.firstPublished !== undefined ? book.firstPublished : '';
             document.getElementById('editBookCurrentEdition').value = book.currentEdition !== null && book.currentEdition !== undefined ? book.currentEdition : '';
+            document.getElementById('editBookCurrentPage').value = book.currentPage !== null && book.currentPage !== undefined ? book.currentPage : '';
 
             document.getElementById('editBookModal').style.display = 'flex';
         }
@@ -21276,6 +21321,7 @@ window.DBP={
             const title = document.getElementById('bookTitle').value.trim();
             const author = document.getElementById('bookAuthor').value.trim();
             const cover = document.getElementById('bookCoverUrl').value.trim();
+            const driveLink = document.getElementById('bookDriveLink').value.trim();
             const status = document.getElementById('bookStatus').value;
             const genre = document.getElementById('bookGenre').value.trim();
             const ratingValue = document.getElementById('bookRating').value;
@@ -21284,9 +21330,12 @@ window.DBP={
             const pagesVal = document.getElementById('bookPages').value;
             const firstPubVal = document.getElementById('bookFirstPublished').value;
             const editionVal = document.getElementById('bookCurrentEdition').value;
+            const currentPageVal = document.getElementById('bookCurrentPage').value;
             const pages = pagesVal ? parseInt(pagesVal) : null;
             const firstPublished = firstPubVal ? parseInt(firstPubVal) : null;
             const currentEdition = editionVal ? parseInt(editionVal) : null;
+            let currentPage = currentPageVal ? parseInt(currentPageVal) : 0;
+            if (pages && currentPage > pages) currentPage = pages;
 
             console.log('Form values:', { title, author, genre, status, rating, review });
 
@@ -21300,6 +21349,7 @@ window.DBP={
                 title,
                 author,
                 cover: cover || '',
+                driveLink: driveLink || '',
                 genre,
                 status,
                 addedAt: new Date().toISOString(),
@@ -21307,7 +21357,8 @@ window.DBP={
                 review,
                 pages,
                 firstPublished,
-                currentEdition
+                currentEdition,
+                currentPage
             };
 
             console.log('Adding book:', book);
@@ -21336,6 +21387,7 @@ window.DBP={
             const title = document.getElementById('editBookTitle').value.trim();
             const author = document.getElementById('editBookAuthor').value.trim();
             const cover = document.getElementById('editBookCoverUrl').value.trim();
+            const driveLink = document.getElementById('editBookDriveLink').value.trim();
             const status = document.getElementById('editBookStatus').value;
             const genre = document.getElementById('editBookGenre').value.trim();
             const ratingValue = document.getElementById('editBookRating').value;
@@ -21343,9 +21395,12 @@ window.DBP={
             const pagesVal = document.getElementById('editBookPages').value;
             const firstPubVal = document.getElementById('editBookFirstPublished').value;
             const editionVal = document.getElementById('editBookCurrentEdition').value;
+            const currentPageVal = document.getElementById('editBookCurrentPage').value;
             const pages = pagesVal ? parseInt(pagesVal) : null;
             const firstPublished = firstPubVal ? parseInt(firstPubVal) : null;
             const currentEdition = editionVal ? parseInt(editionVal) : null;
+            let currentPage = currentPageVal ? parseInt(currentPageVal) : 0;
+            if (pages && currentPage > pages) currentPage = pages;
 
             console.log('Update form values:', { bookId, title, author, cover, status, genre, ratingValue, review });
 
@@ -21363,13 +21418,15 @@ window.DBP={
                     title,
                     author,
                     cover: cover || '',
+                    driveLink: driveLink || '',
                     genre,
                     status,
                     rating,
                     review,
                     pages,
                     firstPublished,
-                    currentEdition
+                    currentEdition,
+                    currentPage
                 };
 
                 localStorage.setItem('readingList', JSON.stringify(readingList));
@@ -21384,14 +21441,13 @@ window.DBP={
         }
 
         function removeBook(id) {
-            if (!confirm('Are you sure you want to delete this book?')) {
-                return;
-            }
-            readingList = readingList.filter(b => b.id !== parseInt(id));
-            localStorage.setItem('readingList', JSON.stringify(readingList));
-            renderReadingList();
-            updateReadingCounts();
-            showNotification('✅ Book removed successfully!', 'success');
+            memeConfirmModal('Xóa cuốn sách này khỏi danh sách?', () => {
+                readingList = readingList.filter(b => b.id !== parseInt(id));
+                localStorage.setItem('readingList', JSON.stringify(readingList));
+                renderReadingList();
+                updateReadingCounts();
+                showNotification('✅ Book removed successfully!', 'success');
+            });
         }
 
 
@@ -21411,6 +21467,86 @@ window.DBP={
             renderReadingList();
             updateReadingCounts();
             showNotification(`✅ Status changed to "${getStatusText(book.status)}"!`, 'success');
+        }
+
+        // 🔗 Mở link sách (Drive/PDF) ở tab mới
+        function openBookLink(url) {
+            if (!url) return;
+            const finalUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+            window.open(finalUrl, '_blank', 'noopener');
+        }
+
+        // 📖 Modal cập nhật trang đang đọc (thay cho prompt())
+        function bookProgressModal(bookId) {
+            const book = readingList.find(b => b.id === parseInt(bookId));
+            if (!book) return;
+
+            const existing = document.getElementById('bookProgressModal');
+            if (existing) existing.remove();
+
+            const maxAttr = book.pages ? `max="${book.pages}"` : '';
+            const hint = book.pages
+                ? `Tổng cộng <strong style="color: var(--text-dark);">${book.pages}</strong> trang.`
+                : `Chưa có tổng số trang — bạn có thể thêm ở phần Edit Book.`;
+
+            const modal = document.createElement('div');
+            modal.id = 'bookProgressModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                z-index: 100000; display: flex; align-items: center; justify-content: center;
+                padding: 20px;
+            `;
+            modal.innerHTML = `
+                <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                    max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    border: 1px solid var(--border-color);">
+                    <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">📖</div>
+                    <h3 style="margin: 0 0 8px 0; font-size: 1.05rem; color: var(--text-dark); text-align:center;">${escapeHtml(book.title)}</h3>
+                    <p style="margin: 0 0 18px 0; color: var(--text-muted); font-size: 0.85rem; text-align:center; line-height:1.5;">
+                        Đang đọc đến trang nào rồi? ${hint}
+                    </p>
+                    <input id="bookProgressInput" type="number" min="0" ${maxAttr} step="1"
+                        value="${book.currentPage || ''}" placeholder="Số trang hiện tại"
+                        style="width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--border-color);
+                        border-radius:9px; font-size:1rem; margin-bottom:20px; background: var(--bg-light); color: var(--text-dark);" />
+                    <div style="display:flex; gap:10px;">
+                        <button id="bookProgressCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                        <button id="bookProgressOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Lưu tiến độ</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+            document.body.appendChild(modal);
+            const input = document.getElementById('bookProgressInput');
+            input.focus();
+            input.select();
+
+            const submit = () => {
+                let val = parseInt(input.value);
+                modal.remove();
+                if (isNaN(val) || val < 0) {
+                    showNotification('⚠️ Vui lòng nhập số trang hợp lệ.', 'error');
+                    return;
+                }
+                if (book.pages && val > book.pages) val = book.pages;
+                book.currentPage = val;
+                // Tự động chuyển sang "Reading" nếu đang ở "Want to Read"
+                if (book.status === 'want' && val > 0) book.status = 'reading';
+                // Tự động chuyển sang "Finished" nếu đọc hết
+                if (book.pages && val >= book.pages) book.status = 'finished';
+                localStorage.setItem('readingList', JSON.stringify(readingList));
+                renderReadingList();
+                updateReadingCounts();
+                // Nếu đang mở modal chi tiết của đúng sách này, refresh luôn
+                const detailsModal = document.getElementById('bookDetailsModal');
+                if (detailsModal && detailsModal.style.display === 'flex' && document.getElementById('bookDetailsTitle')?.textContent === book.title) {
+                    showBookDetails(book.id);
+                }
+                showNotification(`✅ Đã cập nhật: trang ${val}${book.pages ? ' / ' + book.pages : ''}`, 'success');
+            };
+            document.getElementById('bookProgressCancelBtn').onclick = () => modal.remove();
+            document.getElementById('bookProgressOkBtn').onclick = submit;
+            input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
         }
 
 
@@ -25609,6 +25745,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const metaEl = document.getElementById('bookDetailsMeta');
             const ratingEl = document.getElementById('bookDetailsRating');
             const reviewEl = document.getElementById('bookDetailsReview');
+            const progressEl = document.getElementById('bookDetailsProgress');
+            const progressFillEl = document.getElementById('bookDetailsProgressFill');
+            const progressLabelEl = document.getElementById('bookDetailsProgressLabel');
+            const progressBtnEl = document.getElementById('bookDetailsProgressBtn');
+            const linkEl = document.getElementById('bookDetailsLink');
 
             if (modal && titleEl && authorEl && genreEl && statusEl && coverEl && ratingEl && reviewEl) {
                 titleEl.textContent = book.title;
@@ -25637,6 +25778,32 @@ document.addEventListener('DOMContentLoaded', function() {
                         metaEl.style.display = 'flex';
                     } else {
                         metaEl.style.display = 'none';
+                    }
+                }
+
+                // Progress bar (current page / total pages)
+                if (progressEl && progressFillEl && progressLabelEl && progressBtnEl) {
+                    const cp = book.currentPage || 0;
+                    if (book.pages || cp) {
+                        const pct = book.pages ? Math.min(100, Math.round((cp / book.pages) * 100)) : 0;
+                        progressFillEl.style.width = `${pct}%`;
+                        progressFillEl.classList.toggle('completed', pct >= 100);
+                        progressLabelEl.textContent = book.pages ? `Trang ${cp}/${book.pages} (${pct}%)` : `Trang ${cp}`;
+                        progressBtnEl.onclick = () => bookProgressModal(book.id);
+                        progressEl.style.display = 'block';
+                    } else {
+                        progressEl.style.display = 'none';
+                    }
+                }
+
+                // Drive/PDF link
+                if (linkEl) {
+                    if (book.driveLink) {
+                        linkEl.href = book.driveLink;
+                        linkEl.style.display = 'inline-flex';
+                        linkEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); openBookLink(book.driveLink); };
+                    } else {
+                        linkEl.style.display = 'none';
                     }
                 }
 
