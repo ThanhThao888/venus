@@ -16578,8 +16578,12 @@ window.DBP={
                         <input type="text" id="bookCoverUrl" placeholder="https://example.com/book.jpg">
                     </div>
                     <div class="form-group">
-                        <label for="bookDriveLink">🔗 Book Link (Drive, PDF, YouTube, etc. — optional)</label>
-                        <input type="text" id="bookDriveLink" placeholder="https://drive.google.com/... or https://youtube.com/...">
+                        <label for="bookDriveLink">📖 Reading Link (Drive/PDF, optional)</label>
+                        <input type="text" id="bookDriveLink" placeholder="https://drive.google.com/...">
+                    </div>
+                    <div class="form-group">
+                        <label for="bookAudioLink">🎧 Audio Link (YouTube, optional)</label>
+                        <input type="text" id="bookAudioLink" placeholder="https://youtube.com/...">
                     </div>
                     <div class="form-group">
                         <label for="bookGenre">Genre *</label>
@@ -16681,8 +16685,12 @@ window.DBP={
                         <input type="text" id="editBookCoverUrl" placeholder="https://example.com/book.jpg">
                     </div>
                     <div class="form-group">
-                        <label for="editBookDriveLink">🔗 Book Link (Drive, PDF, YouTube, etc. — optional)</label>
-                        <input type="text" id="editBookDriveLink" placeholder="https://drive.google.com/... or https://youtube.com/...">
+                        <label for="editBookDriveLink">📖 Reading Link (Drive/PDF, optional)</label>
+                        <input type="text" id="editBookDriveLink" placeholder="https://drive.google.com/...">
+                    </div>
+                    <div class="form-group">
+                        <label for="editBookAudioLink">🎧 Audio Link (YouTube, optional)</label>
+                        <input type="text" id="editBookAudioLink" placeholder="https://youtube.com/...">
                     </div>
                     <div class="form-group">
                         <label for="editBookGenre">Genre *</label>
@@ -17756,7 +17764,10 @@ window.DBP={
                             <button id="bookDetailsProgressBtn" class="book-action-btn" style="font-size:0.7rem; padding:2px 8px;" title="Update reading progress">📖</button>
                         </div>
                     </div>
-                    <a id="bookDetailsLink" href="#" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:none; margin:8px 0; font-size:0.85rem; color:var(--primary); text-decoration:none; font-weight:600; align-items:center; gap:4px;">🔗</a>
+                    <div style="display:flex; gap:14px; flex-wrap:wrap;">
+                        <a id="bookDetailsLink" href="#" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:none; margin:8px 0; font-size:0.85rem; color:var(--primary); text-decoration:none; font-weight:600; align-items:center; gap:4px;">📖 Reading Link</a>
+                        <a id="bookDetailsAudioLink" href="#" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:none; margin:8px 0; font-size:0.85rem; color:var(--primary); text-decoration:none; font-weight:600; align-items:center; gap:4px;">🎧 Audio Link</a>
+                    </div>
                     <div id="bookDetailsRating" style="margin: 8px 0; color: #f59e0b; font-size: 1.1rem;"></div> <!-- Ẩn mặc định nếu không có rating -->
                     <div id="bookDetailsReview" style="margin-top: 10px;"></div> <!-- Ẩn mặc định nếu không có review -->
                 </div>
@@ -21256,7 +21267,8 @@ window.DBP={
                                 ${detailsHTML}
                             </div>
                             <div class="book-actions">
-                                ${book.driveLink ? `<button class="book-action-btn" onclick="openBookLink('${book.driveLink.replace(/'/g, "\\'")}'); event.stopPropagation();" title="Open book link (Drive/PDF)">🔗</button>` : ''}
+                                ${book.driveLink ? `<button class="book-action-btn" onclick="openBookLink('${book.driveLink.replace(/'/g, "\\'")}'); event.stopPropagation();" title="Open reading link (Drive/PDF)">📖</button>` : ''}
+                                ${book.audioLink ? `<button class="book-action-btn" onclick="openBookLink('${book.audioLink.replace(/'/g, "\\'")}'); event.stopPropagation();" title="Open audio link (YouTube)">🎧</button>` : ''}
                                 <button class="book-action-btn" onclick="bookProgressModal(${book.id}); event.stopPropagation();" title="Update reading progress">📖</button>
                                 <button class="book-action-btn" onclick="openEditBookModal(${book.id}); event.stopPropagation();" title="Edit Book">✏️</button>
                                 <button class="book-action-btn" onclick="removeBook(${book.id}); event.stopPropagation();" title="Delete Book">🗑️</button>
@@ -21295,6 +21307,7 @@ window.DBP={
             document.getElementById('editBookAuthor').value = book.author;
             document.getElementById('editBookCoverUrl').value = book.cover || '';
             document.getElementById('editBookDriveLink').value = book.driveLink || '';
+            document.getElementById('editBookAudioLink').value = book.audioLink || '';
             document.getElementById('editBookGenre').value = book.genre || 'Other';
             document.getElementById('editBookStatus').value = book.status;
             document.getElementById('editBookRating').value = book.rating !== null ? book.rating : '';
@@ -21320,6 +21333,7 @@ window.DBP={
             const author = document.getElementById('bookAuthor').value.trim();
             const cover = document.getElementById('bookCoverUrl').value.trim();
             const driveLink = document.getElementById('bookDriveLink').value.trim();
+            const audioLink = document.getElementById('bookAudioLink').value.trim();
             const status = document.getElementById('bookStatus').value;
             const genre = document.getElementById('bookGenre').value.trim();
             const ratingValue = document.getElementById('bookRating').value;
@@ -21348,6 +21362,7 @@ window.DBP={
                 author,
                 cover: cover || '',
                 driveLink: driveLink || '',
+                audioLink: audioLink || '',
                 genre,
                 status,
                 addedAt: new Date().toISOString(),
@@ -21386,6 +21401,7 @@ window.DBP={
             const author = document.getElementById('editBookAuthor').value.trim();
             const cover = document.getElementById('editBookCoverUrl').value.trim();
             const driveLink = document.getElementById('editBookDriveLink').value.trim();
+            const audioLink = document.getElementById('editBookAudioLink').value.trim();
             const status = document.getElementById('editBookStatus').value;
             const genre = document.getElementById('editBookGenre').value.trim();
             const ratingValue = document.getElementById('editBookRating').value;
@@ -21417,6 +21433,7 @@ window.DBP={
                     author,
                     cover: cover || '',
                     driveLink: driveLink || '',
+                    audioLink: audioLink || '',
                     genre,
                     status,
                     rating,
@@ -25748,6 +25765,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const progressLabelEl = document.getElementById('bookDetailsProgressLabel');
             const progressBtnEl = document.getElementById('bookDetailsProgressBtn');
             const linkEl = document.getElementById('bookDetailsLink');
+            const audioLinkEl = document.getElementById('bookDetailsAudioLink');
 
             if (modal && titleEl && authorEl && genreEl && statusEl && coverEl && ratingEl && reviewEl) {
                 titleEl.textContent = book.title;
@@ -25786,7 +25804,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         const pct = book.pages ? Math.min(100, Math.round((cp / book.pages) * 100)) : 0;
                         progressFillEl.style.width = `${pct}%`;
                         progressFillEl.classList.toggle('completed', pct >= 100);
-                        progressLabelEl.textContent = book.pages ? `Trang ${cp}/${book.pages} (${pct}%)` : `Trang ${cp}`;
+                        progressLabelEl.textContent = book.pages ? `Page ${cp}/${book.pages} (${pct}%)` : `Page ${cp}`;
                         progressBtnEl.onclick = () => bookProgressModal(book.id);
                         progressEl.style.display = 'block';
                     } else {
@@ -25802,6 +25820,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         linkEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); openBookLink(book.driveLink); };
                     } else {
                         linkEl.style.display = 'none';
+                    }
+                }
+
+                // Audio (YouTube) link
+                if (audioLinkEl) {
+                    if (book.audioLink) {
+                        audioLinkEl.href = book.audioLink;
+                        audioLinkEl.style.display = 'inline-flex';
+                        audioLinkEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); openBookLink(book.audioLink); };
+                    } else {
+                        audioLinkEl.style.display = 'none';
                     }
                 }
 
