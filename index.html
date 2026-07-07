@@ -9443,15 +9443,8 @@
     }
     .rdm-track-select:focus { border-color: var(--primary); }
     .rdm-hpw-row { display: flex; align-items: center; gap: 8px; }
-    .rdm-gen-btn {
-        flex: 1; padding: 9px 0; border: none;
-        border-radius: var(--radius-md); background: var(--primary);
-        color: #fff; font-weight: 700; font-size: 0.88rem;
-        cursor: pointer; transition: all 0.2s; letter-spacing: 0.4px;
-    }
-    .rdm-gen-btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
     .rdm-reset-btn {
-        padding: 9px 14px; border: 1px solid var(--border-color);
+        flex: 1; padding: 9px 14px; border: 1px solid var(--border-color);
         border-radius: var(--radius-md); background: transparent;
         color: var(--text-muted); font-weight: 600; font-size: 0.88rem; cursor: pointer;
         transition: all 0.2s;
@@ -9630,8 +9623,15 @@
     .rdm-gnode-rect:hover { filter: brightness(1.08); }
     .rdm-gnode-text { font-size: 10.5px; font-weight: 700; pointer-events: none; }
     .rdm-gnode-sub { font-size: 8.5px; font-weight: 600; pointer-events: none; }
-    .rdm-gedge { fill: none; stroke-width: 1.6; }
+    .rdm-gedge { fill: none; stroke-width: 1.4; opacity: 0.4; transition: opacity 0.15s ease, stroke-width 0.15s ease; }
+    .rdm-gedge-skip { stroke-dasharray: 4 3; }
     .rdm-gphase-label { font-size: 10.5px; font-weight: 800; text-anchor: middle; }
+    /* ── Graph hover isolation: dim everything not connected to the hovered node ── */
+    .rdm-gnode-rect, .rdm-gnode-text, .rdm-gnode-sub { transition: opacity 0.15s ease; }
+    .rdm-gnode-dim .rdm-gnode-rect, .rdm-gnode-dim .rdm-gnode-text, .rdm-gnode-dim .rdm-gnode-sub { opacity: 0.22; }
+    .rdm-gedge-dim { opacity: 0.06; }
+    .rdm-gedge-hi { opacity: 1; stroke-width: 2.6; }
+    .rdm-gnode-hi .rdm-gnode-rect { stroke-width: 2.75; filter: brightness(1.15); }
     .rdm-graph-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.68rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px; }
     .rdm-graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
     .rdm-graph-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
@@ -16049,7 +16049,6 @@ window.DBP={
                             style="font-size:0.82rem;font-weight:700;color:var(--primary);min-width:24px;text-align:right;">10</span>
                     </div>
                     <div style="display:flex;gap:6px;">
-                        <button class="rdm-gen-btn" onclick="StrategicRoadmap.generate()">⚡ Generate</button>
                         <button class="rdm-reset-btn"
                             onclick="StrategicRoadmap.resetTrack(document.getElementById('rdmTrackSelect').value)"
                             title="Reset manual completions for this track">↺ Reset</button>
@@ -37781,6 +37780,76 @@ document.addEventListener('click', function(e) {
             };
         }
 
+        // ── Custom caption/confirm modals for Memes (replace prompt()/confirm()) ──
+        // Native prompt()/confirm() are silently blocked in some sandboxed
+        // previews / mobile webviews — self-drawn modals work everywhere.
+        function memeCaptionModal(titleText, initialCaption, onSubmit) {
+            const existing = document.getElementById('memeCaptionModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'memeCaptionModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                z-index: 100000; display: flex; align-items: center; justify-content: center;
+                padding: 20px;
+            `;
+            const safeInitial = (initialCaption || '').replace(/"/g, '&quot;');
+            modal.innerHTML = `
+                <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                    max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    border: 1px solid var(--border-color);">
+                    <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">✏️</div>
+                    <h3 style="margin: 0 0 16px 0; font-size: 1.1rem; color: var(--text-dark); text-align: center;">${titleText}</h3>
+                    <input id="memeCaptionInput" type="text" value="${safeInitial}" placeholder="Nhập caption..."
+                        style="width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--border-color);
+                        border-radius:9px; font-size:1rem; margin-bottom:20px; background: var(--bg-light); color: var(--text-dark);" />
+                    <div style="display: flex; gap: 10px;">
+                        <button id="memeCaptionCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                        <button id="memeCaptionOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Lưu caption</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+            document.body.appendChild(modal);
+            const input = document.getElementById('memeCaptionInput');
+            input.focus();
+            input.select();
+            const submit = () => { const val = input.value; modal.remove(); onSubmit(val); };
+            document.getElementById('memeCaptionCancelBtn').onclick = () => modal.remove();
+            document.getElementById('memeCaptionOkBtn').onclick = submit;
+            input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+        }
+
+        function memeConfirmModal(message, onConfirm) {
+            const existing = document.getElementById('memeConfirmModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'memeConfirmModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                z-index: 100000; display: flex; align-items: center; justify-content: center;
+                padding: 20px;
+            `;
+            modal.innerHTML = `
+                <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                    max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    border: 1px solid var(--border-color);">
+                    <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">🗑️</div>
+                    <p style="margin: 0 0 22px 0; color: var(--text-dark); font-size: 0.95rem; text-align: center; line-height: 1.5;">${message}</p>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="memeConfirmCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                        <button id="memeConfirmOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #ef4444, #dc2626); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Xóa</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+            document.body.appendChild(modal);
+            document.getElementById('memeConfirmCancelBtn').onclick = () => modal.remove();
+            document.getElementById('memeConfirmOkBtn').onclick = () => { modal.remove(); onConfirm(); };
+        }
+
         function editCurrentMemeCaption() {
             if (!currentMemeUrl) return;
             const memeIndex = customMemes.findIndex(m => (typeof m === 'string' ? m : m.url) === currentMemeUrl);
@@ -37789,16 +37858,16 @@ document.addEventListener('click', function(e) {
                 return;
             }
             const oldCaption = typeof customMemes[memeIndex] === 'string' ? 'No caption' : customMemes[memeIndex].caption;
-            const newCaption = prompt('✏️ Sửa caption:', oldCaption);
-            if (newCaption === null) return; // user cancelled
-            customMemes[memeIndex].caption = newCaption || 'No caption';
-            localStorage.setItem('customMemes', JSON.stringify(customMemes));
-            // Cập nhật allMemes
-            const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === currentMemeUrl);
-            if (allIndex !== -1) allMemes[allIndex] = customMemes[memeIndex];
-            // Cập nhật caption đang hiện ngay lập tức
-            document.getElementById('memeCaption').innerHTML = renderMemeCaption(newCaption || 'No caption');
-            showNotification('✅ Caption updated!', 'success');
+            memeCaptionModal('✏️ Sửa caption', oldCaption, (newCaption) => {
+                customMemes[memeIndex].caption = newCaption || 'No caption';
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+                // Cập nhật allMemes
+                const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === currentMemeUrl);
+                if (allIndex !== -1) allMemes[allIndex] = customMemes[memeIndex];
+                // Cập nhật caption đang hiện ngay lập tức
+                document.getElementById('memeCaption').innerHTML = renderMemeCaption(newCaption || 'No caption');
+                showNotification('✅ Caption updated!', 'success');
+            });
         }
 
         function addCustomMeme() {
@@ -37824,20 +37893,22 @@ document.addEventListener('click', function(e) {
                 return;
             }
             
-            // ✅ PROMPT FOR CAPTION
-            const caption = prompt('Enter a caption for this meme (optional):', '') || 'No caption';
-            
-            // ✅ LƯU OBJECT THAY VÌ STRING
-            const newMeme = { url, caption, addedAt: new Date().toISOString() };
-            customMemes.push(newMeme);
-            allMemes.push(newMeme);
-            
-            localStorage.setItem('customMemes', JSON.stringify(customMemes));
-            
-            urlInput.value = '';
-            updateCustomMemesCount();
-            showNotification('✅ Meme added successfully!', 'success');
-            getRandomMeme();
+            // ✅ CUSTOM MODAL FOR CAPTION
+            memeCaptionModal('Nhập caption cho meme này (không bắt buộc)', '', (captionInput) => {
+                const caption = captionInput || 'No caption';
+
+                // ✅ LƯU OBJECT THAY VÌ STRING
+                const newMeme = { url, caption, addedAt: new Date().toISOString() };
+                customMemes.push(newMeme);
+                allMemes.push(newMeme);
+
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+
+                urlInput.value = '';
+                updateCustomMemesCount();
+                showNotification('✅ Meme added successfully!', 'success');
+                getRandomMeme();
+            });
         }
 
         function updateCustomMemesCount() {
@@ -37942,53 +38013,52 @@ document.addEventListener('click', function(e) {
         }
 
         function editMemeCaption(url, oldCaption) {
-            const newCaption = prompt('Edit caption:', oldCaption);
-            if (newCaption === null) return; // User cancelled
-            
-            const memeIndex = customMemes.findIndex(m => m.url === url);
-            if (memeIndex !== -1) {
-                customMemes[memeIndex].caption = newCaption || 'No caption';
-                localStorage.setItem('customMemes', JSON.stringify(customMemes));
-                
-                // Update allMemes
-                const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === url);
-                if (allIndex !== -1) {
-                    allMemes[allIndex] = customMemes[memeIndex];
+            memeCaptionModal('Sửa caption', oldCaption, (newCaption) => {
+                const memeIndex = customMemes.findIndex(m => m.url === url);
+                if (memeIndex !== -1) {
+                    customMemes[memeIndex].caption = newCaption || 'No caption';
+                    localStorage.setItem('customMemes', JSON.stringify(customMemes));
+
+                    // Update allMemes
+                    const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === url);
+                    if (allIndex !== -1) {
+                        allMemes[allIndex] = customMemes[memeIndex];
+                    }
+
+                    // Re-render modal
+                    const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
+                    if (modalBody) {
+                        modalBody.innerHTML = renderCustomMemesList();
+                    }
+
+                    showNotification('✅ Caption updated!', 'success');
                 }
-                
-                // Re-render modal
+            });
+        }
+
+        function deleteCustomMeme(url) {
+            memeConfirmModal('Xóa meme này?', () => {
+                customMemes = customMemes.filter(m => m.url !== url);
+                allMemes = allMemes.filter(m => {
+                    const mUrl = typeof m === 'string' ? m : m.url;
+                    return mUrl !== url;
+                });
+
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+                updateCustomMemesCount();
+
                 const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
                 if (modalBody) {
                     modalBody.innerHTML = renderCustomMemesList();
                 }
-                
-                showNotification('✅ Caption updated!', 'success');
-            }
-        }
 
-        function deleteCustomMeme(url) {
-            if (!confirm('🗑️ Delete this meme?')) return;
-            
-            customMemes = customMemes.filter(m => m.url !== url);
-            allMemes = allMemes.filter(m => {
-                const mUrl = typeof m === 'string' ? m : m.url;
-                return mUrl !== url;
+                const headerCount = document.querySelector('#manageMemesModal p');
+                if (headerCount) {
+                    headerCount.textContent = `${customMemes.length} custom memes`;
+                }
+
+                showNotification('Meme deleted', 'info');
             });
-            
-            localStorage.setItem('customMemes', JSON.stringify(customMemes));
-            updateCustomMemesCount();
-            
-            const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
-            if (modalBody) {
-                modalBody.innerHTML = renderCustomMemesList();
-            }
-            
-            const headerCount = document.querySelector('#manageMemesModal p');
-            if (headerCount) {
-                headerCount.textContent = `${customMemes.length} custom memes`;
-            }
-            
-            showNotification('Meme deleted', 'info');
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -40714,6 +40784,13 @@ window.fcRenderTagChips = fcRenderTagChips;
                     return Math.max(0, ...skill.studyHoursKeys.map(k => careerHrs[k] || 0));
                 } catch (e) { return 0; }
             }
+            // Hours still needed for a skill = target hours minus whatever's already
+            // logged against it. Used for every weeks/ETA estimate below, so a skill
+            // you're 100h into out of 160h only counts as 60h of remaining work
+            // instead of the full target (which used to overstate every ETA).
+            function hoursRemaining(track, skill) {
+                return Math.max(0, skill.hours - getRoadmapSkillHours(track, skill));
+            }
             // Writes hours both to localStorage AND to the live `studyHours` object
             // used by the main Study Hours tracker, so a value entered here is never
             // silently overwritten the next time hours are logged through that screen.
@@ -40890,7 +40967,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>`;
                 }
 
-                const totalHrs = sortedSkills.reduce((s, sk) => s + sk.hours, 0);
+                const totalHrs = sortedSkills.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
                 const totalWks = Math.ceil(totalHrs / hpw);
                 const finishDate = new Date();
                 finishDate.setDate(finishDate.getDate() + totalWks * 7);
@@ -40919,7 +40996,7 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                 // ── Focus Now card ──
                 if (focusSkill) {
-                    const fWks = Math.ceil(focusSkill.hours / hpw);
+                    const fWks = Math.ceil(hoursRemaining(track, focusSkill) / hpw);
                     const fTrackable = focusSkill.studyHoursKeys && focusSkill.studyHoursKeys.length > 0;
                     const fHrs = fTrackable ? getRoadmapSkillHours(track, focusSkill) : 0;
                     const fThreshold = Math.round(focusSkill.hours * 0.75 * 10) / 10;
@@ -40962,7 +41039,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const phSkillsAll = curriculum.filter(s => s.phase === ph);
                     const phDone = phSkillsAll.filter(s => completedSet.has(s.id)).length;
                     const phPct = phSkillsAll.length > 0 ? Math.round((phDone / phSkillsAll.length) * 100) : 0;
-                    const phHrsLeft = phSkillsActive.reduce((s, sk) => s + sk.hours, 0);
+                    const phHrsLeft = phSkillsActive.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
                     const phWksLeft = Math.ceil(phHrsLeft / hpw);
 
                     html += `<div class="rdm-phase-block">
@@ -40976,7 +41053,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>`;
 
                     phSkillsActive.forEach(skill => {
-                        const wks = Math.ceil(skill.hours / hpw);
+                        const wks = Math.ceil(hoursRemaining(track, skill) / hpw);
                         const locked = isLocked(skill, completedSet);
                         const isFocus = focusSkill && skill.id === focusSkill.id;
                         const stateClass = locked ? 'rdm-locked' : 'rdm-unlocked';
@@ -41054,10 +41131,50 @@ window.fcRenderTagChips = fcRenderTagChips;
             // SVG node graph, columns = phases, arrows = prereq edges, so the
             // dependency structure that already exists in the data (but was
             // hidden inside the flat list) becomes visible at a glance.
+            // Barycenter row-ordering: reduces line crossings by repeatedly
+            // sorting each column's nodes according to the average row of
+            // the nodes they connect to (prereqs on the forward pass,
+            // dependents on the backward pass) — the standard Sugiyama
+            // heuristic for laying out a DAG without it looking like a
+            // plate of spaghetti.
+            function orderColumnsForGraph(columns) {
+                const posOf = new Map(); // id -> row index within its own column
+                columns.forEach(col => col.skills.forEach((sk, ri) => posOf.set(sk.id, ri)));
+
+                const sortByKey = (skills, keyFn) => {
+                    const withKeys = skills.map((sk, i) => ({ sk, i, key: keyFn(sk) }));
+                    withKeys.sort((a, b) => {
+                        if (a.key === null && b.key === null) return a.i - b.i;
+                        if (a.key === null) return 1;
+                        if (b.key === null) return -1;
+                        return a.key - b.key || a.i - b.i;
+                    });
+                    return withKeys.map(w => w.sk);
+                };
+
+                for (let pass = 0; pass < 4; pass++) {
+                    const forward = pass % 2 === 0;
+                    const order = forward ? columns : [...columns].reverse();
+                    order.forEach(col => {
+                        col.skills = sortByKey(col.skills, sk => {
+                            const neighborIds = forward
+                                ? (sk.prereqs || [])
+                                : columns.flatMap(c => c.skills).filter(other => (other.prereqs || []).includes(sk.id)).map(o => o.id);
+                            const rows = neighborIds.map(id => posOf.get(id)).filter(r => r !== undefined);
+                            if (rows.length === 0) return null;
+                            return rows.reduce((a, b) => a + b, 0) / rows.length;
+                        });
+                        col.skills.forEach((sk, ri) => posOf.set(sk.id, ri));
+                    });
+                }
+                return columns;
+            }
+
             function renderGraphHtml(track, opts) {
                 const curriculum = getCurriculum(track);
                 if (!curriculum) return null;
 
+                const hpw = (opts && opts.hpw) || 10;
                 const completed = getCompleted(track);
                 const completedSet = new Set(completed);
                 const totalCount = curriculum.length;
@@ -41066,25 +41183,57 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const streak = getStreak();
                 const streakHtml = streak.count > 0 ? `<span class="rdm-streak-badge">🔥 ${streak.count} ngày</span>` : '';
 
+                const remainingHrs = curriculum.filter(s => !completedSet.has(s.id)).reduce((s, sk) => s + hoursRemaining(track, sk), 0);
+                const remainingWks = Math.ceil(remainingHrs / hpw);
+                const finishDate = new Date();
+                finishDate.setDate(finishDate.getDate() + remainingWks * 7);
+                const paceHtml = remainingHrs > 0
+                    ? `<div class="rdm-stat-row">${remainingHrs}h left · ~${remainingWks}wk @ ${hpw}h/wk</div>
+                       <div class="rdm-stat-row rdm-finish-date">🏁 Est. finish: <strong>${fmtDate(finishDate)}</strong></div>`
+                    : '';
+
                 const phaseList = getPhaseList(track, curriculum);
-                const nodeW = 168, nodeH = 50, colGap = 70, rowGap = 14, topPad = 30, sidePad = 12;
+                const nodeW = 168, nodeH = 50, colGap = 70, rowGap = 14, sidePad = 12;
                 const colWidth = nodeW + colGap;
 
-                const idToPos = new Map();
-                const columns = [];
+                // Build columns in original order first, then re-order rows
+                // within each column to minimize edge crossings.
+                let columns = [];
                 let maxRows = 0;
+                const colIndexOf = new Map(); // skill id -> column index (for skip-edge detection)
                 phaseList.forEach((phInfo, ci) => {
                     const skills = curriculum.filter(s => s.phase === phInfo.num);
-                    const x = sidePad + ci * colWidth;
-                    columns.push({ phInfo, skills, x });
-                    maxRows = Math.max(maxRows, skills.length);
-                    skills.forEach((sk, ri) => {
+                    skills.forEach(sk => colIndexOf.set(sk.id, ci));
+                    columns.push({ phInfo, skills, x: sidePad + ci * colWidth });
+                });
+                if (columns.length === 0) return null;
+                columns = orderColumnsForGraph(columns);
+
+                // Separate normal (adjacent-column) edges from "skip" edges
+                // that jump 2+ phases — those get routed on their own lanes
+                // above the grid instead of slicing straight through
+                // unrelated nodes in the columns between them.
+                const skipEdges = [];
+                curriculum.forEach(sk => {
+                    (sk.prereqs || []).forEach(pid => {
+                        if (!colIndexOf.has(pid) || !colIndexOf.has(sk.id)) return;
+                        if (colIndexOf.get(sk.id) - colIndexOf.get(pid) > 1) skipEdges.push({ from: pid, to: sk.id });
+                    });
+                });
+                const laneOf = new Map(); // "from|to" -> lane index
+                skipEdges.forEach((e, i) => laneOf.set(e.from + '|' + e.to, i));
+                const skipLaneGap = 9;
+                const topPad = 30 + (skipEdges.length ? skipEdges.length * skipLaneGap + 6 : 0);
+
+                const idToPos = new Map();
+                columns.forEach(col => {
+                    maxRows = Math.max(maxRows, col.skills.length);
+                    col.skills.forEach((sk, ri) => {
                         const y = topPad + ri * (nodeH + rowGap);
-                        idToPos.set(sk.id, { x, y, cx: x + nodeW / 2, cy: y + nodeH / 2 });
+                        idToPos.set(sk.id, { x: col.x, y, cx: col.x + nodeW / 2, cy: y + nodeH / 2 });
                     });
                 });
 
-                if (columns.length === 0) return null;
                 const svgWidth = sidePad * 2 + columns.length * colWidth - colGap;
                 const svgHeight = topPad + Math.max(1, maxRows) * (nodeH + rowGap) + 6;
 
@@ -41098,17 +41247,26 @@ window.fcRenderTagChips = fcRenderTagChips;
                         const done = completedSet.has(sk.id);
                         const preDone = completedSet.has(pid);
                         const stroke = done ? '#10b981' : (preDone ? '#3b82f6' : '#cbd5e1');
-                        const x1 = from.x + nodeW, y1 = from.cy;
-                        const x2 = to.x, y2 = to.cy;
-                        const mx = (x1 + x2) / 2;
-                        edgesSvg += `<path class="rdm-gedge" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="${stroke}" marker-end="url(#rdmArrow-${track})"></path>`;
+                        const laneKey = pid + '|' + sk.id;
+                        if (laneOf.has(laneKey)) {
+                            // Skip edge: route up into a dedicated dashed lane above the
+                            // grid, across, then down — never crosses through other nodes.
+                            const laneY = 22 + laneOf.get(laneKey) * skipLaneGap;
+                            const x1 = from.cx, x2 = to.cx;
+                            edgesSvg += `<path class="rdm-gedge rdm-gedge-skip" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="M${x1},${from.y} V${laneY} H${x2} V${to.y}" stroke="${stroke}" marker-end="url(#rdmArrow-${track})"></path>`;
+                        } else {
+                            const x1 = from.x + nodeW, y1 = from.cy;
+                            const x2 = to.x, y2 = to.cy;
+                            const mx = (x1 + x2) / 2;
+                            edgesSvg += `<path class="rdm-gedge" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="${stroke}" marker-end="url(#rdmArrow-${track})"></path>`;
+                        }
                     });
                 });
 
                 let nodesSvg = '';
                 columns.forEach(col => {
                     const shortLabel = 'P' + col.phInfo.num + ' — ' + col.phInfo.label.replace(/^Phase\s*\d+\s*—?\s*/i, '');
-                    nodesSvg += `<text class="rdm-gphase-label" x="${col.x + nodeW / 2}" y="16" fill="${col.phInfo.color}">${escapeHtml(shortLabel.length > 26 ? shortLabel.slice(0,25)+'…' : shortLabel)}</text>`;
+                    nodesSvg += `<text class="rdm-gphase-label" x="${col.x + nodeW / 2}" y="${Math.max(16, topPad - 14)}" fill="${col.phInfo.color}">${escapeHtml(shortLabel.length > 26 ? shortLabel.slice(0,25)+'…' : shortLabel)}</text>`;
                     col.skills.forEach(sk => {
                         const pos = idToPos.get(sk.id);
                         const done = completedSet.has(sk.id);
@@ -41124,10 +41282,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                             ? `StrategicRoadmap.notifyLocked('${track}','${sk.id}')`
                             : `StrategicRoadmap.markDone('${track}','${sk.id}')`;
                         nodesSvg += `
-                            <g onclick="${handler}">
+                            <g data-skill="${sk.id}" onclick="${handler}" onmouseenter="StrategicRoadmap.hoverGraphNode(this,'${sk.id}',true)" onmouseleave="StrategicRoadmap.hoverGraphNode(this,'${sk.id}',false)">
                                 <rect class="rdm-gnode-rect" x="${pos.x}" y="${pos.y}" width="${nodeW}" height="${nodeH}" rx="9" fill="${fill}" stroke="${stroke}"></rect>
                                 <text class="rdm-gnode-text" x="${pos.x + 9}" y="${pos.y + 20}" fill="${textColor}">${icon}${escapeHtml(label)}</text>
-                                <text class="rdm-gnode-sub" x="${pos.x + 9}" y="${pos.y + 36}" fill="${textColor}">${sk.hours}h · ${starRating(sk.imp)}</text>
+                                <text class="rdm-gnode-sub" x="${pos.x + 9}" y="${pos.y + 36}" fill="${textColor}">${sk.hours}h · ~${Math.ceil(hoursRemaining(track, sk) / hpw)}wk · ${starRating(sk.imp)}</text>
                             </g>`;
                     });
                 });
@@ -41148,7 +41306,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <div class="rdm-pct-ring" style="--pct:${pctComplete}"><span class="rdm-pct-num">${pctComplete}%</span></div>
                         <div class="rdm-summary-text">
                             <div class="rdm-stat-row"><strong>${doneCount}</strong> / ${totalCount} skills mastered</div>
-                            <div class="rdm-stat-row">🌳 Kéo ngang để xem toàn bộ cây kỹ năng</div>
+                            ${paceHtml}
                         </div>
                         ${streakHtml}
                     </div>
@@ -41178,6 +41336,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const focusSkill = unlockedNow[0] || sorted[0] || null;
                 const phaseList = getPhaseList(track, curriculum);
                 const meta = (typeof TRACK_META !== 'undefined' && TRACK_META[track]) || { icon: '📘', label: track };
+                const remainingHrs = activeSkills.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
+                const remainingWks = Math.ceil(remainingHrs / hpw);
+                const finishDate = new Date();
+                finishDate.setDate(finishDate.getDate() + remainingWks * 7);
 
                 let phasesHtml = '';
                 phaseList.forEach(phInfo => {
@@ -41202,6 +41364,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <div class="rdm-compare-head">${meta.icon} ${escapeHtml(meta.label)}</div>
                         <div class="rdm-compare-ring" style="background:conic-gradient(var(--primary) ${pctComplete}%, var(--border-color) 0)"><span>${pctComplete}%</span></div>
                         <div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">${doneCount}/${totalCount} skills</div>
+                        ${remainingHrs > 0 ? `<div style="text-align:center;font-size:0.68rem;color:var(--text-muted);margin-bottom:8px;">🏁 ~${remainingWks}wk · ${fmtDate(finishDate)}</div>` : ''}
                         ${phasesHtml}
                         ${focusHtml}
                     </div>`;
@@ -41256,6 +41419,87 @@ window.fcRenderTagChips = fcRenderTagChips;
                 }
             }
 
+            // ── Custom confirm/hours-input modals (replace confirm()/prompt()) ──
+            // Native confirm()/prompt() are silently blocked in some sandboxed
+            // iframe previews / mobile webviews, so the roadmap uses self-drawn
+            // modals instead — same visual language as the rest of the app.
+            function rdmConfirmModal(message, onConfirm, opts) {
+                opts = opts || {};
+                const existing = document.getElementById('rdmConfirmModal');
+                if (existing) existing.remove();
+
+                const modal = document.createElement('div');
+                modal.id = 'rdmConfirmModal';
+                modal.style.cssText = `
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                    z-index: 99999; display: flex; align-items: center; justify-content: center;
+                    padding: 20px;
+                `;
+                const icon = opts.icon || '❓';
+                const title = opts.title || 'Xác nhận';
+                const confirmLabel = opts.confirmLabel || 'Xác nhận';
+                const confirmColor = opts.danger
+                    ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                    : 'linear-gradient(135deg, #6366f1, #4f46e5)';
+                modal.innerHTML = `
+                    <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                        max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                        border: 1px solid var(--border-color);">
+                        <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">${icon}</div>
+                        <h3 style="margin: 0 0 10px 0; font-size: 1.1rem; color: var(--text-dark); text-align: center;">${title}</h3>
+                        <p style="margin: 0 0 22px 0; color: var(--text-muted); font-size: 0.9rem; text-align: center; line-height: 1.5; white-space: pre-line;">${message}</p>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="rdmConfirmCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                            <button id="rdmConfirmOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background:${confirmColor}; color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">${confirmLabel}</button>
+                        </div>
+                    </div>
+                `;
+                modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+                document.body.appendChild(modal);
+                document.getElementById('rdmConfirmCancelBtn').onclick = () => modal.remove();
+                document.getElementById('rdmConfirmOkBtn').onclick = () => { modal.remove(); onConfirm(); };
+            }
+
+            function rdmHoursModal(skillName, currentHours, threshold, targetHours, onSubmit) {
+                const existing = document.getElementById('rdmHoursModal');
+                if (existing) existing.remove();
+
+                const modal = document.createElement('div');
+                modal.id = 'rdmHoursModal';
+                modal.style.cssText = `
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                    z-index: 99999; display: flex; align-items: center; justify-content: center;
+                    padding: 20px;
+                `;
+                modal.innerHTML = `
+                    <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                        max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                        border: 1px solid var(--border-color);">
+                        <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">⏱️</div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 1.05rem; color: var(--text-dark); text-align:center;">${skillName}</h3>
+                        <p style="margin: 0 0 18px 0; color: var(--text-muted); font-size: 0.85rem; text-align:center; line-height:1.5;">
+                            Cần tối thiểu <strong style="color: var(--text-dark);">${threshold}h</strong> (75% của mục tiêu ${targetHours}h) để tính hoàn thành.
+                        </p>
+                        <input id="rdmHoursInput" type="number" step="0.1" min="0" value="${currentHours > 0 ? currentHours : ''}"
+                            placeholder="Số giờ đã học"
+                            style="width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--border-color);
+                            border-radius:9px; font-size:1rem; margin-bottom:20px; background: var(--bg-light); color: var(--text-dark);" />
+                        <div style="display:flex; gap:10px;">
+                            <button id="rdmHoursCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                            <button id="rdmHoursOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Lưu giờ học</button>
+                        </div>
+                    </div>
+                `;
+                modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+                document.body.appendChild(modal);
+                const input = document.getElementById('rdmHoursInput');
+                input.focus();
+                const submit = () => { const val = input.value; modal.remove(); onSubmit(val); };
+                document.getElementById('rdmHoursCancelBtn').onclick = () => modal.remove();
+                document.getElementById('rdmHoursOkBtn').onclick = submit;
+                input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+            }
+
             return {
                 generate() {
                     const track = document.getElementById('rdmTrackSelect')?.value;
@@ -41294,6 +41538,38 @@ window.fcRenderTagChips = fcRenderTagChips;
                 setCompareTrack(t) {
                     setCompareTrackStorage(t);
                     this.generate();
+                },
+                // Hovering a node in Graph view: highlight only its direct
+                // prereqs + direct dependents (and the edges between them),
+                // dim everything else so the relevant chain pops out instead
+                // of getting lost in the full mesh of arrows.
+                hoverGraphNode(el, skillId, entering) {
+                    const svg = el.closest('svg');
+                    if (!svg) return;
+                    const nodes = svg.querySelectorAll('[data-skill]');
+                    const edges = svg.querySelectorAll('[data-edge]');
+                    if (!entering) {
+                        nodes.forEach(n => n.classList.remove('rdm-gnode-dim', 'rdm-gnode-hi'));
+                        edges.forEach(e => e.classList.remove('rdm-gedge-dim', 'rdm-gedge-hi'));
+                        return;
+                    }
+                    const connected = new Set([skillId]);
+                    edges.forEach(e => {
+                        const from = e.getAttribute('data-from'), to = e.getAttribute('data-to');
+                        if (from === skillId) connected.add(to);
+                        if (to === skillId) connected.add(from);
+                    });
+                    nodes.forEach(n => {
+                        const id = n.getAttribute('data-skill');
+                        n.classList.toggle('rdm-gnode-hi', connected.has(id));
+                        n.classList.toggle('rdm-gnode-dim', !connected.has(id));
+                    });
+                    edges.forEach(e => {
+                        const from = e.getAttribute('data-from'), to = e.getAttribute('data-to');
+                        const rel = from === skillId || to === skillId;
+                        e.classList.toggle('rdm-gedge-hi', rel);
+                        e.classList.toggle('rdm-gedge-dim', !rel);
+                    });
                 },
                 // Clicking a locked node in Graph view: explain what's blocking it.
                 notifyLocked(track, skillId) {
@@ -41382,51 +41658,59 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const trackable = skill.studyHoursKeys && skill.studyHoursKeys.length > 0;
 
                     if (!trackable) {
-                        if (!confirm(`Confirm that you have genuinely completed:\n"${skill.name}"?\n\nThis skill has no hours data to auto-verify, so only mark it when you're sure.`)) return;
-                        toggleManual(track, skillId);
-                        render(track);
-                        flashBadge();
-                        bumpStreak();
-                        if (typeof showNotification === 'function')
-                            showNotification('✅ Skill marked complete — roadmap updated!', 'success');
-                        checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
+                        rdmConfirmModal(
+                            `Xác nhận bạn đã thực sự hoàn thành:\n"${skill.name}"?\n\nSkill này không có dữ liệu giờ học để tự xác minh, chỉ tick khi bạn chắc chắn.`,
+                            () => {
+                                toggleManual(track, skillId);
+                                render(track);
+                                flashBadge();
+                                bumpStreak();
+                                if (typeof showNotification === 'function')
+                                    showNotification('✅ Skill marked complete — roadmap updated!', 'success');
+                                checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
+                            },
+                            { icon: '✅', title: 'Xác nhận hoàn thành', confirmLabel: 'Đã hoàn thành' }
+                        );
                         return;
                     }
 
                     const current = getRoadmapSkillHours(track, skill);
                     const threshold = Math.round(skill.hours * 0.75 * 10) / 10;
-                    const input = prompt(
-                        `How many hours have you studied for:\n"${skill.name}"?\n\nNeed at least ${threshold}h (75% of the ${skill.hours}h target) to be counted as complete.`,
-                        current > 0 ? String(current) : ''
-                    );
-                    if (input === null) return; // user cancelled
-                    let hrs = parseFloat(input.replace(',', '.'));
-                    if (isNaN(hrs) || hrs < 0) {
-                        if (typeof showNotification === 'function')
-                            showNotification('⚠️ Please enter a valid number of hours.', 'error');
-                        return;
-                    }
-                    if (hrs > skill.hours * 2) hrs = skill.hours * 2; // sanity clamp against fat-finger entries
+                    rdmHoursModal(skill.name, current, threshold, skill.hours, (input) => {
+                        if (input === null || input === '') return; // user cancelled / left blank
+                        let hrs = parseFloat(String(input).replace(',', '.'));
+                        if (isNaN(hrs) || hrs < 0) {
+                            if (typeof showNotification === 'function')
+                                showNotification('⚠️ Please enter a valid number of hours.', 'error');
+                            return;
+                        }
+                        if (hrs > skill.hours * 2) hrs = skill.hours * 2; // sanity clamp against fat-finger entries
 
-                    setRoadmapSkillHours(track, skill, hrs);
-                    render(track);
+                        setRoadmapSkillHours(track, skill, hrs);
+                        render(track);
 
-                    if (hrs >= threshold) {
-                        flashBadge();
-                        bumpStreak();
-                        if (typeof showNotification === 'function')
-                            showNotification(`🎉 Reached ${hrs}h (≥${threshold}h) — "${skill.name}" is now complete!`, 'achievement');
-                        checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
-                    } else {
-                        const remaining = Math.max(0, threshold - hrs).toFixed(1);
-                        if (typeof showNotification === 'function')
-                            showNotification(`📈 Logged ${hrs}h / ${skill.hours}h. Need ${remaining}h more to complete.`, 'info');
-                    }
+                        if (hrs >= threshold) {
+                            flashBadge();
+                            bumpStreak();
+                            if (typeof showNotification === 'function')
+                                showNotification(`🎉 Reached ${hrs}h (≥${threshold}h) — "${skill.name}" is now complete!`, 'achievement');
+                            checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
+                        } else {
+                            const remaining = Math.max(0, threshold - hrs).toFixed(1);
+                            if (typeof showNotification === 'function')
+                                showNotification(`📈 Logged ${hrs}h / ${skill.hours}h. Need ${remaining}h more to complete.`, 'info');
+                        }
+                    });
                 },
                 resetTrack(track) {
-                    if (!confirm('Reset manual roadmap completions for this track? (Auto-detected completions from study hours remain.)')) return;
-                    localStorage.removeItem(storageKey(track));
-                    render(track);
+                    rdmConfirmModal(
+                        'Xóa các completion đã tick tay cho track này?\n(Completion tự động phát hiện từ giờ học vẫn được giữ nguyên.)',
+                        () => {
+                            localStorage.removeItem(storageKey(track));
+                            render(track);
+                        },
+                        { icon: '🔄', title: 'Reset track', confirmLabel: 'Reset', danger: true }
+                    );
                 },
                 // Sync track selector with the main app's currentCareer value
                 syncCareer() {
