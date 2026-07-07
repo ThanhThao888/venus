@@ -10623,7 +10623,13 @@ const CAL = (() => {
 
   /* ── Helpers ── */
   function dateStr(d) {
-    return d.toISOString().split('T')[0];
+    // Use LOCAL date components, not UTC (toISOString shifts by the
+    // timezone offset and silently rolls early-morning times back to
+    // the previous day for UTC+ zones like Vietnam).
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
   function fmt(d, opts) {
     return d.toLocaleDateString('vi-VN', opts);
@@ -10679,16 +10685,24 @@ const CAL = (() => {
         if (!s.start || !s.end) return;
         const startD = new Date(s.start);
         const endD   = new Date(s.end);
-        const startDate = startD.toISOString().split('T')[0];
-        const endDate   = endD.toISOString().split('T')[0];
+        // Use LOCAL date, not UTC — dateStr() already does this correctly.
+        const startDate = dateStr(startD);
+        const endDate   = dateStr(endD);
         if (startDate !== dateISO && endDate !== dateISO) return;
 
-        // Handle cross-midnight
+        // Handle cross-midnight (session started the day before dateISO
+        // and spills into dateISO, e.g. slept 22:00 → 04:00)
         let startH, dur;
-        if (startDate === dateISO) {
+        if (startDate === dateISO && endDate === dateISO) {
+          // Whole session falls within this single day — use its real times.
           startH = startD.getHours() + startD.getMinutes() / 60;
-          dur = Math.min(s.duration, 24 - startH);
+          dur = (endD - startD) / 3600000;
+        } else if (startDate === dateISO) {
+          // Started today, spills into tomorrow — show from start until midnight.
+          startH = startD.getHours() + startD.getMinutes() / 60;
+          dur = 24 - startH;
         } else {
+          // Started yesterday, ends today — show from midnight until end time.
           startH = 0;
           dur = endD.getHours() + endD.getMinutes() / 60;
         }
@@ -11324,6 +11338,16 @@ const CAL = (() => {
 })();
 
 /* ── Global helpers ── */
+// Local (not UTC) YYYY-MM-DD — use this instead of toISOString().split('T')[0]
+// whenever comparing/keying dates by the user's own calendar day, otherwise
+// times before the timezone offset (e.g. 00:00-06:59 in UTC+7) get bucketed
+// into the previous day.
+function toLocalDateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
 function openCalendarModal()  { CAL.open(); }
 function closeCalendarModal() { CAL.close(); }
 
@@ -33269,11 +33293,11 @@ function getLast7DaysData(sleepSessions, studyData) {
     for (let i = 6; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = toLocalDateStr(date);
         
         // Find sleep for this day
         const daySleep = sleepSessions.filter(s => {
-            const sleepDate = new Date(s.start).toISOString().split('T')[0];
+            const sleepDate = toLocalDateStr(new Date(s.start));
             return sleepDate === dateStr;
         });
         
@@ -33659,14 +33683,14 @@ function analyzeWeeklyPatterns(studyData = {}, sleepData = []) {
         for (let i = 0; i < 14; i++) {
             const date = new Date(today);
             date.setDate(date.getDate() - i);
-            const dateStr = date.toISOString().split('T')[0];
+            const dateStr = toLocalDateStr(date);
             
             // Lấy giờ học
             const studyHours = parseFloat(studyData[dateStr] || 0);
             
             // Lấy giờ ngủ
             const daySleep = sleepData.filter(s => {
-                const sleepDate = new Date(s.start).toISOString().split('T')[0];
+                const sleepDate = toLocalDateStr(new Date(s.start));
                 return sleepDate === dateStr;
             });
             const sleepHours = daySleep.reduce((sum, s) => sum + s.duration, 0);
@@ -33830,7 +33854,7 @@ function calculateSleepDebtWithInterest(sleepSessions = []) {
         sorted.forEach((session, index) => {
             const deficit = IDEAL_SLEEP - session.duration;
             const date = new Date(session.start);
-            const dateStr = date.toISOString().split('T')[0];
+            const dateStr = toLocalDateStr(date);
             
             if (deficit > 0) {
                 // Accumulate debt with compound interest
