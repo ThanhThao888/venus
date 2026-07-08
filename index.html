@@ -16119,6 +16119,18 @@ window.DBP={
                 </select>
             </div>
 
+            <!-- Category Filter + Group By Row (Group 5, item 19-20) -->
+            <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
+                <select id="resourceCategoryFilter" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 130px;">
+                    <option value="all">All Categories</option>
+                </select>
+                <select id="resourceGroupBy" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 130px;">
+                    <option value="none">No Grouping</option>
+                    <option value="domain">🗂️ Group by Domain</option>
+                    <option value="category">🏷️ Group by Category</option>
+                </select>
+            </div>
+
             <!-- Status Filter + Sort Row -->
             <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
                 <select id="resourceStatusFilter" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 120px;">
@@ -40560,10 +40572,26 @@ window.fcRenderTagChips = fcRenderTagChips;
         // Renders the <datalist> options used by the Category input in the Add/Edit modal
         function renderResourceCategoryDatalist() {
             const list = document.getElementById('resourceCategoryList');
-            if (!list) return;
-            list.innerHTML = resourceCategories
-                .map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`)
-                .join('');
+            if (list) {
+                list.innerHTML = resourceCategories
+                    .map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`)
+                    .join('');
+            }
+            renderResourceCategoryFilterOptions();
+        }
+
+        // Renders the options for the Category filter dropdown (Group 5, item 19), preserving current selection
+        function renderResourceCategoryFilterOptions() {
+            const select = document.getElementById('resourceCategoryFilter');
+            if (!select) return;
+            const current = select.value || 'all';
+            select.innerHTML = '<option value="all">All Categories</option>' +
+                resourceCategories
+                    .map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`)
+                    .join('');
+            // Restore previous selection if it still exists in the list
+            const stillExists = Array.from(select.options).some(o => o.value === current);
+            select.value = stillExists ? current : 'all';
         }
 
         // ===== RESOURCE SCHEMA =====
@@ -40593,7 +40621,17 @@ window.fcRenderTagChips = fcRenderTagChips;
         };
 
         // ===== RENDER RESOURCE CARDS =====
-        function renderResourceCards(resources = resourceLibrary, isQueue = false) {
+        // Labels used for group section headers when groupBy = 'domain' (Group 5, item 20)
+        const RESOURCE_DOMAIN_GROUP_LABELS = {
+            'career-finance': '💼 Career & Finance',
+            'language-learning': '🗣️ Language Learning',
+            'tech-tools': '💻 Tech & Tools',
+            'personal-growth': '🌱 Personal Growth',
+            'entertainment': '🎬 Entertainment',
+            'other': '📦 Other'
+        };
+
+        function renderResourceCards(resources = resourceLibrary, isQueue = false, groupBy = 'none') {
             const container = document.getElementById('resourceCardsContainer');
             const countElement = document.getElementById('resourceCount');
             updateResourceDashboard();
@@ -40608,10 +40646,53 @@ window.fcRenderTagChips = fcRenderTagChips;
                     : '<div style="text-align: center; color: var(--text-muted); padding: 20px;">No resources yet. Add your first one!</div>';
                 return;
             }
-            
-            container.innerHTML = resources
-                .map(resource => renderResourceCard(resource, isQueue))
-                .join('');
+
+            // No grouping (or in queue mode, which has its own manual ordering): flat list as before
+            if (isQueue || groupBy === 'none' || !groupBy) {
+                container.innerHTML = resources
+                    .map(resource => renderResourceCard(resource, isQueue))
+                    .join('');
+                return;
+            }
+
+            // Grouped rendering: bucket resources by domain or category, preserving the existing sort order within each group
+            const groups = new Map(); // key -> array of resources
+            resources.forEach(resource => {
+                let key;
+                if (groupBy === 'domain') {
+                    key = resource.domain || '__none__';
+                } else { // category
+                    key = resource.category || '__none__';
+                }
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(resource);
+            });
+
+            // Sort group keys alphabetically by label, with "no domain/category" pushed to the end
+            const keys = Array.from(groups.keys()).sort((a, b) => {
+                if (a === '__none__') return 1;
+                if (b === '__none__') return -1;
+                const labelA = groupBy === 'domain' ? (RESOURCE_DOMAIN_GROUP_LABELS[a] || a) : a;
+                const labelB = groupBy === 'domain' ? (RESOURCE_DOMAIN_GROUP_LABELS[b] || b) : b;
+                return labelA.localeCompare(labelB);
+            });
+
+            container.innerHTML = keys.map(key => {
+                const groupResources = groups.get(key);
+                let label;
+                if (key === '__none__') {
+                    label = groupBy === 'domain' ? '📦 No Domain' : '🏷️ No Category';
+                } else if (groupBy === 'domain') {
+                    label = RESOURCE_DOMAIN_GROUP_LABELS[key] || key;
+                } else {
+                    label = `🏷️ ${key}`;
+                }
+                const header = `<div style="display:flex; align-items:center; gap:8px; margin: 14px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border-color);">
+                    <span style="font-weight:600; font-size:0.85rem; color: var(--text-dark);">${label}</span>
+                    <span style="font-size:0.75rem; color: var(--text-muted);">(${groupResources.length})</span>
+                </div>`;
+                return header + groupResources.map(resource => renderResourceCard(resource, isQueue)).join('');
+            }).join('');
         }
 
         // ===== ADD RESOURCE FRICTION REDUCERS (Group 3, item 10-12) =====
@@ -41978,8 +42059,10 @@ window.fcRenderTagChips = fcRenderTagChips;
             const filterType = document.getElementById('resourceTypeFilter').value;
             const filterDomain = document.getElementById('resourceDomainFilter')?.value || 'all';
             const filterPurpose = document.getElementById('resourcePurposeFilter')?.value || 'all';
+            const filterCategory = document.getElementById('resourceCategoryFilter')?.value || 'all';
             const filterStatus = document.getElementById('resourceStatusFilter')?.value || 'all';
             const sortBy = document.getElementById('resourceSortBy')?.value || 'newest';
+            const groupBy = document.getElementById('resourceGroupBy')?.value || 'none';
             const searchQuery = document.getElementById('resourceSearch').value.toLowerCase().trim();
             
             let filtered = [...resourceLibrary];
@@ -41997,6 +42080,11 @@ window.fcRenderTagChips = fcRenderTagChips;
             // Filter by purpose
             if (filterPurpose !== 'all') {
                 filtered = filtered.filter(r => r.purpose === filterPurpose);
+            }
+
+            // Filter by category
+            if (filterCategory !== 'all') {
+                filtered = filtered.filter(r => r.category === filterCategory);
             }
 
             // Filter by status
@@ -42041,13 +42129,14 @@ window.fcRenderTagChips = fcRenderTagChips;
             // Favorites always float to the top, regardless of sort mode (stable sort preserves order within each group)
             filtered.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
             
-            renderResourceCards(filtered);
+            renderResourceCards(filtered, false, groupBy);
             
             // Update filter stats notification
             const statsText = [];
             if (filterType !== 'all') statsText.push(`Type: ${filterType}`);
             if (filterDomain !== 'all') statsText.push(`Domain: ${filterDomain}`);
             if (filterPurpose !== 'all') statsText.push(`Purpose: ${filterPurpose}`);
+            if (filterCategory !== 'all') statsText.push(`Category: ${filterCategory}`);
             if (filterStatus !== 'all') statsText.push(`Status: ${filterStatus}`);
             if (searchQuery) statsText.push(`"${searchQuery}"`);
             if (activeTagFilters.size > 0) statsText.push(`Tags: ${activeTagFilters.size}`);
@@ -42067,6 +42156,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             renderResourceCards();
             renderTagCloud();
             renderActiveFilters();
+            renderResourceCategoryFilterOptions();
         });
 
         // ===== END RESOURCE LIBRARY SYSTEM ===== //
