@@ -16065,12 +16065,23 @@ window.DBP={
                 <span>Show Statistics</span>
                 <span style="font-size: 0.8rem;">▼</span>
             </button>
+
+            <!-- Toggle Listening Queue Button -->
+            <button onclick="toggleListeningQueueMode()" id="toggleQueueBtn" 
+                    style="width: 100%; margin-bottom: 12px; padding: 8px; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-dark); font-size: 0.9rem;">
+                <span>🎧</span>
+                <span id="toggleQueueBtnText">Show Listening Queue</span>
+            </button>
+            <div id="queueHint" style="display:none; font-size: 0.78rem; color: var(--text-muted); margin: -6px 0 12px; text-align:center;">
+                To-read Audio/Video/Podcast, sorted by your order · drag ⠿ to reorder
+            </div>
             
             <!-- Filters & Add Button -->
             <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
                 <select id="resourceTypeFilter" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 110px;">
                     <option value="all">All Types</option>
                     <option value="video">🎥 Video</option>
+                    <option value="audio">🎧 Audio/Listening</option>
                     <option value="journal">📰 Journal/Article</option>
                     <option value="research">📑 Research Paper</option>
                     <option value="data">📊 Data Source</option>
@@ -16083,6 +16094,29 @@ window.DBP={
                 <button class="add-analysis-btn" onclick="openResourceModal()">
                     <i class="fas fa-plus"></i> Add
                 </button>
+            </div>
+
+            <!-- Domain + Purpose Filter Row -->
+            <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
+                <select id="resourceDomainFilter" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 130px;">
+                    <option value="all">All Domains</option>
+                    <option value="career-finance">💼 Career & Finance</option>
+                    <option value="language-learning">🗣️ Language Learning</option>
+                    <option value="tech-tools">💻 Tech & Tools</option>
+                    <option value="personal-growth">🌱 Personal Growth</option>
+                    <option value="entertainment">🎬 Entertainment</option>
+                    <option value="other">📦 Other</option>
+                </select>
+                <select id="resourcePurposeFilter" onchange="filterResources()" class="filter-select" style="flex:1; min-width: 130px;">
+                    <option value="all">All Purposes</option>
+                    <option value="study">📚 Study</option>
+                    <option value="listening-practice">👂 Listening Practice</option>
+                    <option value="reference">🔖 Reference</option>
+                    <option value="inspiration">💡 Inspiration</option>
+                    <option value="entertainment">🎉 Entertainment</option>
+                    <option value="work">🧰 Work</option>
+                    <option value="other">📌 Other</option>
+                </select>
             </div>
 
             <!-- Status Filter + Sort Row -->
@@ -16106,6 +16140,34 @@ window.DBP={
             <input type="text" id="resourceSearch" placeholder="🔍 Search resources..." 
                 onkeyup="searchResources()" 
                 style="width: 100%; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.9rem;">
+
+            <!-- Forgotten Resources Reminder -->
+            <div id="forgottenResourceBanner" style="display:none; margin-bottom: 12px; padding: 10px 12px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 0.82rem; color: #f59e0b;">
+                <!-- Filled by renderForgottenResourceBanner() -->
+            </div>
+
+            <!-- Bulk Actions Row -->
+            <div style="display:flex; gap:8px; margin-bottom: 10px; flex-wrap: wrap; align-items:center;">
+                <button onclick="toggleBulkSelectMode()" id="toggleBulkSelectBtn" class="btn-secondary" style="flex:1; min-width:110px; padding: 6px 10px; font-size: 0.8rem;">☑️ Select</button>
+                <button onclick="exportResourceLibrary()" class="btn-secondary" style="flex:1; min-width:110px; padding: 6px 10px; font-size: 0.8rem;">⬇️ Export</button>
+                <button onclick="document.getElementById('resourceImportInput').click()" class="btn-secondary" style="flex:1; min-width:110px; padding: 6px 10px; font-size: 0.8rem;">⬆️ Import</button>
+                <input type="file" id="resourceImportInput" accept="application/json" style="display:none;" onchange="importResourceLibrary(this.files[0])">
+            </div>
+
+            <!-- Bulk Actions Toolbar (shown only in select mode with items selected) -->
+            <div id="bulkActionsToolbar" style="display:none; margin-bottom: 12px; padding: 10px; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 8px;">
+                <div style="font-size: 0.8rem; color: var(--text-dark); margin-bottom: 8px;"><span id="bulkSelectedCount">0</span> selected</div>
+                <div style="display:flex; gap: 6px; flex-wrap: wrap;">
+                    <select id="bulkStatusSelect" class="filter-select" style="flex:1; min-width: 110px;">
+                        <option value="to-read">📋 To Read</option>
+                        <option value="reading">📖 Reading</option>
+                        <option value="completed">✅ Completed</option>
+                    </select>
+                    <button onclick="applyBulkStatus()" class="btn-secondary" style="padding: 6px 10px; font-size: 0.78rem;">Set Status</button>
+                    <button onclick="applyBulkDelete()" class="btn-secondary" style="padding: 6px 10px; font-size: 0.78rem; color:#ef4444;">🗑️ Delete Selected</button>
+                    <button onclick="clearBulkSelection()" class="btn-secondary" style="padding: 6px 10px; font-size: 0.78rem;">Cancel</button>
+                </div>
+            </div>
             
             <!-- Counter -->
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
@@ -16135,15 +16197,16 @@ window.DBP={
 
                         <div class="form-group" style="margin-bottom: 16px;">
                             <label for="resourceTitle" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Title *</label>
-                            <input type="text" id="resourceTitle" required placeholder="e.g., Ray Dalio on Economic Cycles" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                            <input type="text" id="resourceTitle" required placeholder="e.g., Ray Dalio on Economic Cycles" oninput="resourceTitleTouched = true;" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                             <div class="form-group">
-                                <label for="resourceType" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Type *</label>
-                                <select id="resourceType" required style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                <label for="resourceType" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Type * <span style="font-weight:400; color: var(--text-muted); font-size:0.78rem;">(format)</span></label>
+                                <select id="resourceType" required onchange="resourceTypeTouched = true;" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
                                     <option value="">Select Type</option>
                                     <option value="video">🎥 Video</option>
+                                    <option value="audio">🎧 Audio/Listening</option>
                                     <option value="journal">📰 Journal/Article</option>
                                     <option value="research">📑 Research Paper</option>
                                     <option value="data">📊 Data Source</option>
@@ -16155,31 +16218,66 @@ window.DBP={
                             </div>
                             
                             <div class="form-group">
-                                <label for="resourceCategory" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Category</label>
-                                <select id="resourceCategory" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
-                                    <option value="">Select Category</option>
-                                    <option value="Economics">Economics</option>
-                                    <option value="Finance">Finance</option>
-                                    <option value="Investing">Investing</option>
-                                    <option value="Trading">Trading</option>
-                                    <option value="Corporate Finance">Corporate Finance</option>
-                                    <option value="Technology">Technology</option>
-                                    <option value="Psychology">Psychology</option>
-                                    <option value="Strategy">Strategy</option>
-                                    <option value="Data Science">Data Science</option>
-                                    <option value="Other">Other</option>
+                                <label for="resourcePurpose" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Purpose <span style="font-weight:400; color: var(--text-muted); font-size:0.78rem;">(why you use it)</span></label>
+                                <select id="resourcePurpose" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                    <option value="">Select Purpose</option>
+                                    <option value="study">📚 Study</option>
+                                    <option value="listening-practice">👂 Listening Practice</option>
+                                    <option value="reference">🔖 Reference</option>
+                                    <option value="inspiration">💡 Inspiration</option>
+                                    <option value="entertainment">🎉 Entertainment</option>
+                                    <option value="work">🧰 Work</option>
+                                    <option value="other">📌 Other</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                            <div class="form-group">
+                                <label for="resourceDomain" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Domain <span style="font-weight:400; color: var(--text-muted); font-size:0.78rem;">(broad area)</span></label>
+                                <select id="resourceDomain" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                    <option value="">Select Domain</option>
+                                    <option value="career-finance">💼 Career & Finance</option>
+                                    <option value="language-learning">🗣️ Language Learning</option>
+                                    <option value="tech-tools">💻 Tech & Tools</option>
+                                    <option value="personal-growth">🌱 Personal Growth</option>
+                                    <option value="entertainment">🎬 Entertainment</option>
+                                    <option value="other">📦 Other</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="resourceCategory" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Category <span style="font-weight:400; color: var(--text-muted); font-size:0.78rem;">(type new to add it)</span></label>
+                                <input type="text" id="resourceCategory" list="resourceCategoryList" placeholder="e.g., Economics, Grammar, Productivity..." style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                <datalist id="resourceCategoryList"></datalist>
                             </div>
                         </div>
 
                         <div class="form-group" style="margin-bottom: 16px;">
                             <label for="resourceUrl" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">URL *</label>
-                            <input type="url" id="resourceUrl" required placeholder="https://..." style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                            <input type="url" id="resourceUrl" required placeholder="https://..." oninput="handleResourceUrlInput()" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                            <div id="resourceUrlDuplicateWarning" style="display:none; margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(245, 158, 11, 0.12); color: #f59e0b; font-size: 0.8rem;"></div>
                         </div>
 
                         <div class="form-group" style="margin-bottom: 16px;">
                             <label for="resourceAuthor" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Author/Source</label>
                             <input type="text" id="resourceAuthor" placeholder="e.g., Ray Dalio, McKinsey, Bloomberg" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                            <div class="form-group">
+                                <label for="resourceLanguage" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Language</label>
+                                <select id="resourceLanguage" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                                    <option value="">Select Language</option>
+                                    <option value="en">🇬🇧 English</option>
+                                    <option value="vi">🇻🇳 Vietnamese</option>
+                                    <option value="other">🌐 Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="resourceDuration" style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">Duration <span style="font-weight:400; color: var(--text-muted); font-size:0.78rem;">(minutes)</span></label>
+                                <input type="number" id="resourceDuration" min="0" step="1" placeholder="e.g., 45" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark);">
+                            </div>
                         </div>
 
                         <div class="form-group" style="margin-bottom: 16px;">
@@ -16224,6 +16322,28 @@ window.DBP={
                             <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
                                 <span>0%</span><span>50%</span><span>100%</span>
                             </div>
+                        </div>
+
+                        <!-- Favorite / Pin -->
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: var(--text-dark);">
+                                <input type="checkbox" id="resourceFavorite" style="width: 16px; height: 16px; cursor: pointer;">
+                                <span>⭐ Pin as Favorite</span>
+                            </label>
+                        </div>
+
+                        <!-- Link to Skill/Goal — logged hours count toward Study Hours -->
+                        <div class="form-group" style="margin-bottom: 16px; padding: 12px; background: var(--bg-light); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-dark);">🔗 Link to Skill <span style="font-weight:400; color: var(--text-muted); font-size:0.78rem;">(optional — lets you log hours here into Study Hours)</span></label>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px;">
+                                <select id="resourceLinkedCareer" onchange="populateLinkedSkillOptions()" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
+                                    <option value="">No career selected</option>
+                                </select>
+                                <select id="resourceLinkedSkill" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-white); color: var(--text-dark);">
+                                    <option value="">No skill selected</option>
+                                </select>
+                            </div>
+                            <div id="resourceLoggedHoursNote" style="font-size: 0.78rem; color: var(--text-muted);"></div>
                         </div>
 
                         <!-- Modal Footer -->
@@ -40411,14 +40531,59 @@ window.fcRenderTagChips = fcRenderTagChips;
         // ===== RESOURCE LIBRARY SYSTEM =====
         let resourceLibrary = JSON.parse(localStorage.getItem('resourceLibrary')) || [];
 
+        // ===== RESOURCE CATEGORIES (user-managed, dynamic list — like Tags) =====
+        const DEFAULT_RESOURCE_CATEGORIES = [
+            "Economics", "Finance", "Investing", "Trading", "Corporate Finance",
+            "Technology", "Psychology", "Strategy", "Data Science",
+            "Language Learning", "Productivity", "Other"
+        ];
+        let resourceCategories = JSON.parse(localStorage.getItem('resourceCategories')) || DEFAULT_RESOURCE_CATEGORIES.slice();
+
+        function saveResourceCategories() {
+            localStorage.setItem('resourceCategories', JSON.stringify(resourceCategories));
+        }
+
+        // Adds a category to the managed list if it's new (case-insensitive check)
+        function ensureResourceCategory(category) {
+            const trimmed = (category || '').trim();
+            if (!trimmed) return '';
+            const exists = resourceCategories.some(c => c.toLowerCase() === trimmed.toLowerCase());
+            if (!exists) {
+                resourceCategories.push(trimmed);
+                resourceCategories.sort((a, b) => a.localeCompare(b));
+                saveResourceCategories();
+                renderResourceCategoryDatalist();
+            }
+            return trimmed;
+        }
+
+        // Renders the <datalist> options used by the Category input in the Add/Edit modal
+        function renderResourceCategoryDatalist() {
+            const list = document.getElementById('resourceCategoryList');
+            if (!list) return;
+            list.innerHTML = resourceCategories
+                .map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`)
+                .join('');
+        }
+
         // ===== RESOURCE SCHEMA =====
         const resourceSchema = {
             id: Date.now(),
             title: "",
-            type: "", 
-            category: "",
+            type: "",       // format: video, audio, journal, research, data, podcast, book, tool, other
+            purpose: "",     // why you use it: study, listening-practice, reference, inspiration, entertainment, work, other
+            domain: "",      // broad area: career-finance, language-learning, tech-tools, personal-growth, entertainment, other
+            category: "",    // free-text, user-managed (see resourceCategories)
             url: "",
             author: "",
+            language: "",    // en, vi, other — useful for listening practice
+            duration: null,  // estimated length in minutes (audio/video/podcast)
+            queueOrder: null, // manual order within the Listening Queue view
+            rating: null,     // 1-5 stars, set after completing
+            favorite: false,  // pinned to top regardless of filters
+            linkedCareer: "", // career key in skillsData, for contributing hours to a skill
+            linkedSkill: "",  // skill name within that career
+            loggedHours: 0,   // hours already logged to the linked skill from this resource
             notes: "",
             tags: [],
             priority: "medium",
@@ -40428,21 +40593,228 @@ window.fcRenderTagChips = fcRenderTagChips;
         };
 
         // ===== RENDER RESOURCE CARDS =====
-        function renderResourceCards(resources = resourceLibrary) {
+        function renderResourceCards(resources = resourceLibrary, isQueue = false) {
             const container = document.getElementById('resourceCardsContainer');
             const countElement = document.getElementById('resourceCount');
             updateResourceDashboard();
+            renderForgottenResourceBanner();
+            if (typeof updateBulkToolbar === 'function') updateBulkToolbar();
             
             countElement.textContent = resources.length;
             
             if (resources.length === 0) {
-                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">No resources yet. Add your first one!</div>';
+                container.innerHTML = isQueue
+                    ? '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Queue is empty — mark some Audio/Video/Podcast resources as "To Read" first.</div>'
+                    : '<div style="text-align: center; color: var(--text-muted); padding: 20px;">No resources yet. Add your first one!</div>';
                 return;
             }
             
             container.innerHTML = resources
-                .map(resource => renderResourceCard(resource))
+                .map(resource => renderResourceCard(resource, isQueue))
                 .join('');
+        }
+
+        // ===== ADD RESOURCE FRICTION REDUCERS (Group 3, item 10-12) =====
+        let resourceTitleTouched = false; // true once the user manually edits Title (stops auto-fill)
+        let resourceTypeTouched = false;  // true once the user manually picks Type (stops auto-detect)
+
+        // Normalizes a URL for duplicate comparison: lowercase host, no protocol/www/trailing slash/query
+        function normalizeResourceUrl(url) {
+            try {
+                const u = new URL(url);
+                let host = u.hostname.toLowerCase().replace(/^www\./, '');
+                let path = u.pathname.replace(/\/+$/, '');
+                return host + path;
+            } catch (e) {
+                return (url || '').toLowerCase().trim().replace(/\/+$/, '');
+            }
+        }
+
+        // Guesses a resource Type from the URL's domain. Never overrides a type the user already picked.
+        function autoDetectResourceType(url) {
+            if (resourceTypeTouched) return;
+            const typeSelect = document.getElementById('resourceType');
+            if (typeSelect.value) return; // safety: don't clobber an existing value either
+
+            let host;
+            try { host = new URL(url).hostname.toLowerCase().replace(/^www\./, ''); }
+            catch (e) { return; }
+
+            const rules = [
+                { hosts: ['youtube.com', 'youtu.be', 'vimeo.com'], type: 'video' },
+                { hosts: ['open.spotify.com', 'soundcloud.com', 'notegpt.io', 'anchor.fm', 'audible.com'], type: 'audio' },
+                { hosts: ['podcasts.apple.com', 'podcastaddict.com', 'overcast.fm'], type: 'podcast' },
+                { hosts: ['github.com', 'gitlab.com', 'huggingface.co', 'replit.com'], type: 'tool' },
+                { hosts: ['medium.com', 'substack.com', 'dev.to', 'blog.'], type: 'journal' },
+                { hosts: ['arxiv.org', 'ssrn.com', 'researchgate.net', 'nber.org'], type: 'research' },
+                { hosts: ['kaggle.com', 'data.gov', 'statista.com'], type: 'data' },
+            ];
+
+            for (const rule of rules) {
+                if (rule.hosts.some(h => host.includes(h))) {
+                    typeSelect.value = rule.type;
+                    return;
+                }
+            }
+        }
+
+        // Fills Title from the URL slug if Title is still empty / untouched by the user
+        function autoFillResourceTitle(url) {
+            if (resourceTitleTouched) return;
+            const titleInput = document.getElementById('resourceTitle');
+            if (titleInput.value.trim()) return;
+
+            let guess = '';
+            try {
+                const u = new URL(url);
+                const segments = u.pathname.split('/').filter(Boolean);
+                const slug = segments.length ? segments[segments.length - 1] : '';
+                if (slug && slug.length > 2) {
+                    guess = slug
+                        .replace(/\.(html?|php|aspx?)$/i, '')
+                        .replace(/[-_]+/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    guess = guess.replace(/\b\w/g, c => c.toUpperCase());
+                }
+                if (!guess) {
+                    guess = u.hostname.toLowerCase().replace(/^www\./, '').split('.')[0];
+                    guess = guess.charAt(0).toUpperCase() + guess.slice(1);
+                }
+            } catch (e) {
+                return;
+            }
+
+            if (guess) {
+                titleInput.value = guess;
+                titleInput.style.fontStyle = 'italic';
+                titleInput.title = 'Auto-filled from URL — feel free to edit';
+                // Once the user actually types, oninput sets resourceTitleTouched=true and this styling is irrelevant
+                setTimeout(() => { titleInput.style.fontStyle = 'normal'; }, 4000);
+            }
+        }
+
+        // Warns if this URL (or a very similar one) is already saved in the library
+        function checkDuplicateResourceUrl(url) {
+            const warningEl = document.getElementById('resourceUrlDuplicateWarning');
+            const currentId = document.getElementById('resourceId').value;
+            const normalized = normalizeResourceUrl(url);
+
+            const match = resourceLibrary.find(r =>
+                r.id != currentId && normalizeResourceUrl(r.url) === normalized
+            );
+
+            if (match) {
+                const statusLabel = { 'to-read': 'To Read', 'reading': 'Reading', 'completed': 'Completed' }[match.status] || match.status;
+                warningEl.innerHTML = `⚠️ Already in your library: <strong>${match.title}</strong> (${statusLabel})`;
+                warningEl.style.display = 'block';
+            } else {
+                warningEl.style.display = 'none';
+            }
+        }
+
+        // Single entry point wired to the URL field's oninput
+        function handleResourceUrlInput() {
+            const url = document.getElementById('resourceUrl').value.trim();
+            if (!url) {
+                document.getElementById('resourceUrlDuplicateWarning').style.display = 'none';
+                return;
+            }
+            autoDetectResourceType(url);
+            autoFillResourceTitle(url);
+            checkDuplicateResourceUrl(url);
+        }
+
+        // ===== LISTENING QUEUE (Group 2, item 8-9) =====
+        // Shows To-Read Audio/Video/Podcast resources, sorted by manual queueOrder,
+        // with drag-and-drop (or ▲▼ buttons) to reorder — perfect for "what to listen to next".
+        let listeningQueueMode = false;
+        let draggedResourceId = null;
+        const QUEUE_TYPES = ['audio', 'video', 'podcast'];
+
+        function getQueueSorted() {
+            return resourceLibrary
+                .filter(r => QUEUE_TYPES.includes(r.type) && r.status === 'to-read')
+                .sort((a, b) => {
+                    const ao = a.queueOrder ?? Number.MAX_SAFE_INTEGER;
+                    const bo = b.queueOrder ?? Number.MAX_SAFE_INTEGER;
+                    if (ao !== bo) return ao - bo;
+                    const priorityOrder = { high: 0, medium: 1, low: 2 };
+                    return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1);
+                });
+        }
+
+        function toggleListeningQueueMode() {
+            listeningQueueMode = !listeningQueueMode;
+            const btnText = document.getElementById('toggleQueueBtnText');
+            const hint = document.getElementById('queueHint');
+            const typeFilterRow = document.getElementById('resourceTypeFilter')?.closest('div');
+
+            if (listeningQueueMode) {
+                btnText.textContent = 'Back to All Resources';
+                hint.style.display = 'block';
+                if (typeFilterRow) typeFilterRow.style.opacity = '0.4';
+                document.getElementById('resourceSearch').value = '';
+            } else {
+                btnText.textContent = 'Show Listening Queue';
+                hint.style.display = 'none';
+                if (typeFilterRow) typeFilterRow.style.opacity = '1';
+            }
+            filterResources();
+        }
+
+        function renderListeningQueueCards() {
+            const queue = getQueueSorted();
+            renderResourceCards(queue, true);
+        }
+
+        // Drag-and-drop reordering
+        function dragStartResource(e, id) {
+            draggedResourceId = id;
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function dragOverResource(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function dropResource(e, targetId) {
+            e.preventDefault();
+            if (!draggedResourceId || draggedResourceId === targetId) return;
+
+            const ids = getQueueSorted().map(r => r.id);
+            const fromIdx = ids.indexOf(draggedResourceId);
+            const toIdx = ids.indexOf(targetId);
+            if (fromIdx === -1 || toIdx === -1) return;
+
+            ids.splice(fromIdx, 1);
+            ids.splice(toIdx, 0, draggedResourceId);
+            ids.forEach((id, i) => {
+                const r = resourceLibrary.find(x => x.id == id);
+                if (r) r.queueOrder = i;
+            });
+
+            saveResources();
+            draggedResourceId = null;
+            renderListeningQueueCards();
+        }
+
+        // Fallback for touch/mobile: move item up or down by one position
+        function moveResourceInQueue(id, direction) {
+            const ids = getQueueSorted().map(r => r.id);
+            const idx = ids.indexOf(id);
+            const newIdx = idx + direction;
+            if (idx === -1 || newIdx < 0 || newIdx >= ids.length) return;
+
+            [ids[idx], ids[newIdx]] = [ids[newIdx], ids[idx]];
+            ids.forEach((rid, i) => {
+                const r = resourceLibrary.find(x => x.id == rid);
+                if (r) r.queueOrder = i;
+            });
+
+            saveResources();
+            renderListeningQueueCards();
         }
 
         // ===== TOGGLE RESOURCE CARD =====
@@ -40481,9 +40853,10 @@ window.fcRenderTagChips = fcRenderTagChips;
         }
 
         // ===== RENDER RESOURCE CARD =====
-        function renderResourceCard(resource) {
+        function renderResourceCard(resource, isQueue = false) {
             const typeIcons = {
                 video: "🎥",
+                audio: "🎧",
                 journal: "📰",
                 research: "📑",
                 data: "📊",
@@ -40495,6 +40868,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             
             const typeColors = {
                 video: '#ef4444',
+                audio: '#14b8a6',
                 journal: '#3b82f6',
                 research: '#8b5cf6',
                 data: '#10b981',
@@ -40503,6 +40877,37 @@ window.fcRenderTagChips = fcRenderTagChips;
                 tool: '#ec4899',
                 other: '#6366f1'
             };
+
+            const domainLabels = {
+                'career-finance': '💼 Career & Finance',
+                'language-learning': '🗣️ Language Learning',
+                'tech-tools': '💻 Tech & Tools',
+                'personal-growth': '🌱 Personal Growth',
+                'entertainment': '🎬 Entertainment',
+                'other': '📦 Other'
+            };
+
+            const purposeLabels = {
+                'study': '📚 Study',
+                'listening-practice': '👂 Listening Practice',
+                'reference': '🔖 Reference',
+                'inspiration': '💡 Inspiration',
+                'entertainment': '🎉 Entertainment',
+                'work': '🧰 Work',
+                'other': '📌 Other'
+            };
+
+            const languageLabels = {
+                'en': '🇬🇧 EN',
+                'vi': '🇻🇳 VI',
+                'other': '🌐 Other'
+            };
+
+            const durationText = (resource.duration != null && resource.duration !== '')
+                ? (resource.duration >= 60
+                    ? `⏱️ ${Math.floor(resource.duration / 60)}h ${resource.duration % 60 ? (resource.duration % 60) + 'm' : ''}`.trim()
+                    : `⏱️ ${resource.duration}m`)
+                : '';
             
             const priorityIcons = {
                 high: '🔺',
@@ -40629,16 +41034,80 @@ window.fcRenderTagChips = fcRenderTagChips;
                 `;
             }
             
+            const langDurationHTML = (resource.language || durationText) ? `
+                            <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+                                ${resource.language ? `<span class="tag" style="background: rgba(107,114,128,0.12); color: var(--text-muted);">${languageLabels[resource.language] || resource.language}</span>` : ''}
+                                ${durationText ? `<span class="tag" style="background: rgba(107,114,128,0.12); color: var(--text-muted);">${durationText}</span>` : ''}
+                            </div>` : '';
+
+            const queueControlsHTML = isQueue ? `
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:grab; color: var(--text-muted); padding-right:4px;" title="Drag to reorder">
+                            <span style="font-size:1rem;">⠿</span>
+                            <button onclick="moveResourceInQueue('${resource.id}', -1)" class="resource-status-btn" title="Move up" style="padding:2px 6px; font-size:0.7rem;">▲</button>
+                            <button onclick="moveResourceInQueue('${resource.id}', 1)" class="resource-status-btn" title="Move down" style="padding:2px 6px; font-size:0.7rem;">▼</button>
+                        </div>` : '';
+
+            const dragAttrs = isQueue
+                ? `draggable="true" ondragstart="dragStartResource(event, '${resource.id}')" ondragover="dragOverResource(event)" ondrop="dropResource(event, '${resource.id}')"`
+                : '';
+
+            // ===== FAVORITE / PIN TOGGLE =====
+            const favoriteHTML = `<button onclick="toggleResourceFavorite('${resource.id}')" class="resource-status-btn" title="${resource.favorite ? 'Unpin' : 'Pin as Favorite'}" style="background: ${resource.favorite ? 'rgba(245, 158, 11, 0.15)' : 'transparent'};">${resource.favorite ? '⭐' : '☆'}</button>`;
+
+            // ===== RATING (only meaningful once completed) =====
+            let ratingHTML = '';
+            if (resource.status === 'completed') {
+                ratingHTML = `
+                    <div style="margin: 8px 0; display:flex; align-items:center; gap:2px;">
+                        ${[1,2,3,4,5].map(n => `<span onclick="setResourceRating('${resource.id}', ${n})" style="cursor:pointer; font-size:0.95rem; color:${(resource.rating || 0) >= n ? '#f59e0b' : 'var(--border-color)'};" title="Rate ${n} star${n>1?'s':''}">★</span>`).join('')}
+                        ${resource.rating ? `<span style="font-size:0.72rem; color: var(--text-muted); margin-left:4px;">${resource.rating}/5</span>` : ''}
+                    </div>`;
+            }
+
+            // ===== FORGOTTEN RESOURCE BADGE =====
+            const daysSinceAdded = Math.floor((new Date() - new Date(resource.dateAdded)) / (1000 * 60 * 60 * 24));
+            const forgottenBadge = (resource.status === 'to-read' && daysSinceAdded >= 30)
+                ? `<span class="tag" style="background: rgba(239,68,68,0.12); color: #ef4444;" title="Added ${daysSinceAdded} days ago, still To Read">😴 Forgotten (${daysSinceAdded}d)</span>`
+                : '';
+
+            // ===== LINKED SKILL / LOG HOURS =====
+            let linkedSkillHTML = '';
+            if (resource.linkedSkill) {
+                const careerTitle = (typeof skillsData !== 'undefined' && skillsData[resource.linkedCareer]) ? skillsData[resource.linkedCareer].title : resource.linkedCareer;
+                linkedSkillHTML = `
+                    <div style="margin: 8px 0; padding: 8px; background: rgba(99,102,241,0.08); border-radius: 6px; font-size: 0.78rem; color: var(--text-muted); display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <span>🔗 ${resource.linkedSkill}${careerTitle ? ` <span style="opacity:0.7;">(${careerTitle})</span>` : ''}${resource.loggedHours ? ` · ${resource.loggedHours}h logged` : ''}</span>
+                        <button onclick="promptLogResourceHours('${resource.id}')" class="resource-status-btn" title="Log hours to this skill" style="padding: 4px 8px; font-size: 0.72rem;">⏱️ Log Hours</button>
+                    </div>`;
+            }
+
+            // ===== BULK SELECT CHECKBOX =====
+            const bulkCheckboxHTML = (typeof bulkSelectMode !== 'undefined' && bulkSelectMode) ? `
+                        <div style="display:flex; align-items:flex-start; padding-top:4px;">
+                            <input type="checkbox" onchange="toggleBulkSelectResource('${resource.id}', this.checked)" ${(typeof bulkSelectedIds !== 'undefined' && bulkSelectedIds.has(resource.id)) ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;">
+                        </div>` : '';
+
             return `
-                <div class="finance-card" style="border-left: 4px solid ${cardColor};">
+                <div class="finance-card" style="border-left: 4px solid ${cardColor}; ${isQueue ? 'display:flex; align-items:stretch; gap:8px;' : ''}" ${dragAttrs}>
+                    ${queueControlsHTML}
+                    ${bulkCheckboxHTML}
+                    <div style="flex:1; min-width:0;">
                     <div class="finance-card-header">
                         <div>
                             <div class="finance-card-title">${resource.title}</div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                            <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
                                 ${typeIcons[resource.type]} ${resource.author || 'Unknown Source'} ${resource.category ? `• ${resource.category}` : ''}
                             </div>
+                            ${(resource.domain || resource.purpose || forgottenBadge) ? `
+                            <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+                                ${resource.domain ? `<span class="tag" style="background: rgba(99,102,241,0.12); color: #6366f1;">${domainLabels[resource.domain] || resource.domain}</span>` : ''}
+                                ${resource.purpose ? `<span class="tag" style="background: rgba(20,184,166,0.12); color: #14b8a6;">${purposeLabels[resource.purpose] || resource.purpose}</span>` : ''}
+                                ${forgottenBadge}
+                            </div>` : ''}
+                            ${langDurationHTML}
                         </div>
                         <div style="display: flex; gap: 6px; align-items: center;">
+                            ${favoriteHTML}
                             ${priorityIcons[resource.priority]}
                             ${statusBadges[resource.status]}
                         </div>
@@ -40646,6 +41115,8 @@ window.fcRenderTagChips = fcRenderTagChips;
                     <div class="finance-card-content">
                         ${notesHTML}
                         ${progressHTML}
+                        ${ratingHTML}
+                        ${linkedSkillHTML}
                         ${tagsHTML}
                         <div style="margin-top: 12px;">
                             <a href="${resource.url}" target="_blank" class="resource-status-btn open-link" title="Open Resource"
@@ -40661,6 +41132,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <button onclick="deleteResource('${resource.id}')" class="resource-status-btn" title="Delete">
                             🗑️
                         </button>
+                    </div>
                     </div>
                 </div>
             `;
@@ -40835,6 +41307,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             const form = document.getElementById('resourceForm');
             const title = document.getElementById('resourceModalTitle');
             const idInput = document.getElementById('resourceId');
+            populateLinkedCareerOptions();
             
             if (resourceId) {
                 const resource = resourceLibrary.find(r => r.id == resourceId);
@@ -40843,26 +41316,44 @@ window.fcRenderTagChips = fcRenderTagChips;
                     idInput.value = resource.id;
                     document.getElementById('resourceTitle').value = resource.title;
                     document.getElementById('resourceType').value = resource.type;
+                    document.getElementById('resourcePurpose').value = resource.purpose || '';
+                    document.getElementById('resourceDomain').value = resource.domain || '';
                     document.getElementById('resourceCategory').value = resource.category || '';
                     document.getElementById('resourceUrl').value = resource.url;
                     document.getElementById('resourceAuthor').value = resource.author || '';
+                    document.getElementById('resourceLanguage').value = resource.language || '';
+                    document.getElementById('resourceDuration').value = resource.duration ?? '';
                     document.getElementById('resourceNotes').value = resource.notes || '';
                     document.getElementById('resourceTags').value = resource.tags ? resource.tags.join(', ') : '';
                     document.getElementById('resourcePriority').value = resource.priority;
                     document.getElementById('resourceStatus').value = resource.status;
+                    document.getElementById('resourceFavorite').checked = !!resource.favorite;
+                    document.getElementById('resourceLinkedCareer').value = resource.linkedCareer || '';
+                    populateLinkedSkillOptions();
+                    document.getElementById('resourceLinkedSkill').value = resource.linkedSkill || '';
+                    document.getElementById('resourceLoggedHoursNote').textContent = resource.loggedHours ? `⏱️ ${resource.loggedHours}h already logged from this resource.` : '';
                     // Populate progress slider
                     const prog = resource.progress ?? 50;
                     document.getElementById('resourceProgress').value = prog;
                     document.getElementById('resourceProgressLabel').textContent = prog + '%';
+                    // Editing an existing resource: don't let URL auto-detect/auto-fill touch its Title/Type
+                    resourceTitleTouched = true;
+                    resourceTypeTouched = true;
                 }
             } else {
                 title.textContent = 'Add New Resource';
                 form.reset();
                 idInput.value = '';
+                document.getElementById('resourceLinkedSkill').innerHTML = '<option value="">No skill selected</option>';
+                document.getElementById('resourceLoggedHoursNote').textContent = '';
                 document.getElementById('resourceProgress').value = 50;
                 document.getElementById('resourceProgressLabel').textContent = '50%';
+                resourceTitleTouched = false;
+                resourceTypeTouched = false;
             }
             
+            document.getElementById('resourceUrlDuplicateWarning').style.display = 'none';
+            renderResourceCategoryDatalist();
             toggleProgressField();
             modal.style.display = 'block';
         }
@@ -40892,9 +41383,19 @@ window.fcRenderTagChips = fcRenderTagChips;
                 id: isNew ? Date.now().toString() : id,
                 title: document.getElementById('resourceTitle').value,
                 type: document.getElementById('resourceType').value,
-                category: document.getElementById('resourceCategory').value,
+                purpose: document.getElementById('resourcePurpose').value,
+                domain: document.getElementById('resourceDomain').value,
+                category: ensureResourceCategory(document.getElementById('resourceCategory').value),
                 url: document.getElementById('resourceUrl').value,
                 author: document.getElementById('resourceAuthor').value,
+                language: document.getElementById('resourceLanguage').value,
+                duration: document.getElementById('resourceDuration').value ? parseInt(document.getElementById('resourceDuration').value) : null,
+                queueOrder: existing?.queueOrder ?? null,
+                favorite: document.getElementById('resourceFavorite').checked,
+                linkedCareer: document.getElementById('resourceLinkedCareer').value,
+                linkedSkill: document.getElementById('resourceLinkedSkill').value,
+                loggedHours: existing?.loggedHours ?? 0,
+                rating: existing?.rating ?? null,
                 notes: document.getElementById('resourceNotes').value,
                 tags: document.getElementById('resourceTags').value.split(',').map(tag => tag.trim()).filter(tag => tag),
                 priority: document.getElementById('resourcePriority').value,
@@ -40943,6 +41444,250 @@ window.fcRenderTagChips = fcRenderTagChips;
                 saveResources();
                 renderResourceCards();
             }
+        }
+
+        // ===== GROUP 4: FAVORITE / PIN (item 14) =====
+        function toggleResourceFavorite(id) {
+            const resource = resourceLibrary.find(r => r.id == id);
+            if (!resource) return;
+            resource.favorite = !resource.favorite;
+            saveResources();
+            filterResources();
+        }
+
+        // ===== GROUP 4: RATING (item 13) =====
+        function setResourceRating(id, stars) {
+            const resource = resourceLibrary.find(r => r.id == id);
+            if (!resource) return;
+            resource.rating = (resource.rating === stars) ? null : stars; // click same star again to clear
+            saveResources();
+            renderResourceCards();
+            filterResources();
+        }
+
+        // ===== GROUP 4: LINK RESOURCE TO SKILL/GOAL (item 18) =====
+        function populateLinkedCareerOptions() {
+            const sel = document.getElementById('resourceLinkedCareer');
+            if (!sel || typeof skillsData === 'undefined') return;
+            const current = sel.value;
+            sel.innerHTML = '<option value="">No career selected</option>' +
+                Object.keys(skillsData).map(key =>
+                    `<option value="${key}">${(skillsData[key].title || key).replace(/</g, '&lt;')}</option>`
+                ).join('');
+            sel.value = current;
+        }
+
+        function populateLinkedSkillOptions() {
+            const careerSel = document.getElementById('resourceLinkedCareer');
+            const skillSel = document.getElementById('resourceLinkedSkill');
+            if (!careerSel || !skillSel) return;
+            const career = careerSel.value;
+
+            if (!career || typeof skillsData === 'undefined' || !skillsData[career]) {
+                skillSel.innerHTML = '<option value="">No skill selected</option>';
+                return;
+            }
+
+            const categories = skillsData[career].categories || {};
+            let optionsHTML = '<option value="">No skill selected</option>';
+            Object.entries(categories).forEach(([catName, cat]) => {
+                optionsHTML += `<optgroup label="${catName.replace(/</g, '&lt;')}">`;
+                (cat.skills || []).forEach(sk => {
+                    optionsHTML += `<option value="${sk.name.replace(/"/g, '&quot;')}">${sk.name}</option>`;
+                });
+                optionsHTML += `</optgroup>`;
+            });
+            skillSel.innerHTML = optionsHTML;
+        }
+
+        // Prompts for hours and logs them to the resource's linked skill (adds to Study Hours)
+        function promptLogResourceHours(id) {
+            const resource = resourceLibrary.find(r => r.id == id);
+            if (!resource || !resource.linkedSkill || !resource.linkedCareer) return;
+
+            const input = prompt(`How many hours to log to "${resource.linkedSkill}"?`, '1');
+            if (input === null) return;
+            const hours = parseFloat(input);
+            if (!hours || hours <= 0) {
+                showNotification('Please enter a valid number of hours', 'error');
+                return;
+            }
+            logResourceHoursToSkill(resource, hours);
+        }
+
+        function logResourceHoursToSkill(resource, hours) {
+            if (typeof studyHours === 'undefined') {
+                showNotification('Study Hours system not available', 'error');
+                return;
+            }
+            const career = resource.linkedCareer;
+            const skillName = resource.linkedSkill;
+
+            if (!studyHours[career]) studyHours[career] = {};
+            if (!studyHours[career][skillName]) studyHours[career][skillName] = 0;
+            studyHours[career][skillName] += hours;
+            localStorage.setItem('studyHours', JSON.stringify(studyHours));
+
+            resource.loggedHours = (resource.loggedHours || 0) + hours;
+            saveResources();
+
+            // Best-effort refresh of skill UI/stats if those functions exist in this page
+            if (typeof loadSkills === 'function' && typeof currentCareer !== 'undefined') { try { loadSkills(currentCareer); } catch(e) {} }
+            if (typeof updateStats === 'function') { try { updateStats(); } catch(e) {} }
+            if (typeof updateGoals === 'function') { try { updateGoals(); } catch(e) {} }
+            if (typeof updateChart === 'function') { try { updateChart(); } catch(e) {} }
+
+            showNotification(`✅ Logged ${hours}h to "${skillName}"`, 'success');
+            renderResourceCards();
+            filterResources();
+        }
+
+        // ===== GROUP 4: FORGOTTEN RESOURCES REMINDER (item 15) =====
+        function renderForgottenResourceBanner() {
+            const banner = document.getElementById('forgottenResourceBanner');
+            if (!banner) return;
+
+            const THRESHOLD_DAYS = 30;
+            const now = new Date();
+            const forgotten = resourceLibrary.filter(r => {
+                if (r.status !== 'to-read') return false;
+                const days = Math.floor((now - new Date(r.dateAdded)) / (1000 * 60 * 60 * 24));
+                return days >= THRESHOLD_DAYS;
+            });
+
+            if (forgotten.length === 0) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            const topTitles = forgotten.slice(0, 3).map(r => r.title).join(', ');
+            const more = forgotten.length > 3 ? ` +${forgotten.length - 3} more` : '';
+            banner.innerHTML = `😴 <strong>${forgotten.length}</strong> resource${forgotten.length > 1 ? 's' : ''} sitting in "To Read" for 30+ days: ${topTitles}${more}`;
+            banner.style.display = 'block';
+        }
+
+        // ===== GROUP 4: BULK ACTIONS (item 16) =====
+        let bulkSelectMode = false;
+        let bulkSelectedIds = new Set();
+
+        function toggleBulkSelectMode() {
+            bulkSelectMode = !bulkSelectMode;
+            bulkSelectedIds.clear();
+            document.getElementById('toggleBulkSelectBtn').textContent = bulkSelectMode ? '✖️ Cancel Select' : '☑️ Select';
+            updateBulkToolbar();
+            filterResources();
+        }
+
+        function toggleBulkSelectResource(id, checked) {
+            if (checked) bulkSelectedIds.add(id);
+            else bulkSelectedIds.delete(id);
+            updateBulkToolbar();
+        }
+
+        function updateBulkToolbar() {
+            const toolbar = document.getElementById('bulkActionsToolbar');
+            const countEl = document.getElementById('bulkSelectedCount');
+            if (!toolbar || !countEl) return;
+            countEl.textContent = bulkSelectedIds.size;
+            toolbar.style.display = (bulkSelectMode && bulkSelectedIds.size > 0) ? 'block' : 'none';
+        }
+
+        function applyBulkStatus() {
+            const newStatus = document.getElementById('bulkStatusSelect').value;
+            if (bulkSelectedIds.size === 0) return;
+            resourceLibrary.forEach(r => {
+                if (bulkSelectedIds.has(r.id)) {
+                    r.status = newStatus;
+                    if (newStatus === 'completed' && !r.completedDate) r.completedDate = new Date().toISOString();
+                    if (newStatus === 'reading' && !r.startedDate) r.startedDate = new Date().toISOString();
+                }
+            });
+            saveResources();
+            showNotification(`✅ Updated status for ${bulkSelectedIds.size} resource(s)`, 'success');
+            clearBulkSelection();
+        }
+
+        function applyBulkDelete() {
+            if (bulkSelectedIds.size === 0) return;
+            if (!confirm(`Delete ${bulkSelectedIds.size} selected resource(s)? This cannot be undone.`)) return;
+            resourceLibrary = resourceLibrary.filter(r => !bulkSelectedIds.has(r.id));
+            saveResources();
+            showNotification(`🗑️ Deleted ${bulkSelectedIds.size} resource(s)`, 'success');
+            clearBulkSelection();
+        }
+
+        function clearBulkSelection() {
+            bulkSelectedIds.clear();
+            bulkSelectMode = false;
+            document.getElementById('toggleBulkSelectBtn').textContent = '☑️ Select';
+            updateBulkToolbar();
+            filterResources();
+        }
+
+        // ===== GROUP 4: EXPORT / IMPORT (item 17) =====
+        function exportResourceLibrary() {
+            const payload = {
+                exportedAt: new Date().toISOString(),
+                resourceLibrary: resourceLibrary,
+                resourceCategories: resourceCategories
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `resource-library-${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showNotification('⬇️ Resource library exported', 'success');
+        }
+
+        function importResourceLibrary(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                let data;
+                try {
+                    data = JSON.parse(e.target.result);
+                } catch (err) {
+                    showNotification('❌ Invalid JSON file', 'error');
+                    return;
+                }
+
+                const incoming = Array.isArray(data) ? data : (data.resourceLibrary || []);
+                if (!Array.isArray(incoming)) {
+                    showNotification('❌ File does not contain a resource library', 'error');
+                    return;
+                }
+
+                const existingUrls = new Set(resourceLibrary.map(r => normalizeResourceUrl(r.url)));
+                let added = 0, skipped = 0;
+                incoming.forEach(r => {
+                    if (!r || !r.url) return;
+                    const norm = normalizeResourceUrl(r.url);
+                    if (existingUrls.has(norm)) { skipped++; return; }
+                    existingUrls.add(norm);
+                    resourceLibrary.push({
+                        ...resourceSchema,
+                        ...r,
+                        id: r.id ? String(r.id) : (Date.now() + Math.random()).toString()
+                    });
+                    added++;
+                });
+
+                if (Array.isArray(data.resourceCategories)) {
+                    data.resourceCategories.forEach(c => ensureResourceCategory(c));
+                }
+
+                saveResources();
+                renderResourceCategoryDatalist();
+                renderTagCloud();
+                filterResources();
+                showNotification(`⬆️ Imported ${added} resource(s)${skipped ? `, skipped ${skipped} duplicate(s)` : ''}`, 'success');
+                document.getElementById('resourceImportInput').value = '';
+            };
+            reader.readAsText(file);
         }
 
         // markResourceViewed is now handled by autoMarkReading (called on Open Link click)
@@ -41065,6 +41810,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             
             const typeIcons = {
                 video: "🎥",
+                audio: "🎧",
                 journal: "📰",
                 research: "📑",
                 data: "📊",
@@ -41076,6 +41822,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             
             const typeColors = {
                 video: '#ef4444',
+                audio: '#14b8a6',
                 journal: '#3b82f6',
                 research: '#8b5cf6',
                 data: '#10b981',
@@ -41224,7 +41971,13 @@ window.fcRenderTagChips = fcRenderTagChips;
 
         // ===== FILTERING & SEARCH =====
         function filterResources() {
+            if (listeningQueueMode) {
+                renderListeningQueueCards();
+                return;
+            }
             const filterType = document.getElementById('resourceTypeFilter').value;
+            const filterDomain = document.getElementById('resourceDomainFilter')?.value || 'all';
+            const filterPurpose = document.getElementById('resourcePurposeFilter')?.value || 'all';
             const filterStatus = document.getElementById('resourceStatusFilter')?.value || 'all';
             const sortBy = document.getElementById('resourceSortBy')?.value || 'newest';
             const searchQuery = document.getElementById('resourceSearch').value.toLowerCase().trim();
@@ -41234,6 +41987,16 @@ window.fcRenderTagChips = fcRenderTagChips;
             // Filter by type
             if (filterType !== 'all') {
                 filtered = filtered.filter(r => r.type === filterType);
+            }
+
+            // Filter by domain
+            if (filterDomain !== 'all') {
+                filtered = filtered.filter(r => r.domain === filterDomain);
+            }
+
+            // Filter by purpose
+            if (filterPurpose !== 'all') {
+                filtered = filtered.filter(r => r.purpose === filterPurpose);
             }
 
             // Filter by status
@@ -41274,12 +42037,17 @@ window.fcRenderTagChips = fcRenderTagChips;
             } else if (sortBy === 'status') {
                 filtered.sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
             }
+
+            // Favorites always float to the top, regardless of sort mode (stable sort preserves order within each group)
+            filtered.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
             
             renderResourceCards(filtered);
             
             // Update filter stats notification
             const statsText = [];
             if (filterType !== 'all') statsText.push(`Type: ${filterType}`);
+            if (filterDomain !== 'all') statsText.push(`Domain: ${filterDomain}`);
+            if (filterPurpose !== 'all') statsText.push(`Purpose: ${filterPurpose}`);
             if (filterStatus !== 'all') statsText.push(`Status: ${filterStatus}`);
             if (searchQuery) statsText.push(`"${searchQuery}"`);
             if (activeTagFilters.size > 0) statsText.push(`Tags: ${activeTagFilters.size}`);
