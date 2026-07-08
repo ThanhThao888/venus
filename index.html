@@ -13684,6 +13684,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 #dbpToast{position:fixed;bottom:138px;right:24px;background:#1e293b;color:#fff;padding:10px 16px;border-radius:10px;font-size:0.82rem;font-weight:600;z-index:3000;opacity:0;transform:translateY(10px);transition:all 0.3s;pointer-events:none;max-width:260px;box-shadow:0 4px 12px rgba(0,0,0,0.15);}
 #dbpToast.show{opacity:1;transform:translateY(0);}
 #dbpToast.success{background:#059669;}
+#dbpToast.warn{background:#d97706;}
 
 /* ─── FLOATING TIMER ─── */
 #dbpFloatTimer{
@@ -14301,6 +14302,10 @@ function generate(){
     if(!picked.length){ toast('⚠️ Select at least 1 task first!'); return; }
 
     const start = new Date(); start.setHours(sh,sm,0,0);
+    // Cảnh báo nếu Start Time đã qua rồi (so với giờ hiện tại)
+    if(start < new Date()){
+        toast(`⚠️ ${gel('dbpStartTime').value} đã qua rồi — plan vẫn được tạo từ mốc giờ đó`, 4200, 'warn');
+    }
     const blocks = [];
     let cursor = new Date(start);
     let cumWork = 0;
@@ -14616,8 +14621,11 @@ function savePlan(){
     store.set('dbpHistory',hist.slice(0,7));
     // Xóa temp storage vì đã vào history rồi
     try{ localStorage.removeItem('dbpCurrentBlocks'); localStorage.removeItem('dbpCurrentStyle'); }catch(_){}
+    // FIX: nếu đang có timer chạy cho plan này thì phải dừng nó lại,
+    // nếu không interval cũ vẫn chạy ngầm dù _blocks đã bị xóa
+    if(_activeTimerIdx !== null){ floatStop(); }
     // Reset _blocks để mở modal lại sẽ bắt đầu fresh
-    _blocks=[]; _timers=[];
+    _blocks=[]; _timers={};
     toast('💾 Plan saved!');
 }
 
@@ -14706,7 +14714,7 @@ function open(){
     if(_activeTimerIdx === null && !_blocks.length){
         gel('dbpSchedule').innerHTML='';
         gel('dbpActionRow').style.display='none';
-        _blocks=[]; _timers=[]; _undoStack=[];
+        _blocks=[]; _timers={}; _undoStack=[];
     }
     loadSettings();
     renderTasks();
