@@ -26861,6 +26861,19 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // One-time cleanup: trim any existing backupHistory (from before this update)
+        // down to 1 entry to immediately free up localStorage space. Safe no-op if
+        // the key doesn't exist or is already small.
+        try {
+            const _existingBackups = JSON.parse(localStorage.getItem('backupHistory') || '[]');
+            if (Array.isArray(_existingBackups) && _existingBackups.length > 1) {
+                localStorage.setItem('backupHistory', JSON.stringify(_existingBackups.slice(0, 1)));
+                console.log('🧹 Đã dọn bớt backupHistory cũ, giải phóng dung lượng localStorage.');
+            }
+        } catch (e) {
+            console.warn('Không thể dọn backupHistory cũ:', e);
+        }
+
         function autoBackup() {
             try {
                 const backupData = {
@@ -26886,7 +26899,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 localStorage.setItem('autoBackup', dataStr);
                 const backups = JSON.parse(localStorage.getItem('backupHistory') || '[]');
                 backups.unshift(backupData);
-                if (backups.length > 3) backups.splice(3); 
+                if (backups.length > 1) backups.splice(1); 
                 localStorage.setItem('backupHistory', JSON.stringify(backups));
                 console.log('✅ Sao lưu tự động thành công');                
             } catch (e) {
