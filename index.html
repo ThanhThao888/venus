@@ -42172,49 +42172,88 @@ window.fcRenderTagChips = fcRenderTagChips;
 
 
         // --- DATA MANAGEMENT (EXPORT/IMPORT) ---
+        // ✅ Key trung tính của Vault (xem module SECURE VAULT ở cuối file).
+        // Vault có Export/Import riêng (mã hoá) trong chính UI của nó — bị loại
+        // khỏi backup chung ở đây để ciphertext không bị phát tán ra ngoài nếu
+        // file backup chung này bị lộ/upload nhầm chỗ.
+        const FULLBACKUP_EXCLUDE_KEYS = ['_uiCacheV3'];
+
+        // ✅ Ước lượng dung lượng localStorage hiện tại (xấp xỉ UTF-16, 2 byte/ký tự).
+        // excludeKeys: các key sẽ KHÔNG được tính (vd vì sắp bị ghi đè bởi key khác cùng tên).
+        function estimateLocalStorageBytes(excludeKeys = []) {
+            let size = 0;
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (excludeKeys.includes(k)) continue;
+                size += (k.length + (localStorage.getItem(k) || '').length) * 2;
+            }
+            return size;
+        }
+
+        // ✅ Gom toàn bộ localStorage (trừ các key bị loại) thành 1 object backup chuẩn.
+        function buildFullBackupObject(extraMeta = {}) {
+            const raw = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (FULLBACKUP_EXCLUDE_KEYS.includes(key)) continue;
+                raw[key] = localStorage.getItem(key);
+            }
+            return {
+                __meta: {
+                    app: "Finance Career Skills Tracker",
+                    exportDate: new Date().toISOString(),
+                    version: "3.1-full-backup",
+                    keyCount: Object.keys(raw).length,
+                    excludes: FULLBACKUP_EXCLUDE_KEYS,
+                    ...extraMeta
+                },
+                resourceStats: (typeof getResourceStats === 'function') ? getResourceStats() : null,
+                data: raw
+            };
+        }
+
+        function downloadBackupObject(backup, filenamePrefix) {
+            const dataStr = JSON.stringify(backup, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${filenamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
         function exportProgress() {
             try {
-                // ✅ FULL BACKUP — quét TOÀN BỘ localStorage, không liệt kê tay từng key.
-                // Nhờ vậy mọi tính năng mới thêm sau này (Brain Dump, Deadlines,
+                // ✅ FULL BACKUP — quét TOÀN BỘ localStorage (trừ Vault), không liệt kê tay
+                // từng key. Nhờ vậy mọi tính năng mới thêm sau này (Brain Dump, Deadlines,
                 // Daily Battle Plan, Launchpad...) tự động được backup, không cần sửa code nữa.
-                const raw = {};
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    raw[key] = localStorage.getItem(key);
-                }
-
-                const backup = {
-                    __meta: {
-                        app: "Finance Career Skills Tracker",
-                        exportDate: new Date().toISOString(),
-                        version: "3.0-full-backup",
-                        keyCount: Object.keys(raw).length
-                    },
-                    // resourceStats giữ lại để tương thích ngược, không bắt buộc khi import
-                    resourceStats: (typeof getResourceStats === 'function') ? getResourceStats() : null,
-                    data: raw
-                };
-
-                const dataStr = JSON.stringify(backup, null, 2);
-                const dataBlob = new Blob([dataStr], { type: 'application/json' });
-                const url = URL.createObjectURL(dataBlob);
-
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `finance-skills-tracker-FULLBACKUP-${new Date().toISOString().split('T')[0]}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-
-                showNotification(`✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu!`, 'success');
+                const backup = buildFullBackupObject();
+                downloadBackupObject(backup, 'finance-skills-tracker-FULLBACKUP');
+                showNotification(
+                    `✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu! (Vault không nằm trong file này — dùng nút "Export vault" riêng trong Vault nếu cần backup vault)`,
+                    'success'
+                );
             } catch (err) {
                 console.error("Export failed:", err);
                 showNotification('❌ Export failed: ' + err.message, 'error');
             }
         }
 
+        // ✅ FIX 1: tự động tải 1 bản backup "an toàn" của dữ liệu HIỆN TẠI ngay
+        // trước khi import ghi đè — để luôn có đường lùi nếu import sau đó hỏng
+        // (sai file, quota lỗi giữa chừng...).
+        function downloadPreImportSafetyBackup() {
+            const backup = buildFullBackupObject({
+                note: "AUTO SAFETY BACKUP — tạo tự động ngay trước khi import ghi đè dữ liệu."
+            });
+            downloadBackupObject(backup, 'finance-skills-tracker-PREIMPORT-SAFETY');
+        }
+
         function importProgress(event) {
+            const VAULT_KEY = '_uiCacheV3';
             const file = event.target.files[0];
             if (!file) return;
 
@@ -42229,21 +42268,56 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const isFullBackup = parsed.__meta && parsed.data;
                     const entries = isFullBackup ? parsed.data : parsed;
 
-                    const keys = Object.keys(entries).filter(k => k !== 'exportDate' && k !== 'version' && k !== 'resourceStats');
+                    let keys = Object.keys(entries).filter(k => k !== 'exportDate' && k !== 'version' && k !== 'resourceStats');
+
+                    // ✅ FIX 3: Vault không được restore qua đường backup chung —
+                    // nếu file cũ (trước bản 3.1) có kèm _uiCacheV3, bỏ qua và báo riêng.
+                    const hadVaultInFile = keys.includes(VAULT_KEY);
+                    keys = keys.filter(k => k !== VAULT_KEY);
+
                     if (keys.length === 0) {
                         showNotification('❌ File không có dữ liệu hợp lệ.', 'error');
                         event.target.value = '';
                         return;
                     }
 
+                    // ✅ FIX 2: check quota TRƯỚC khi ghi bất cứ gì.
+                    // Dung lượng sau import ≈ (dung lượng hiện tại, trừ các key sắp bị ghi đè)
+                    // + dung lượng các key mới từ file.
+                    const maxStorage = 5 * 1024 * 1024; // ~giới hạn localStorage phổ biến
+                    const currentSizeExcludingOverwritten = estimateLocalStorageBytes(keys);
+                    let incomingSize = 0;
+                    keys.forEach(key => {
+                        const value = entries[key];
+                        const strValue = typeof value === 'string' ? value : JSON.stringify(value);
+                        incomingSize += (key.length + strValue.length) * 2;
+                    });
+                    const projectedSize = currentSizeExcludingOverwritten + incomingSize;
+
+                    if (projectedSize > maxStorage * 0.95) {
+                        const proceedAnyway = confirm(
+                            `⚠️ Dữ liệu sau khi import ước tính chiếm ~${(projectedSize / 1024 / 1024).toFixed(2)}MB, ` +
+                            `gần hoặc vượt giới hạn localStorage (~5MB).\n` +
+                            `Import có thể lỗi giữa chừng và làm dữ liệu lẫn lộn.\n` +
+                            `Vẫn muốn tiếp tục? (Khuyến nghị: xoá bớt memes/flashcards cũ trước khi import)`
+                        );
+                        if (!proceedAnyway) { event.target.value = ''; return; }
+                    }
+
                     const ok = confirm(
                         `Sắp khôi phục ${keys.length} mục dữ liệu từ file backup.\n` +
                         `Dữ liệu hiện tại trong app sẽ bị GHI ĐÈ bởi dữ liệu trong file.\n` +
+                        (hadVaultInFile ? `(File này có kèm dữ liệu Vault cũ — sẽ KHÔNG được restore qua đây. Dùng "Import vault" riêng trong Vault nếu cần.)\n` : '') +
+                        `Một bản backup an toàn của dữ liệu HIỆN TẠI sẽ tự động tải về trước khi ghi đè.\n` +
                         `Tiếp tục?`
                     );
                     if (!ok) { event.target.value = ''; return; }
 
+                    // ✅ FIX 1: auto-backup dữ liệu hiện tại trước khi ghi đè bất cứ gì.
+                    downloadPreImportSafetyBackup();
+
                     let restored = 0;
+                    const failed = [];
                     keys.forEach(key => {
                         let value = entries[key];
                         // File backup mới lưu sẵn dạng string (đúng như localStorage gốc).
@@ -42251,9 +42325,24 @@ window.fcRenderTagChips = fcRenderTagChips;
                         if (typeof value !== 'string') {
                             value = JSON.stringify(value);
                         }
-                        localStorage.setItem(key, value);
-                        restored++;
+                        try {
+                            localStorage.setItem(key, value);
+                            restored++;
+                        } catch (setErr) {
+                            failed.push(key);
+                        }
                     });
+
+                    if (failed.length > 0) {
+                        showNotification(
+                            `⚠️ Restore được ${restored}/${keys.length} mục — ${failed.length} mục lỗi (có thể do hết dung lượng): ` +
+                            `${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}. ` +
+                            `File backup an toàn của dữ liệu cũ vừa tải về, có thể import lại nếu cần khôi phục.`,
+                            'error'
+                        );
+                        event.target.value = '';
+                        return;
+                    }
 
                     showNotification(`✅ Đã khôi phục ${restored} mục. Đang tải lại trang...`, 'success');
 
