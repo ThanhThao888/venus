@@ -10437,6 +10437,31 @@
 .dark-mode .todo-prio-select{background:#0f172a;}
 .dark-mode .todo-progress-wrap{background:#1e293b;}
 .dark-mode .todo-empty{background:#1e293b;}
+
+/* ── Todo Reminder Popup (shows on every page load) ── */
+#todoReminderOverlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);z-index:99998;display:flex;align-items:center;justify-content:center;padding:16px;animation:trOverlayIn .25s ease both;}
+@keyframes trOverlayIn{from{opacity:0;}to{opacity:1;}}
+.todo-reminder-card{background:var(--bg-white,#fff);border-radius:16px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;animation:trCardIn .35s cubic-bezier(.34,1.36,.64,1) both;}
+@keyframes trCardIn{from{opacity:0;transform:translateY(16px) scale(.95);}to{opacity:1;transform:translateY(0) scale(1);}}
+.todo-reminder-head{background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:18px 20px;color:#fff;display:flex;align-items:center;gap:10px;}
+.todo-reminder-head-icon{font-size:1.6rem;}
+.todo-reminder-head-text{flex:1;}
+.todo-reminder-head-title{font-size:1.02rem;font-weight:800;}
+.todo-reminder-head-sub{font-size:.78rem;opacity:.9;}
+.todo-reminder-body{padding:16px 20px;max-height:45vh;overflow-y:auto;}
+.todo-reminder-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;margin-bottom:6px;background:var(--bg-light,#f8fafc);border-left:3px solid var(--p-color,#6366f1);}
+.todo-reminder-item-badge{font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:20px;color:#fff;background:var(--p-color,#6366f1);flex-shrink:0;}
+.todo-reminder-item-text{font-size:.86rem;color:var(--text-dark,#1e293b);flex:1;min-width:0;word-break:break-word;}
+.todo-reminder-more{font-size:.78rem;color:var(--text-muted,#64748b);text-align:center;padding:4px 0 2px;}
+.todo-reminder-actions{display:flex;gap:10px;padding:14px 20px 18px;}
+.todo-reminder-btn{flex:1;padding:11px 14px;border-radius:10px;font-size:.86rem;font-weight:700;cursor:pointer;border:none;transition:transform .15s,opacity .15s;}
+.todo-reminder-btn:active{transform:scale(.97);}
+.todo-reminder-btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 4px 12px rgba(99,102,241,.35);}
+.todo-reminder-btn-secondary{background:var(--bg-light,#f1f5f9);color:var(--text-muted,#64748b);}
+.dark-mode .todo-reminder-card{background:#1e293b;}
+.dark-mode .todo-reminder-item{background:#0f172a;}
+.dark-mode .todo-reminder-item-text{color:#e2e8f0;}
+.dark-mode .todo-reminder-btn-secondary{background:#334155;color:#cbd5e1;}
 </style>
 
 <!-- Calendar Modal HTML -->
@@ -43335,6 +43360,80 @@ return {
 document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 </script>
 <!-- END PLANEXT -->
+
+<!-- ============================================================
+     TODO REMINDER POPUP — nhắc Todo List mỗi lần load trang
+     (Todo list nằm sâu trong Visual Planner nên dễ bị quên;
+     popup này tự bật lên để đập vào mắt ngay khi mở/refresh trang)
+     ============================================================ -->
+<script>
+(function(){
+  const TR_PRIO_INFO = {
+    A: { color:'#ef4444' }, B: { color:'#f97316' }, C: { color:'#eab308' },
+    D: { color:'#3b82f6' }, E: { color:'#6b7280' }
+  };
+  const TR_ORDER = ['A','B','C','D','E'];
+
+  function trEsc(s){
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function showTodoReminder(){
+    let todos = [];
+    try { todos = JSON.parse(localStorage.getItem('todoTasks') || '[]'); } catch { todos = []; }
+    const open = todos.filter(t => !t.done).sort((a,b) => {
+      const pa = TR_ORDER.indexOf(a.priority), pb = TR_ORDER.indexOf(b.priority);
+      return pa !== pb ? pa - pb : (a.order||0) - (b.order||0);
+    });
+    if (!open.length) return; // Không có việc đang mở → khỏi làm phiền
+
+    const MAX_SHOW = 6;
+    const shown = open.slice(0, MAX_SHOW);
+    const remain = open.length - shown.length;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'todoReminderOverlay';
+    overlay.innerHTML = `
+      <div class="todo-reminder-card">
+        <div class="todo-reminder-head">
+          <span class="todo-reminder-head-icon">📋</span>
+          <div class="todo-reminder-head-text">
+            <div class="todo-reminder-head-title">Bạn còn ${open.length} việc chưa xong!</div>
+            <div class="todo-reminder-head-sub">Nhắc từ Todo List trong Visual Planner</div>
+          </div>
+        </div>
+        <div class="todo-reminder-body">
+          ${shown.map(t => {
+            const info = TR_PRIO_INFO[t.priority] || TR_PRIO_INFO.C;
+            return `<div class="todo-reminder-item" style="--p-color:${info.color};">
+              <span class="todo-reminder-item-badge">${trEsc(t.priority||'C')}</span>
+              <span class="todo-reminder-item-text">${trEsc(t.text)}</span>
+            </div>`;
+          }).join('')}
+          ${remain > 0 ? `<div class="todo-reminder-more">…và ${remain} việc khác</div>` : ''}
+        </div>
+        <div class="todo-reminder-actions">
+          <button class="todo-reminder-btn todo-reminder-btn-secondary" id="todoReminderDismiss">Để sau</button>
+          <button class="todo-reminder-btn todo-reminder-btn-primary" id="todoReminderOpen">📋 Mở Todo List</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    function closeReminder(){ overlay.remove(); }
+
+    document.getElementById('todoReminderDismiss').addEventListener('click', closeReminder);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeReminder(); });
+    document.getElementById('todoReminderOpen').addEventListener('click', () => {
+      closeReminder();
+      if (typeof openCalendarModal === 'function') openCalendarModal();
+      setTimeout(() => { if (typeof PLANEXT !== 'undefined') PLANEXT.openTodoView(); }, 150);
+    });
+  }
+
+  // Chờ 1 chút cho các module khác (PLANEXT, vault, v.v.) init xong trước
+  document.addEventListener('DOMContentLoaded', () => setTimeout(showTodoReminder, 600));
+})();
+</script>
 
 <!-- ============================================================
      SECURE VAULT MODULE
