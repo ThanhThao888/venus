@@ -12313,7 +12313,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   /* Backfill doneMeta for any legacy doneIds that predate the notes/analytics
      feature, so every completed item always has a completedAt + note entry. */
   function backfillDoneMeta() {
-    const todayISO = new Date().toISOString().slice(0, 10);
+    const todayISO = localISODate();
     let changed = false;
     doneIds.forEach(id => {
       if (!doneMeta[id]) {
@@ -12361,6 +12361,19 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   }
 
   /* ─── Time helpers ─── */
+  /* IMPORTANT: use this instead of `new Date().toISOString().slice(0,10)`.
+     toISOString() always converts to UTC, so anytime between 00:00–07:00
+     local time (e.g. Vietnam, UTC+7) it silently reports "yesterday's" date
+     — that previously caused wrong completedAt/snooze dates. This builds
+     the date string from the LOCAL calendar fields instead. */
+  function localISODate(d) {
+    d = d || new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   function daysLeft(dateStr) {
     const now = new Date(); now.setHours(0,0,0,0);
     const d   = new Date(dateStr); d.setHours(0,0,0,0);
@@ -12413,7 +12426,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   function isSnoozed(id) {
     const until = snoozeMap[id];
     if (!until) return false;
-    return new Date().toISOString().slice(0,10) < until;
+    return localISODate() < until;
   }
 
   function snoozeLabel(id) {
@@ -12423,7 +12436,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 
   /* Drop any snoozes whose date has already passed so the item goes back to normal. */
   function cleanupSnoozes() {
-    const todayISO = new Date().toISOString().slice(0,10);
+    const todayISO = localISODate();
     let changed = false;
     Object.keys(snoozeMap).forEach(id => {
       if (snoozeMap[id] <= todayISO) { delete snoozeMap[id]; changed = true; }
@@ -13104,7 +13117,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     done(id, days) {
       if (doneIds.includes(id)) return;
       doneIds.push(id);
-      doneMeta[id] = { completedAt: new Date().toISOString().slice(0, 10), note: '' };
+      doneMeta[id] = { completedAt: localISODate(), note: '' };
       delete snoozeMap[id];
       expandedChecklists.delete(id);
       persist();
@@ -13171,7 +13184,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     },
 
     saveNote(id, value) {
-      if (!doneMeta[id]) doneMeta[id] = { completedAt: new Date().toISOString().slice(0, 10), note: '' };
+      if (!doneMeta[id]) doneMeta[id] = { completedAt: localISODate(), note: '' };
       doneMeta[id].note = value;
       persist();
       const flash = document.getElementById('note-saved-' + id);
@@ -13210,7 +13223,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     snooze(id, days) {
       const until = new Date();
       until.setDate(until.getDate() + Number(days));
-      snoozeMap[id] = until.toISOString().slice(0, 10);
+      snoozeMap[id] = localISODate(until);
       persist();
       document.querySelectorAll('.dlt-snooze-menu.show').forEach(el => el.classList.remove('show'));
       render();
