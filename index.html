@@ -3395,6 +3395,11 @@
             border-color: #60a5fa;
         }
 
+        .goal-type-option.error {
+            border-color: #ef4444 !important;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+        }
+
         /* Suggestion Button Hover Effects */
         .suggestion-btn:hover {
             background: var(--primary) !important;
@@ -11189,6 +11194,34 @@ function toLocalDateStr(d) {
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
 }
+
+/* ── Vietnam Timezone Helpers ──
+   Goal deadlines are always evaluated in Vietnam time (Asia/Ho_Chi_Minh, GMT+7),
+   regardless of the visitor's own browser/system timezone. */
+const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+// Current wall-clock time in Vietnam, as a real Date object.
+function getVietnamNow() {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: VN_TIMEZONE,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+    }).formatToParts(new Date());
+    const get = type => parts.find(p => p.type === type)?.value;
+    return new Date(`${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}+07:00`);
+}
+
+// "Today" in Vietnam as YYYY-MM-DD — safe to use as <input type="date"> min/value.
+function getVietnamDateStr() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: VN_TIMEZONE }).format(new Date());
+}
+
+// A deadline picked as a calendar date expires at 23:59:59 Vietnam time that day.
+function getVietnamDeadlineEnd(dateStr) {
+    return new Date(`${dateStr}T23:59:59+07:00`);
+}
+
 function openCalendarModal()  { CAL.open(); }
 function closeCalendarModal() { CAL.close(); }
 
@@ -13695,7 +13728,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   // Days until goal deadline
   function daysUntilDeadline(goal) {
     if (!goal.deadline) return 999;
-    const diff = new Date(goal.deadline) - new Date();
+    const diff = getVietnamDeadlineEnd(goal.deadline) - getVietnamNow();
     return Math.ceil(diff / 86400000);
   }
 
@@ -18235,15 +18268,18 @@ window.DBP={
                 <button onclick="closeGoalModal()" style="background:none; border:none; font-size:24px; cursor:pointer; color: var(--text-dark);">&times;</button>
             </div>
             
-            <form id="goalForm">
+            <form id="goalForm" novalidate>
                 <input type="hidden" id="editGoalId">
-                
+
+                <!-- Inline validation banner -->
+                <div id="goalFormError" role="alert" style="display:none; margin-bottom: 16px; padding: 10px 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; color: #ef4444; font-size: 0.85rem; font-weight: 500;"></div>
+
                 <!-- Step 1: Goal Title -->
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-dark);">
                         📝 Goal Title *
                     </label>
-                    <input type="text" id="goalTitle" required 
+                    <input type="text" id="goalTitle" maxlength="80"
                         placeholder="e.g., Master Financial Modeling"
                         style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; background: var(--bg-white); color: var(--text-dark); font-size: 1rem;">
                 </div>
@@ -18253,13 +18289,13 @@ window.DBP={
                     <label style="display: block; margin-bottom: 10px; font-weight: 600; color: var(--text-dark);">
                         🎯 Goal Type *
                     </label>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                    <div id="goalTypeOptions" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
                         <!-- Study Hours Option -->
                         <div class="goal-type-option" data-type="study_hours" onclick="selectGoalType('study_hours')" 
                             style="padding: 16px; border: 2px solid var(--border-color); border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.3s ease; background: var(--bg-white);">
                             <div style="font-size: 2rem; margin-bottom: 8px;">📚</div>
                             <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-dark);">Study Hours</div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted);">Auto-syncs</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">Auto-syncs with study time</div>
                         </div>
 
                         <!-- Skill Mastery Option -->
@@ -18267,7 +18303,7 @@ window.DBP={
                             style="padding: 16px; border: 2px solid var(--border-color); border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.3s ease; background: var(--bg-white);">
                             <div style="font-size: 2rem; margin-bottom: 8px;">🎯</div>
                             <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-dark);">Skill Mastery</div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted);">Track specific skill</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">Track one specific skill</div>
                         </div>
 
                         <!-- Custom Goal Option -->
@@ -18278,19 +18314,19 @@ window.DBP={
                             <div style="font-size: 0.85rem; color: var(--text-muted);">Manual tracking</div>
                         </div>
                     </div>
-                    <input type="hidden" id="goalType" required>
+                    <input type="hidden" id="goalType">
                 </div>
 
                 <!-- Step 3: Type-Specific Fields (Dynamic) -->
                 <div id="goalTypeSpecificFields"></div>
 
                 <!-- Step 4: Target & Deadline -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 8px;">
                     <div>
                         <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--text-dark);">
-                            🎯 Target Value *
+                            🎯 Target Value * <span id="goalTargetUnit" style="font-weight: 400; color: var(--text-muted);">(hours)</span>
                         </label>
-                        <input type="number" id="goalTarget" min="0" step="0.1" required 
+                        <input type="number" id="goalTarget" min="0.1" step="0.1"
                             placeholder="e.g., 100"
                             style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
                     </div>
@@ -18301,6 +18337,9 @@ window.DBP={
                         <input type="date" id="goalDeadline" 
                             style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
                     </div>
+                </div>
+                <div style="margin-bottom: 20px; font-size: 0.78rem; color: var(--text-muted);">
+                    🕐 Deadline dates are evaluated using Vietnam time (GMT+7).
                 </div>
 
                 <!-- Actions -->
@@ -23643,11 +23682,12 @@ window.DBP={
         }
 
         function getGoalStatus(goal) {
-            const now = new Date();
+            const now = getVietnamNow();
             // ✅ Completion check FIRST — a finished goal is never overdue
             if (goal.currentProgress >= goal.target) return 'completed';
             if (goal.deadline) {
-                const deadline = new Date(goal.deadline);
+                // Deadline is a calendar date; it expires at 23:59:59 Vietnam time on that day
+                const deadline = getVietnamDeadlineEnd(goal.deadline);
                 if (deadline < now) return 'overdue';
                 const diffTime = deadline - now;
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -23656,11 +23696,26 @@ window.DBP={
             return 'active';
         }
 
-                function openAddGoalModal() {
+        // Clear any leftover validation state (error banner + red-bordered cards)
+        function resetGoalFormValidationState() {
+            const errorBanner = document.getElementById('goalFormError');
+            errorBanner.style.display = 'none';
+            errorBanner.textContent = '';
+            document.querySelectorAll('.goal-type-option').forEach(opt => opt.classList.remove('error'));
+        }
+
+        function openAddGoalModal() {
             document.getElementById('goalModalTitle').textContent = '➕ Add New Goal';
             document.getElementById('goalForm').reset();
             document.getElementById('editGoalId').value = '';
+            document.getElementById('goalType').value = '';
             document.getElementById('goalTypeSpecificFields').innerHTML = '';
+            document.querySelectorAll('.goal-type-option').forEach(opt => opt.classList.remove('selected'));
+            resetGoalFormValidationState();
+            resetGoalTargetFieldState();
+            // Vietnam-time "today" so users can't pick a deadline that has already passed there
+            const deadlineInput = document.getElementById('goalDeadline');
+            if (deadlineInput) deadlineInput.min = getVietnamDateStr();
             document.getElementById('goalModal').style.display = 'flex';
         }
 
@@ -23668,12 +23723,21 @@ window.DBP={
             const goal = goals.find(g => g.id === id);
             if (!goal) return;
             document.getElementById('goalModalTitle').textContent = '✏️ Edit Goal';
+            resetGoalFormValidationState();
             document.getElementById('editGoalId').value = goal.id;
             document.getElementById('goalTitle').value = goal.title;
             document.getElementById('goalType').value = goal.type;
+            document.querySelectorAll('.goal-type-option').forEach(opt => {
+                opt.classList.toggle('selected', opt.dataset.type === goal.type);
+            });
             populateGoalTypeSpecificFields(goal.type, goal);
             document.getElementById('goalTarget').value = goal.target;
-            document.getElementById('goalDeadline').value = goal.deadline || '';
+            const deadlineInput = document.getElementById('goalDeadline');
+            if (deadlineInput) {
+                // Don't block re-saving a goal whose deadline is already in the past
+                deadlineInput.min = '';
+                deadlineInput.value = goal.deadline || '';
+            }
             document.getElementById('goalModal').style.display = 'flex';
         }
 
@@ -23901,10 +23965,25 @@ window.DBP={
 
 
 
+        // Unlock the Target field and put it back to its default (editable) look.
+        // Called whenever the goal type changes, since skill_mastery locks it.
+        function resetGoalTargetFieldState() {
+            const targetInput = document.getElementById('goalTarget');
+            if (targetInput) {
+                targetInput.readOnly = false;
+                targetInput.style.background = 'var(--bg-white)';
+                targetInput.style.border = '1px solid var(--border-color)';
+            }
+        }
+
         function populateGoalTypeSpecificFields(type, goalData = {}) {
             const container = document.getElementById('goalTypeSpecificFields');
             container.innerHTML = '';
-            
+            resetGoalTargetFieldState();
+
+            const unitLabel = document.getElementById('goalTargetUnit');
+            if (unitLabel) unitLabel.textContent = type === 'custom' ? '(items)' : '(hours)';
+
             // 📚 STUDY HOURS GOAL
             if (type === 'study_hours') {
                 container.innerHTML = `
@@ -23915,20 +23994,9 @@ window.DBP={
                                 <h4 style="margin: 0 0 8px 0; color: var(--text-dark); font-size: 1.1rem;">Study Hours Goal</h4>
                                 <p style="margin: 0 0 12px 0; color: var(--text-muted); font-size: 0.9rem; line-height: 1.5;">
                                     Tracks total study hours in <strong>${skillsData[currentCareer]?.title || currentCareer}</strong>.<br>
-                                    ✅ <strong>Auto-updates</strong> when you add study time to any skill in this career.
+                                    ✅ <strong>Auto-updates</strong> when you add study time to any skill in this career.<br>
+                                    Set your target hours below in the <strong>Target Value</strong> field.
                                 </p>
-                                
-                                <!-- ✅ UNLOCK TARGET INPUT FOR STUDY HOURS -->
-                                <div style="margin-top: 12px; padding: 12px; background: rgba(59, 130, 246, 0.08); border-radius: 8px;">
-                                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--text-dark);">
-                                        🎯 Set Your Target Hours:
-                                    </label>
-                                    <input type="number" id="studyHoursCustomTarget" min="1" step="1" placeholder="e.g., 300 for Advanced, 1000 for Expert"
-                                        style="width: 100%; padding: 10px; border: 2px solid #3b82f6; border-radius: 8px; background: white; color: var(--text-dark); font-size: 1rem;">
-                                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px;">
-                                        💡 Tip: 300h = Advanced, 1000h = Technical Mastery, 5000h+ = Expertise
-                                    </div>
-                                </div>
                                 
                                 <!-- Smart Suggestions -->
                                 <div style="background: rgba(59, 130, 246, 0.08); padding: 12px; border-radius: 8px; margin-top: 12px;">
@@ -23943,28 +24011,15 @@ window.DBP={
                                             </button>
                                         `).join('')}
                                     </div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">
+                                        💡 Tip: 300h = Advanced, 1000h = Technical Mastery, 5000h+ = Expertise
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 `;
-                
-                // ✅ AUTO-FILL TARGET when custom input changes
-                const customTargetInput = document.getElementById('studyHoursCustomTarget');
-                const mainTargetInput = document.getElementById('goalTarget');
-                
-                if (customTargetInput && mainTargetInput) {
-                    customTargetInput.addEventListener('input', function() {
-                        mainTargetInput.value = this.value;
-                    });
-                    
-                    // ✅ If editing, pre-fill
-                    if (goalData && goalData.target) {
-                        customTargetInput.value = goalData.target;
-                        mainTargetInput.value = goalData.target;
-                    }
-                }
-                
+
             // 🎯 SKILL MASTERY GOAL
             } else if (type === 'skill_mastery') {
                 const careerData = skillsData[currentCareer];
@@ -24109,11 +24164,9 @@ window.DBP={
 
         // ✅ Apply Study Hours Suggestion (different from skill-based suggestion)
         function applyStudyHoursSuggestion(hours, label) {
-            const customInput = document.getElementById('studyHoursCustomTarget');
             const targetInput = document.getElementById('goalTarget');
             const titleInput = document.getElementById('goalTitle');
             
-            if (customInput) customInput.value = hours;
             if (targetInput) targetInput.value = hours;
             
             // Auto-suggest title if empty
@@ -25274,36 +25327,61 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // Show a validation problem: banner text + optional field/card highlight
+        function showGoalFormError(message, invalidGoalType) {
+            const errorBanner = document.getElementById('goalFormError');
+            errorBanner.textContent = `⚠️ ${message}`;
+            errorBanner.style.display = 'block';
+            if (invalidGoalType) {
+                document.querySelectorAll('.goal-type-option').forEach(opt => opt.classList.add('error'));
+            }
+            showNotification(message, 'error');
+        }
+
         document.getElementById('goalForm').addEventListener('submit', function(e) {
             e.preventDefault();
+            resetGoalFormValidationState();
+
             const id = document.getElementById('editGoalId').value;
             const title = document.getElementById('goalTitle').value.trim();
             const type = document.getElementById('goalType').value;
             const target = parseFloat(document.getElementById('goalTarget').value);
             const deadline = document.getElementById('goalDeadline').value || undefined;
-            
-            if (!title || !type || isNaN(target) || target <= 0) {
-                showNotification('Please fill in all required fields with valid values.', 'error');
+
+            // --- Validate step by step, in the order the fields appear ---
+            if (!title) {
+                showGoalFormError('Please enter a goal title.');
+                document.getElementById('goalTitle').focus();
                 return;
             }
-            let courseId = undefined;
+            if (!type) {
+                showGoalFormError('Please choose a goal type.', true);
+                return;
+            }
+
             let skillName = undefined;
-            
-            if (type === 'study_hours') {
-                const courseSelect = document.getElementById('goalCourseSelect');
-                courseId = courseSelect ? courseSelect.value || undefined : undefined;
-            } else if (type === 'skill_mastery') {
+            if (type === 'skill_mastery') {
                 const skillSelect = document.getElementById('goalSkillSelect');
                 skillName = skillSelect ? skillSelect.value || undefined : undefined;
-            } else if (type === 'complete_course') {
-                const courseCompleteSelect = document.getElementById('goalCourseComplete');
-                courseId = courseCompleteSelect ? courseCompleteSelect.value : undefined;
-                if (!courseId) {
-                    showNotification('Please select a course to complete.', 'error');
+                if (!skillName) {
+                    showGoalFormError('Please select a skill to master.');
                     return;
                 }
             }
-            
+
+            if (isNaN(target) || target <= 0) {
+                showGoalFormError('Please enter a target value greater than 0.');
+                document.getElementById('goalTarget').focus();
+                return;
+            }
+
+            // Deadline (if set) must not already be in the past, in Vietnam time
+            if (deadline && getVietnamDeadlineEnd(deadline) < getVietnamNow() && deadline !== (goals.find(g => g.id === id)?.deadline)) {
+                showGoalFormError('Deadline cannot be in the past (Vietnam time).');
+                document.getElementById('goalDeadline').focus();
+                return;
+            }
+
             if (id) {
                 const goalIndex = goals.findIndex(g => g.id === id);
                 if (goalIndex !== -1) {
@@ -25313,7 +25391,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         type,
                         target,
                         deadline,
-                        courseId,
                         skillName,
                         manuallyUpdated: false 
                     };
@@ -25327,10 +25404,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     target,
                     deadline,
                     career: currentCareer,
-                    courseId,
                     skillName,
                     currentProgress: 0,
-                    manuallyUpdated: false
+                    manuallyUpdated: false,
+                    createdAt: new Date().toISOString()
                 };
                 goals.push(newGoal);
                 showNotification('Goal added successfully!', 'success');
@@ -25344,18 +25421,6 @@ document.addEventListener('DOMContentLoaded', function() {
         function getGoalProgressPercent(goal) {
             const progress = calculateGoalProgress(goal);
             return goal.target > 0 ? Math.min(100, (progress / goal.target) * 100) : 0;
-        }
-
-        function openAddGoalModal() {
-            document.getElementById('goalModalTitle').textContent = '➕ Add New Goal';
-            document.getElementById('goalForm').reset();
-            document.getElementById('editGoalId').value = '';
-            document.getElementById('goalTypeSpecificFields').innerHTML = '';
-            document.getElementById('goalModal').style.display = 'flex';
-        }
-
-        function closeGoalModal() {
-            document.getElementById('goalModal').style.display = 'none';
         }
 
         document.getElementById('goalType').addEventListener('change', function() {
@@ -26601,13 +26666,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
         function selectGoalType(type) {
             document.querySelectorAll('.goal-type-option').forEach(opt => {
-                opt.classList.remove('selected');
+                opt.classList.remove('selected', 'error');
             });
             const selectedOption = document.querySelector(`[data-type="${type}"]`);
             if (selectedOption) {
                 selectedOption.classList.add('selected');
             }
             document.getElementById('goalType').value = type;
+            document.getElementById('goalFormError').style.display = 'none';
             populateGoalTypeSpecificFields(type);
         }
 
