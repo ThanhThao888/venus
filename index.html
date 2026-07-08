@@ -11876,6 +11876,13 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   transition: all 0.15s; touch-action: manipulation;
 }
 .dlt-del-btn:hover { background: #fee2e2; color: #ef4444; }
+.dlt-edit-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1.5px solid #6366f1; color: #6366f1; background: none;
+  cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; touch-action: manipulation;
+}
+.dlt-edit-btn:hover { background: #6366f1; color: #fff; }
 
 /* ── Google Calendar button ── */
 .dlt-gcal-btn {
@@ -12005,6 +12012,13 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dlt-cm-badge.early    { background: rgba(16,185,129,.14); color: #059669; }
 .dlt-cm-badge.ontime   { background: rgba(99,102,241,.14); color: #6366f1; }
 .dlt-cm-badge.late     { background: rgba(239,68,68,.14); color: #ef4444; }
+.dlt-cm-undo-btn {
+  font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-light);
+  color: var(--text-muted); cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  touch-action: manipulation;
+}
+.dlt-cm-undo-btn:hover { background: #fef3c7; color: #d97706; border-color: #fbbf24; }
 .dlt-cm-note {
   margin-top: 9px; width: 100%; box-sizing: border-box; resize: vertical;
   min-height: 44px; padding: 8px 10px; border: 1px solid var(--border-color);
@@ -12061,6 +12075,23 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 @keyframes dltXpIn  { from { opacity:0; transform:translateY(-8px) scale(.9); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes dltXpOut { to { opacity:0; transform:translateY(-6px); } }
 
+/* ── Quick Undo Toast (right after Mark Done) ── */
+.dlt-undo-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 10000; background: var(--text-dark); color: #fff;
+  padding: 11px 12px 11px 18px; border-radius: 12px; font-size: .86rem;
+  box-shadow: 0 6px 24px rgba(0,0,0,.28);
+  display: flex; align-items: center; gap: 14px;
+  animation: dltUndoIn .25s ease;
+}
+@keyframes dltUndoIn { from { opacity:0; transform:translateX(-50%) translateY(10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+.dlt-undo-toast button {
+  background: rgba(255,255,255,.15); color: #fff; border: none;
+  padding: 6px 13px; border-radius: 8px; font-weight: 700; font-size: .82rem;
+  cursor: pointer; touch-action: manipulation;
+}
+.dlt-undo-toast button:hover { background: rgba(255,255,255,.28); }
+
 @media (max-width: 600px) {
   .dlt-card { max-width: 100%; }
   #dltPopup { bottom: 12px; right: 12px; left: 12px; width: auto; max-width: none; }
@@ -12089,7 +12120,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 <!-- Modal -->
 <div id="dltModal">
   <div class="dlt-modal-box">
-    <h3>📌 New Deadline</h3>
+    <h3 id="dltModalTitle">📌 New Deadline</h3>
     <div class="dlt-fg">
       <label>Name</label>
       <input type="text" id="dltName" placeholder="e.g. CFA Exam Registration" maxlength="70" />
@@ -12115,7 +12146,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     </div>
     <div class="dlt-modal-actions">
       <button class="dlt-modal-cancel" onclick="DLT.closeModal()">Cancel</button>
-      <button class="dlt-modal-save"   onclick="DLT.save()">Save ✓</button>
+      <button class="dlt-modal-save"   id="dltModalSaveBtn" onclick="DLT.save()">Save ✓</button>
     </div>
   </div>
 </div>
@@ -12164,6 +12195,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   let doneMeta   = JSON.parse(localStorage.getItem('dltDoneMeta') || '{}');
   let curFilter  = 'all';
   let curSearch  = '';
+  let editingId  = null; // id of the manual deadline currently being edited, or null when adding new
   let cmChart    = null; // Chart.js instance for the completed-analytics modal
 
   function persist() {
@@ -12282,6 +12314,25 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 2500);
     } catch(e) {}
+  }
+
+  /* ─── Quick Undo Toast (in case "Mark Done" was clicked by mistake) ─── */
+  let undoToastTimer = null;
+  function showUndoToast(id) {
+    document.querySelectorAll('.dlt-undo-toast').forEach(el => el.remove());
+    clearTimeout(undoToastTimer);
+    const el = document.createElement('div');
+    el.className = 'dlt-undo-toast';
+    el.innerHTML = `<span>✓ Marked done</span><button type="button">Undo</button>`;
+    el.querySelector('button').onclick = () => {
+      doneIds = doneIds.filter(x => x !== id);
+      delete doneMeta[id];
+      persist();
+      render();
+      el.remove();
+    };
+    document.body.appendChild(el);
+    undoToastTimer = setTimeout(() => el.remove(), 6000);
   }
 
   /* ─── Google Calendar Link ─── */
@@ -12404,7 +12455,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         </div>
         <div class="dlt-card-btns">
           ${!done ? `<button class="dlt-done-btn" onclick="DLT.done('${d.id}',${days})" title="Mark done">✓</button>` : ''}
-
+          ${canDel && !done ? `<button class="dlt-edit-btn" onclick="event.stopPropagation(); DLT.openEditModal('${d.id}')" title="Edit">✎</button>` : ''}
           <a class="dlt-gcal-btn" href="${gcalUrl}" target="_blank" title="Add to Google Calendar" onclick="event.stopPropagation()">📅</a>
           ${canDel ? `<button class="dlt-del-btn" onclick="event.stopPropagation(); DLT.del('${d.id}')" title="Delete">✕</button>` : ''}
         </div>
@@ -12661,6 +12712,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
             <div class="dlt-cm-item-meta">${c.category ? c.category + ' · ' : ''}Due ${fmtDate(c.date)} · Completed ${fmtDate(c.meta.completedAt)}</div>
           </div>
           ${badge}
+          <button class="dlt-cm-undo-btn" onclick="DLT.undoDone('${c.id}')" title="Move back to active — not actually done yet">↩ Undo</button>
         </div>
         <textarea class="dlt-cm-note" placeholder="Add a note — why early/late, how it went, anything to remember next time..."
           onblur="DLT.saveNote('${c.id}', this.value)">${d_escapeHtml(c.meta.note || '')}</textarea>
@@ -12676,6 +12728,9 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     search(v){ curSearch = v || ''; render(); },
     navigate: navigateToItem,
     openModal() {
+      editingId = null;
+      document.getElementById('dltModalTitle').textContent = '📌 New Deadline';
+      document.getElementById('dltModalSaveBtn').textContent = 'Save ✓';
       document.getElementById('dltName').value = '';
       document.getElementById('dltDate').value = '';
       document.getElementById('dltTime').value = '';
@@ -12684,7 +12739,21 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       setTimeout(() => document.getElementById('dltName').focus(), 100);
     },
 
-    closeModal() { document.getElementById('dltModal').classList.remove('open'); },
+    openEditModal(id) {
+      const item = manualList.find(m => m.id === id);
+      if (!item) return;
+      editingId = id;
+      document.getElementById('dltModalTitle').textContent = '✏️ Edit Deadline';
+      document.getElementById('dltModalSaveBtn').textContent = 'Update ✓';
+      document.getElementById('dltName').value = item.name || '';
+      document.getElementById('dltDate').value = item.date || '';
+      document.getElementById('dltTime').value = item.time || '';
+      document.getElementById('dltCat').value  = item.category === '📌 Manual' ? '' : (item.category || '');
+      document.getElementById('dltModal').classList.add('open');
+      setTimeout(() => document.getElementById('dltName').focus(), 100);
+    },
+
+    closeModal() { document.getElementById('dltModal').classList.remove('open'); editingId = null; },
 
     save() {
       const name = document.getElementById('dltName').value.trim();
@@ -12692,7 +12761,19 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       const time = document.getElementById('dltTime').value; // "HH:MM" or ""
       const cat  = document.getElementById('dltCat').value;
       if (!name || !date) { alert('Please fill in name and date!'); return; }
-      manualList.push({ id: Date.now().toString(), name, date, time: time || '', category: cat || '📌 Manual' });
+
+      if (editingId) {
+        const item = manualList.find(m => m.id === editingId);
+        if (item) {
+          item.name = name;
+          item.date = date;
+          item.time = time || '';
+          item.category = cat || '📌 Manual';
+        }
+        editingId = null;
+      } else {
+        manualList.push({ id: Date.now().toString(), name, date, time: time || '', category: cat || '📌 Manual' });
+      }
       persist();
       DLT.closeModal();
       render();
@@ -12705,6 +12786,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       persist();
       addXP(days >= 0 ? 30 : 10);
       render();
+      showUndoToast(id);
     },
 
     del(id) {
@@ -12771,6 +12853,15 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         clearTimeout(flash._hideTimer);
         flash._hideTimer = setTimeout(() => flash.classList.remove('show'), 1400);
       }
+    },
+
+    undoDone(id) {
+      doneIds = doneIds.filter(x => x !== id);
+      delete doneMeta[id];
+      persist();
+      renderCompletedModal(); // refresh the open modal
+      render();               // refresh the main list behind it
+      if (typeof showNotification === 'function') showNotification('↩️ Marked as not done', 'info');
     }
   };
 
