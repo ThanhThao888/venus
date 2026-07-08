@@ -121,99 +121,9 @@
             font-size: 1.1rem;
         }
 
-        /* --- Quote Card Styles: collapsed icon, expands on hover/tap --- */
-        #quoteCard {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            display: flex;
-            align-items: center;
-            width: 48px;
-            height: 48px;
-            max-height: 48px;
-            background: var(--quote-bg);
-            border: 1px solid var(--quote-border);
-            border-radius: 24px;
-            box-shadow: var(--shadow-md);
-            cursor: pointer;
-            overflow: hidden;
-            white-space: nowrap;
-            transition: width 0.35s cubic-bezier(0.4,0,0.2,1),
-                        max-height 0.35s cubic-bezier(0.4,0,0.2,1),
-                        border-radius 0.35s ease,
-                        box-shadow 0.25s ease,
-                        transform 0.25s ease;
-            z-index: 999;
-        }
-
-        .quote-icon {
-            flex: 0 0 48px;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.05rem;
-            color: var(--quote-icon);
-        }
-
-        .quote-body {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            padding: 10px 18px 10px 0;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            overflow-y: auto;
-            max-height: 260px;
-        }
-
-        #quoteText {
-            font-style: italic;
-            font-size: 0.9rem;
-            color: var(--quote-text);
-            margin-bottom: 6px;
-            line-height: 1.4;
-            white-space: normal;
-        }
-
-        #quoteAuthor {
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            text-align: right;
-            white-space: normal;
-        }
-
-        /* Expanded state: hover on desktop, or .qc-open toggled by tap on touch devices */
-        @media (hover: hover) and (pointer: fine) {
-            #quoteCard:hover {
-                width: min(320px, calc(100vw - 40px));
-                max-height: 300px;
-                align-items: flex-start;
-                white-space: normal;
-                border-radius: var(--radius-md);
-                box-shadow: var(--shadow-lg);
-            }
-            #quoteCard:hover .quote-body {
-                opacity: 1;
-                transition: opacity 0.3s ease 0.15s;
-            }
-        }
-
-        #quoteCard.qc-open {
-            width: min(320px, calc(100vw - 40px));
-            max-height: 300px;
-            align-items: flex-start;
-            white-space: normal;
-            border-radius: var(--radius-md);
-            box-shadow: var(--shadow-lg);
-        }
-
-        #quoteCard.qc-open .quote-body {
-            opacity: 1;
-            transition: opacity 0.3s ease 0.15s;
-        }
-        /* --- End Quote Card Styles --- */
+        /* Quote widget CSS lives in one consolidated block further down
+           (search "QUOTE WIDGET — FAB + POPUP") to avoid duplicate/conflicting
+           rules scattered across the file. */
 
         /* --- DAILY STUDY CHART DARK MODE --- */
         .dark-mode .chart-container {
@@ -294,7 +204,7 @@
         /* Main Content Layout */
         .main-content {
             display: grid;
-            grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+            grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
             gap: 30px; 
             align-items: start;
         }        
@@ -1666,18 +1576,6 @@
                 max-height: none;
                 overflow-y: visible;
             }
-            #quoteCard {
-                max-width: 250px;
-                bottom: 10px;
-                left: 10px;
-                padding: 12px 15px;
-            }
-            #quoteText {
-                font-size: 0.85rem;
-            }
-            #quoteAuthor {
-                font-size: 0.75rem;
-            }
         }
 
         @media (max-width: 768px) {
@@ -1705,9 +1603,6 @@
             .progress-header {
                 flex-direction: column;
                 align-items: flex-start;
-            }
-            #quoteCard {
-                display: none;
             }
         }
 
@@ -3061,18 +2956,6 @@
             .form-group select,
             .form-group textarea {
                 font-size: 16px; =
-            }
-            
-            #quoteCard {
-                left: 5px;
-                right: 5px;
-                max-width: calc(100vw - 10px);
-                bottom: 5px;
-            }
-            
-            #quoteText {
-                font-size: 0.8rem;
-                line-height: 1.3;
             }
         }
 
@@ -4701,25 +4584,6 @@
                 inset 0 1px 1px rgba(255, 255, 255, 0.1);
         }
 
-        .dark-mode #quoteCard {
-            background: rgba(30, 41, 59, 0.8);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(96, 165, 250, 0.3);
-            box-shadow: 
-                0 8px 32px rgba(0, 0, 0, 0.4),
-                0 0 20px rgba(96, 165, 250, 0.2);
-        }
-
-        .dark-mode #quoteCard:hover {
-            box-shadow: 
-                0 12px 40px rgba(96, 165, 250, 0.4),
-                0 0 30px rgba(96, 165, 250, 0.3);
-            border-color: rgba(96, 165, 250, 0.5);
-        }       
-        
-        
-
 
         /* --- SIDEBAR GLASS CARDS --- */
         .sidebar-card {
@@ -6209,7 +6073,261 @@
 
 
 
-        /* --- QUOTE CARD FIXED BOTTOM LEFT (OPTIMIZED) --- */
+        /* ═══════════════════════════════════════════════════════════
+           QUOTE WIDGET — FAB + POPUP
+           Nút tròn 48px cố định (không đổi kích thước) + popup card
+           tách biệt, kích thước cố định, tự scroll nếu quote dài.
+           Cùng tông glass với các FAB khác (Finance Calculators,
+           Brain Dump, Battle Plan): nền xanh nhạt, viền xanh, icon
+           đơn sắc — không dùng animation phồng to theo hover/click.
+        ═══════════════════════════════════════════════════════════ */
+
+        #quoteFab {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(59, 130, 246, 0.1);
+            color: #1e40af;
+            border: 1px solid #3b82f6;
+            font-size: 1.05rem;
+            cursor: pointer;
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            z-index: 999;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        #quoteFab:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #quoteFab:active {
+            transform: translateY(-1px);
+        }
+
+        #quoteFab.quote-fab-open {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: #1e40af;
+        }
+
+        .dark-mode #quoteFab {
+            background: rgba(30, 41, 59, 0.7);
+            color: #f1f5f9;
+            border: 1px solid #475569;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .dark-mode #quoteFab:hover {
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .dark-mode #quoteFab.quote-fab-open {
+            background: rgba(96, 165, 250, 0.22);
+            border-color: #60a5fa;
+        }
+
+        /* --- Popup card --- */
+        #quotePopup {
+            position: fixed;
+            bottom: 80px;
+            left: 20px;
+            width: 300px;
+            max-width: calc(100vw - 40px);
+            height: 320px;
+            max-height: calc(100vh - 120px);
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 16px;
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.12),
+                0 0 40px rgba(59, 130, 246, 0.06);
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(8px) scale(0.98);
+            pointer-events: none;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        #quotePopup.quote-popup-open {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .quote-popup-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+            flex-shrink: 0;
+        }
+
+        .quote-popup-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+
+        .quote-popup-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .quote-popup-btn {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(59, 130, 246, 0.1);
+            color: #1e40af;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            font-size: 0.75rem;
+            cursor: pointer;
+            padding: 0;
+            transition: background 0.15s ease, transform 0.15s ease;
+        }
+
+        .quote-popup-btn:hover {
+            background: rgba(59, 130, 246, 0.18);
+            transform: translateY(-1px);
+        }
+
+        .quote-popup-btn.quote-popup-close:hover {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+
+        .quote-popup-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .quote-popup-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .quote-popup-body::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.25);
+            border-radius: 3px;
+        }
+
+        .quote-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #1e40af;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        #quoteText {
+            font-style: italic;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+            line-height: 1.5;
+            font-weight: 500;
+        }
+
+        #quoteAuthor {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: right;
+            font-weight: 600;
+            opacity: 0.85;
+        }
+
+        .dark-mode #quotePopup {
+            background: #0f172a;
+            border-color: rgba(96, 165, 250, 0.25);
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.4),
+                0 0 40px rgba(96, 165, 250, 0.12);
+        }
+
+        .dark-mode .quote-popup-header {
+            border-bottom-color: rgba(96, 165, 250, 0.2);
+        }
+
+        .dark-mode .quote-popup-btn {
+            background: rgba(96, 165, 250, 0.12);
+            color: #f1f5f9;
+            border-color: rgba(96, 165, 250, 0.35);
+        }
+
+        .dark-mode .quote-popup-btn:hover {
+            background: rgba(96, 165, 250, 0.22);
+        }
+
+        .dark-mode .quote-icon {
+            background: rgba(96, 165, 250, 0.12);
+            border-color: rgba(96, 165, 250, 0.35);
+            color: #f1f5f9;
+        }
+
+        .dark-mode #quoteText {
+            color: #e2e8f0;
+        }
+
+        .dark-mode #quoteAuthor {
+            color: #94a3b8;
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 480px) {
+            #quoteFab {
+                width: 44px;
+                height: 44px;
+                bottom: 16px;
+                left: 16px;
+            }
+            #quotePopup {
+                bottom: 68px;
+                left: 16px;
+                width: calc(100vw - 32px);
+                height: 300px;
+            }
+        }
+
+        /* --- Reduced motion --- */
+        @media (prefers-reduced-motion: reduce) {
+            #quoteFab,
+            #quotePopup {
+                transition: none;
+            }
+        }
+
+
+
 
         /* ====== NEW: Unified Finance Card for Deals & Analyses ====== */
 
@@ -8942,6 +9060,25 @@
     }
     .ft-ext-link:hover { opacity: 1; }
 
+    /* Streak display */
+    .ft-streak {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        background: var(--bg-light);
+        border-radius: 20px;
+        padding: 5px 10px;
+        margin-bottom: 14px;
+        min-height: 15px;
+    }
+    .ft-streak .ft-streak-fire { font-size: 0.9rem; }
+    .ft-streak.has-streak { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+    .ft-streak .ft-streak-best { color: var(--text-muted); font-weight: 500; margin-left: 2px; }
+
     /* Ring */
     .ft-ring-wrap {
         position: relative;
@@ -9168,15 +9305,8 @@
     }
     .rdm-track-select:focus { border-color: var(--primary); }
     .rdm-hpw-row { display: flex; align-items: center; gap: 8px; }
-    .rdm-gen-btn {
-        flex: 1; padding: 9px 0; border: none;
-        border-radius: var(--radius-md); background: var(--primary);
-        color: #fff; font-weight: 700; font-size: 0.88rem;
-        cursor: pointer; transition: all 0.2s; letter-spacing: 0.4px;
-    }
-    .rdm-gen-btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
     .rdm-reset-btn {
-        padding: 9px 14px; border: 1px solid var(--border-color);
+        flex: 1; padding: 9px 14px; border: 1px solid var(--border-color);
         border-radius: var(--radius-md); background: transparent;
         color: var(--text-muted); font-weight: 600; font-size: 0.88rem; cursor: pointer;
         transition: all 0.2s;
@@ -9321,6 +9451,101 @@
     .rdm-focus-card .rdm-hrs-progress-label { color: rgba(255,255,255,0.85); }
     .rdm-check-btn.rdm-check-hrs { border-color: #3b82f6; color: #3b82f6; font-size: 0.68rem; }
     .rdm-check-btn.rdm-check-hrs:hover { background: rgba(59,130,246,0.12); border-color: #3b82f6; color: #3b82f6; }
+
+    /* ── View toggle (List / Graph) + Compare toggle ── */
+    .rdm-view-row { display: flex; gap: 6px; align-items: center; }
+    .rdm-view-toggle { display: flex; background: var(--bg-light); border-radius: 8px; padding: 2px; gap: 2px; }
+    .rdm-view-btn {
+        border: none; background: transparent; padding: 5px 10px; border-radius: 6px;
+        font-size: 0.72rem; font-weight: 700; color: var(--text-muted); cursor: pointer;
+        transition: all 0.15s ease; white-space: nowrap;
+    }
+    .rdm-view-btn.active { background: var(--bg-white); color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+    .rdm-compare-btn {
+        border: 1px dashed var(--border-color); background: transparent; color: var(--text-muted);
+        padding: 5px 10px; border-radius: 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer;
+        white-space: nowrap; transition: all 0.15s ease;
+    }
+    .rdm-compare-btn.active { border-style: solid; border-color: #8b5cf6; color: #8b5cf6; background: rgba(139,92,246,0.08); }
+    .rdm-compare-select-row { display: none; margin-top: 8px; }
+    .rdm-compare-select-row.show { display: flex; gap: 6px; }
+
+    /* ── Streak badge ── */
+    .rdm-streak-badge {
+        display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 800;
+        color: #f97316; background: rgba(249,115,22,0.12); border-radius: 10px; padding: 3px 9px;
+        margin-left: auto; white-space: nowrap;
+    }
+    .rdm-summary-v2 { position: relative; }
+
+    /* ── Graph / tree view ── */
+    .rdm-graph-wrap { overflow-x: auto; overflow-y: hidden; padding: 6px 2px 10px; -webkit-overflow-scrolling: touch; }
+    .rdm-graph-svg { display: block; }
+    .rdm-gnode-rect { stroke-width: 1.5; cursor: pointer; transition: filter 0.15s ease; }
+    .rdm-gnode-rect:hover { filter: brightness(1.08); }
+    .rdm-gnode-text { font-size: 10.5px; font-weight: 700; pointer-events: none; }
+    .rdm-gnode-sub { font-size: 8.5px; font-weight: 600; pointer-events: none; }
+    .rdm-gedge { fill: none; stroke-width: 1.4; opacity: 0.4; transition: opacity 0.15s ease, stroke-width 0.15s ease; }
+    .rdm-gedge-skip { stroke-dasharray: 4 3; }
+    .rdm-gphase-label { font-size: 10.5px; font-weight: 800; text-anchor: middle; }
+    /* ── Graph hover isolation: dim everything not connected to the hovered node ── */
+    .rdm-gnode-rect, .rdm-gnode-text, .rdm-gnode-sub { transition: opacity 0.15s ease; }
+    .rdm-gnode-dim .rdm-gnode-rect, .rdm-gnode-dim .rdm-gnode-text, .rdm-gnode-dim .rdm-gnode-sub { opacity: 0.22; }
+    .rdm-gedge-dim { opacity: 0.06; }
+    .rdm-gedge-hi { opacity: 1; stroke-width: 2.6; }
+    .rdm-gnode-hi .rdm-gnode-rect { stroke-width: 2.75; filter: brightness(1.15); }
+    .rdm-graph-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.68rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px; }
+    .rdm-graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .rdm-graph-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+    /* ── Compare view ── */
+    .rdm-compare-grid { display: flex; gap: 10px; align-items: stretch; }
+    .rdm-compare-col { flex: 1; min-width: 0; border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; }
+    .rdm-compare-head { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 800; margin-bottom: 8px; }
+    .rdm-compare-ring { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 6px; position: relative; }
+    .rdm-compare-ring::before {
+        content: ''; position: absolute; inset: 4px; background: var(--bg-white); border-radius: 50%;
+    }
+    .dark-mode .rdm-compare-ring::before { background: var(--bg-light); }
+    .rdm-compare-ring span { position: relative; z-index: 1; font-size: 0.68rem; font-weight: 800; }
+    .rdm-compare-phase-mini { display: flex; align-items: center; gap: 6px; font-size: 0.68rem; margin: 4px 0; }
+    .rdm-compare-phase-mini .track { flex: 1; height: 5px; border-radius: 3px; background: var(--border-color); overflow: hidden; }
+    .rdm-compare-phase-mini .fill { height: 100%; border-radius: 3px; }
+    .rdm-compare-focus { font-size: 0.72rem; margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--bg-light); }
+    .rdm-compare-focus strong { display: block; font-size: 0.75rem; margin-bottom: 2px; }
+
+    /* ── Milestone celebration overlay ── */
+    .rdm-celebrate-overlay {
+        position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
+        background: rgba(15,23,42,0.55); backdrop-filter: blur(2px); animation: rdmFadeIn 0.2s ease;
+    }
+    .rdm-celebrate-card {
+        background: var(--bg-white); border-radius: 20px; padding: 28px 32px; text-align: center;
+        max-width: 320px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); animation: rdmPopIn 0.35s cubic-bezier(.2,1.4,.4,1);
+        position: relative;
+    }
+    .rdm-celebrate-icon { font-size: 3rem; margin-bottom: 10px; animation: rdmBounce 0.8s ease infinite; }
+    .rdm-celebrate-title { font-size: 1.05rem; font-weight: 800; color: var(--text-dark); margin-bottom: 6px; }
+    .rdm-celebrate-sub { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 18px; }
+    .rdm-celebrate-close {
+        border: none; background: linear-gradient(135deg,#f97316,#ef4444); color: #fff; font-weight: 700;
+        padding: 9px 22px; border-radius: 10px; cursor: pointer; font-size: 0.85rem;
+    }
+    .rdm-celebrate-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: 20px; }
+    .rdm-confetti-piece { position: absolute; top: -10px; width: 8px; height: 8px; opacity: 0.9; animation: rdmConfettiFall linear forwards; }
+    @keyframes rdmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes rdmPopIn { 0% { transform: scale(0.7); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    @keyframes rdmBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+    @keyframes rdmConfettiFall { to { transform: translateY(260px) rotate(360deg); opacity: 0; } }
+
+    /* ── Focus Now: create-goal button ── */
+    .rdm-focus-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .rdm-focus-goal-btn {
+        flex: 1; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.12); color: #fff;
+        font-weight: 700; font-size: 0.72rem; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+        transition: background 0.15s ease;
+    }
+    .rdm-focus-goal-btn:hover { background: rgba(255,255,255,0.24); }
     /* ── End Roadmap Module ─────────────────────────────────── */
 
     
@@ -9745,7 +9970,7 @@
 <body>
 
     <div class="dark-mode-container" style="display:flex;gap:8px;align-items:center;">
-        <button class="dark-mode-toggle" onclick="toggleDarkMode()">🌃 Dark Mode</button>
+        <button class="dark-mode-toggle" onclick="toggleDarkMode()">Dark Mode</button>
         <button id="calendarFAB" onclick="openCalendarModal()" title="Visual Planner"
             class="dark-mode-toggle"
             style="font-size:1.1rem; padding:8px 13px;">📆</button>
@@ -10006,6 +10231,99 @@
     .cal-week-col-head { font-size:.65rem; padding:6px 2px; }
     .cal-week-hour-label { font-size:.6rem; padding:2px 3px 0; }
 }
+
+/* ── To-Do List (ABCDE priority) — v2 ── */
+.todo-wrap{padding:4px 2px 20px;}
+
+/* progress bar */
+.todo-progress-wrap{background:var(--bg-light);border-radius:12px;padding:12px 14px;margin-bottom:16px;border:1px solid var(--border-color);}
+.todo-progress-info{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;}
+.todo-progress-label{font-size:.78rem;font-weight:700;color:var(--text-muted);}
+.todo-progress-pct{font-size:.95rem;font-weight:800;background:linear-gradient(135deg,#6366f1,#10b981);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.todo-progress-bar{height:8px;border-radius:20px;background:var(--border-color);overflow:hidden;position:relative;}
+.todo-progress-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#6366f1,#10b981);transition:width .5s cubic-bezier(.4,0,.2,1);position:relative;}
+.todo-progress-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);animation:todoShine 2.2s ease-in-out infinite;}
+@keyframes todoShine{0%{transform:translateX(-100%);}100%{transform:translateX(100%);}}
+
+/* add row */
+.todo-add-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.todo-add-input{flex:1;min-width:180px;padding:11px 14px;border:1.5px solid var(--border-color);border-radius:10px;font-size:.88rem;background:var(--bg-white);color:var(--text-dark);transition:border-color .2s,box-shadow .2s;}
+.todo-add-input:focus{outline:none;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15);}
+.todo-add-select{padding:11px 10px;border:1.5px solid var(--border-color);border-radius:10px;font-size:.85rem;background:var(--bg-white);color:var(--text-dark);cursor:pointer;transition:border-color .2s;}
+.todo-add-select:focus{outline:none;border-color:#6366f1;}
+.todo-add-btn{padding:11px 18px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:10px;font-size:.85rem;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 3px 10px rgba(16,185,129,.3);transition:transform .15s,box-shadow .15s,opacity .15s;}
+.todo-add-btn:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(16,185,129,.4);opacity:1;}
+.todo-add-btn:active{transform:translateY(0);}
+.todo-hint{font-size:.72rem;color:var(--text-muted);margin:0 0 18px;padding:6px 10px;background:rgba(99,102,241,.06);border-radius:8px;border-left:3px solid #6366f1;}
+
+/* groups */
+.todo-group{margin-bottom:16px;animation:todoFadeIn .35s ease both;}
+@keyframes todoFadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+.todo-group-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;padding:4px 2px;}
+.todo-group-badge{font-size:.72rem;font-weight:800;padding:3px 11px;border-radius:20px;color:#fff;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.15);letter-spacing:.3px;}
+.todo-group-desc{font-size:.72rem;color:var(--text-muted);}
+.todo-group-count{font-size:.68rem;font-weight:700;color:var(--text-muted);background:var(--bg-light);padding:2px 8px;border-radius:10px;margin-left:auto;}
+
+/* rows */
+.todo-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-color);border-left:4px solid var(--p-color,#6366f1);border-radius:10px;margin-bottom:7px;background:var(--bg-white);box-shadow:var(--shadow-sm);transition:transform .15s,box-shadow .15s,opacity .3s;}
+.todo-row:hover{transform:translateX(3px);box-shadow:var(--shadow-md);}
+.todo-row.done{opacity:.55;border-left-color:var(--border-color);}
+.todo-row.done:hover{transform:none;}
+
+.todo-check{width:20px;height:20px;flex-shrink:0;cursor:pointer;accent-color:#10b981;border-radius:6px;transition:transform .15s;}
+.todo-check:hover{transform:scale(1.15);}
+
+.todo-text{flex:1;font-size:.87rem;color:var(--text-dark);min-width:0;word-break:break-word;transition:color .2s;}
+.todo-row.done .todo-text{text-decoration:line-through;color:var(--text-muted);}
+
+.todo-prio-select{font-size:.68rem;font-weight:700;padding:3px 5px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-light);color:var(--text-dark);flex-shrink:0;cursor:pointer;}
+
+.todo-move-btn,.todo-edit-btn,.todo-del-btn{background:none;border:none;font-size:.9rem;cursor:pointer;color:var(--text-muted);padding:3px 5px;flex-shrink:0;line-height:1;border-radius:6px;transition:color .15s,background .15s,transform .15s;}
+.todo-move-btn:disabled{opacity:.2;cursor:default;}
+.todo-move-btn:hover:not(:disabled){color:#6366f1;background:rgba(99,102,241,.1);transform:scale(1.1);}
+.todo-edit-btn:hover{color:#6366f1;background:rgba(99,102,241,.1);transform:scale(1.1);}
+.todo-del-btn:hover{color:#ef4444;background:rgba(239,68,68,.1);transform:scale(1.1);}
+
+.todo-empty{font-size:.88rem;color:var(--text-muted);text-align:center;padding:40px 20px;background:var(--bg-light);border-radius:12px;border:1.5px dashed var(--border-color);}
+.todo-empty-icon{font-size:2.2rem;display:block;margin-bottom:8px;animation:todoBounce 2s ease-in-out infinite;}
+@keyframes todoBounce{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+
+.todo-done-section{margin-top:20px;padding-top:14px;border-top:1px solid var(--border-color);}
+.todo-done-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer;padding:6px 4px;border-radius:8px;transition:background .15s;}
+.todo-done-head:hover{background:rgba(99,102,241,.06);}
+.todo-done-head span{font-size:.82rem;font-weight:700;color:var(--text-muted);}
+.todo-clear-btn{padding:5px 12px;background:rgba(239,68,68,.08);color:#ef4444;border:1px solid rgba(239,68,68,.25);border-radius:8px;font-size:.72rem;font-weight:700;cursor:pointer;transition:background .15s,transform .15s;}
+.todo-clear-btn:hover{background:rgba(239,68,68,.15);transform:translateY(-1px);}
+
+.dark-mode .todo-row{background:#1e293b;}
+.dark-mode .todo-prio-select{background:#0f172a;}
+.dark-mode .todo-progress-wrap{background:#1e293b;}
+.dark-mode .todo-empty{background:#1e293b;}
+
+/* ── Todo Reminder Popup (shows on every page load) ── */
+#todoReminderOverlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);z-index:99998;display:flex;align-items:center;justify-content:center;padding:16px;animation:trOverlayIn .25s ease both;}
+@keyframes trOverlayIn{from{opacity:0;}to{opacity:1;}}
+.todo-reminder-card{background:var(--bg-white,#fff);border-radius:16px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;animation:trCardIn .35s cubic-bezier(.34,1.36,.64,1) both;}
+@keyframes trCardIn{from{opacity:0;transform:translateY(16px) scale(.95);}to{opacity:1;transform:translateY(0) scale(1);}}
+.todo-reminder-head{background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:18px 20px;color:#fff;display:flex;align-items:center;gap:10px;}
+.todo-reminder-head-icon{font-size:1.6rem;}
+.todo-reminder-head-text{flex:1;}
+.todo-reminder-head-title{font-size:1.02rem;font-weight:800;}
+.todo-reminder-head-sub{font-size:.78rem;opacity:.9;}
+.todo-reminder-body{padding:16px 20px;max-height:45vh;overflow-y:auto;}
+.todo-reminder-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;margin-bottom:6px;background:var(--bg-light,#f8fafc);border-left:3px solid var(--p-color,#6366f1);}
+.todo-reminder-item-badge{font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:20px;color:#fff;background:var(--p-color,#6366f1);flex-shrink:0;}
+.todo-reminder-item-text{font-size:.86rem;color:var(--text-dark,#1e293b);flex:1;min-width:0;word-break:break-word;}
+.todo-reminder-more{font-size:.78rem;color:var(--text-muted,#64748b);text-align:center;padding:4px 0 2px;}
+.todo-reminder-actions{display:flex;gap:10px;padding:14px 20px 18px;}
+.todo-reminder-btn{flex:1;padding:11px 14px;border-radius:10px;font-size:.86rem;font-weight:700;cursor:pointer;border:none;transition:transform .15s,opacity .15s;}
+.todo-reminder-btn:active{transform:scale(.97);}
+.todo-reminder-btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 4px 12px rgba(99,102,241,.35);}
+.todo-reminder-btn-secondary{background:var(--bg-light,#f1f5f9);color:var(--text-muted,#64748b);}
+.dark-mode .todo-reminder-card{background:#1e293b;}
+.dark-mode .todo-reminder-item{background:#0f172a;}
+.dark-mode .todo-reminder-item-text{color:#e2e8f0;}
+.dark-mode .todo-reminder-btn-secondary{background:#334155;color:#cbd5e1;}
 </style>
 
 <!-- Calendar Modal HTML -->
@@ -10049,7 +10367,7 @@
       <input type="date" id="calDateJump"
         style="padding:4px 8px;border:1px solid var(--border-color);border-radius:6px;font-size:.8rem;background:var(--bg-white);color:var(--text-dark);cursor:pointer;"
         onchange="PLANEXT.jumpToDate(this.value)">
-      <span style="font-size:.68rem;color:var(--text-muted);white-space:nowrap;">← → T D W M</span>
+      <span style="font-size:.68rem;color:var(--text-muted);white-space:nowrap;">← →</span>
     </div>
     <!-- Category filter panel (hidden by default) -->
     <div id="calFilterPanel" style="display:none;flex-wrap:wrap;gap:6px;padding:8px 16px;background:rgba(245,158,11,.05);border-bottom:1px solid var(--border-color);">
@@ -10068,9 +10386,10 @@
       <button class="cal-tab active" onclick="CAL.switchTab('day')">📅 Day</button>
       <button class="cal-tab"       onclick="CAL.switchTab('week')">🗓 Week</button>
       <button class="cal-tab"       onclick="PLANEXT.openMonthView()">📆 Month</button>
+      <button class="cal-tab"       onclick="PLANEXT.openTodoView()">✅ To-Do</button>
     </div>
     <!-- Legend -->
-    <div class="cal-legend">
+    <div class="cal-legend" id="calLegend">
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#6366f1"></div>Task/Event</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#3b82f6"></div>Study Session</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#8b5cf6"></div>Deadline</div>
@@ -10191,7 +10510,13 @@ const CAL = (() => {
 
   /* ── Helpers ── */
   function dateStr(d) {
-    return d.toISOString().split('T')[0];
+    // Use LOCAL date components, not UTC (toISOString shifts by the
+    // timezone offset and silently rolls early-morning times back to
+    // the previous day for UTC+ zones like Vietnam).
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
   function fmt(d, opts) {
     return d.toLocaleDateString('vi-VN', opts);
@@ -10247,16 +10572,24 @@ const CAL = (() => {
         if (!s.start || !s.end) return;
         const startD = new Date(s.start);
         const endD   = new Date(s.end);
-        const startDate = startD.toISOString().split('T')[0];
-        const endDate   = endD.toISOString().split('T')[0];
+        // Use LOCAL date, not UTC — dateStr() already does this correctly.
+        const startDate = dateStr(startD);
+        const endDate   = dateStr(endD);
         if (startDate !== dateISO && endDate !== dateISO) return;
 
-        // Handle cross-midnight
+        // Handle cross-midnight (session started the day before dateISO
+        // and spills into dateISO, e.g. slept 22:00 → 04:00)
         let startH, dur;
-        if (startDate === dateISO) {
+        if (startDate === dateISO && endDate === dateISO) {
+          // Whole session falls within this single day — use its real times.
           startH = startD.getHours() + startD.getMinutes() / 60;
-          dur = Math.min(s.duration, 24 - startH);
+          dur = (endD - startD) / 3600000;
+        } else if (startDate === dateISO) {
+          // Started today, spills into tomorrow — show from start until midnight.
+          startH = startD.getHours() + startD.getMinutes() / 60;
+          dur = 24 - startH;
         } else {
+          // Started yesterday, ends today — show from midnight until end time.
           startH = 0;
           dur = endD.getHours() + endD.getMinutes() / 60;
         }
@@ -10892,6 +11225,16 @@ const CAL = (() => {
 })();
 
 /* ── Global helpers ── */
+// Local (not UTC) YYYY-MM-DD — use this instead of toISOString().split('T')[0]
+// whenever comparing/keying dates by the user's own calendar day, otherwise
+// times before the timezone offset (e.g. 00:00-06:59 in UTC+7) get bucketed
+// into the previous day.
+function toLocalDateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
 function openCalendarModal()  { CAL.open(); }
 function closeCalendarModal() { CAL.close(); }
 
@@ -11322,7 +11665,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
                     <div class="career-name">English</div>
                 </div>
                 <div class="career-card" data-career="chinese" onclick="selectCareer('chinese')">
-                    <div class="career-icon">💞</div>
+                    <div class="career-icon">🀄</div>
                     <div class="career-name">Chinese</div>
                 </div>                
 
@@ -11714,7 +12057,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
         <option value="">— None —</option>
         <option>📜 CFA</option><option>💼 PE</option><option>🏦 IB</option>
         <option>📈 HF</option><option>🎯 Consulting</option><option>🌐 English</option>
-        <option>💞 Chinese</option><option>🛠️ Tools</option><option>💳 Fintech</option>
+        <option>🀄 Chinese</option><option>🛠️ Tools</option><option>💳 Fintech</option>
         <option>📚 Other</option>
       </select>
     </div>
@@ -11740,7 +12083,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   /* ─── Constants ─── */
   const CAREER_MAP = {
     pe:'💼 PE', ib:'🏦 IB', hf:'📈 HF', sc:'🎯 Consulting',
-    fintech:'💳 Fintech', english:'🌐 English', chinese:'💞 Chinese',
+    fintech:'💳 Fintech', english:'🌐 English', chinese:'🀄 Chinese',
     tools:'🛠️ Tools', cfa1:'📜 CFA'
   };
 
@@ -13194,15 +13537,18 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dbp-divider{height:1px;background:var(--border-color,#e2e8f0);margin:16px 0;}
 
 /* ─── TRIGGER BUTTON ─── */
-#dbpTriggerBtn{position:fixed;bottom:80px;right:24px;background:linear-gradient(135deg,#1d4ed8,#4f46e5);color:#fff;border:none;border-radius:50px;padding:12px 20px;font-size:0.87rem;font-weight:800;cursor:pointer;box-shadow:0 4px 20px rgba(29,78,216,0.45);z-index:998;transition:all 0.25s;display:flex;align-items:center;gap:8px;}
-#dbpTriggerBtn:hover{transform:translateY(-3px);box-shadow:0 9px 28px rgba(29,78,216,0.55);}
+#dbpTriggerBtn{position:fixed;bottom:80px;right:24px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:rgba(59,130,246,0.1);color:#1e40af;border:1px solid #3b82f6;border-radius:50%;padding:0;font-size:1.05rem;cursor:pointer;backdrop-filter:blur(2px);box-shadow:0 2px 4px rgba(0,0,0,0.05);z-index:998;transition:all 0.25s;}
+#dbpTriggerBtn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1);}
 #dbpTriggerBtn:active{transform:translateY(-1px);}
+.dark-mode #dbpTriggerBtn{background:rgba(30,41,59,0.7);color:#f1f5f9;border:1px solid #475569;box-shadow:0 2px 4px rgba(0,0,0,0.2);}
+.dark-mode #dbpTriggerBtn:hover{box-shadow:0 4px 8px rgba(0,0,0,0.3);}
 .dbp-btn-pulse{width:8px;height:8px;background:#10b981;border-radius:50%;animation:dbp-pulse 2s infinite;flex-shrink:0;}
 
 /* ─── TOAST ─── */
 #dbpToast{position:fixed;bottom:138px;right:24px;background:#1e293b;color:#fff;padding:10px 16px;border-radius:10px;font-size:0.82rem;font-weight:600;z-index:3000;opacity:0;transform:translateY(10px);transition:all 0.3s;pointer-events:none;max-width:260px;box-shadow:0 4px 12px rgba(0,0,0,0.15);}
 #dbpToast.show{opacity:1;transform:translateY(0);}
 #dbpToast.success{background:#059669;}
+#dbpToast.warn{background:#d97706;}
 
 /* ─── FLOATING TIMER ─── */
 #dbpFloatTimer{
@@ -13277,7 +13623,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     .dbp-history-date { font-size: 0.7rem; }
     .dbp-history-tasks { font-size: 0.78rem; }
     .dbp-history-load, .dbp-history-del { padding: 4px 10px; font-size: 0.68rem; }
-    #dbpTriggerBtn { bottom: calc(16px + env(safe-area-inset-bottom)); right: 16px; padding: 10px 16px; font-size: 0.8rem; }
+    #dbpTriggerBtn { bottom: calc(16px + env(safe-area-inset-bottom)); right: 16px; width: 40px; height: 40px; font-size: 1rem; }
     #dbpToast { bottom: 80px; right: 16px; left: 16px; max-width: none; }
     #dbpFloatTimer { bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; min-width: 200px; padding: 12px 14px; }
     .dbpft-time { font-size: 1.8rem; }
@@ -13323,8 +13669,8 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 
 
 <!-- ── TRIGGER ── -->
-<button id="dbpTriggerBtn" onclick="DBP.open()">
-    <span class="dbp-btn-pulse"></span>⚡ Battle Plan
+<button id="dbpTriggerBtn" onclick="DBP.open()" title="Daily Battle Plan">
+    <i class="fa-solid fa-bolt-lightning"></i>
 </button>
 
 <!-- ── TOAST ── -->
@@ -13820,6 +14166,10 @@ function generate(){
     if(!picked.length){ toast('⚠️ Select at least 1 task first!'); return; }
 
     const start = new Date(); start.setHours(sh,sm,0,0);
+    // Cảnh báo nếu Start Time đã qua rồi (so với giờ hiện tại)
+    if(start < new Date()){
+        toast(`⚠️ ${gel('dbpStartTime').value} đã qua rồi — plan vẫn được tạo từ mốc giờ đó`, 4200, 'warn');
+    }
     const blocks = [];
     let cursor = new Date(start);
     let cumWork = 0;
@@ -14135,8 +14485,11 @@ function savePlan(){
     store.set('dbpHistory',hist.slice(0,7));
     // Xóa temp storage vì đã vào history rồi
     try{ localStorage.removeItem('dbpCurrentBlocks'); localStorage.removeItem('dbpCurrentStyle'); }catch(_){}
+    // FIX: nếu đang có timer chạy cho plan này thì phải dừng nó lại,
+    // nếu không interval cũ vẫn chạy ngầm dù _blocks đã bị xóa
+    if(_activeTimerIdx !== null){ floatStop(); }
     // Reset _blocks để mở modal lại sẽ bắt đầu fresh
-    _blocks=[]; _timers=[];
+    _blocks=[]; _timers={};
     toast('💾 Plan saved!');
 }
 
@@ -14225,7 +14578,7 @@ function open(){
     if(_activeTimerIdx === null && !_blocks.length){
         gel('dbpSchedule').innerHTML='';
         gel('dbpActionRow').style.display='none';
-        _blocks=[]; _timers=[]; _undoStack=[];
+        _blocks=[]; _timers={}; _undoStack=[];
     }
     loadSettings();
     renderTasks();
@@ -14417,14 +14770,19 @@ window.DBP={
                             <a href="https://cool-timer.com/" target="_blank" class="ft-ext-link" title="Open Cool-Timer.com">🌐</a>
                         </div>
 
-                        <!-- Goal lock: bắt buộc chọn 1 mục tiêu trước khi Start -->
+                        <div id="ftStreakDisplay" class="ft-streak" title="Số ngày liên tiếp hoàn thành ít nhất 1 phiên Focus Timer">
+                            <!-- filled by renderFocusStreak() -->
+                        </div>
+
+                        <!-- Goal lock: must pick one goal before Start is allowed -->
+                        <div class="focus-lock-banner">🔒 FOCUS SESSION ACTIVE — everything else is dimmed</div>
                         <div class="ft-goal-select-wrap" style="margin-bottom:10px;">
                             <select id="ftGoalSelect" class="ft-goal-select"
                                 style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);font-size:0.85rem;">
-                                <option value="">🎯 Chọn 1 mục tiêu trước khi bắt đầu…</option>
+                                <option value="">🎯 Pick ONE goal before you start…</option>
                             </select>
                             <div id="ftGoalHint" style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;display:none;">
-                                Chọn một mục tiêu duy nhất — đây là session single-tasking.
+                                Pick a single goal — this is a single-tasking session.
                             </div>
                         </div>
 
@@ -14466,7 +14824,7 @@ window.DBP={
                                 <svg id="ftPauseIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
                                 <span id="ftBtnLabel">Start</span>
                             </button>
-                            <button class="ft-btn" id="ftSwitchBtn" onclick="switchFocusGoal()" title="Đổi mục tiêu giữa chừng (sẽ ghi log)" style="display:none;">
+                            <button class="ft-btn" id="ftSwitchBtn" onclick="switchFocusGoal()" title="Switch goal mid-session (this gets logged)" style="display:none;">
                                 <span style="font-size:15px;">🔀</span>
                             </button>
                         </div>
@@ -14476,7 +14834,7 @@ window.DBP={
                     <div class="sidebar-card" id="focusFragmentationCard">
                         <h3 class="sidebar-title">📊 Focus Fragmentation (7 ngày)</h3>
                         <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;">
-                            Số lần đổi mục tiêu giữa chừng & phút tập trung thực tế theo từng mục tiêu.
+                            Mid-session switches & actual focused minutes per goal.
                         </div>
                         <div class="chart-container" style="position:relative;height:150px;margin-bottom:14px;">
                             <canvas id="focusSwitchChart"></canvas>
@@ -14485,7 +14843,108 @@ window.DBP={
                             <canvas id="focusGoalMinutesChart"></canvas>
                         </div>
                         <div id="focusFragEmptyState" style="font-size:0.78rem;color:var(--text-muted);text-align:center;padding:10px 0;display:none;">
-                            Chưa có session nào được ghi log tuần này. Bắt đầu Focus Timer với 1 mục tiêu để bắt đầu thấy dữ liệu ở đây.
+                            No sessions logged this week yet. Start the Focus Timer with a goal selected to see data here.
+                        </div>
+                        <button class="ft-history-btn" onclick="openFocusHistoryModal()" title="Xem, sửa hoặc xoá các phiên đã ghi nhận">
+                            🗂️ Quản lý lịch sử phiên
+                        </button>
+                    </div>
+
+                    <!-- ══ FOCUS HISTORY MODAL ══ -->
+                    <style>
+                        .ft-history-btn{width:100%;margin-top:12px;padding:8px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-light);color:var(--text-muted);font-size:0.78rem;font-weight:600;cursor:pointer;transition:var(--transition);}
+                        .ft-history-btn:hover{background:var(--border-color);color:var(--text-dark);}
+                        .fhm-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.55);backdrop-filter:blur(3px);z-index:9999;display:none;align-items:center;justify-content:center;padding:16px;}
+                        .fhm-overlay.open{display:flex;}
+                        .fhm-box{background:var(--bg-white);color:var(--text-dark);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:460px;width:100%;max-height:80vh;display:flex;flex-direction:column;padding:20px 20px 16px;}
+                        .fhm-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+                        .fhm-title{font-size:1.05rem;font-weight:700;}
+                        .fhm-close{background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--text-muted);}
+                        .fhm-sub{font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;}
+                        .fhm-list{overflow-y:auto;flex:1;margin:0 -6px;padding:0 6px;}
+                        .fhm-row{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px;border:1px solid var(--border-color);margin-bottom:8px;}
+                        .fhm-row-icon{font-size:1.2rem;flex-shrink:0;}
+                        .fhm-row-main{flex:1;min-width:0;}
+                        .fhm-row-goal{font-size:0.85rem;font-weight:600;}
+                        .fhm-row-meta{font-size:0.72rem;color:var(--text-muted);margin-top:1px;}
+                        .fhm-badge{font-size:0.65rem;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;}
+                        .fhm-badge.completed{background:rgba(16,185,129,.12);color:#10b981;}
+                        .fhm-badge.switched{background:rgba(245,158,11,.12);color:#f59e0b;}
+                        .fhm-badge.abandoned{background:rgba(239,68,68,.12);color:#ef4444;}
+                        .fhm-del-btn{background:none;border:none;color:var(--text-muted);font-size:0.95rem;cursor:pointer;padding:4px 6px;flex-shrink:0;}
+                        .fhm-del-btn:hover{color:#ef4444;}
+                        .fhm-empty{font-size:0.82rem;color:var(--text-muted);text-align:center;padding:24px 0;}
+                        .fhm-footer{margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);}
+                        .fhm-clear-btn{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06);color:#ef4444;font-size:0.78rem;font-weight:600;cursor:pointer;}
+                        .fhm-clear-btn:hover{background:rgba(239,68,68,.12);}
+                    </style>
+                    <div class="fhm-overlay" id="fhmOverlay">
+                        <div class="fhm-box">
+                            <div class="fhm-head">
+                                <div class="fhm-title">🗂️ Lịch sử phiên Focus</div>
+                                <button class="fhm-close" onclick="closeFocusHistoryModal()">✕</button>
+                            </div>
+                            <div class="fhm-sub">Xoá phiên bị ghi nhầm — streak &amp; biểu đồ sẽ tự cập nhật lại.</div>
+                            <div class="fhm-list" id="fhmList"></div>
+                            <div class="fhm-footer">
+                                <button class="fhm-clear-btn" onclick="clearAllFocusHistory()">🗑️ Xoá toàn bộ lịch sử</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ══ FOCUS SWITCH MODAL ══ -->
+                    <style>
+                        .fsm-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.55);backdrop-filter:blur(3px);z-index:9999;display:none;align-items:center;justify-content:center;padding:16px;}
+                        .fsm-overlay.open{display:flex;}
+                        .fsm-box{background:var(--bg-white);color:var(--text-dark);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:400px;width:100%;padding:22px;}
+                        .fsm-title{font-size:1.05rem;font-weight:700;margin-bottom:4px;}
+                        .fsm-sub{font-size:0.8rem;color:var(--text-muted);margin-bottom:14px;}
+                        .fsm-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+                        .fsm-chip{padding:7px 12px;border-radius:20px;border:1px solid var(--border-color);background:var(--bg-light);color:var(--text-dark);font-size:0.8rem;cursor:pointer;transition:var(--transition);user-select:none;}
+                        .fsm-chip.selected{background:var(--primary);color:#fff;border-color:var(--primary);}
+                        .fsm-textarea{width:100%;border:1px solid var(--border-color);border-radius:8px;padding:8px;font-size:0.82rem;background:var(--bg-white);color:var(--text-dark);margin-bottom:14px;resize:vertical;min-height:50px;font-family:inherit;}
+                        .fsm-select{width:100%;padding:8px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);font-size:0.85rem;margin-bottom:14px;}
+                        .fsm-actions{display:flex;gap:8px;}
+                        .fsm-btn{flex:1;padding:10px;border-radius:8px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;transition:var(--transition);}
+                        .fsm-btn-primary{background:var(--primary);color:#fff;}
+                        .fsm-btn-secondary{background:var(--bg-light);color:var(--text-dark);border:1px solid var(--border-color);}
+                        .fsm-step{display:none;}
+                        .fsm-step.active{display:block;}
+
+                        /* Real UI lock: dim every other sidebar widget while a focus session is running */
+                        body.focus-session-active .sidebar-card:not(.focus-timer-card):not(#focusFragmentationCard){
+                            opacity:0.32;filter:blur(1.5px) grayscale(0.3);pointer-events:none;transition:opacity .3s ease, filter .3s ease;
+                        }
+                        .focus-lock-banner{display:none;text-align:center;font-size:0.72rem;font-weight:700;color:#fff;background:linear-gradient(90deg,#ef4444,#f59e0b);border-radius:8px;padding:6px 10px;margin-bottom:10px;letter-spacing:.3px;}
+                        body.focus-session-active .focus-lock-banner{display:block;}
+                    </style>
+                    <div class="fsm-overlay" id="fsmOverlay">
+                        <div class="fsm-box">
+                            <div class="fsm-step active" id="fsmStep1">
+                                <div class="fsm-title">What just pulled your attention?</div>
+                                <div class="fsm-sub">Tap what applies — this is the data point that actually matters.</div>
+                                <div class="fsm-chips" id="fsmChips">
+                                    <div class="fsm-chip" data-val="Phone / social media">📱 Phone / social</div>
+                                    <div class="fsm-chip" data-val="Random thought">💭 Random thought</div>
+                                    <div class="fsm-chip" data-val="Fatigue / need a break">🔋 Fatigue</div>
+                                    <div class="fsm-chip" data-val="Another task felt urgent">⚡ Another task felt urgent</div>
+                                    <div class="fsm-chip" data-val="Other">✏️ Other</div>
+                                </div>
+                                <textarea class="fsm-textarea" id="fsmNote" placeholder="Optional — one short line..."></textarea>
+                                <div class="fsm-actions">
+                                    <button class="fsm-btn fsm-btn-secondary" onclick="fsmCancel()">Cancel</button>
+                                    <button class="fsm-btn fsm-btn-primary" onclick="fsmGoToStep2()">Next →</button>
+                                </div>
+                            </div>
+                            <div class="fsm-step" id="fsmStep2">
+                                <div class="fsm-title">What are you switching to?</div>
+                                <div class="fsm-sub">Pick exactly one. It locks your next block the same way.</div>
+                                <select class="fsm-select" id="fsmGoalSelect"></select>
+                                <div class="fsm-actions">
+                                    <button class="fsm-btn fsm-btn-secondary" onclick="fsmBackToStep1()">← Back</button>
+                                    <button class="fsm-btn fsm-btn-primary" onclick="fsmConfirmSwitch()">Switch & keep going</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -14587,7 +15046,7 @@ window.DBP={
                                 <option value="sc">🎯 SC</option>
                                 <option value="fintech">💳 Fintech</option>
                                 <option value="english">🚩 English</option>
-                                <option value="chinese">💞 Chinese</option>
+                                <option value="chinese">🀄 Chinese</option>
                                 <option value="tools">🛠️ Tools</option>
                                 <option value="cfa1">📜 CFA</option>
                             </select>
@@ -14678,10 +15137,10 @@ window.DBP={
                             <option value="sc">🎯 Strategy Consulting</option>
                             <option value="fintech">💳 Fintech</option>
                             <option value="english">🚩 English</option>
-                            <option value="chinese">💞 Chinese</option>
+                            <option value="chinese">🀄 Chinese</option>
                             <option value="tools">🛠️ Finance Tools</option>
                             <option value="cfa1">📜 CFA Level 1</option>
-                            <option value="general">📊 General Finance</option>
+                            <option value="mastery">🗺️ Mastery Roadmap</option>
                         </select>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
@@ -15483,6 +15942,7 @@ window.DBP={
                     style="font-size:0.7rem;padding:2px 8px;border-radius:12px;background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;letter-spacing:0.4px;">
                     DAG
                 </span>
+                <span id="rdmCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
             </h3>
             <div id="rdmBody">
                 <!-- ── Controls ── -->
@@ -15510,10 +15970,31 @@ window.DBP={
                             style="font-size:0.82rem;font-weight:700;color:var(--primary);min-width:24px;text-align:right;">10</span>
                     </div>
                     <div style="display:flex;gap:6px;">
-                        <button class="rdm-gen-btn" onclick="StrategicRoadmap.generate()">⚡ Generate</button>
                         <button class="rdm-reset-btn"
                             onclick="StrategicRoadmap.resetTrack(document.getElementById('rdmTrackSelect').value)"
                             title="Reset manual completions for this track">↺ Reset</button>
+                    </div>
+                    <div class="rdm-view-row">
+                        <div class="rdm-view-toggle">
+                            <button type="button" class="rdm-view-btn" id="rdmViewBtnList" onclick="StrategicRoadmap.setView('list')">📋 List</button>
+                            <button type="button" class="rdm-view-btn" id="rdmViewBtnGraph" onclick="StrategicRoadmap.setView('graph')">🌳 Graph</button>
+                        </div>
+                        <button type="button" class="rdm-compare-btn" id="rdmCompareBtn" onclick="StrategicRoadmap.toggleCompare()">🆚 So sánh</button>
+                    </div>
+                    <div class="rdm-compare-select-row" id="rdmCompareRow">
+                        <select id="rdmCompareTrackSelect" class="rdm-track-select" onchange="StrategicRoadmap.setCompareTrack(this.value)">
+                            <option value="">— Chọn track thứ 2 —</option>
+                            <option value="pe">🏦 Private Equity</option>
+                            <option value="ib">💼 Investment Banking</option>
+                            <option value="hf">📈 Hedge Fund</option>
+                            <option value="sc">🧩 Strategy Consulting</option>
+                            <option value="fintech">💳 Fintech</option>
+                            <option value="tools">🛠️ Tools &amp; Software</option>
+                            <option value="cfa1">📚 CFA Level 1</option>
+                            <option value="english">🌐 Business English</option>
+                            <option value="chinese">🀄 Chinese</option>
+                            <option value="mastery">🧭 7-Phase Mastery</option>
+                        </select>
                     </div>
                 </div>
                 <!-- ── Output ── -->
@@ -16018,6 +16499,14 @@ window.DBP={
                         <input type="text" id="bookCoverUrl" placeholder="https://example.com/book.jpg">
                     </div>
                     <div class="form-group">
+                        <label for="bookDriveLink">📝 Reading Link (Drive/PDF, optional)</label>
+                        <input type="text" id="bookDriveLink" placeholder="https://drive.google.com/...">
+                    </div>
+                    <div class="form-group">
+                        <label for="bookAudioLink">🎧 Audio Link (YouTube, optional)</label>
+                        <input type="text" id="bookAudioLink" placeholder="https://youtube.com/...">
+                    </div>
+                    <div class="form-group">
                         <label for="bookGenre">Genre *</label>
                         <select id="bookGenre" required>
                             <option value="">Select a Genre</option>
@@ -16071,6 +16560,10 @@ window.DBP={
                         <label for="bookPages">📄 Pages (Optional)</label>
                         <input type="number" id="bookPages" min="1" placeholder="e.g. 350">
                     </div>
+                    <div class="form-group">
+                        <label for="bookCurrentPage">📖 Current Page (Optional)</label>
+                        <input type="number" id="bookCurrentPage" min="0" placeholder="e.g. 120">
+                    </div>
                     <div class="form-group" style="display:flex; gap:10px;">
                         <div style="flex:1;">
                             <label for="bookFirstPublished">📅 First Published (Optional)</label>
@@ -16113,6 +16606,14 @@ window.DBP={
                         <input type="text" id="editBookCoverUrl" placeholder="https://example.com/book.jpg">
                     </div>
                     <div class="form-group">
+                        <label for="editBookDriveLink">📝 Reading Link (Drive/PDF, optional)</label>
+                        <input type="text" id="editBookDriveLink" placeholder="https://drive.google.com/...">
+                    </div>
+                    <div class="form-group">
+                        <label for="editBookAudioLink">🎧 Audio Link (YouTube, optional)</label>
+                        <input type="text" id="editBookAudioLink" placeholder="https://youtube.com/...">
+                    </div>
+                    <div class="form-group">
                         <label for="editBookGenre">Genre *</label>
                         <select id="editBookGenre" required>
                             <option value="">Select a Genre</option>
@@ -16148,9 +16649,9 @@ window.DBP={
                     </div>
 
                     <div style="margin-bottom: 12px;">
-                        <label for="editBookRating" style="display: block; margin-bottom: 5px; font-weight: 500;">Rating (1-5 sao)</label>
+                        <label for="editBookRating" style="display: block; margin-bottom: 5px; font-weight: 500;">Rating (1-5 stars)</label>
                         <select id="editBookRating" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
-                            <option value="">Chưa đánh giá</option>
+                            <option value="">No rating</option>
                             <option value="1">⭐</option>
                             <option value="2">⭐⭐</option>
                             <option value="3">⭐⭐⭐</option>
@@ -16165,6 +16666,10 @@ window.DBP={
                     <div style="margin-bottom: 12px;">
                         <label for="editBookPages" style="display: block; margin-bottom: 5px; font-weight: 500;">📄 Pages (Optional)</label>
                         <input type="number" id="editBookPages" min="1" placeholder="e.g. 350" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label for="editBookCurrentPage" style="display: block; margin-bottom: 5px; font-weight: 500;">📖 Current Page (Optional)</label>
+                        <input type="number" id="editBookCurrentPage" min="0" placeholder="e.g. 120" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
                     </div>
                     <div style="margin-bottom: 12px; display:flex; gap:10px;">
                         <div style="flex:1;">
@@ -16252,17 +16757,34 @@ window.DBP={
 
 
 
-    <!-- --- Motivational Quote Card --- -->
-    <div id="quoteCard" onclick="handleQuoteCardClick()">
-        <div class="quote-icon">
-            <i class="fas fa-quote-left"></i>
+    <!-- --- Motivational Quote Widget: FAB button + popup card --- -->
+    <button id="quoteFab" onclick="toggleQuoteCard()" title="Motivational quote" aria-haspopup="true" aria-expanded="false" aria-controls="quotePopup">
+        <i class="fas fa-quote-left"></i>
+    </button>
+
+    <div id="quotePopup" role="dialog" aria-hidden="true" aria-label="Motivational quote">
+        <div class="quote-popup-header">
+            <span class="quote-popup-label">
+                <i class="fas fa-quote-left"></i> Quote
+            </span>
+            <div class="quote-popup-actions">
+                <button class="quote-popup-btn" onclick="getRandomQuote()" title="New quote">
+                    <i class="fas fa-shuffle"></i>
+                </button>
+                <button class="quote-popup-btn quote-popup-close" onclick="closeQuoteCard()" title="Close">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
         </div>
-        <div class="quote-body">
+        <div class="quote-popup-body">
+            <div class="quote-icon">
+                <i class="fas fa-quote-left"></i>
+            </div>
             <div id="quoteText">Loading your first quote of inspiration...</div>
             <div id="quoteAuthor">- Your Future Self</div>
         </div>
     </div>
-    <!-- --- End Motivational Quote Card --- -->
+    <!-- --- End Motivational Quote Widget --- -->
 
     <!-- ══════════════════════════════════════════
          🧠 BRAIN DUMP — Floating Button + Panel
@@ -16280,20 +16802,22 @@ window.DBP={
         bottom: 20px; right: 20px;
         width: 52px; height: 52px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: white; border: none; cursor: pointer;
-        box-shadow: 0 4px 18px rgba(99,102,241,0.45);
+        background: rgba(59, 130, 246, 0.1);
+        color: #1e40af; border: 1px solid #3b82f6; cursor: pointer;
+        backdrop-filter: blur(2px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         z-index: 200;
         display: flex; align-items: center; justify-content: center;
-        font-size: 1.3rem;
+        font-size: 1.15rem;
         transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s;
         outline: none;
     }
-    #bdFab:hover { transform: scale(1.13); box-shadow: 0 6px 24px rgba(99,102,241,0.55); }
-    #bdFab.bd-open { transform: rotate(45deg) scale(1.05); background: linear-gradient(135deg,#ef4444,#f97316); }
+    #bdFab:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    .dark-mode #bdFab { background: rgba(30, 41, 59, 0.7); color: #f1f5f9; border: 1px solid #475569; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    #bdFab.bd-open { transform: rotate(45deg) scale(1.05); background: rgba(239,68,68,0.15); color:#ef4444; border-color:#ef4444; }
     #bdFab.bd-has-notes::after {
         content: ''; position: absolute; inset: -4px; border-radius: 50%;
-        border: 2px solid rgba(99,102,241,0.5);
+        border: 2px solid rgba(59,130,246,0.5);
         animation: bd-ring 2s ease-in-out infinite;
     }
     @keyframes bd-ring {
@@ -16542,7 +17066,7 @@ window.DBP={
 
     <!-- FAB button -->
     <button id="bdFab" onclick="BrainDump.toggle()" title="Brain Dump — quick capture when you lose focus">
-        <span id="bdFabIcon">🧠</span>
+        <span id="bdFabIcon"><i class="fa-solid fa-lightbulb"></i></span>
         <span class="bd-count" id="bdCount"></span>
     </button>
 
@@ -17173,6 +17697,19 @@ window.DBP={
                     <p><strong>Genre:</strong> <span id="bookDetailsGenre">Genre</span></p>
                     <p><strong>Status:</strong> <span id="bookDetailsStatus" class="book-status-badge">Status</span></p>
                     <div id="bookDetailsMeta" style="margin: 6px 0; font-size:0.85rem; color: var(--text-muted,#888); display:none; display:flex; flex-wrap:wrap; gap:8px;"></div>
+                    <div id="bookDetailsProgress" style="margin: 8px 0; display:none;">
+                        <div class="goal-progress-container" style="margin:4px 0;">
+                            <div id="bookDetailsProgressFill" class="goal-progress-fill" style="width:0%;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span id="bookDetailsProgressLabel" style="font-size:0.78rem; color:var(--text-muted,#888);"></span>
+                            <button id="bookDetailsProgressBtn" class="book-action-btn" style="font-size:0.7rem; padding:2px 8px;" title="Update reading progress">📖</button>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:14px; flex-wrap:wrap;">
+                        <a id="bookDetailsLink" href="#" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:none; margin:8px 0; font-size:0.85rem; color:var(--primary); text-decoration:none; font-weight:600; align-items:center; gap:4px;">📝 Reading Link</a>
+                        <a id="bookDetailsAudioLink" href="#" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:none; margin:8px 0; font-size:0.85rem; color:var(--primary); text-decoration:none; font-weight:600; align-items:center; gap:4px;">🎧 Audio Link</a>
+                    </div>
                     <div id="bookDetailsRating" style="margin: 8px 0; color: #f59e0b; font-size: 1.1rem;"></div> <!-- Ẩn mặc định nếu không có rating -->
                     <div id="bookDetailsReview" style="margin-top: 10px;"></div> <!-- Ẩn mặc định nếu không có review -->
                 </div>
@@ -18656,7 +19193,7 @@ window.DBP={
             sc: "🎯",
             fintech: "💳",
             english: "🚩",
-            chinese: "💞",
+            chinese: "🀄",
             tools: "🛠️",
             cfa1: "📜"
         };
@@ -19031,20 +19568,6 @@ window.DBP={
 
 
         let quoteTimer;
-        // On touch devices there's no hover, so tapping the collapsed icon
-        // just opens it (shows the quote) without immediately fetching a new
-        // one; tapping again while open fetches a fresh quote; the card can
-        // be collapsed again via the small close behavior below.
-        function handleQuoteCardClick() {
-            const card = document.getElementById('quoteCard');
-            const isTouch = window.matchMedia('(hover: none), (pointer: coarse)').matches;
-            if (isTouch && !card.classList.contains('qc-open')) {
-                card.classList.add('qc-open');
-                return; // first tap: just reveal, don't reroll yet
-            }
-            getRandomQuote();
-        }
-
         function getRandomQuote() {
             const randomIndex = Math.floor(Math.random() * motivationalQuotes.length);
             const quote = motivationalQuotes[randomIndex];
@@ -19061,6 +19584,46 @@ window.DBP={
                 clearTimeout(quoteTimer);
                 console.log("Cleared quoteTimer on unload.");
             }
+        });
+
+        // ===== QUOTE WIDGET: open/close popup =====
+        function toggleQuoteCard() {
+            const popup = document.getElementById('quotePopup');
+            const fab = document.getElementById('quoteFab');
+            if (!popup || !fab) return;
+            if (popup.classList.contains('quote-popup-open')) {
+                closeQuoteCard();
+            } else {
+                popup.classList.add('quote-popup-open');
+                popup.setAttribute('aria-hidden', 'false');
+                fab.classList.add('quote-fab-open');
+                fab.setAttribute('aria-expanded', 'true');
+            }
+        }
+
+        function closeQuoteCard() {
+            const popup = document.getElementById('quotePopup');
+            const fab = document.getElementById('quoteFab');
+            if (!popup || !fab) return;
+            popup.classList.remove('quote-popup-open');
+            popup.setAttribute('aria-hidden', 'true');
+            fab.classList.remove('quote-fab-open');
+            fab.setAttribute('aria-expanded', 'false');
+        }
+
+        // Click outside the popup/button closes it
+        document.addEventListener('click', function(e) {
+            const popup = document.getElementById('quotePopup');
+            const fab = document.getElementById('quoteFab');
+            if (!popup || !fab) return;
+            if (!popup.classList.contains('quote-popup-open')) return;
+            if (popup.contains(e.target) || fab.contains(e.target)) return;
+            closeQuoteCard();
+        });
+
+        // Esc key closes it too
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeQuoteCard();
         });
 
 
@@ -19616,7 +20179,7 @@ window.DBP={
             loadSkills(career);
             updateStats();
             updateChart();
-            if (career !== 'mastery') renderCourses();
+            renderCourses();
             if (career !== 'mastery') { document.getElementById('goalsSection').style.display = 'block'; updateGoals(); } else { const gs = document.getElementById('goalsSection'); if(gs) gs.style.display='none'; }
         }
 
@@ -20304,7 +20867,7 @@ window.DBP={
             }
 
             // ── Helpers ───────────────────────────────────────────────────────
-            const careerEmojis = { pe:'💼', ib:'🏦', hf:'📈', sc:'🎯', fintech:'💳', english:'🚩', chinese:'💞', tools:'🛠️', cfa1:'📜' };
+            const careerEmojis = { pe:'💼', ib:'🏦', hf:'📈', sc:'🎯', fintech:'💳', english:'📖', chinese:'🀄', tools:'🛠️', cfa1:'📜' };
             const MAX_CHARS = 140;
             const CAPACITY  = 50;
 
@@ -20660,6 +21223,21 @@ window.DBP={
                         if (book.currentEdition) metaParts.push(`🔖 Ed. ${book.currentEdition}`);
                         return metaParts.length ? `<div style="font-size:0.75rem; color:var(--text-muted,#888); margin-top:3px; display:flex; flex-wrap:wrap; gap:6px;">${metaParts.map(p => `<span>${p}</span>`).join('')}</div>` : '';
                     })(),
+                    (() => {
+                        const cp = book.currentPage || 0;
+                        if (!book.pages && !cp) return '';
+                        const pct = book.pages ? Math.min(100, Math.round((cp / book.pages) * 100)) : 0;
+                        const label = book.pages ? `Page ${cp}/${book.pages} (${pct}%)` : `Page ${cp}`;
+                        return `<div style="margin-top:6px;" onclick="event.stopPropagation();">
+                                    <div class="goal-progress-container" style="margin:4px 0;">
+                                        <div class="goal-progress-fill${pct >= 100 ? ' completed' : ''}" style="width:${pct}%;"></div>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="font-size:0.72rem; color:var(--text-muted,#888);">${label}</span>
+                                        <button class="book-action-btn" style="font-size:0.7rem; padding:2px 8px;" onclick="bookProgressModal(${book.id})" title="Update reading progress">📖</button>
+                                    </div>
+                                </div>`;
+                    })(),
                     ratingDisplay,
                     reviewDisplay
                 ];
@@ -20671,10 +21249,11 @@ window.DBP={
                                 ${detailsHTML}
                             </div>
                             <div class="book-actions">
+                                ${book.driveLink ? `<button class="book-action-btn" onclick="openBookLink('${book.driveLink.replace(/'/g, "\\'")}'); event.stopPropagation();" title="Open reading link (Drive/PDF)">📝</button>` : ''}
+                                ${book.audioLink ? `<button class="book-action-btn" onclick="openBookLink('${book.audioLink.replace(/'/g, "\\'")}'); event.stopPropagation();" title="Open audio link (YouTube)">🎧</button>` : ''}
+                                <button class="book-action-btn" onclick="bookProgressModal(${book.id}); event.stopPropagation();" title="Update reading progress">📖</button>
                                 <button class="book-action-btn" onclick="openEditBookModal(${book.id}); event.stopPropagation();" title="Edit Book">✏️</button>
                                 <button class="book-action-btn" onclick="removeBook(${book.id}); event.stopPropagation();" title="Delete Book">🗑️</button>
-                                <button class="book-action-btn" onclick="toggleBookStatus(${book.id}); event.stopPropagation();" title="Toggle Status">🔄</button>
-                                <button class="book-action-btn" onclick="showBookDetails(${book.id}); event.stopPropagation();" title="View Details">👁️</button>
                             </div>
                         </div>`;
             }).join('');
@@ -20709,6 +21288,8 @@ window.DBP={
             document.getElementById('editBookTitle').value = book.title;
             document.getElementById('editBookAuthor').value = book.author;
             document.getElementById('editBookCoverUrl').value = book.cover || '';
+            document.getElementById('editBookDriveLink').value = book.driveLink || '';
+            document.getElementById('editBookAudioLink').value = book.audioLink || '';
             document.getElementById('editBookGenre').value = book.genre || 'Other';
             document.getElementById('editBookStatus').value = book.status;
             document.getElementById('editBookRating').value = book.rating !== null ? book.rating : '';
@@ -20716,6 +21297,7 @@ window.DBP={
             document.getElementById('editBookPages').value = book.pages !== null && book.pages !== undefined ? book.pages : '';
             document.getElementById('editBookFirstPublished').value = book.firstPublished !== null && book.firstPublished !== undefined ? book.firstPublished : '';
             document.getElementById('editBookCurrentEdition').value = book.currentEdition !== null && book.currentEdition !== undefined ? book.currentEdition : '';
+            document.getElementById('editBookCurrentPage').value = book.currentPage !== null && book.currentPage !== undefined ? book.currentPage : '';
 
             document.getElementById('editBookModal').style.display = 'flex';
         }
@@ -20732,6 +21314,8 @@ window.DBP={
             const title = document.getElementById('bookTitle').value.trim();
             const author = document.getElementById('bookAuthor').value.trim();
             const cover = document.getElementById('bookCoverUrl').value.trim();
+            const driveLink = document.getElementById('bookDriveLink').value.trim();
+            const audioLink = document.getElementById('bookAudioLink').value.trim();
             const status = document.getElementById('bookStatus').value;
             const genre = document.getElementById('bookGenre').value.trim();
             const ratingValue = document.getElementById('bookRating').value;
@@ -20740,9 +21324,12 @@ window.DBP={
             const pagesVal = document.getElementById('bookPages').value;
             const firstPubVal = document.getElementById('bookFirstPublished').value;
             const editionVal = document.getElementById('bookCurrentEdition').value;
+            const currentPageVal = document.getElementById('bookCurrentPage').value;
             const pages = pagesVal ? parseInt(pagesVal) : null;
             const firstPublished = firstPubVal ? parseInt(firstPubVal) : null;
             const currentEdition = editionVal ? parseInt(editionVal) : null;
+            let currentPage = currentPageVal ? parseInt(currentPageVal) : 0;
+            if (pages && currentPage > pages) currentPage = pages;
 
             console.log('Form values:', { title, author, genre, status, rating, review });
 
@@ -20756,6 +21343,8 @@ window.DBP={
                 title,
                 author,
                 cover: cover || '',
+                driveLink: driveLink || '',
+                audioLink: audioLink || '',
                 genre,
                 status,
                 addedAt: new Date().toISOString(),
@@ -20763,7 +21352,8 @@ window.DBP={
                 review,
                 pages,
                 firstPublished,
-                currentEdition
+                currentEdition,
+                currentPage
             };
 
             console.log('Adding book:', book);
@@ -20792,6 +21382,8 @@ window.DBP={
             const title = document.getElementById('editBookTitle').value.trim();
             const author = document.getElementById('editBookAuthor').value.trim();
             const cover = document.getElementById('editBookCoverUrl').value.trim();
+            const driveLink = document.getElementById('editBookDriveLink').value.trim();
+            const audioLink = document.getElementById('editBookAudioLink').value.trim();
             const status = document.getElementById('editBookStatus').value;
             const genre = document.getElementById('editBookGenre').value.trim();
             const ratingValue = document.getElementById('editBookRating').value;
@@ -20799,9 +21391,12 @@ window.DBP={
             const pagesVal = document.getElementById('editBookPages').value;
             const firstPubVal = document.getElementById('editBookFirstPublished').value;
             const editionVal = document.getElementById('editBookCurrentEdition').value;
+            const currentPageVal = document.getElementById('editBookCurrentPage').value;
             const pages = pagesVal ? parseInt(pagesVal) : null;
             const firstPublished = firstPubVal ? parseInt(firstPubVal) : null;
             const currentEdition = editionVal ? parseInt(editionVal) : null;
+            let currentPage = currentPageVal ? parseInt(currentPageVal) : 0;
+            if (pages && currentPage > pages) currentPage = pages;
 
             console.log('Update form values:', { bookId, title, author, cover, status, genre, ratingValue, review });
 
@@ -20819,13 +21414,16 @@ window.DBP={
                     title,
                     author,
                     cover: cover || '',
+                    driveLink: driveLink || '',
+                    audioLink: audioLink || '',
                     genre,
                     status,
                     rating,
                     review,
                     pages,
                     firstPublished,
-                    currentEdition
+                    currentEdition,
+                    currentPage
                 };
 
                 localStorage.setItem('readingList', JSON.stringify(readingList));
@@ -20840,14 +21438,13 @@ window.DBP={
         }
 
         function removeBook(id) {
-            if (!confirm('Are you sure you want to delete this book?')) {
-                return;
-            }
-            readingList = readingList.filter(b => b.id !== parseInt(id));
-            localStorage.setItem('readingList', JSON.stringify(readingList));
-            renderReadingList();
-            updateReadingCounts();
-            showNotification('✅ Book removed successfully!', 'success');
+            memeConfirmModal('Remove this book from your list?', () => {
+                readingList = readingList.filter(b => b.id !== parseInt(id));
+                localStorage.setItem('readingList', JSON.stringify(readingList));
+                renderReadingList();
+                updateReadingCounts();
+                showNotification('✅ Book removed successfully!', 'success');
+            });
         }
 
 
@@ -20869,11 +21466,91 @@ window.DBP={
             showNotification(`✅ Status changed to "${getStatusText(book.status)}"!`, 'success');
         }
 
+        // 🔗 Open book link (Drive/PDF) in a new tab
+        function openBookLink(url) {
+            if (!url) return;
+            const finalUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+            window.open(finalUrl, '_blank', 'noopener');
+        }
+
+        // 📖 Modal to update current reading page (replaces prompt())
+        function bookProgressModal(bookId) {
+            const book = readingList.find(b => b.id === parseInt(bookId));
+            if (!book) return;
+
+            const existing = document.getElementById('bookProgressModal');
+            if (existing) existing.remove();
+
+            const maxAttr = book.pages ? `max="${book.pages}"` : '';
+            const hint = book.pages
+                ? `Total <strong style="color: var(--text-dark);">${book.pages}</strong> pages.`
+                : `No total page count yet — you can add it in Edit Book.`;
+
+            const modal = document.createElement('div');
+            modal.id = 'bookProgressModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                z-index: 100000; display: flex; align-items: center; justify-content: center;
+                padding: 20px;
+            `;
+            modal.innerHTML = `
+                <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                    max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    border: 1px solid var(--border-color);">
+                    <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">📖</div>
+                    <h3 style="margin: 0 0 8px 0; font-size: 1.05rem; color: var(--text-dark); text-align:center;">${escapeHtml(book.title)}</h3>
+                    <p style="margin: 0 0 18px 0; color: var(--text-muted); font-size: 0.85rem; text-align:center; line-height:1.5;">
+                        What page are you on? ${hint}
+                    </p>
+                    <input id="bookProgressInput" type="number" min="0" ${maxAttr} step="1"
+                        value="${book.currentPage || ''}" placeholder="Current page number"
+                        style="width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--border-color);
+                        border-radius:9px; font-size:1rem; margin-bottom:20px; background: var(--bg-light); color: var(--text-dark);" />
+                    <div style="display:flex; gap:10px;">
+                        <button id="bookProgressCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Cancel</button>
+                        <button id="bookProgressOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Save Progress</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+            document.body.appendChild(modal);
+            const input = document.getElementById('bookProgressInput');
+            input.focus();
+            input.select();
+
+            const submit = () => {
+                let val = parseInt(input.value);
+                modal.remove();
+                if (isNaN(val) || val < 0) {
+                    showNotification('⚠️ Please enter a valid page number.', 'error');
+                    return;
+                }
+                if (book.pages && val > book.pages) val = book.pages;
+                book.currentPage = val;
+                // Automatically switch to "Reading" if currently "Want to Read"
+                if (book.status === 'want' && val > 0) book.status = 'reading';
+                // Automatically switch to "Finished" if fully read
+                if (book.pages && val >= book.pages) book.status = 'finished';
+                localStorage.setItem('readingList', JSON.stringify(readingList));
+                renderReadingList();
+                updateReadingCounts();
+                // If the details modal for this exact book is open, refresh it too
+                const detailsModal = document.getElementById('bookDetailsModal');
+                if (detailsModal && detailsModal.style.display === 'flex' && document.getElementById('bookDetailsTitle')?.textContent === book.title) {
+                    showBookDetails(book.id);
+                }
+                showNotification(`✅ Updated: page ${val}${book.pages ? ' / ' + book.pages : ''}`, 'success');
+            };
+            document.getElementById('bookProgressCancelBtn').onclick = () => modal.remove();
+            document.getElementById('bookProgressOkBtn').onclick = submit;
+            input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+        }
+
 
         document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM loaded, initializing reading list...');
             if (!checkLocalStorageAvailability()) {
-                showNotification('❌ Bộ nhớ cục bộ bị chặn hoặc không khả dụng. Tiến trình có thể không được lưu.', 'error');
+                showNotification('❌ Local storage is blocked or unavailable. Your progress may not be saved.', 'error');
             }
 
             renderReadingList();
@@ -21020,6 +21697,7 @@ window.DBP={
         let timerRunning = localStorage.getItem('focusRunning') === 'true';
         let focusStartTimestamp = parseInt(localStorage.getItem('focusStartTimestamp')) || null;
         let remainingAtStart = parseInt(localStorage.getItem('focusRemainingAtStart')) || null;
+        let ft60Warned = false; // đã bắn cảnh báo "còn 1 phút" cho phiên hiện tại chưa
 
         function formatTime(sec) {
             const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -21045,6 +21723,41 @@ window.DBP={
                 localStorage.setItem('focusRemainingAtStart', remainingAtStart);
             } else {
                 localStorage.removeItem('focusRemainingAtStart');
+            }
+        }
+
+        function beep60Warning() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                function tone(freq, start, dur, vol) {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.frequency.value = freq;
+                    osc.type = 'sine';
+                    const t = ctx.currentTime + start;
+                    gain.gain.setValueAtTime(0, t);
+                    gain.gain.linearRampToValueAtTime(vol, t + 0.02);
+                    gain.gain.setValueAtTime(vol, t + dur - 0.05);
+                    gain.gain.linearRampToValueAtTime(0, t + dur);
+                    osc.start(t);
+                    osc.stop(t + dur + 0.05);
+                }
+                // 2 tiếng "tinh tinh" ngắn, nhẹ hơn nhiều so với chuông hết giờ
+                tone(880, 0.00, 0.14, 0.30);
+                tone(880, 0.20, 0.14, 0.30);
+            } catch (e) { console.warn('beep60 failed', e); }
+        }
+
+        function fireOneMinuteWarning() {
+            beep60Warning();
+            showNotification('⏳ Còn 1 phút nữa thôi — sắp xong rồi!', 'warning');
+            if ("Notification" in window && Notification.permission === "granted") {
+                new Notification("⏳ Còn 1 phút!", {
+                    body: "Phiên Focus sắp kết thúc, ráng tí nữa nha.",
+                    icon: "https://cdn-icons-png.flaticon.com/512/1828/1828976.png"
+                });
             }
         }
 
@@ -21144,6 +21857,10 @@ window.DBP={
                     onTimerComplete();
                     return;
                 }
+            }
+            if (timerRunning && !ft60Warned && remainingSeconds <= 60 && timerDuration > 60) {
+                ft60Warned = true;
+                fireOneMinuteWarning();
             }
             updateTimerDisplay();
             ftUpdateRing();
@@ -21256,6 +21973,53 @@ window.DBP={
             localStorage.setItem('focusSessionLogs', JSON.stringify(logs));
         }
 
+        // ── Focus Streak (số ngày liên tiếp hoàn thành >=1 phiên) ───────
+        function computeFocusStreak() {
+            const logs = getFocusSessionLogs().filter(l => l.outcome === 'completed');
+            if (!logs.length) return { current: 0, best: 0 };
+
+            // Lấy tập các "ngày" (theo giờ địa phương) đã có ít nhất 1 phiên completed
+            const dayMs = 86400000;
+            const dayKeys = new Set(logs.map(l => {
+                const d = new Date(l.end || l.start);
+                d.setHours(0, 0, 0, 0);
+                return d.getTime();
+            }));
+            const sortedDays = Array.from(dayKeys).sort((a, b) => a - b);
+
+            // Best streak: chuỗi dài nhất trong toàn bộ lịch sử
+            let best = 1, run = 1;
+            for (let i = 1; i < sortedDays.length; i++) {
+                const diff = Math.round((sortedDays[i] - sortedDays[i - 1]) / dayMs);
+                run = (diff === 1) ? run + 1 : 1;
+                if (run > best) best = run;
+            }
+
+            // Current streak: đếm ngược từ hôm nay (cho phép hôm nay chưa có phiên nào,
+            // miễn là hôm qua có — tránh streak bị "gãy" ngay lúc mở app buổi sáng)
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            let cursor = today.getTime();
+            if (!dayKeys.has(cursor)) cursor -= dayMs;
+            let current = 0;
+            while (dayKeys.has(cursor)) { current++; cursor -= dayMs; }
+
+            return { current, best };
+        }
+
+        function renderFocusStreak() {
+            const el = document.getElementById('ftStreakDisplay');
+            if (!el) return;
+            const { current, best } = computeFocusStreak();
+            if (current <= 0) {
+                el.classList.remove('has-streak');
+                el.innerHTML = `<span style="opacity:.75">Chưa có streak — hoàn thành 1 phiên hôm nay để bắt đầu 🔥</span>`;
+                return;
+            }
+            el.classList.add('has-streak');
+            el.innerHTML = `<span class="ft-streak-fire">🔥</span> ${current} ngày liên tiếp` +
+                (best > current ? `<span class="ft-streak-best">· Kỷ lục: ${best}</span>` : '');
+        }
+
         function populateFtGoalSelect() {
             const sel = document.getElementById('ftGoalSelect');
             if (!sel) return;
@@ -21278,6 +22042,10 @@ window.DBP={
         document.addEventListener('DOMContentLoaded', () => {
             populateFtGoalSelect();
             renderFocusFragmentationChart();
+            renderFocusStreak();
+            document.querySelectorAll('.fsm-chip').forEach(chip => {
+                chip.addEventListener('click', () => chip.classList.toggle('selected'));
+            });
         });
 
         function updateFtGoalLockUI() {
@@ -21286,10 +22054,11 @@ window.DBP={
             const label = document.getElementById('ftCurrentGoalLabel');
             if (sel) sel.disabled = timerRunning;
             if (switchBtn) switchBtn.style.display = timerRunning ? 'inline-flex' : 'none';
+            document.body.classList.toggle('focus-session-active', timerRunning);
             if (label) {
                 if (timerRunning && focusCurrentGoal) {
                     label.style.display = 'block';
-                    label.textContent = `${getCareerIcon(focusCurrentGoal)} Đang khoá vào: ${getCareerDisplayName(focusCurrentGoal)}`;
+                    label.textContent = `${getCareerIcon(focusCurrentGoal)} Locked on: ${getCareerDisplayName(focusCurrentGoal)}`;
                 } else {
                     label.style.display = 'none';
                 }
@@ -21329,49 +22098,85 @@ window.DBP={
             focusOpenLogId = null;
             localStorage.removeItem('focusOpenLogId');
             renderFocusFragmentationChart();
+            renderFocusStreak();
         }
+
+        // ── Focus Switch Modal (replaces prompt()/alert()) ──────────────
+        let fsmSelectedReasons = [];
 
         function switchFocusGoal() {
             if (!timerRunning) return;
-            const distraction = prompt('Điều gì vừa kéo em ra khỏi việc đang làm? (viết 1 dòng ngắn — có thể để trống)') || '';
-            const prevGoal = focusCurrentGoal;
+            fsmSelectedReasons = [];
+            document.querySelectorAll('.fsm-chip').forEach(c => c.classList.remove('selected'));
+            const noteEl = document.getElementById('fsmNote');
+            if (noteEl) noteEl.value = '';
+            document.getElementById('fsmStep1').classList.add('active');
+            document.getElementById('fsmStep2').classList.remove('active');
+            document.getElementById('fsmOverlay').classList.add('open');
+        }
 
-            // đóng session hiện tại, đánh dấu là bị switch
+        function fsmCancel() {
+            document.getElementById('fsmOverlay').classList.remove('open');
+        }
+
+        function fsmGoToStep2() {
+            fsmSelectedReasons = Array.from(document.querySelectorAll('.fsm-chip.selected')).map(c => c.dataset.val);
+            const note = document.getElementById('fsmNote').value.trim();
+            if (note) fsmSelectedReasons.push(note);
+
+            const sel = document.getElementById('fsmGoalSelect');
+            sel.innerHTML = '';
+            FOCUS_CAREER_LIST.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = `${getCareerIcon(c)} ${getCareerDisplayName(c)}`;
+                if (c === focusCurrentGoal) opt.selected = true;
+                sel.appendChild(opt);
+            });
+
+            document.getElementById('fsmStep1').classList.remove('active');
+            document.getElementById('fsmStep2').classList.add('active');
+        }
+
+        function fsmBackToStep1() {
+            document.getElementById('fsmStep2').classList.remove('active');
+            document.getElementById('fsmStep1').classList.add('active');
+        }
+
+        function fsmConfirmSwitch() {
+            const sel = document.getElementById('fsmGoalSelect');
+            const nextGoal = sel.value;
+            const prevGoal = focusCurrentGoal;
+            const distractionNote = fsmSelectedReasons.join('; ');
+
             const logs = getFocusSessionLogs();
             const idx = logs.findIndex(l => l.id === focusOpenLogId);
             if (idx !== -1) {
                 logs[idx].end = Date.now();
                 logs[idx].actualSec = Math.max(0, Math.round((logs[idx].end - logs[idx].start) / 1000));
                 logs[idx].outcome = 'switched';
-                logs[idx].distractionNote = distraction.trim();
+                logs[idx].distractionNote = distractionNote;
                 saveFocusSessionLogs(logs);
             }
             focusOpenLogId = null;
 
-            // chọn goal mới
-            const sel = document.getElementById('ftGoalSelect');
-            sel.disabled = false;
-            const choices = FOCUS_CAREER_LIST.map(c => `${getCareerDisplayName(c)} (${c})`).join('\n');
-            let next = prompt(`Mục tiêu MỚI muốn chuyển sang là gì? Gõ đúng mã:\n${choices}`, prevGoal);
-            if (!next || !FOCUS_CAREER_LIST.includes(next.trim())) {
-                // huỷ, quay lại goal cũ để không mất trạng thái khoá
-                next = prevGoal;
-                alert('Không nhận diện được mục tiêu — giữ nguyên mục tiêu cũ.');
-            }
-            focusCurrentGoal = next.trim();
+            focusCurrentGoal = nextGoal;
             localStorage.setItem('focusCurrentGoal', focusCurrentGoal);
-            sel.value = focusCurrentGoal;
-            sel.disabled = true;
+            const goalSelectMain = document.getElementById('ftGoalSelect');
+            if (goalSelectMain) { goalSelectMain.value = focusCurrentGoal; goalSelectMain.disabled = true; }
 
-            // reset timer về full duration cho session mới, tiếp tục chạy
             remainingSeconds = timerDuration;
             focusStartTimestamp = Date.now();
             remainingAtStart = remainingSeconds;
+            ft60Warned = (remainingSeconds <= 60);
             persistTimerState();
             openFocusSessionLog(focusCurrentGoal, prevGoal);
             updateFtGoalLockUI();
             renderFocusFragmentationChart();
+
+            document.getElementById('fsmOverlay').classList.remove('open');
         }
+
 
         function renderFocusFragmentationChart() {
             const logs = getFocusSessionLogs();
@@ -21423,7 +22228,7 @@ window.DBP={
                     data: {
                         labels: dayLabels,
                         datasets: [{
-                            label: 'Số lần switch',
+                            label: 'Switch count',
                             data: switchCounts,
                             backgroundColor: '#ef4444',
                             borderRadius: 4
@@ -21431,7 +22236,7 @@ window.DBP={
                     },
                     options: {
                         responsive: true, maintainAspectRatio: false,
-                        plugins: { legend: { display: false }, title: { display: true, text: 'Task-switching theo ngày', font: { size: 11 } } },
+                        plugins: { legend: { display: false }, title: { display: true, text: 'Task-switching by day', font: { size: 11 } } },
                         scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
                     }
                 });
@@ -21444,7 +22249,7 @@ window.DBP={
                     data: {
                         labels: goalLabels,
                         datasets: [{
-                            label: 'Phút tập trung thực tế',
+                            label: 'Actual focused minutes',
                             data: goalMinutes,
                             backgroundColor: goalColors,
                             borderRadius: 4
@@ -21453,12 +22258,79 @@ window.DBP={
                     options: {
                         indexAxis: 'y',
                         responsive: true, maintainAspectRatio: false,
-                        plugins: { legend: { display: false }, title: { display: true, text: 'Phút tập trung / mục tiêu (7 ngày)', font: { size: 11 } } },
+                        plugins: { legend: { display: false }, title: { display: true, text: 'Focused minutes / goal (7 days)', font: { size: 11 } } },
                         scales: { x: { beginAtZero: true } }
                     }
                 });
             }
         }
+
+        // ── Focus History Modal: xem / xoá từng phiên đã log ────────────
+        const FHM_OUTCOME_LABEL = {
+            completed: { text: '✅ Hoàn thành', cls: 'completed' },
+            switched: { text: '🔀 Đã chuyển', cls: 'switched' },
+            abandoned: { text: '⏹️ Bỏ dở', cls: 'abandoned' }
+        };
+
+        function openFocusHistoryModal() {
+            renderFhmList();
+            document.getElementById('fhmOverlay').classList.add('open');
+        }
+
+        function closeFocusHistoryModal() {
+            document.getElementById('fhmOverlay').classList.remove('open');
+        }
+
+        function renderFhmList() {
+            const listEl = document.getElementById('fhmList');
+            if (!listEl) return;
+            const logs = getFocusSessionLogs().slice().sort((a, b) => b.start - a.start);
+
+            if (!logs.length) {
+                listEl.innerHTML = `<div class="fhm-empty">Chưa có phiên nào được ghi nhận.</div>`;
+                return;
+            }
+
+            listEl.innerHTML = logs.map(l => {
+                const outcome = FHM_OUTCOME_LABEL[l.outcome] || { text: '⏳ Đang chạy', cls: 'switched' };
+                const dt = new Date(l.start);
+                const dateStr = dt.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const timeStr = dt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                const actualMin = Math.round((l.actualSec || 0) / 60);
+                return `
+                    <div class="fhm-row" data-id="${l.id}">
+                        <span class="fhm-row-icon">${getCareerIcon(l.goal)}</span>
+                        <div class="fhm-row-main">
+                            <div class="fhm-row-goal">${getCareerDisplayName(l.goal)}</div>
+                            <div class="fhm-row-meta">${dateStr} · ${timeStr} · ${actualMin}/${l.plannedMin} phút</div>
+                        </div>
+                        <span class="fhm-badge ${outcome.cls}">${outcome.text}</span>
+                        <button class="fhm-del-btn" onclick="deleteFocusLog('${l.id}')" title="Xoá phiên này">🗑️</button>
+                    </div>`;
+            }).join('');
+        }
+
+        function deleteFocusLog(id) {
+            if (!confirm('Xoá phiên này khỏi lịch sử? Streak và biểu đồ sẽ được tính lại.')) return;
+            const logs = getFocusSessionLogs().filter(l => l.id !== id);
+            saveFocusSessionLogs(logs);
+            renderFhmList();
+            renderFocusFragmentationChart();
+            renderFocusStreak();
+        }
+
+        function clearAllFocusHistory() {
+            if (!getFocusSessionLogs().length) return;
+            if (!confirm('Xoá TOÀN BỘ lịch sử phiên Focus? Hành động này không thể hoàn tác.')) return;
+            saveFocusSessionLogs([]);
+            renderFhmList();
+            renderFocusFragmentationChart();
+            renderFocusStreak();
+        }
+
+        document.getElementById('fhmOverlay')?.addEventListener('click', (e) => {
+            if (e.target.id === 'fhmOverlay') closeFocusHistoryModal();
+        });
 
         function focusStartTimer() {
             if (timerRunning) return;
@@ -21473,6 +22345,7 @@ window.DBP={
             timerRunning = true;
             focusStartTimestamp = Date.now();
             remainingAtStart = remainingSeconds;
+            ft60Warned = (remainingSeconds <= 60); // nếu vào phiên mà còn <=60s sẵn thì khỏi cảnh báo lại
             persistTimerState();
             openFocusSessionLog(focusCurrentGoal, null);
             updateFtGoalLockUI();
@@ -21502,6 +22375,7 @@ window.DBP={
             focusPauseTimer();
             if (wasOpen) closeFocusSessionLog('abandoned');
             remainingSeconds = timerDuration;
+            ft60Warned = false;
             persistTimerState();
             updateFtGoalLockUI();
             updateTimerDisplay();
@@ -21722,10 +22596,10 @@ window.DBP={
             sc: "🎯 Strategy Consulting",
             fintech: "💳 Fintech",
             english: "🚩 English",
-            chinese: "💞 Chinese",
+            chinese: "🀄 Chinese",
             tools: "🛠️ Finance Tools",
             cfa1: "📜 CFA Level 1",
-            general: "📊 General Finance"
+            mastery: "🗺️ Mastery Roadmap"
         };
 
         const priorityIcons = {
@@ -21789,7 +22663,7 @@ window.DBP={
             const careerTitleEl = document.getElementById('courseCareerTitle');
             if (!container || !careerTitleEl) return;
 
-            careerTitleEl.textContent = skillsData[currentCareer].title;
+            careerTitleEl.textContent = currentCareer === 'mastery' ? 'Mastery Roadmap' : skillsData[currentCareer].title;
 
             const statusFilter = document.getElementById('courseStatusFilter')?.value || 'all';
             const sortBy = document.getElementById('courseSortBy')?.value || 'newest';
@@ -22983,7 +23857,7 @@ function getCareerIcon(career) {
         'sc': '🎯',
         'fintech': '💳',
         'english': '🚩',
-        'chinese': '💞',
+        'chinese': '🀄',
         'tools': '🛠️',
         'cfa1': '📜'
     };
@@ -23855,15 +24729,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
  
         document.addEventListener('DOMContentLoaded', function() {
-            const quoteCard = document.getElementById('quoteCard');
-            if (quoteCard) {
-                document.addEventListener('click', function(e) {
-                    if (quoteCard.classList.contains('qc-open') && !quoteCard.contains(e.target)) {
-                        quoteCard.classList.remove('qc-open');
-                    }
-                });
-            }
-
             document.querySelectorAll('.career-card').forEach(card => {
                 card.addEventListener('touchstart', function() {
                     this.style.transform = 'translateY(-8px) scale(1.02)';
@@ -24866,6 +25731,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const metaEl = document.getElementById('bookDetailsMeta');
             const ratingEl = document.getElementById('bookDetailsRating');
             const reviewEl = document.getElementById('bookDetailsReview');
+            const progressEl = document.getElementById('bookDetailsProgress');
+            const progressFillEl = document.getElementById('bookDetailsProgressFill');
+            const progressLabelEl = document.getElementById('bookDetailsProgressLabel');
+            const progressBtnEl = document.getElementById('bookDetailsProgressBtn');
+            const linkEl = document.getElementById('bookDetailsLink');
+            const audioLinkEl = document.getElementById('bookDetailsAudioLink');
 
             if (modal && titleEl && authorEl && genreEl && statusEl && coverEl && ratingEl && reviewEl) {
                 titleEl.textContent = book.title;
@@ -24894,6 +25765,43 @@ document.addEventListener('DOMContentLoaded', function() {
                         metaEl.style.display = 'flex';
                     } else {
                         metaEl.style.display = 'none';
+                    }
+                }
+
+                // Progress bar (current page / total pages)
+                if (progressEl && progressFillEl && progressLabelEl && progressBtnEl) {
+                    const cp = book.currentPage || 0;
+                    if (book.pages || cp) {
+                        const pct = book.pages ? Math.min(100, Math.round((cp / book.pages) * 100)) : 0;
+                        progressFillEl.style.width = `${pct}%`;
+                        progressFillEl.classList.toggle('completed', pct >= 100);
+                        progressLabelEl.textContent = book.pages ? `Page ${cp}/${book.pages} (${pct}%)` : `Page ${cp}`;
+                        progressBtnEl.onclick = () => bookProgressModal(book.id);
+                        progressEl.style.display = 'block';
+                    } else {
+                        progressEl.style.display = 'none';
+                    }
+                }
+
+                // Drive/PDF link
+                if (linkEl) {
+                    if (book.driveLink) {
+                        linkEl.href = book.driveLink;
+                        linkEl.style.display = 'inline-flex';
+                        linkEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); openBookLink(book.driveLink); };
+                    } else {
+                        linkEl.style.display = 'none';
+                    }
+                }
+
+                // Audio (YouTube) link
+                if (audioLinkEl) {
+                    if (book.audioLink) {
+                        audioLinkEl.href = book.audioLink;
+                        audioLinkEl.style.display = 'inline-flex';
+                        audioLinkEl.onclick = (e) => { e.stopPropagation(); e.preventDefault(); openBookLink(book.audioLink); };
+                    } else {
+                        audioLinkEl.style.display = 'none';
                     }
                 }
 
@@ -32332,11 +33240,11 @@ function getLast7DaysData(sleepSessions, studyData) {
     for (let i = 6; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = toLocalDateStr(date);
         
         // Find sleep for this day
         const daySleep = sleepSessions.filter(s => {
-            const sleepDate = new Date(s.start).toISOString().split('T')[0];
+            const sleepDate = toLocalDateStr(new Date(s.start));
             return sleepDate === dateStr;
         });
         
@@ -32722,14 +33630,14 @@ function analyzeWeeklyPatterns(studyData = {}, sleepData = []) {
         for (let i = 0; i < 14; i++) {
             const date = new Date(today);
             date.setDate(date.getDate() - i);
-            const dateStr = date.toISOString().split('T')[0];
+            const dateStr = toLocalDateStr(date);
             
             // Lấy giờ học
             const studyHours = parseFloat(studyData[dateStr] || 0);
             
             // Lấy giờ ngủ
             const daySleep = sleepData.filter(s => {
-                const sleepDate = new Date(s.start).toISOString().split('T')[0];
+                const sleepDate = toLocalDateStr(new Date(s.start));
                 return sleepDate === dateStr;
             });
             const sleepHours = daySleep.reduce((sum, s) => sum + s.duration, 0);
@@ -32893,7 +33801,7 @@ function calculateSleepDebtWithInterest(sleepSessions = []) {
         sorted.forEach((session, index) => {
             const deficit = IDEAL_SLEEP - session.duration;
             const date = new Date(session.start);
-            const dateStr = date.toISOString().split('T')[0];
+            const dateStr = toLocalDateStr(date);
             
             if (deficit > 0) {
                 // Accumulate debt with compound interest
@@ -37037,6 +37945,76 @@ document.addEventListener('click', function(e) {
             };
         }
 
+        // ── Custom caption/confirm modals for Memes (replace prompt()/confirm()) ──
+        // Native prompt()/confirm() are silently blocked in some sandboxed
+        // previews / mobile webviews — self-drawn modals work everywhere.
+        function memeCaptionModal(titleText, initialCaption, onSubmit) {
+            const existing = document.getElementById('memeCaptionModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'memeCaptionModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                z-index: 100000; display: flex; align-items: center; justify-content: center;
+                padding: 20px;
+            `;
+            const safeInitial = (initialCaption || '').replace(/"/g, '&quot;');
+            modal.innerHTML = `
+                <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                    max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    border: 1px solid var(--border-color);">
+                    <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">✏️</div>
+                    <h3 style="margin: 0 0 16px 0; font-size: 1.1rem; color: var(--text-dark); text-align: center;">${titleText}</h3>
+                    <input id="memeCaptionInput" type="text" value="${safeInitial}" placeholder="Nhập caption..."
+                        style="width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--border-color);
+                        border-radius:9px; font-size:1rem; margin-bottom:20px; background: var(--bg-light); color: var(--text-dark);" />
+                    <div style="display: flex; gap: 10px;">
+                        <button id="memeCaptionCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                        <button id="memeCaptionOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Lưu caption</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+            document.body.appendChild(modal);
+            const input = document.getElementById('memeCaptionInput');
+            input.focus();
+            input.select();
+            const submit = () => { const val = input.value; modal.remove(); onSubmit(val); };
+            document.getElementById('memeCaptionCancelBtn').onclick = () => modal.remove();
+            document.getElementById('memeCaptionOkBtn').onclick = submit;
+            input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+        }
+
+        function memeConfirmModal(message, onConfirm) {
+            const existing = document.getElementById('memeConfirmModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'memeConfirmModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                z-index: 100000; display: flex; align-items: center; justify-content: center;
+                padding: 20px;
+            `;
+            modal.innerHTML = `
+                <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                    max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    border: 1px solid var(--border-color);">
+                    <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">🗑️</div>
+                    <p style="margin: 0 0 22px 0; color: var(--text-dark); font-size: 0.95rem; text-align: center; line-height: 1.5;">${message}</p>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="memeConfirmCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                        <button id="memeConfirmOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #ef4444, #dc2626); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Xóa</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+            document.body.appendChild(modal);
+            document.getElementById('memeConfirmCancelBtn').onclick = () => modal.remove();
+            document.getElementById('memeConfirmOkBtn').onclick = () => { modal.remove(); onConfirm(); };
+        }
+
         function editCurrentMemeCaption() {
             if (!currentMemeUrl) return;
             const memeIndex = customMemes.findIndex(m => (typeof m === 'string' ? m : m.url) === currentMemeUrl);
@@ -37045,16 +38023,16 @@ document.addEventListener('click', function(e) {
                 return;
             }
             const oldCaption = typeof customMemes[memeIndex] === 'string' ? 'No caption' : customMemes[memeIndex].caption;
-            const newCaption = prompt('✏️ Sửa caption:', oldCaption);
-            if (newCaption === null) return; // user cancelled
-            customMemes[memeIndex].caption = newCaption || 'No caption';
-            localStorage.setItem('customMemes', JSON.stringify(customMemes));
-            // Cập nhật allMemes
-            const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === currentMemeUrl);
-            if (allIndex !== -1) allMemes[allIndex] = customMemes[memeIndex];
-            // Cập nhật caption đang hiện ngay lập tức
-            document.getElementById('memeCaption').innerHTML = renderMemeCaption(newCaption || 'No caption');
-            showNotification('✅ Caption updated!', 'success');
+            memeCaptionModal('✏️ Sửa caption', oldCaption, (newCaption) => {
+                customMemes[memeIndex].caption = newCaption || 'No caption';
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+                // Cập nhật allMemes
+                const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === currentMemeUrl);
+                if (allIndex !== -1) allMemes[allIndex] = customMemes[memeIndex];
+                // Cập nhật caption đang hiện ngay lập tức
+                document.getElementById('memeCaption').innerHTML = renderMemeCaption(newCaption || 'No caption');
+                showNotification('✅ Caption updated!', 'success');
+            });
         }
 
         function addCustomMeme() {
@@ -37080,20 +38058,22 @@ document.addEventListener('click', function(e) {
                 return;
             }
             
-            // ✅ PROMPT FOR CAPTION
-            const caption = prompt('Enter a caption for this meme (optional):', '') || 'No caption';
-            
-            // ✅ LƯU OBJECT THAY VÌ STRING
-            const newMeme = { url, caption, addedAt: new Date().toISOString() };
-            customMemes.push(newMeme);
-            allMemes.push(newMeme);
-            
-            localStorage.setItem('customMemes', JSON.stringify(customMemes));
-            
-            urlInput.value = '';
-            updateCustomMemesCount();
-            showNotification('✅ Meme added successfully!', 'success');
-            getRandomMeme();
+            // ✅ CUSTOM MODAL FOR CAPTION
+            memeCaptionModal('Nhập caption cho meme này (không bắt buộc)', '', (captionInput) => {
+                const caption = captionInput || 'No caption';
+
+                // ✅ LƯU OBJECT THAY VÌ STRING
+                const newMeme = { url, caption, addedAt: new Date().toISOString() };
+                customMemes.push(newMeme);
+                allMemes.push(newMeme);
+
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+
+                urlInput.value = '';
+                updateCustomMemesCount();
+                showNotification('✅ Meme added successfully!', 'success');
+                getRandomMeme();
+            });
         }
 
         function updateCustomMemesCount() {
@@ -37198,53 +38178,52 @@ document.addEventListener('click', function(e) {
         }
 
         function editMemeCaption(url, oldCaption) {
-            const newCaption = prompt('Edit caption:', oldCaption);
-            if (newCaption === null) return; // User cancelled
-            
-            const memeIndex = customMemes.findIndex(m => m.url === url);
-            if (memeIndex !== -1) {
-                customMemes[memeIndex].caption = newCaption || 'No caption';
-                localStorage.setItem('customMemes', JSON.stringify(customMemes));
-                
-                // Update allMemes
-                const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === url);
-                if (allIndex !== -1) {
-                    allMemes[allIndex] = customMemes[memeIndex];
+            memeCaptionModal('Sửa caption', oldCaption, (newCaption) => {
+                const memeIndex = customMemes.findIndex(m => m.url === url);
+                if (memeIndex !== -1) {
+                    customMemes[memeIndex].caption = newCaption || 'No caption';
+                    localStorage.setItem('customMemes', JSON.stringify(customMemes));
+
+                    // Update allMemes
+                    const allIndex = allMemes.findIndex(m => (typeof m === 'object' ? m.url : m) === url);
+                    if (allIndex !== -1) {
+                        allMemes[allIndex] = customMemes[memeIndex];
+                    }
+
+                    // Re-render modal
+                    const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
+                    if (modalBody) {
+                        modalBody.innerHTML = renderCustomMemesList();
+                    }
+
+                    showNotification('✅ Caption updated!', 'success');
                 }
-                
-                // Re-render modal
+            });
+        }
+
+        function deleteCustomMeme(url) {
+            memeConfirmModal('Xóa meme này?', () => {
+                customMemes = customMemes.filter(m => m.url !== url);
+                allMemes = allMemes.filter(m => {
+                    const mUrl = typeof m === 'string' ? m : m.url;
+                    return mUrl !== url;
+                });
+
+                localStorage.setItem('customMemes', JSON.stringify(customMemes));
+                updateCustomMemesCount();
+
                 const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
                 if (modalBody) {
                     modalBody.innerHTML = renderCustomMemesList();
                 }
-                
-                showNotification('✅ Caption updated!', 'success');
-            }
-        }
 
-        function deleteCustomMeme(url) {
-            if (!confirm('🗑️ Delete this meme?')) return;
-            
-            customMemes = customMemes.filter(m => m.url !== url);
-            allMemes = allMemes.filter(m => {
-                const mUrl = typeof m === 'string' ? m : m.url;
-                return mUrl !== url;
+                const headerCount = document.querySelector('#manageMemesModal p');
+                if (headerCount) {
+                    headerCount.textContent = `${customMemes.length} custom memes`;
+                }
+
+                showNotification('Meme deleted', 'info');
             });
-            
-            localStorage.setItem('customMemes', JSON.stringify(customMemes));
-            updateCustomMemesCount();
-            
-            const modalBody = document.querySelector('#manageMemesModal > div > div:last-child');
-            if (modalBody) {
-                modalBody.innerHTML = renderCustomMemesList();
-            }
-            
-            const headerCount = document.querySelector('#manageMemesModal p');
-            if (headerCount) {
-                headerCount.textContent = `${customMemes.length} custom memes`;
-            }
-            
-            showNotification('Meme deleted', 'info');
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -39970,6 +40949,13 @@ window.fcRenderTagChips = fcRenderTagChips;
                     return Math.max(0, ...skill.studyHoursKeys.map(k => careerHrs[k] || 0));
                 } catch (e) { return 0; }
             }
+            // Hours still needed for a skill = target hours minus whatever's already
+            // logged against it. Used for every weeks/ETA estimate below, so a skill
+            // you're 100h into out of 160h only counts as 60h of remaining work
+            // instead of the full target (which used to overstate every ETA).
+            function hoursRemaining(track, skill) {
+                return Math.max(0, skill.hours - getRoadmapSkillHours(track, skill));
+            }
             // Writes hours both to localStorage AND to the live `studyHours` object
             // used by the main Study Hours tracker, so a value entered here is never
             // silently overwritten the next time hours are logged through that screen.
@@ -40061,6 +41047,66 @@ window.fcRenderTagChips = fcRenderTagChips;
                 return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             }
 
+            // ── View mode (list/graph) + Compare-track persistence ───────────
+            function getViewMode() { return localStorage.getItem('rdmViewMode') || 'list'; }
+            function setViewModeStorage(mode) { try { localStorage.setItem('rdmViewMode', mode); } catch(e) {} }
+            function getCompareTrack() { return localStorage.getItem('rdmCompareTrack') || ''; }
+            function setCompareTrackStorage(t) { try { localStorage.setItem('rdmCompareTrack', t || ''); } catch(e) {} }
+
+            // ── Gamification: daily streak ───────────────────────────────────
+            // A "streak day" is any calendar day on which at least one skill was
+            // marked complete (via markDone). Consecutive days increment the
+            // counter; a missed day resets it to 1 on the next completion.
+            function todayStr() { return new Date().toISOString().slice(0, 10); }
+            function getStreak() {
+                try { return JSON.parse(localStorage.getItem('rdmStreak') || 'null') || { count: 0, lastDate: '' }; }
+                catch (e) { return { count: 0, lastDate: '' }; }
+            }
+            function bumpStreak() {
+                const s = getStreak();
+                const today = todayStr();
+                if (s.lastDate === today) return s;
+                const y = new Date(); y.setDate(y.getDate() - 1);
+                const yesterday = y.toISOString().slice(0, 10);
+                s.count = (s.lastDate === yesterday) ? s.count + 1 : 1;
+                s.lastDate = today;
+                try { localStorage.setItem('rdmStreak', JSON.stringify(s)); } catch (e) {}
+                return s;
+            }
+
+            // Whether every skill in `phase` is completed, given a completedSet.
+            function phaseFullyDone(curriculum, phase, completedSet) {
+                const phSkills = curriculum.filter(s => s.phase === phase);
+                return phSkills.length > 0 && phSkills.every(s => completedSet.has(s.id));
+            }
+
+            // Confetti + modal celebration shown when a whole Phase is completed.
+            function celebrate(title, sub) {
+                const old = document.querySelector('.rdm-celebrate-overlay');
+                if (old) old.remove();
+                const colors = ['#f97316', '#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'];
+                let confetti = '';
+                for (let i = 0; i < 26; i++) {
+                    const left = Math.round(Math.random() * 100);
+                    const delay = (Math.random() * 0.4).toFixed(2);
+                    const dur = (1.1 + Math.random() * 0.9).toFixed(2);
+                    confetti += `<div class="rdm-confetti-piece" style="left:${left}%;background:${colors[i % colors.length]};animation-delay:${delay}s;animation-duration:${dur}s;"></div>`;
+                }
+                const overlay = document.createElement('div');
+                overlay.className = 'rdm-celebrate-overlay';
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+                overlay.innerHTML = `
+                    <div class="rdm-celebrate-card">
+                        <div class="rdm-celebrate-confetti">${confetti}</div>
+                        <div class="rdm-celebrate-icon">🎉</div>
+                        <div class="rdm-celebrate-title">${escapeHtml(title)}</div>
+                        <div class="rdm-celebrate-sub">${escapeHtml(sub)}</div>
+                        <button class="rdm-celebrate-close" onclick="this.closest('.rdm-celebrate-overlay').remove()">Tuyệt vời! 🚀</button>
+                    </div>`;
+                document.body.appendChild(overlay);
+                setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 7000);
+            }
+
             function renderHtml(track, opts) {
                 // opts: { hpw }
                 const curriculum = getCurriculum(track);
@@ -40086,7 +41132,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>`;
                 }
 
-                const totalHrs = sortedSkills.reduce((s, sk) => s + sk.hours, 0);
+                const totalHrs = sortedSkills.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
                 const totalWks = Math.ceil(totalHrs / hpw);
                 const finishDate = new Date();
                 finishDate.setDate(finishDate.getDate() + totalWks * 7);
@@ -40096,6 +41142,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const upNext = unlockedNow.slice(1, 3);
 
                 // ── Summary / stats row ──
+                const streak = getStreak();
+                const streakHtml = streak.count > 0
+                    ? `<span class="rdm-streak-badge">🔥 ${streak.count} ngày</span>`
+                    : '';
                 let html = `
                     <div class="rdm-summary-v2">
                         <div class="rdm-pct-ring" style="--pct:${pctComplete}">
@@ -40106,11 +41156,12 @@ window.fcRenderTagChips = fcRenderTagChips;
                             <div class="rdm-stat-row">${totalHrs}h left · ~${totalWks}wk @ ${hpw}h/wk</div>
                             <div class="rdm-stat-row rdm-finish-date">🏁 Est. finish: <strong>${fmtDate(finishDate)}</strong></div>
                         </div>
+                        ${streakHtml}
                     </div>`;
 
                 // ── Focus Now card ──
                 if (focusSkill) {
-                    const fWks = Math.ceil(focusSkill.hours / hpw);
+                    const fWks = Math.ceil(hoursRemaining(track, focusSkill) / hpw);
                     const fTrackable = focusSkill.studyHoursKeys && focusSkill.studyHoursKeys.length > 0;
                     const fHrs = fTrackable ? getRoadmapSkillHours(track, focusSkill) : 0;
                     const fThreshold = Math.round(focusSkill.hours * 0.75 * 10) / 10;
@@ -40132,7 +41183,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                                 </div>
                                 <span class="rdm-hrs-progress-label">${fHrs}h / ${focusSkill.hours}h logged · need ${fThreshold}h to complete</span>
                             </div>` : ''}
-                            <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">${fTrackable ? '🕐 Update hours studied' : '✓ Confirm complete'}</button>
+                            <div class="rdm-focus-actions">
+                                <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">${fTrackable ? '🕐 Update hours studied' : '✓ Confirm complete'}</button>
+                                ${fTrackable ? `<button class="rdm-focus-goal-btn" onclick="StrategicRoadmap.createGoalFromFocus('${track}')" title="Tự tạo Goal theo dõi kỹ năng này">🎯 Tạo Goal</button>` : ''}
+                            </div>
                         </div>`;
                     if (upNext.length > 0) {
                         html += `<div class="rdm-upnext">⏭ Up next: ${upNext.map(s => escapeHtml(s.name.split(' (')[0])).join('  ·  ')}</div>`;
@@ -40150,7 +41204,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const phSkillsAll = curriculum.filter(s => s.phase === ph);
                     const phDone = phSkillsAll.filter(s => completedSet.has(s.id)).length;
                     const phPct = phSkillsAll.length > 0 ? Math.round((phDone / phSkillsAll.length) * 100) : 0;
-                    const phHrsLeft = phSkillsActive.reduce((s, sk) => s + sk.hours, 0);
+                    const phHrsLeft = phSkillsActive.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
                     const phWksLeft = Math.ceil(phHrsLeft / hpw);
 
                     html += `<div class="rdm-phase-block">
@@ -40164,7 +41218,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>`;
 
                     phSkillsActive.forEach(skill => {
-                        const wks = Math.ceil(skill.hours / hpw);
+                        const wks = Math.ceil(hoursRemaining(track, skill) / hpw);
                         const locked = isLocked(skill, completedSet);
                         const isFocus = focusSkill && skill.id === focusSkill.id;
                         const stateClass = locked ? 'rdm-locked' : 'rdm-unlocked';
@@ -40237,12 +41291,271 @@ window.fcRenderTagChips = fcRenderTagChips;
                 return html;
             }
 
+            // ── GRAPH VIEW — visual DAG showing which skill unlocks which ────
+            // Renders the *entire* curriculum (done + locked + unlocked) as an
+            // SVG node graph, columns = phases, arrows = prereq edges, so the
+            // dependency structure that already exists in the data (but was
+            // hidden inside the flat list) becomes visible at a glance.
+            // Barycenter row-ordering: reduces line crossings by repeatedly
+            // sorting each column's nodes according to the average row of
+            // the nodes they connect to (prereqs on the forward pass,
+            // dependents on the backward pass) — the standard Sugiyama
+            // heuristic for laying out a DAG without it looking like a
+            // plate of spaghetti.
+            function orderColumnsForGraph(columns) {
+                const posOf = new Map(); // id -> row index within its own column
+                columns.forEach(col => col.skills.forEach((sk, ri) => posOf.set(sk.id, ri)));
+
+                const sortByKey = (skills, keyFn) => {
+                    const withKeys = skills.map((sk, i) => ({ sk, i, key: keyFn(sk) }));
+                    withKeys.sort((a, b) => {
+                        if (a.key === null && b.key === null) return a.i - b.i;
+                        if (a.key === null) return 1;
+                        if (b.key === null) return -1;
+                        return a.key - b.key || a.i - b.i;
+                    });
+                    return withKeys.map(w => w.sk);
+                };
+
+                for (let pass = 0; pass < 4; pass++) {
+                    const forward = pass % 2 === 0;
+                    const order = forward ? columns : [...columns].reverse();
+                    order.forEach(col => {
+                        col.skills = sortByKey(col.skills, sk => {
+                            const neighborIds = forward
+                                ? (sk.prereqs || [])
+                                : columns.flatMap(c => c.skills).filter(other => (other.prereqs || []).includes(sk.id)).map(o => o.id);
+                            const rows = neighborIds.map(id => posOf.get(id)).filter(r => r !== undefined);
+                            if (rows.length === 0) return null;
+                            return rows.reduce((a, b) => a + b, 0) / rows.length;
+                        });
+                        col.skills.forEach((sk, ri) => posOf.set(sk.id, ri));
+                    });
+                }
+                return columns;
+            }
+
+            function renderGraphHtml(track, opts) {
+                const curriculum = getCurriculum(track);
+                if (!curriculum) return null;
+
+                const hpw = (opts && opts.hpw) || 10;
+                const completed = getCompleted(track);
+                const completedSet = new Set(completed);
+                const totalCount = curriculum.length;
+                const doneCount = completed.length;
+                const pctComplete = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+                const streak = getStreak();
+                const streakHtml = streak.count > 0 ? `<span class="rdm-streak-badge">🔥 ${streak.count} ngày</span>` : '';
+
+                const remainingHrs = curriculum.filter(s => !completedSet.has(s.id)).reduce((s, sk) => s + hoursRemaining(track, sk), 0);
+                const remainingWks = Math.ceil(remainingHrs / hpw);
+                const finishDate = new Date();
+                finishDate.setDate(finishDate.getDate() + remainingWks * 7);
+                const paceHtml = remainingHrs > 0
+                    ? `<div class="rdm-stat-row">${remainingHrs}h left · ~${remainingWks}wk @ ${hpw}h/wk</div>
+                       <div class="rdm-stat-row rdm-finish-date">🏁 Est. finish: <strong>${fmtDate(finishDate)}</strong></div>`
+                    : '';
+
+                const phaseList = getPhaseList(track, curriculum);
+                const nodeW = 168, nodeH = 50, colGap = 70, rowGap = 14, sidePad = 12;
+                const colWidth = nodeW + colGap;
+
+                // Build columns in original order first, then re-order rows
+                // within each column to minimize edge crossings.
+                let columns = [];
+                let maxRows = 0;
+                const colIndexOf = new Map(); // skill id -> column index (for skip-edge detection)
+                phaseList.forEach((phInfo, ci) => {
+                    const skills = curriculum.filter(s => s.phase === phInfo.num);
+                    skills.forEach(sk => colIndexOf.set(sk.id, ci));
+                    columns.push({ phInfo, skills, x: sidePad + ci * colWidth });
+                });
+                if (columns.length === 0) return null;
+                columns = orderColumnsForGraph(columns);
+
+                // Separate normal (adjacent-column) edges from "skip" edges
+                // that jump 2+ phases — those get routed on their own lanes
+                // above the grid instead of slicing straight through
+                // unrelated nodes in the columns between them.
+                const skipEdges = [];
+                curriculum.forEach(sk => {
+                    (sk.prereqs || []).forEach(pid => {
+                        if (!colIndexOf.has(pid) || !colIndexOf.has(sk.id)) return;
+                        if (colIndexOf.get(sk.id) - colIndexOf.get(pid) > 1) skipEdges.push({ from: pid, to: sk.id });
+                    });
+                });
+                const laneOf = new Map(); // "from|to" -> lane index
+                skipEdges.forEach((e, i) => laneOf.set(e.from + '|' + e.to, i));
+                const skipLaneGap = 9;
+                const topPad = 30 + (skipEdges.length ? skipEdges.length * skipLaneGap + 6 : 0);
+
+                const idToPos = new Map();
+                columns.forEach(col => {
+                    maxRows = Math.max(maxRows, col.skills.length);
+                    col.skills.forEach((sk, ri) => {
+                        const y = topPad + ri * (nodeH + rowGap);
+                        idToPos.set(sk.id, { x: col.x, y, cx: col.x + nodeW / 2, cy: y + nodeH / 2 });
+                    });
+                });
+
+                const svgWidth = sidePad * 2 + columns.length * colWidth - colGap;
+                const svgHeight = topPad + Math.max(1, maxRows) * (nodeH + rowGap) + 6;
+
+                let edgesSvg = '';
+                curriculum.forEach(sk => {
+                    const to = idToPos.get(sk.id);
+                    if (!to) return;
+                    (sk.prereqs || []).forEach(pid => {
+                        const from = idToPos.get(pid);
+                        if (!from) return;
+                        const done = completedSet.has(sk.id);
+                        const preDone = completedSet.has(pid);
+                        const stroke = done ? '#10b981' : (preDone ? '#3b82f6' : '#cbd5e1');
+                        const laneKey = pid + '|' + sk.id;
+                        if (laneOf.has(laneKey)) {
+                            // Skip edge: route up into a dedicated dashed lane above the
+                            // grid, across, then down — never crosses through other nodes.
+                            const laneY = 22 + laneOf.get(laneKey) * skipLaneGap;
+                            const x1 = from.cx, x2 = to.cx;
+                            edgesSvg += `<path class="rdm-gedge rdm-gedge-skip" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="M${x1},${from.y} V${laneY} H${x2} V${to.y}" stroke="${stroke}" marker-end="url(#rdmArrow-${track})"></path>`;
+                        } else {
+                            const x1 = from.x + nodeW, y1 = from.cy;
+                            const x2 = to.x, y2 = to.cy;
+                            const mx = (x1 + x2) / 2;
+                            edgesSvg += `<path class="rdm-gedge" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="${stroke}" marker-end="url(#rdmArrow-${track})"></path>`;
+                        }
+                    });
+                });
+
+                let nodesSvg = '';
+                columns.forEach(col => {
+                    const shortLabel = 'P' + col.phInfo.num + ' — ' + col.phInfo.label.replace(/^Phase\s*\d+\s*—?\s*/i, '');
+                    nodesSvg += `<text class="rdm-gphase-label" x="${col.x + nodeW / 2}" y="${Math.max(16, topPad - 14)}" fill="${col.phInfo.color}">${escapeHtml(shortLabel.length > 26 ? shortLabel.slice(0,25)+'…' : shortLabel)}</text>`;
+                    col.skills.forEach(sk => {
+                        const pos = idToPos.get(sk.id);
+                        const done = completedSet.has(sk.id);
+                        const locked = !done && isLocked(sk, completedSet);
+                        let fill, stroke, textColor;
+                        if (done)        { fill = 'rgba(16,185,129,0.16)';  stroke = '#10b981'; textColor = '#065f46'; }
+                        else if (locked) { fill = 'rgba(148,163,184,0.14)'; stroke = '#94a3b8'; textColor = '#64748b'; }
+                        else             { fill = 'rgba(59,130,246,0.14)';  stroke = '#3b82f6'; textColor = '#1e40af'; }
+                        const icon = done ? '✓ ' : (locked ? '🔒 ' : '');
+                        const shortName = sk.name.split(' (')[0];
+                        const label = shortName.length > 22 ? shortName.slice(0, 21) + '…' : shortName;
+                        const handler = locked
+                            ? `StrategicRoadmap.notifyLocked('${track}','${sk.id}')`
+                            : `StrategicRoadmap.markDone('${track}','${sk.id}')`;
+                        nodesSvg += `
+                            <g data-skill="${sk.id}" onclick="${handler}" onmouseenter="StrategicRoadmap.hoverGraphNode(this,'${sk.id}',true)" onmouseleave="StrategicRoadmap.hoverGraphNode(this,'${sk.id}',false)">
+                                <rect class="rdm-gnode-rect" x="${pos.x}" y="${pos.y}" width="${nodeW}" height="${nodeH}" rx="9" fill="${fill}" stroke="${stroke}"></rect>
+                                <text class="rdm-gnode-text" x="${pos.x + 9}" y="${pos.y + 20}" fill="${textColor}">${icon}${escapeHtml(label)}</text>
+                                <text class="rdm-gnode-sub" x="${pos.x + 9}" y="${pos.y + 36}" fill="${textColor}">${sk.hours}h · ~${Math.ceil(hoursRemaining(track, sk) / hpw)}wk · ${starRating(sk.imp)}</text>
+                            </g>`;
+                    });
+                });
+
+                const svg = `
+                    <svg class="rdm-graph-svg" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <marker id="rdmArrow-${track}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                                <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"></path>
+                            </marker>
+                        </defs>
+                        ${edgesSvg}
+                        ${nodesSvg}
+                    </svg>`;
+
+                return `
+                    <div class="rdm-summary-v2" style="padding:10px 12px;">
+                        <div class="rdm-pct-ring" style="--pct:${pctComplete}"><span class="rdm-pct-num">${pctComplete}%</span></div>
+                        <div class="rdm-summary-text">
+                            <div class="rdm-stat-row"><strong>${doneCount}</strong> / ${totalCount} skills mastered</div>
+                            ${paceHtml}
+                        </div>
+                        ${streakHtml}
+                    </div>
+                    <div class="rdm-graph-wrap">${svg}</div>
+                    <div class="rdm-graph-legend">
+                        <span><i style="background:#10b981"></i> Đã hoàn thành</span>
+                        <span><i style="background:#3b82f6"></i> Có thể học ngay</span>
+                        <span><i style="background:#94a3b8"></i> Đang khoá</span>
+                    </div>`;
+            }
+
+            // ── COMPARE VIEW — two tracks side-by-side ────────────────────────
+            // Compact dashboard (ring %, phase bars, current focus skill) for
+            // each track, so parallel tracks (e.g. PE + CFA1) can be watched
+            // together without switching the selector back and forth.
+            function buildCompareCol(track, hpw) {
+                const curriculum = getCurriculum(track);
+                if (!curriculum) return null;
+                const completed = getCompleted(track);
+                const completedSet = new Set(completed);
+                const totalCount = curriculum.length;
+                const doneCount = completed.length;
+                const pctComplete = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+                const activeSkills = curriculum.filter(s => !completedSet.has(s.id));
+                const sorted = topologicalSort(activeSkills, curriculum);
+                const unlockedNow = sorted.filter(s => !isLocked(s, completedSet));
+                const focusSkill = unlockedNow[0] || sorted[0] || null;
+                const phaseList = getPhaseList(track, curriculum);
+                const meta = (typeof TRACK_META !== 'undefined' && TRACK_META[track]) || { icon: '📘', label: track };
+                const remainingHrs = activeSkills.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
+                const remainingWks = Math.ceil(remainingHrs / hpw);
+                const finishDate = new Date();
+                finishDate.setDate(finishDate.getDate() + remainingWks * 7);
+
+                let phasesHtml = '';
+                phaseList.forEach(phInfo => {
+                    const phSkillsAll = curriculum.filter(s => s.phase === phInfo.num);
+                    if (phSkillsAll.length === 0) return;
+                    const phDone = phSkillsAll.filter(s => completedSet.has(s.id)).length;
+                    const phPct = Math.round((phDone / phSkillsAll.length) * 100);
+                    phasesHtml += `
+                        <div class="rdm-compare-phase-mini">
+                            <span style="width:34px;flex-shrink:0;color:${phInfo.color};font-weight:800;">P${phInfo.num}</span>
+                            <span class="track"><span class="fill" style="width:${phPct}%;background:${phInfo.color}"></span></span>
+                            <span style="flex-shrink:0;">${phDone}/${phSkillsAll.length}</span>
+                        </div>`;
+                });
+
+                const focusHtml = focusSkill
+                    ? `<div class="rdm-compare-focus"><strong>🎯 ${escapeHtml(focusSkill.name.split(' (')[0])}</strong>${focusSkill.hours}h · ${starRating(focusSkill.imp)}</div>`
+                    : `<div class="rdm-compare-focus">🏆 Track hoàn thành!</div>`;
+
+                return `
+                    <div class="rdm-compare-col">
+                        <div class="rdm-compare-head">${meta.icon} ${escapeHtml(meta.label)}</div>
+                        <div class="rdm-compare-ring" style="background:conic-gradient(var(--primary) ${pctComplete}%, var(--border-color) 0)"><span>${pctComplete}%</span></div>
+                        <div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">${doneCount}/${totalCount} skills</div>
+                        ${remainingHrs > 0 ? `<div style="text-align:center;font-size:0.68rem;color:var(--text-muted);margin-bottom:8px;">🏁 ~${remainingWks}wk · ${fmtDate(finishDate)}</div>` : ''}
+                        ${phasesHtml}
+                        ${focusHtml}
+                    </div>`;
+            }
+
+            function renderCompareHtml(trackA, trackB, opts) {
+                const colA = buildCompareCol(trackA, opts.hpw || 10);
+                const colB = buildCompareCol(trackB, opts.hpw || 10);
+                if (!colA || !colB) return null;
+                return `<div class="rdm-compare-grid">${colA}${colB}</div>`;
+            }
+
             // ── 6. RENDER (delegates to renderHtml string-builder) ──────────
             function render(track) {
                 const output = document.getElementById('rdmOutput');
                 if (!output) return;
                 const hpw = parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
-                const html = renderHtml(track, { hpw });
+
+                const compareTrack = getCompareTrack();
+                if (compareTrack && compareTrack !== track) {
+                    const cmpHtml = renderCompareHtml(track, compareTrack, { hpw });
+                    if (cmpHtml !== null) { output.innerHTML = cmpHtml; return; }
+                }
+
+                const mode = getViewMode();
+                const html = mode === 'graph' ? renderGraphHtml(track, { hpw }) : renderHtml(track, { hpw });
                 if (html === null) return;
                 output.innerHTML = html;
             }
@@ -40256,10 +41569,242 @@ window.fcRenderTagChips = fcRenderTagChips;
                 }
             }
 
+            // Checks whether completing `skillId` just finished its whole Phase,
+            // and if so, fires the confetti celebration. Call AFTER the skill's
+            // completion state has actually been saved.
+            function checkPhaseCelebration(track, curriculum, skill, wasPhaseDone) {
+                const completedSet = new Set(getCompleted(track));
+                const isPhaseDoneNow = phaseFullyDone(curriculum, skill.phase, completedSet);
+                if (!wasPhaseDone && isPhaseDoneNow) {
+                    const phInfo = getPhaseList(track, curriculum).find(p => p.num === skill.phase);
+                    celebrate(
+                        `Hoàn thành ${phInfo ? phInfo.label : 'Phase ' + skill.phase}!`,
+                        'Toàn bộ kỹ năng trong phase này đã xong — phase tiếp theo đã mở khoá.'
+                    );
+                }
+            }
+
+            // ── Custom confirm/hours-input modals (replace confirm()/prompt()) ──
+            // Native confirm()/prompt() are silently blocked in some sandboxed
+            // iframe previews / mobile webviews, so the roadmap uses self-drawn
+            // modals instead — same visual language as the rest of the app.
+            function rdmConfirmModal(message, onConfirm, opts) {
+                opts = opts || {};
+                const existing = document.getElementById('rdmConfirmModal');
+                if (existing) existing.remove();
+
+                const modal = document.createElement('div');
+                modal.id = 'rdmConfirmModal';
+                modal.style.cssText = `
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                    z-index: 99999; display: flex; align-items: center; justify-content: center;
+                    padding: 20px;
+                `;
+                const icon = opts.icon || '❓';
+                const title = opts.title || 'Xác nhận';
+                const confirmLabel = opts.confirmLabel || 'Xác nhận';
+                const confirmColor = opts.danger
+                    ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                    : 'linear-gradient(135deg, #6366f1, #4f46e5)';
+                modal.innerHTML = `
+                    <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                        max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                        border: 1px solid var(--border-color);">
+                        <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">${icon}</div>
+                        <h3 style="margin: 0 0 10px 0; font-size: 1.1rem; color: var(--text-dark); text-align: center;">${title}</h3>
+                        <p style="margin: 0 0 22px 0; color: var(--text-muted); font-size: 0.9rem; text-align: center; line-height: 1.5; white-space: pre-line;">${message}</p>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="rdmConfirmCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                            <button id="rdmConfirmOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background:${confirmColor}; color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">${confirmLabel}</button>
+                        </div>
+                    </div>
+                `;
+                modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+                document.body.appendChild(modal);
+                document.getElementById('rdmConfirmCancelBtn').onclick = () => modal.remove();
+                document.getElementById('rdmConfirmOkBtn').onclick = () => { modal.remove(); onConfirm(); };
+            }
+
+            function rdmHoursModal(skillName, currentHours, threshold, targetHours, onSubmit) {
+                const existing = document.getElementById('rdmHoursModal');
+                if (existing) existing.remove();
+
+                const modal = document.createElement('div');
+                modal.id = 'rdmHoursModal';
+                modal.style.cssText = `
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                    z-index: 99999; display: flex; align-items: center; justify-content: center;
+                    padding: 20px;
+                `;
+                modal.innerHTML = `
+                    <div style="background: var(--bg-white); border-radius: 14px; padding: 28px 24px;
+                        max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                        border: 1px solid var(--border-color);">
+                        <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">⏱️</div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 1.05rem; color: var(--text-dark); text-align:center;">${skillName}</h3>
+                        <p style="margin: 0 0 18px 0; color: var(--text-muted); font-size: 0.85rem; text-align:center; line-height:1.5;">
+                            Cần tối thiểu <strong style="color: var(--text-dark);">${threshold}h</strong> (75% của mục tiêu ${targetHours}h) để tính hoàn thành.
+                        </p>
+                        <input id="rdmHoursInput" type="number" step="0.1" min="0" value="${currentHours > 0 ? currentHours : ''}"
+                            placeholder="Số giờ đã học"
+                            style="width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--border-color);
+                            border-radius:9px; font-size:1rem; margin-bottom:20px; background: var(--bg-light); color: var(--text-dark);" />
+                        <div style="display:flex; gap:10px;">
+                            <button id="rdmHoursCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                            <button id="rdmHoursOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Lưu giờ học</button>
+                        </div>
+                    </div>
+                `;
+                modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+                document.body.appendChild(modal);
+                const input = document.getElementById('rdmHoursInput');
+                input.focus();
+                const submit = () => { const val = input.value; modal.remove(); onSubmit(val); };
+                document.getElementById('rdmHoursCancelBtn').onclick = () => modal.remove();
+                document.getElementById('rdmHoursOkBtn').onclick = submit;
+                input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+            }
+
             return {
                 generate() {
                     const track = document.getElementById('rdmTrackSelect')?.value;
                     if (track) render(track);
+                },
+                // ── View mode toggle (List / Graph) ──
+                setView(mode) {
+                    setViewModeStorage(mode);
+                    const btnList = document.getElementById('rdmViewBtnList');
+                    const btnGraph = document.getElementById('rdmViewBtnGraph');
+                    if (btnList) btnList.classList.toggle('active', mode === 'list');
+                    if (btnGraph) btnGraph.classList.toggle('active', mode === 'graph');
+                    this.generate();
+                },
+                // ── Compare mode toggle (2 tracks side-by-side) ──
+                toggleCompare() {
+                    const row = document.getElementById('rdmCompareRow');
+                    const btn = document.getElementById('rdmCompareBtn');
+                    const isOn = row && row.classList.contains('show');
+                    if (isOn) {
+                        row.classList.remove('show');
+                        if (btn) btn.classList.remove('active');
+                        setCompareTrackStorage('');
+                        const selOff = document.getElementById('rdmCompareTrackSelect');
+                        if (selOff) selOff.value = '';
+                    } else {
+                        if (row) row.classList.add('show');
+                        if (btn) btn.classList.add('active');
+                        const sel = document.getElementById('rdmCompareTrackSelect');
+                        const saved = getCompareTrack();
+                        if (sel && saved) sel.value = saved;
+                    }
+                    this.generate();
+                },
+                // Persist the chosen second track for compare mode
+                setCompareTrack(t) {
+                    setCompareTrackStorage(t);
+                    this.generate();
+                },
+                // Hovering a node in Graph view: highlight only its direct
+                // prereqs + direct dependents (and the edges between them),
+                // dim everything else so the relevant chain pops out instead
+                // of getting lost in the full mesh of arrows.
+                hoverGraphNode(el, skillId, entering) {
+                    const svg = el.closest('svg');
+                    if (!svg) return;
+                    const nodes = svg.querySelectorAll('[data-skill]');
+                    const edges = svg.querySelectorAll('[data-edge]');
+                    if (!entering) {
+                        nodes.forEach(n => n.classList.remove('rdm-gnode-dim', 'rdm-gnode-hi'));
+                        edges.forEach(e => e.classList.remove('rdm-gedge-dim', 'rdm-gedge-hi'));
+                        return;
+                    }
+                    const connected = new Set([skillId]);
+                    edges.forEach(e => {
+                        const from = e.getAttribute('data-from'), to = e.getAttribute('data-to');
+                        if (from === skillId) connected.add(to);
+                        if (to === skillId) connected.add(from);
+                    });
+                    nodes.forEach(n => {
+                        const id = n.getAttribute('data-skill');
+                        n.classList.toggle('rdm-gnode-hi', connected.has(id));
+                        n.classList.toggle('rdm-gnode-dim', !connected.has(id));
+                    });
+                    edges.forEach(e => {
+                        const from = e.getAttribute('data-from'), to = e.getAttribute('data-to');
+                        const rel = from === skillId || to === skillId;
+                        e.classList.toggle('rdm-gedge-hi', rel);
+                        e.classList.toggle('rdm-gedge-dim', !rel);
+                    });
+                },
+                // Clicking a locked node in Graph view: explain what's blocking it.
+                notifyLocked(track, skillId) {
+                    const curriculum = getCurriculum(track);
+                    const skill = curriculum && curriculum.find(s => s.id === skillId);
+                    if (!skill) return;
+                    const completedSet = new Set(getCompleted(track));
+                    const idToSkill = new Map(curriculum.map(s => [s.id, s]));
+                    const text = blockedByText(skill, completedSet, idToSkill);
+                    if (typeof showNotification === 'function')
+                        showNotification(`🔒 "${skill.name.split(' (')[0]}" cần hoàn thành trước: ${text}`, 'info');
+                },
+                // Auto-create a Goal (type: skill_mastery) tracking the current
+                // Focus Now skill, target = its full hour requirement, deadline
+                // estimated from the selected hrs/week pace.
+                createGoalFromFocus(track) {
+                    const curriculum = getCurriculum(track);
+                    if (!curriculum) return;
+                    const completedSet = new Set(getCompleted(track));
+                    const activeSkills = curriculum.filter(s => !completedSet.has(s.id));
+                    const sorted = topologicalSort(activeSkills, curriculum);
+                    const unlockedNow = sorted.filter(s => !isLocked(s, completedSet));
+                    const focusSkill = unlockedNow[0] || sorted[0];
+                    if (!focusSkill) return;
+                    if (!focusSkill.studyHoursKeys || focusSkill.studyHoursKeys.length === 0) {
+                        if (typeof showNotification === 'function')
+                            showNotification('⚠️ Kỹ năng này không có dữ liệu giờ học để theo dõi Goal.', 'error');
+                        return;
+                    }
+                    if (typeof goals === 'undefined' || typeof saveGoals !== 'function') {
+                        if (typeof showNotification === 'function')
+                            showNotification('⚠️ Không tìm thấy hệ thống Goals trong app.', 'error');
+                        return;
+                    }
+                    // Goal progress is computed against the app's *current* career —
+                    // switch it to this track first if needed, so the new goal
+                    // actually tracks correctly instead of silently reading the
+                    // wrong career's study hours.
+                    if (typeof currentCareer !== 'undefined' && currentCareer !== track) {
+                        const ok = confirm(`Goal sẽ theo dõi kỹ năng của track "${track}". Chuyển career hiện tại sang track này để Goal cập nhật đúng?`);
+                        if (ok && typeof selectCareer === 'function') selectCareer(track);
+                    }
+                    const hpw = parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
+                    const weeksNeeded = Math.max(1, Math.ceil(focusSkill.hours / hpw));
+                    const deadline = new Date();
+                    deadline.setDate(deadline.getDate() + weeksNeeded * 7);
+
+                    const already = goals.find(g => g.type === 'skill_mastery' && g.skillName === focusSkill.studyHoursKeys[0] && g.career === track);
+                    if (already) {
+                        if (typeof showNotification === 'function')
+                            showNotification('ℹ️ Goal cho kỹ năng này đã tồn tại.', 'info');
+                        return;
+                    }
+
+                    goals.push({
+                        id: Date.now().toString(),
+                        title: `🎯 ${focusSkill.name.split(' (')[0]}`,
+                        type: 'skill_mastery',
+                        target: focusSkill.hours,
+                        deadline: deadline.toISOString().slice(0, 10),
+                        career: track,
+                        skillName: focusSkill.studyHoursKeys[0],
+                        currentProgress: getRoadmapSkillHours(track, focusSkill),
+                        manuallyUpdated: false
+                    });
+                    saveGoals();
+                    if (typeof renderGoals === 'function') renderGoals();
+                    if (typeof updateGoalProgressChart === 'function') { try { updateGoalProgressChart(); } catch (e) {} }
+                    if (typeof showNotification === 'function')
+                        showNotification(`✅ Đã tạo Goal "${focusSkill.name.split(' (')[0]}" — hạn ${deadline.toLocaleDateString('vi-VN')}`, 'success');
                 },
                 // ✅ SMARTER COMPLETION GATE — replaces the old 1-click instant-complete.
                 //   • Skills with studyHoursKeys (trackable): clicking opens an hours-entry
@@ -40274,50 +41819,63 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const skill = curriculum && curriculum.find(s => s.id === skillId);
                     if (!skill) return;
 
+                    const wasPhaseDone = phaseFullyDone(curriculum, skill.phase, new Set(getCompleted(track)));
                     const trackable = skill.studyHoursKeys && skill.studyHoursKeys.length > 0;
 
                     if (!trackable) {
-                        if (!confirm(`Confirm that you have genuinely completed:\n"${skill.name}"?\n\nThis skill has no hours data to auto-verify, so only mark it when you're sure.`)) return;
-                        toggleManual(track, skillId);
-                        render(track);
-                        flashBadge();
-                        if (typeof showNotification === 'function')
-                            showNotification('✅ Skill marked complete — roadmap updated!', 'success');
+                        rdmConfirmModal(
+                            `Xác nhận bạn đã thực sự hoàn thành:\n"${skill.name}"?\n\nSkill này không có dữ liệu giờ học để tự xác minh, chỉ tick khi bạn chắc chắn.`,
+                            () => {
+                                toggleManual(track, skillId);
+                                render(track);
+                                flashBadge();
+                                bumpStreak();
+                                if (typeof showNotification === 'function')
+                                    showNotification('✅ Skill marked complete — roadmap updated!', 'success');
+                                checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
+                            },
+                            { icon: '✅', title: 'Xác nhận hoàn thành', confirmLabel: 'Đã hoàn thành' }
+                        );
                         return;
                     }
 
                     const current = getRoadmapSkillHours(track, skill);
                     const threshold = Math.round(skill.hours * 0.75 * 10) / 10;
-                    const input = prompt(
-                        `How many hours have you studied for:\n"${skill.name}"?\n\nNeed at least ${threshold}h (75% of the ${skill.hours}h target) to be counted as complete.`,
-                        current > 0 ? String(current) : ''
-                    );
-                    if (input === null) return; // user cancelled
-                    let hrs = parseFloat(input.replace(',', '.'));
-                    if (isNaN(hrs) || hrs < 0) {
-                        if (typeof showNotification === 'function')
-                            showNotification('⚠️ Please enter a valid number of hours.', 'error');
-                        return;
-                    }
-                    if (hrs > skill.hours * 2) hrs = skill.hours * 2; // sanity clamp against fat-finger entries
+                    rdmHoursModal(skill.name, current, threshold, skill.hours, (input) => {
+                        if (input === null || input === '') return; // user cancelled / left blank
+                        let hrs = parseFloat(String(input).replace(',', '.'));
+                        if (isNaN(hrs) || hrs < 0) {
+                            if (typeof showNotification === 'function')
+                                showNotification('⚠️ Please enter a valid number of hours.', 'error');
+                            return;
+                        }
+                        if (hrs > skill.hours * 2) hrs = skill.hours * 2; // sanity clamp against fat-finger entries
 
-                    setRoadmapSkillHours(track, skill, hrs);
-                    render(track);
+                        setRoadmapSkillHours(track, skill, hrs);
+                        render(track);
 
-                    if (hrs >= threshold) {
-                        flashBadge();
-                        if (typeof showNotification === 'function')
-                            showNotification(`🎉 Reached ${hrs}h (≥${threshold}h) — "${skill.name}" is now complete!`, 'achievement');
-                    } else {
-                        const remaining = Math.max(0, threshold - hrs).toFixed(1);
-                        if (typeof showNotification === 'function')
-                            showNotification(`📈 Logged ${hrs}h / ${skill.hours}h. Need ${remaining}h more to complete.`, 'info');
-                    }
+                        if (hrs >= threshold) {
+                            flashBadge();
+                            bumpStreak();
+                            if (typeof showNotification === 'function')
+                                showNotification(`🎉 Reached ${hrs}h (≥${threshold}h) — "${skill.name}" is now complete!`, 'achievement');
+                            checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
+                        } else {
+                            const remaining = Math.max(0, threshold - hrs).toFixed(1);
+                            if (typeof showNotification === 'function')
+                                showNotification(`📈 Logged ${hrs}h / ${skill.hours}h. Need ${remaining}h more to complete.`, 'info');
+                        }
+                    });
                 },
                 resetTrack(track) {
-                    if (!confirm('Reset manual roadmap completions for this track? (Auto-detected completions from study hours remain.)')) return;
-                    localStorage.removeItem(storageKey(track));
-                    render(track);
+                    rdmConfirmModal(
+                        'Xóa các completion đã tick tay cho track này?\n(Completion tự động phát hiện từ giờ học vẫn được giữ nguyên.)',
+                        () => {
+                            localStorage.removeItem(storageKey(track));
+                            render(track);
+                        },
+                        { icon: '🔄', title: 'Reset track', confirmLabel: 'Reset', danger: true }
+                    );
                 },
                 // Sync track selector with the main app's currentCareer value
                 syncCareer() {
@@ -40327,6 +41885,21 @@ window.fcRenderTagChips = fcRenderTagChips;
                         sel.value = cc;
                         render(cc);
                     }
+                    // Restore view-mode / compare UI state on (re)load
+                    const mode = getViewMode();
+                    const btnList = document.getElementById('rdmViewBtnList');
+                    const btnGraph = document.getElementById('rdmViewBtnGraph');
+                    if (btnList) btnList.classList.toggle('active', mode !== 'graph');
+                    if (btnGraph) btnGraph.classList.toggle('active', mode === 'graph');
+                    const cmp = getCompareTrack();
+                    if (cmp) {
+                        const row = document.getElementById('rdmCompareRow');
+                        const btn = document.getElementById('rdmCompareBtn');
+                        const sel2 = document.getElementById('rdmCompareTrackSelect');
+                        if (row) row.classList.add('show');
+                        if (btn) btn.classList.add('active');
+                        if (sel2) sel2.value = cmp;
+                    }
                 }
             };
         })();
@@ -40334,8 +41907,11 @@ window.fcRenderTagChips = fcRenderTagChips;
         // Toggle Roadmap card collapse
         function toggleRoadmapCard() {
             const body = document.getElementById('rdmBody');
+            const icon = document.getElementById('rdmCollapseIcon');
             if (!body) return;
-            body.style.display = (body.style.display === 'none') ? '' : 'none';
+            const willHide = body.style.display !== 'none';
+            body.style.display = willHide ? 'none' : '';
+            if (icon) icon.textContent = willHide ? '▼' : '▲';
         }
 
         // Auto-generate on page load with whatever track is selected (default: pe)
@@ -40383,7 +41959,7 @@ window.fcRenderTagChips = fcRenderTagChips;
 
 <!-- ═══════════════════════════════════════════════════════
      📆 PLANNER EXTENSIONS v4.0
-     ✅ Month view         ✅ Keyboard shortcuts (← → T D W M N)
+     ✅ Month view         ✅ Keyboard shortcuts (← → N)
      ✅ Jump-to-date       ✅ Category filter
      ✅ GCal per event     ✅ Export Day → GCal modal
      ✅ Custom reminder    ✅ "What should I do NOW?"
@@ -40558,6 +42134,18 @@ const FILTERS = new Set(['task','study','review','exercise','break','other','dea
 let _monthYear  = new Date().getFullYear();
 let _monthMonth = new Date().getMonth();
 let _inMonthView = false;
+let _inTodoView = false;
+let _todoDoneCollapsed = true;
+
+/* ── To-Do (ABCDE priority — Brian Tracy) ── */
+const TODO_ORDER = ['A','B','C','D','E'];
+const TODO_INFO = {
+  A: { label: 'A — Phải làm',   desc: 'Hậu quả nghiêm trọng nếu không làm', color: '#ef4444' },
+  B: { label: 'B — Nên làm',    desc: 'Hậu quả nhẹ nếu không làm',          color: '#f97316' },
+  C: { label: 'C — Có thì tốt', desc: 'Làm được thì tốt, không có hậu quả', color: '#eab308' },
+  D: { label: 'D — Giao việc',  desc: 'Người khác có thể làm thay',         color: '#3b82f6' },
+  E: { label: 'E — Loại bỏ',    desc: 'Không thực sự cần thiết',            color: '#6b7280' },
+};
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const CAL_COLORS = {
@@ -40689,6 +42277,107 @@ function renderMonth(year, month) {
   return html;
 }
 
+/* ── To-Do: storage helpers ── */
+function escTodo(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function getTodos() {
+  try { return JSON.parse(localStorage.getItem('todoTasks') || '[]'); } catch { return []; }
+}
+function saveTodos(list) {
+  localStorage.setItem('todoTasks', JSON.stringify(list));
+}
+function nextTodoOrder(list, priority) {
+  const inGroup = list.filter(t => t.priority === priority);
+  return inGroup.length ? Math.max(...inGroup.map(t => t.order || 0)) + 1 : 0;
+}
+
+/* ── To-Do: renderer ── */
+function renderTodoList() {
+  const all = getTodos();
+  const open = all.filter(t => !t.done).sort((a,b) => {
+    const pa = TODO_ORDER.indexOf(a.priority), pb = TODO_ORDER.indexOf(b.priority);
+    return pa !== pb ? pa - pb : (a.order||0) - (b.order||0);
+  });
+  const done = all.filter(t => t.done).sort((a,b) => (b.doneAt||0) - (a.doneAt||0));
+
+  const totalCount = all.length;
+  const donePct = totalCount ? Math.round((done.length / totalCount) * 100) : 0;
+
+  let html = `
+    <div class="todo-wrap">
+      ${totalCount ? `
+      <div class="todo-progress-wrap">
+        <div class="todo-progress-info">
+          <span class="todo-progress-label">Tiến độ (${done.length}/${totalCount})</span>
+          <span class="todo-progress-pct">${donePct}%</span>
+        </div>
+        <div class="todo-progress-bar"><div class="todo-progress-fill" style="width:${donePct}%"></div></div>
+      </div>` : ''}
+      <div class="todo-add-row">
+        <input type="text" id="todoNewText" class="todo-add-input" placeholder="Thêm việc cần làm..."
+          onkeydown="if(event.key==='Enter'){PLANEXT.todoAdd();}">
+        <select id="todoNewPriority" class="todo-add-select" title="Mức ưu tiên ABCDE">
+          ${TODO_ORDER.map(p => `<option value="${p}">${TODO_INFO[p].label}</option>`).join('')}
+        </select>
+        <button class="todo-add-btn" onclick="PLANEXT.todoAdd()">+ Thêm</button>
+      </div>
+      <div class="todo-hint">Ưu tiên theo ABCDE (Brian Tracy): A = phải làm, B = nên làm, C = có thì tốt, D = giao việc, E = bỏ.</div>`;
+
+  if (!open.length) {
+    html += `<div class="todo-empty"><span class="todo-empty-icon">🎉</span>Không còn việc nào đang mở.<br>Thêm việc mới ở trên nhé!</div>`;
+  } else {
+    TODO_ORDER.forEach(p => {
+      const group = open.filter(t => t.priority === p);
+      if (!group.length) return;
+      const info = TODO_INFO[p];
+      html += `
+        <div class="todo-group">
+          <div class="todo-group-head">
+            <span class="todo-group-badge" style="background:${info.color};">${p}</span>
+            <span class="todo-group-desc">${info.desc}</span>
+            <span class="todo-group-count">${group.length}</span>
+          </div>`;
+      group.forEach((t, idx) => {
+        html += `
+          <div class="todo-row${t.done?' done':''}" style="--p-color:${info.color};">
+            <input type="checkbox" class="todo-check" ${t.done?'checked':''} onchange="PLANEXT.todoToggle('${t.id}')">
+            <select class="todo-prio-select" onchange="PLANEXT.todoSetPriority('${t.id}', this.value)" title="Đổi mức ưu tiên">
+              ${TODO_ORDER.map(pp => `<option value="${pp}" ${pp===p?'selected':''}>${pp}</option>`).join('')}
+            </select>
+            <span class="todo-text" ondblclick="PLANEXT.todoEdit('${t.id}')" title="Nhấp đúp để sửa">${escTodo(t.text)}</span>
+            <button class="todo-move-btn" ${idx===0?'disabled':''} onclick="PLANEXT.todoMove('${t.id}','up')" title="Lên">▲</button>
+            <button class="todo-move-btn" ${idx===group.length-1?'disabled':''} onclick="PLANEXT.todoMove('${t.id}','down')" title="Xuống">▼</button>
+            <button class="todo-edit-btn" onclick="PLANEXT.todoEdit('${t.id}')" title="Sửa">✎</button>
+            <button class="todo-del-btn" onclick="PLANEXT.todoDelete('${t.id}')" title="Xoá">🗑</button>
+          </div>`;
+      });
+      html += `</div>`;
+    });
+  }
+
+  html += `
+      <div class="todo-done-section">
+        <div class="todo-done-head" onclick="PLANEXT.todoToggleDoneCollapse()">
+          <span>✅ Đã hoàn thành (${done.length})${_todoDoneCollapsed && done.length ? ' — nhấp để xem' : ''}</span>
+          ${done.length ? `<button class="todo-clear-btn" onclick="event.stopPropagation();PLANEXT.todoClearDone()">Xoá hết</button>` : ''}
+        </div>`;
+  if (done.length && !_todoDoneCollapsed) {
+    done.forEach(t => {
+      const info = TODO_INFO[t.priority] || TODO_INFO.C;
+      html += `
+        <div class="todo-row done" style="--p-color:${info.color};">
+          <input type="checkbox" class="todo-check" checked onchange="PLANEXT.todoToggle('${t.id}')">
+          <span class="todo-group-badge" style="background:${info.color};">${t.priority}</span>
+          <span class="todo-text">${escTodo(t.text)}</span>
+          <button class="todo-del-btn" onclick="PLANEXT.todoDelete('${t.id}')" title="Xoá">🗑</button>
+        </div>`;
+    });
+  }
+  html += `</div></div>`;
+  return html;
+}
+
 /* ── Public API ── */
 return {
 
@@ -40727,6 +42416,7 @@ return {
     };
     CAL.goToday = function() {
       _inMonthView = false;
+      if (_inTodoView) self._closeTodoView();
       origToday();
       document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===0));
     };
@@ -40745,6 +42435,114 @@ return {
     CAL.currentDate = new Date(val+'T12:00:00');
     CAL.switchTab('day');
     document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  },
+
+  /* ── To-Do view ── */
+  openTodoView() {
+    _inTodoView = true;
+    _inMonthView = false;
+    document.querySelectorAll('.cal-tab').forEach((t,i) => t.classList.toggle('active', i===3));
+    const body = document.getElementById('calBody');
+    if (body) body.innerHTML = renderTodoList();
+    const title = document.getElementById('calTitleText');
+    if (title) title.textContent = `✅ To-Do list — ưu tiên theo ABCDE`;
+    const bar = document.getElementById('calActionBar');
+    if (bar) bar.style.display = 'none';
+    const panel = document.getElementById('calFilterPanel');
+    if (panel) panel.style.display = 'none';
+    const legend = document.getElementById('calLegend');
+    if (legend) legend.style.display = 'none';
+  },
+
+  _closeTodoView() {
+    _inTodoView = false;
+    const bar = document.getElementById('calActionBar');
+    if (bar) bar.style.display = '';
+    const legend = document.getElementById('calLegend');
+    if (legend) legend.style.display = '';
+  },
+
+  todoAdd() {
+    const input = document.getElementById('todoNewText');
+    const select = document.getElementById('todoNewPriority');
+    const text = (input?.value || '').trim();
+    if (!text) { input?.focus(); return; }
+    const priority = select?.value || 'A';
+    const list = getTodos();
+    list.push({
+      id: 't' + Date.now() + Math.random().toString(36).slice(2,6),
+      text, priority, done: false,
+      order: nextTodoOrder(list, priority),
+      createdAt: Date.now()
+    });
+    saveTodos(list);
+    if (input) input.value = '';
+    this.openTodoView();
+  },
+
+  todoToggle(id) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    t.done = !t.done;
+    t.doneAt = t.done ? Date.now() : null;
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoDelete(id) {
+    if (!confirm('Xoá việc này?')) return;
+    saveTodos(getTodos().filter(t => t.id !== id));
+    this.openTodoView();
+  },
+
+  todoEdit(id) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    const val = prompt('Sửa nội dung việc:', t.text);
+    if (val === null) return;
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    t.text = trimmed;
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoSetPriority(id, priority) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    t.priority = priority;
+    t.order = nextTodoOrder(list, priority);
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoMove(id, dir) {
+    const list = getTodos();
+    const t = list.find(x => x.id === id);
+    if (!t) return;
+    const group = list.filter(x => x.priority === t.priority && !x.done)
+      .sort((a,b) => (a.order||0) - (b.order||0));
+    const idx = group.findIndex(x => x.id === id);
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= group.length) return;
+    const other = group[swapIdx];
+    const tmp = t.order; t.order = other.order; other.order = tmp;
+    saveTodos(list);
+    this.openTodoView();
+  },
+
+  todoClearDone() {
+    if (!confirm('Xoá tất cả việc đã hoàn thành?')) return;
+    saveTodos(getTodos().filter(t => !t.done));
+    this.openTodoView();
+  },
+
+  todoToggleDoneCollapse() {
+    _todoDoneCollapsed = !_todoDoneCollapsed;
+    this.openTodoView();
   },
 
   /* ── Category Filter ── */
@@ -41052,20 +42850,18 @@ return {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
+      // Bỏ qua hoàn toàn khi đang gõ trong input/textarea/select/contenteditable
+      // (để trình duyệt tự xử lý Ctrl+Z undo bình thường, không bị PLANEXT.undo() nuốt mất chữ)
+      if (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT'||e.target.isContentEditable) return;
       // Ctrl+Z / Cmd+Z — Undo
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault(); PLANEXT.undo(); return;
       }
-      if (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
       if (!document.getElementById('calendarModal')?.classList.contains('open')) return;
       if (document.getElementById('calSlotModal')?.classList.contains('open')) return;
       switch(e.key) {
         case 'ArrowLeft':  e.preventDefault(); CAL.prevPeriod(); break;
         case 'ArrowRight': e.preventDefault(); CAL.nextPeriod(); break;
-        case 't': case 'T': e.preventDefault(); CAL.goToday(); break;
-        case 'd': case 'D': e.preventDefault(); _inMonthView=false; CAL.switchTab('day'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===0)); break;
-        case 'w': case 'W': e.preventDefault(); _inMonthView=false; CAL.switchTab('week'); document.querySelectorAll('.cal-tab').forEach((t,i)=>t.classList.toggle('active',i===1)); break;
-        case 'm': case 'M': e.preventDefault(); PLANEXT.openMonthView(); break;
         case 'n': case 'N': e.preventDefault(); PLANEXT.whatNow(); break;
       }
     });
@@ -41079,8 +42875,10 @@ return {
     // Patch month view into CAL.switchTab
     const _origSwitch = CAL.switchTab.bind(CAL);
     CAL.switchTab = function(tab) {
-      if (tab === 'month') { PLANEXT.openMonthView(); return; }
+      if (tab === 'month') { PLANEXT._closeTodoView(); PLANEXT.openMonthView(); return; }
+      if (tab === 'todo')  { PLANEXT.openTodoView(); return; }
       _inMonthView = false;
+      if (_inTodoView) PLANEXT._closeTodoView();
       _origSwitch(tab);
     };
 
@@ -41480,6 +43278,80 @@ return {
 document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 </script>
 <!-- END PLANEXT -->
+
+<!-- ============================================================
+     TODO REMINDER POPUP — nhắc Todo List mỗi lần load trang
+     (Todo list nằm sâu trong Visual Planner nên dễ bị quên;
+     popup này tự bật lên để đập vào mắt ngay khi mở/refresh trang)
+     ============================================================ -->
+<script>
+(function(){
+  const TR_PRIO_INFO = {
+    A: { color:'#ef4444' }, B: { color:'#f97316' }, C: { color:'#eab308' },
+    D: { color:'#3b82f6' }, E: { color:'#6b7280' }
+  };
+  const TR_ORDER = ['A','B','C','D','E'];
+
+  function trEsc(s){
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function showTodoReminder(){
+    let todos = [];
+    try { todos = JSON.parse(localStorage.getItem('todoTasks') || '[]'); } catch { todos = []; }
+    const open = todos.filter(t => !t.done).sort((a,b) => {
+      const pa = TR_ORDER.indexOf(a.priority), pb = TR_ORDER.indexOf(b.priority);
+      return pa !== pb ? pa - pb : (a.order||0) - (b.order||0);
+    });
+    if (!open.length) return; // Không có việc đang mở → khỏi làm phiền
+
+    const MAX_SHOW = 6;
+    const shown = open.slice(0, MAX_SHOW);
+    const remain = open.length - shown.length;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'todoReminderOverlay';
+    overlay.innerHTML = `
+      <div class="todo-reminder-card">
+        <div class="todo-reminder-head">
+          <span class="todo-reminder-head-icon">📋</span>
+          <div class="todo-reminder-head-text">
+            <div class="todo-reminder-head-title">Bạn còn ${open.length} việc chưa xong!</div>
+            <div class="todo-reminder-head-sub">Nhắc từ Todo List trong Visual Planner</div>
+          </div>
+        </div>
+        <div class="todo-reminder-body">
+          ${shown.map(t => {
+            const info = TR_PRIO_INFO[t.priority] || TR_PRIO_INFO.C;
+            return `<div class="todo-reminder-item" style="--p-color:${info.color};">
+              <span class="todo-reminder-item-badge">${trEsc(t.priority||'C')}</span>
+              <span class="todo-reminder-item-text">${trEsc(t.text)}</span>
+            </div>`;
+          }).join('')}
+          ${remain > 0 ? `<div class="todo-reminder-more">…và ${remain} việc khác</div>` : ''}
+        </div>
+        <div class="todo-reminder-actions">
+          <button class="todo-reminder-btn todo-reminder-btn-secondary" id="todoReminderDismiss">Để sau</button>
+          <button class="todo-reminder-btn todo-reminder-btn-primary" id="todoReminderOpen">📋 Mở Todo List</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    function closeReminder(){ overlay.remove(); }
+
+    document.getElementById('todoReminderDismiss').addEventListener('click', closeReminder);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeReminder(); });
+    document.getElementById('todoReminderOpen').addEventListener('click', () => {
+      closeReminder();
+      if (typeof openCalendarModal === 'function') openCalendarModal();
+      setTimeout(() => { if (typeof PLANEXT !== 'undefined') PLANEXT.openTodoView(); }, 150);
+    });
+  }
+
+  // Chờ 1 chút cho các module khác (PLANEXT, vault, v.v.) init xong trước
+  document.addEventListener('DOMContentLoaded', () => setTimeout(showTodoReminder, 600));
+})();
+</script>
 
 <!-- ============================================================
      SECURE VAULT MODULE
