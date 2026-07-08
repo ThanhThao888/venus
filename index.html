@@ -11756,6 +11756,26 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dlt-group-header.g-done    { color: #059669; opacity: .65; }
 .dlt-group-cards { display: flex; flex-wrap: wrap; gap: 11px; }
 
+/* ── Completed Summary Card (collapsed, opens big modal) ── */
+.dlt-summary-card {
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(135deg, rgba(16,185,129,.08), rgba(5,150,105,.04));
+  border: 1px solid rgba(16,185,129,.28); border-left: 5px solid #10b981;
+  border-radius: 12px; padding: 13px 16px; cursor: pointer;
+  transition: all 0.2s; width: 100%; box-sizing: border-box;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.dlt-summary-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.dlt-summary-icon {
+  font-size: 1.6rem; flex-shrink: 0; width: 44px; height: 44px;
+  border-radius: 50%; background: rgba(16,185,129,.14);
+  display: flex; align-items: center; justify-content: center;
+}
+.dlt-summary-info { flex: 1; min-width: 0; }
+.dlt-summary-title { font-weight: 700; font-size: 0.94rem; color: var(--text-dark); }
+.dlt-summary-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+.dlt-summary-arrow { font-size: 1.1rem; color: #10b981; flex-shrink: 0; }
+
 /* ── Urgency Gauge Bar ── */
 .dlt-gauge {
   width: 100%; height: 4px; border-radius: 3px;
@@ -11917,6 +11937,94 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   cursor: pointer; touch-action: manipulation;
 }
 
+/* ── Completed Deadlines Modal (large, scrollable) ── */
+#dltCompletedModal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.55); z-index: 9999;
+  align-items: flex-start; justify-content: center; padding: 30px 20px;
+  overflow-y: auto;
+}
+#dltCompletedModal.open { display: flex; }
+.dlt-cm-box {
+  background: var(--bg-white); border-radius: 18px; padding: 24px 26px 30px;
+  width: 100%; max-width: 820px; box-shadow: var(--shadow-lg);
+  max-height: none;
+}
+.dlt-cm-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px; gap: 10px;
+}
+.dlt-cm-header h3 { margin: 0; font-size: 1.2rem; font-weight: 800; color: var(--text-dark); }
+.dlt-cm-close {
+  width: 34px; height: 34px; border-radius: 9px; border: none;
+  background: var(--bg-light); color: var(--text-muted); font-size: 1rem;
+  cursor: pointer; flex-shrink: 0; touch-action: manipulation;
+}
+.dlt-cm-close:hover { background: #fee2e2; color: #ef4444; }
+
+/* Analytics stat grid */
+.dlt-cm-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  margin-bottom: 20px;
+}
+.dlt-cm-stat {
+  background: var(--bg-light); border-radius: 10px; padding: 12px 8px;
+  text-align: center;
+}
+.dlt-cm-stat-n { font-size: 1.4rem; font-weight: 800; line-height: 1; color: var(--text-dark); }
+.dlt-cm-stat-l { font-size: 0.66rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .3px; color: var(--text-muted); margin-top: 4px; }
+.dlt-cm-stat.on-time .dlt-cm-stat-n { color: #10b981; }
+.dlt-cm-stat.late    .dlt-cm-stat-n { color: #ef4444; }
+.dlt-cm-stat.avg     .dlt-cm-stat-n { color: #6366f1; }
+
+/* Chart area */
+.dlt-cm-chart-wrap {
+  display: flex; align-items: center; gap: 22px; margin-bottom: 22px;
+  background: var(--bg-light); border-radius: 12px; padding: 16px;
+  flex-wrap: wrap;
+}
+.dlt-cm-chart-canvas-box { width: 150px; height: 150px; flex-shrink: 0; position: relative; margin: 0 auto; }
+.dlt-cm-chart-legend { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 8px; }
+.dlt-cm-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.83rem; color: var(--text-dark); }
+.dlt-cm-legend-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+
+/* Completed list rows */
+.dlt-cm-list { display: flex; flex-direction: column; gap: 10px; }
+.dlt-cm-item {
+  border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 14px;
+  border-left: 5px solid #10b981; background: var(--bg-white);
+}
+.dlt-cm-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dlt-cm-item-name { font-weight: 700; font-size: 0.92rem; color: var(--text-dark); }
+.dlt-cm-item-meta { font-size: 0.76rem; color: var(--text-muted); margin-top: 3px; }
+.dlt-cm-badge {
+  font-size: 0.68rem; font-weight: 700; padding: 3px 9px; border-radius: 8px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.dlt-cm-badge.early    { background: rgba(16,185,129,.14); color: #059669; }
+.dlt-cm-badge.ontime   { background: rgba(99,102,241,.14); color: #6366f1; }
+.dlt-cm-badge.late     { background: rgba(239,68,68,.14); color: #ef4444; }
+.dlt-cm-note {
+  margin-top: 9px; width: 100%; box-sizing: border-box; resize: vertical;
+  min-height: 44px; padding: 8px 10px; border: 1px solid var(--border-color);
+  border-radius: 8px; font-size: 0.82rem; font-family: inherit;
+  background: var(--bg-light); color: var(--text-dark); outline: none;
+  transition: border-color .15s;
+}
+.dlt-cm-note:focus { border-color: #6366f1; }
+.dlt-cm-note-saved {
+  font-size: 0.68rem; color: #10b981; font-weight: 700; margin-top: 4px;
+  opacity: 0; transition: opacity .3s;
+}
+.dlt-cm-note-saved.show { opacity: 1; }
+.dlt-cm-empty { color: var(--text-muted); font-size: 0.9rem; font-style: italic; padding: 20px 0; text-align: center; }
+
+@media (max-width: 640px) {
+  .dlt-cm-stats { grid-template-columns: repeat(2, 1fr); }
+  .dlt-cm-chart-wrap { flex-direction: column; }
+}
+
 /* ── Daily Popup ── */
 #dltPopup {
   display: none; position: fixed; bottom: 24px; right: 24px; z-index: 9998;
@@ -12012,6 +12120,22 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   </div>
 </div>
 
+<!-- Completed Deadlines Analytics Modal -->
+<div id="dltCompletedModal">
+  <div class="dlt-cm-box">
+    <div class="dlt-cm-header">
+      <h3>✅ Completed Deadlines</h3>
+      <button class="dlt-cm-close" onclick="DLT.closeCompletedModal()">✕</button>
+    </div>
+    <div class="dlt-cm-stats" id="dltCmStats"></div>
+    <div class="dlt-cm-chart-wrap" id="dltCmChartWrap">
+      <div class="dlt-cm-chart-canvas-box"><canvas id="dltCmChart"></canvas></div>
+      <div class="dlt-cm-chart-legend" id="dltCmLegend"></div>
+    </div>
+    <div class="dlt-cm-list" id="dltCmList"></div>
+  </div>
+</div>
+
 <!-- Daily Popup -->
 <div id="dltPopup">
   <h4>⏰ Deadline Brief</h4>
@@ -12036,12 +12160,30 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   /* ─── Storage ─── */
   let manualList = JSON.parse(localStorage.getItem('deadlines') || '[]');
   let doneIds    = JSON.parse(localStorage.getItem('dltDoneIds') || '[]');
+  // doneMeta: { [id]: { completedAt: 'YYYY-MM-DD', note: string } }
+  let doneMeta   = JSON.parse(localStorage.getItem('dltDoneMeta') || '{}');
   let curFilter  = 'all';
   let curSearch  = '';
+  let cmChart    = null; // Chart.js instance for the completed-analytics modal
 
   function persist() {
-    localStorage.setItem('deadlines',  JSON.stringify(manualList));
-    localStorage.setItem('dltDoneIds', JSON.stringify(doneIds));
+    localStorage.setItem('deadlines',   JSON.stringify(manualList));
+    localStorage.setItem('dltDoneIds',  JSON.stringify(doneIds));
+    localStorage.setItem('dltDoneMeta', JSON.stringify(doneMeta));
+  }
+
+  /* Backfill doneMeta for any legacy doneIds that predate the notes/analytics
+     feature, so every completed item always has a completedAt + note entry. */
+  function backfillDoneMeta() {
+    const todayISO = new Date().toISOString().slice(0, 10);
+    let changed = false;
+    doneIds.forEach(id => {
+      if (!doneMeta[id]) {
+        doneMeta[id] = { completedAt: todayISO, note: '' };
+        changed = true;
+      }
+    });
+    if (changed) persist();
   }
 
   /* ─── Auto-scan from app data ─── */
@@ -12075,6 +12217,13 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     const now = new Date(); now.setHours(0,0,0,0);
     const d   = new Date(dateStr); d.setHours(0,0,0,0);
     return Math.round((d - now) / 86400000);
+  }
+
+  /* Whole-day difference between two YYYY-MM-DD dates: positive = b is after a */
+  function daysBetween(dateA, dateB) {
+    const a = new Date(dateA); a.setHours(0,0,0,0);
+    const b = new Date(dateB); b.setHours(0,0,0,0);
+    return Math.round((b - a) / 86400000);
   }
 
   function countdown(dateStr) {
@@ -12189,7 +12338,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       <div class="dlt-stat">       <div class="dlt-stat-n">${all.length}</div><div class="dlt-stat-l">Total</div></div>
       <div class="dlt-stat s-danger"><div class="dlt-stat-n">${urgent}</div>  <div class="dlt-stat-l">Urgent</div></div>
       <div class="dlt-stat s-warn"> <div class="dlt-stat-n">${overdue}</div> <div class="dlt-stat-l">Overdue</div></div>
-      <div class="dlt-stat s-ok">   <div class="dlt-stat-n">${done}</div>   <div class="dlt-stat-l">Done ✓</div></div>`;
+      <div class="dlt-stat s-ok" ${done ? `style="cursor:pointer" onclick="DLT.openCompletedModal()" title="View completed deadlines & analytics"` : ''}><div class="dlt-stat-n">${done}</div>   <div class="dlt-stat-l">Done ✓</div></div>`;
 
     /* Tabs */
     const cats = ['all', ...new Set(all.map(d => d.category).filter(Boolean))];
@@ -12263,29 +12412,56 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     }
 
     // ── Group by urgency (chunking = less to scan at once) ──
+    // Completed items no longer render inline as cards — instead they're
+    // collapsed into a single summary card that opens the analytics modal.
     const groups = [
       { key:'overdue', label:'🔴 Overdue',               cls:'g-overdue', items: [] },
       { key:'urgent',  label:'🔥 Next 3 Days',           cls:'g-urgent',  items: [] },
       { key:'week',    label:'🟡 This Week (4–7 Days)',  cls:'g-week',    items: [] },
       { key:'later',   label:'🟢 Upcoming',              cls:'g-later',   items: [] },
-      { key:'done',    label:'✅ Completed',             cls:'g-done',    items: [] },
     ];
+    const doneShown = [];
     shown.forEach(d => {
       const done = doneIds.includes(d.id);
       const days = daysLeft(d.date);
-      if (done) groups[4].items.push(d);
-      else if (days < 0) groups[0].items.push(d);
+      if (done) { doneShown.push(d); return; }
+      if (days < 0) groups[0].items.push(d);
       else if (days <= 3) groups[1].items.push(d);
       else if (days <= 7) groups[2].items.push(d);
       else groups[3].items.push(d);
     });
 
-    list.innerHTML = groups.filter(g => g.items.length).map(g => `
+    let html = groups.filter(g => g.items.length).map(g => `
       <div class="dlt-group">
         <div class="dlt-group-header ${g.cls}">${g.label} <span class="dlt-group-count">${g.items.length}</span></div>
         <div class="dlt-group-cards">${g.items.map(cardHTML).join('')}</div>
       </div>
     `).join('');
+
+    if (doneShown.length) {
+      // Late count among the currently-visible completed items, for a quick at-a-glance hint
+      const lateN = doneShown.filter(d => {
+        const meta = doneMeta[d.id];
+        return meta && daysBetween(d.date, meta.completedAt) > 0;
+      }).length;
+      const subText = lateN
+        ? `${doneShown.length} finished · ${lateN} completed late — tap for the full breakdown`
+        : `${doneShown.length} finished — tap to review notes & timing`;
+      html += `
+      <div class="dlt-group">
+        <div class="dlt-group-header g-done">✅ Completed <span class="dlt-group-count">${doneShown.length}</span></div>
+        <div class="dlt-summary-card" onclick="DLT.openCompletedModal()">
+          <div class="dlt-summary-icon">📊</div>
+          <div class="dlt-summary-info">
+            <div class="dlt-summary-title">View completed deadlines & analytics</div>
+            <div class="dlt-summary-sub">${subText}</div>
+          </div>
+          <div class="dlt-summary-arrow">›</div>
+        </div>
+      </div>`;
+    }
+
+    list.innerHTML = html;
 
     tickCountdowns();
   }
@@ -12407,6 +12583,92 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     }
   }
 
+  /* ─── Completed Deadlines Analytics Modal (render) ─── */
+  function renderCompletedModal() {
+    // This is a dedicated review screen, so it always shows the FULL completion
+    // history — independent of whatever filter/search is active on the main list.
+    backfillDoneMeta();
+    const all = allItems();
+    const completed = all
+      .filter(d => doneIds.includes(d.id))
+      .map(d => {
+        const meta = doneMeta[d.id] || { completedAt: d.date, note: '' };
+        const diff = daysBetween(d.date, meta.completedAt); // >0 late, <0 early, 0 on time
+        return Object.assign({}, d, { meta, diff });
+      })
+      .sort((a, b) => new Date(b.meta.completedAt) - new Date(a.meta.completedAt));
+
+    const total = completed.length;
+    const lateN   = completed.filter(c => c.diff > 0).length;
+    const onTimeN = total - lateN;
+    const avgDiff = total ? completed.reduce((s, c) => s + c.diff, 0) / total : 0;
+    const avgLabel = !total ? '—'
+      : avgDiff > 0 ? `${avgDiff.toFixed(1)}d late`
+      : avgDiff < 0 ? `${Math.abs(avgDiff).toFixed(1)}d early`
+      : 'On time';
+
+    document.getElementById('dltCmStats').innerHTML = `
+      <div class="dlt-cm-stat"><div class="dlt-cm-stat-n">${total}</div><div class="dlt-cm-stat-l">Total Done</div></div>
+      <div class="dlt-cm-stat on-time"><div class="dlt-cm-stat-n">${onTimeN}</div><div class="dlt-cm-stat-l">On Time / Early</div></div>
+      <div class="dlt-cm-stat late"><div class="dlt-cm-stat-n">${lateN}</div><div class="dlt-cm-stat-l">Completed Late</div></div>
+      <div class="dlt-cm-stat avg"><div class="dlt-cm-stat-n" style="font-size:1.05rem">${avgLabel}</div><div class="dlt-cm-stat-l">Avg. Timing</div></div>
+    `;
+
+    /* Chart: on-time vs late breakdown */
+    const chartWrap = document.getElementById('dltCmChartWrap');
+    const legendEl  = document.getElementById('dltCmLegend');
+    if (!total) {
+      chartWrap.style.display = 'none';
+    } else {
+      chartWrap.style.display = 'flex';
+      const canvas = document.getElementById('dltCmChart');
+      if (cmChart) { cmChart.destroy(); cmChart = null; }
+      cmChart = new Chart(canvas.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: ['On time / Early', 'Late'],
+          datasets: [{ data: [onTimeN, lateN], backgroundColor: ['#10b981', '#ef4444'], borderWidth: 0 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '68%',
+          plugins: { legend: { display: false } }
+        }
+      });
+      const onTimePct = Math.round((onTimeN / total) * 100);
+      const latePct   = Math.round((lateN / total) * 100);
+      legendEl.innerHTML = `
+        <div class="dlt-cm-legend-item"><span class="dlt-cm-legend-dot" style="background:#10b981"></span>On time / early — ${onTimeN} (${onTimePct}%)</div>
+        <div class="dlt-cm-legend-item"><span class="dlt-cm-legend-dot" style="background:#ef4444"></span>Late — ${lateN} (${latePct}%)</div>
+      `;
+    }
+
+    /* List of completed items with editable notes */
+    const listEl = document.getElementById('dltCmList');
+    if (!total) {
+      listEl.innerHTML = '<div class="dlt-cm-empty">No completed deadlines yet — finish one to see it show up here.</div>';
+      return;
+    }
+    listEl.innerHTML = completed.map(c => {
+      const badge = c.diff > 0
+        ? `<span class="dlt-cm-badge late">${c.diff}d late</span>`
+        : c.diff < 0
+          ? `<span class="dlt-cm-badge early">${Math.abs(c.diff)}d early</span>`
+          : `<span class="dlt-cm-badge ontime">On time</span>`;
+      return `<div class="dlt-cm-item">
+        <div class="dlt-cm-item-top">
+          <div>
+            <div class="dlt-cm-item-name">${d_escapeHtml(c.name)}</div>
+            <div class="dlt-cm-item-meta">${c.category ? c.category + ' · ' : ''}Due ${fmtDate(c.date)} · Completed ${fmtDate(c.meta.completedAt)}</div>
+          </div>
+          ${badge}
+        </div>
+        <textarea class="dlt-cm-note" placeholder="Add a note — why early/late, how it went, anything to remember next time..."
+          onblur="DLT.saveNote('${c.id}', this.value)">${d_escapeHtml(c.meta.note || '')}</textarea>
+        <div class="dlt-cm-note-saved" id="note-saved-${c.id}">Saved ✓</div>
+      </div>`;
+    }).join('');
+  }
+
   /* ─── Public API ─── */
   window.DLT = {
     sync()   { render(); },
@@ -12439,6 +12701,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     done(id, days) {
       if (doneIds.includes(id)) return;
       doneIds.push(id);
+      doneMeta[id] = { completedAt: new Date().toISOString().slice(0, 10), note: '' };
       persist();
       addXP(days >= 0 ? 30 : 10);
       render();
@@ -12448,6 +12711,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       if (!confirm('Delete this deadline?')) return;
       manualList = manualList.filter(d => d.id !== id);
       doneIds    = doneIds.filter(x => x !== id);
+      delete doneMeta[id];
       persist();
       render();
     },
@@ -12485,13 +12749,36 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       if (typeof showNotification === 'function') {
         showNotification(`🔄 Rescheduled to ${fmtDate(newDate)}`, 'success');
       }
+    },
+
+    /* ─── Completed Deadlines Analytics Modal ─── */
+    openCompletedModal() {
+      renderCompletedModal();
+      document.getElementById('dltCompletedModal').classList.add('open');
+    },
+
+    closeCompletedModal() {
+      document.getElementById('dltCompletedModal').classList.remove('open');
+    },
+
+    saveNote(id, value) {
+      if (!doneMeta[id]) doneMeta[id] = { completedAt: new Date().toISOString().slice(0, 10), note: '' };
+      doneMeta[id].note = value;
+      persist();
+      const flash = document.getElementById('note-saved-' + id);
+      if (flash) {
+        flash.classList.add('show');
+        clearTimeout(flash._hideTimer);
+        flash._hideTimer = setTimeout(() => flash.classList.remove('show'), 1400);
+      }
     }
   };
 
   /* ─── Init ─── */
   document.getElementById('dltModal').addEventListener('click', e => { if (e.target.id==='dltModal') DLT.closeModal(); });
+  document.getElementById('dltCompletedModal').addEventListener('click', e => { if (e.target.id==='dltCompletedModal') DLT.closeCompletedModal(); });
 
-  function init() { render(); checkPopup(); setInterval(() => { tickCountdowns(); render(); }, 60000); }
+  function init() { backfillDoneMeta(); render(); checkPopup(); setInterval(() => { tickCountdowns(); render(); }, 60000); }
   document.readyState === 'loading'
     ? document.addEventListener('DOMContentLoaded', init)
     : init();
