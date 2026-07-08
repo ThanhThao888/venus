@@ -21486,6 +21486,44 @@ window.DBP={
 
 
 
+        // --- Weighted random pick: skills with higher `importance` (1-5) have a
+        // proportionally higher chance of being picked, instead of every skill
+        // having an equal chance regardless of priority. ---
+        function pickWeightedRandomSkill(skillsList) {
+            const weights = skillsList.map(s => Math.max(1, s.importance || 3));
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            let r = Math.random() * totalWeight;
+            for (let i = 0; i < skillsList.length; i++) {
+                r -= weights[i];
+                if (r <= 0) return skillsList[i];
+            }
+            return skillsList[skillsList.length - 1]; // fallback (rounding safety)
+        }
+
+        // --- Avoid suggesting the same skill repeatedly within the same day.
+        // Tracked per mood, resets automatically when the date changes. ---
+        function getRecentlySuggestedSkills(mood) {
+            const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+            let store = {};
+            try {
+                store = JSON.parse(localStorage.getItem('suggestedSkillsToday') || '{}');
+            } catch (e) { store = {}; }
+            if (store.date !== today) {
+                store = { date: today }; // new day: reset tracking
+            }
+            return { store, today, seen: new Set(store[mood] || []) };
+        }
+
+        function rememberSuggestedSkill(mood, store, today, career, skillName) {
+            const key = `${career}-${skillName}`;
+            store.date = today;
+            store[mood] = store[mood] || [];
+            if (!store[mood].includes(key)) store[mood].push(key);
+            try {
+                localStorage.setItem('suggestedSkillsToday', JSON.stringify(store));
+            } catch (e) { /* non-critical, ignore quota errors */ }
+        }
+
         function suggestSkillByMood() {
             const suggestionDiv = document.getElementById('learningMoodWidget');
             const suggestionText = document.getElementById('learningMoodSkillText');
@@ -21529,11 +21567,19 @@ window.DBP={
                 return;
             }
 
-            // Pick random incomplete skill
-            const randomSkill = incompleteSkills[Math.floor(Math.random() * incompleteSkills.length)];
+            // Prefer skills not already suggested today for this mood; if every
+            // skill has already been shown today, fall back to the full list.
+            const { store, today, seen } = getRecentlySuggestedSkills(currentMood);
+            let pickPool = incompleteSkills.filter(s => !seen.has(`${s.career}-${s.name}`));
+            if (pickPool.length === 0) pickPool = incompleteSkills;
+
+            // Pick a skill, weighted by importance (higher importance = more likely)
+            const randomSkill = pickWeightedRandomSkill(pickPool);
             const career = randomSkill.career;
             const skillName = randomSkill.name;
             const careerData = skillsData[career];
+
+            rememberSuggestedSkill(currentMood, store, today, career, skillName);
 
             let foundSkill = null;
             Object.values(careerData.categories).some(category => {
