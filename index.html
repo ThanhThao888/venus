@@ -10612,17 +10612,26 @@
 <div id="calSlotModal">
   <div class="cal-slot-box">
     <h4 id="calSlotTitle">➕ Add to this slot</h4>
-    <input type="hidden" id="calSlotDate" />
     <input type="hidden" id="calSlotEventId" value="" />
     <div>
       <label>Task / Event name</label>
       <input type="text" id="calSlotName" placeholder="e.g. Study CFA Ethics…" />
     </div>
-    <!-- Exact start time picker -->
+    <!-- Exact start date+time picker -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div>
+        <label>Start date</label>
+        <input type="date" id="calSlotDate" />
+      </div>
       <div>
         <label>Start time</label>
         <input type="time" id="calSlotStartTime" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+      <div>
+        <label>End date</label>
+        <input type="date" id="calSlotEndDate" />
       </div>
       <div>
         <label>End time</label>
@@ -10852,11 +10861,43 @@ const CAL = (() => {
         return blocks;
     }
 
+  /* Splits a (possibly multi-day) custom event into the portion that falls on
+     a given date. Returns null if the event doesn't touch that date at all. */
+  function splitEventForDate(ev, dateISO) {
+    const evStart = new Date(ev.date + 'T00:00:00');
+    evStart.setHours(Math.floor(ev.startH), Math.round((ev.startH - Math.floor(ev.startH)) * 60), 0, 0);
+    const evEnd = new Date(evStart.getTime() + (ev.dur || 0) * 3600000);
+
+    const dayStart = new Date(dateISO + 'T00:00:00');
+    const dayEnd = new Date(dayStart.getTime() + 24 * 3600000);
+
+    const segStart = evStart > dayStart ? evStart : dayStart;
+    const segEnd   = evEnd   < dayEnd   ? evEnd   : dayEnd;
+    if (segEnd <= segStart) return null;
+
+    const startH = (segStart - dayStart) / 3600000;
+    const dur    = (segEnd - segStart) / 3600000;
+    const evStartMidnight = new Date(ev.date + 'T00:00:00');
+    const totalDays = Math.max(1, Math.ceil((evEnd - evStartMidnight) / 86400000));
+    const dayIndex  = Math.floor((dayStart - evStartMidnight) / 86400000) + 1;
+
+    return { startH, dur, totalDays, dayIndex };
+  }
+
   /* 5. Combine all events for a date */
   function getAllBlocksForDate(dateISO) {
-    const custom = getCalEvents().filter(e => e.date === dateISO).map(e => ({
-      ...e, color: COLORS[e.category] || COLORS.task
-    }));
+    const custom = [];
+    getCalEvents().forEach(e => {
+      const seg = splitEventForDate(e, dateISO);
+      if (!seg) return;
+      custom.push({
+        ...e,
+        startH: seg.startH,
+        dur: seg.dur,
+        title: seg.totalDays > 1 ? `${e.title} (${seg.dayIndex}/${seg.totalDays})` : e.title,
+        color: COLORS[e.category] || COLORS.task
+      });
+    });
     return [
       ...custom,
       ...getSessionBlocks(dateISO),
@@ -11200,18 +11241,39 @@ const CAL = (() => {
 
   /* ── Duration display ── */
   function updateDurDisplay() {
+    const sd = document.getElementById('calSlotDate').value;
+    const edEl = document.getElementById('calSlotEndDate');
     const s = document.getElementById('calSlotStartTime').value;
     const e = document.getElementById('calSlotEndTime').value;
     const el = document.getElementById('calSlotDurDisplay');
-    if (!s || !e || !el) return;
-    let diff = timeStrToH(e) - timeStrToH(s);
-    if (diff === 0) { el.textContent = '⚠️ End must be after start'; el.style.color='#ef4444'; return; }
-    let overnight = false;
-    if (diff < 0) { diff += 24; overnight = true; } // wraps past midnight, e.g. 21:00 → 06:30 next day
-    const hrs = Math.floor(diff);
-    const mins = Math.round((diff - hrs) * 60);
+    if (!sd || !edEl || !s || !e || !el) return;
+
+    // Auto-bump End date by +1 day the first time it looks like an overnight
+    // event (end time earlier than start time) and the user hasn't already
+    // pushed the end date out themselves. This keeps the common "9pm→6am"
+    // case frictionless while still letting multi-day plans set their own
+    // end date explicitly.
+    if (edEl.value <= sd && timeStrToH(e) <= timeStrToH(s)) {
+      const d = new Date(sd + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      edEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    const startDT = new Date(`${sd}T${s}`);
+    const endDT   = new Date(`${edEl.value}T${e}`);
+    const diffMs = endDT - startDT;
+    if (diffMs <= 0) { el.textContent = '⚠️ End must be after start'; el.style.color='#ef4444'; return; }
+
+    const diffH = diffMs / 3600000;
+    const days = Math.floor(diffH / 24);
+    const hrs  = Math.floor(diffH % 24);
+    const mins = Math.round((diffH - Math.floor(diffH)) * 60);
     el.style.color = '#6366f1';
-    el.textContent = `⏱ ${hrs > 0 ? hrs+'h ' : ''}${mins > 0 ? mins+'m' : ''}${overnight ? ' (qua đêm, kết thúc hôm sau)' : ''}`;
+    let label = '⏱ ';
+    if (days > 0) label += `${days}d `;
+    if (hrs  > 0) label += `${hrs}h `;
+    if (mins > 0 || (days===0 && hrs===0)) label += `${mins}m`;
+    el.textContent = label.trim();
   }
 
   /* ── Public API ── */
@@ -11295,6 +11357,7 @@ const CAL = (() => {
       const endH = snappedH + 1;
 
       document.getElementById('calSlotDate').value = dateISO;
+      document.getElementById('calSlotEndDate').value = dateISO; // default: single-day event
       document.getElementById('calSlotEventId').value = eventId || '';
       document.getElementById('calSlotStartTime').value = hToTimeStr(snappedH);
       document.getElementById('calSlotEndTime').value   = hToTimeStr(Math.min(endH, 23.99));
@@ -11324,8 +11387,8 @@ const CAL = (() => {
 
       updateDurDisplay();
 
-      // Wire up time inputs
-      ['calSlotStartTime','calSlotEndTime'].forEach(id => {
+      // Wire up date/time inputs
+      ['calSlotDate','calSlotStartTime','calSlotEndDate','calSlotEndTime'].forEach(id => {
         document.getElementById(id).oninput = updateDurDisplay;
       });
 
@@ -11343,7 +11406,15 @@ const CAL = (() => {
         document.getElementById('calSlotNotes').value    = ev.notes || '';
         document.getElementById('calSlotCategory').value = ev.category || 'task';
         document.getElementById('calSlotStartTime').value = hToTimeStr(ev.startH);
-        document.getElementById('calSlotEndTime').value   = hToTimeStr(ev.startH + ev.dur);
+        // Compute the real end date+time from startH + dur — dur can span
+        // multiple days, so the end date isn't necessarily the same as the start date.
+        const startDT = new Date(ev.date + 'T00:00:00');
+        startDT.setHours(Math.floor(ev.startH), Math.round((ev.startH - Math.floor(ev.startH)) * 60), 0, 0);
+        const endDT = new Date(startDT.getTime() + (ev.dur || 0) * 3600000);
+        document.getElementById('calSlotEndDate').value =
+          `${endDT.getFullYear()}-${String(endDT.getMonth()+1).padStart(2,'0')}-${String(endDT.getDate()).padStart(2,'0')}`;
+        document.getElementById('calSlotEndTime').value =
+          `${String(endDT.getHours()).padStart(2,'0')}:${String(endDT.getMinutes()).padStart(2,'0')}`;
         updateDurDisplay();
         // Show series banner if this belongs to a series
         if (ev.seriesId) {
@@ -11399,26 +11470,30 @@ const CAL = (() => {
       if (!name) { document.getElementById('calSlotName').style.border='1.5px solid #ef4444'; return; }
       document.getElementById('calSlotName').style.border='';
 
-      const dateISO  = document.getElementById('calSlotDate').value;
-      const eventId  = document.getElementById('calSlotEventId').value;
-      const startVal = document.getElementById('calSlotStartTime').value;
-      const endVal   = document.getElementById('calSlotEndTime').value;
-      const category = document.getElementById('calSlotCategory').value;
-      const notes    = document.getElementById('calSlotNotes').value.trim();
+      const dateISO    = document.getElementById('calSlotDate').value;    // start date
+      const endDateISO = document.getElementById('calSlotEndDate').value || dateISO;
+      const eventId    = document.getElementById('calSlotEventId').value;
+      const startVal   = document.getElementById('calSlotStartTime').value;
+      const endVal     = document.getElementById('calSlotEndTime').value;
+      const category   = document.getElementById('calSlotCategory').value;
+      const notes      = document.getElementById('calSlotNotes').value.trim();
 
-      if (!startVal || !endVal) { alert('Please set start and end time'); return; }
+      if (!dateISO || !startVal || !endVal) { alert('Please set start and end time'); return; }
+      const startDT = new Date(`${dateISO}T${startVal}`);
+      const endDT   = new Date(`${endDateISO}T${endVal}`);
+      if (isNaN(startDT.getTime()) || isNaN(endDT.getTime()) || endDT <= startDT) {
+        alert('End time must be after start time');
+        return;
+      }
       const startH = timeStrToH(startVal);
-      let endH   = timeStrToH(endVal);
-      if (endH === startH) { alert('End time must be after start time'); return; }
-      if (endH < startH) endH += 24; // overnight event — wraps into the next day (e.g. 21:00 → 06:30)
-      const dur = endH - startH;
+      const dur = (endDT - startDT) / 3600000; // hours — can exceed 24h for multi-day events
 
       let events = getCalEvents();
       if (eventId) {
         // Edit existing
         const idx = events.findIndex(e => e.id === parseInt(eventId));
         if (idx !== -1) {
-          events[idx] = { ...events[idx], title: name, startH, dur, category, notes, color: COLORS[category] || COLORS.task };
+          events[idx] = { ...events[idx], date: dateISO, title: name, startH, dur, category, notes, color: COLORS[category] || COLORS.task };
         }
       } else {
         // New event
@@ -44271,14 +44346,46 @@ function fmtH(h) {
   return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
 }
 
+/* Splits a (possibly multi-day) custom event into the portion that falls on
+   a given date. Returns null if the event doesn't touch that date at all.
+   Mirrors CAL's internal splitEventForDate. */
+function splitEventForDatePX(ev, dateISO) {
+  const evStart = new Date(ev.date + 'T00:00:00');
+  evStart.setHours(Math.floor(ev.startH), Math.round((ev.startH - Math.floor(ev.startH)) * 60), 0, 0);
+  const evEnd = new Date(evStart.getTime() + (ev.dur || 0) * 3600000);
+
+  const dayStart = new Date(dateISO + 'T00:00:00');
+  const dayEnd = new Date(dayStart.getTime() + 24 * 3600000);
+
+  const segStart = evStart > dayStart ? evStart : dayStart;
+  const segEnd   = evEnd   < dayEnd   ? evEnd   : dayEnd;
+  if (segEnd <= segStart) return null;
+
+  const startH = (segStart - dayStart) / 3600000;
+  const dur    = (segEnd - segStart) / 3600000;
+  const evStartMidnight = new Date(ev.date + 'T00:00:00');
+  const totalDays = Math.max(1, Math.ceil((evEnd - evStartMidnight) / 86400000));
+  const dayIndex  = Math.floor((dayStart - evStartMidnight) / 86400000) + 1;
+
+  return { startH, dur, totalDays, dayIndex };
+}
+
 /* ── Get all events for a date (public, mirrors CAL internals) ── */
 function getBlocks(dateISO) {
   let blocks = [];
-  // 1. Custom cal events
+  // 1. Custom cal events (multi-day aware)
   try {
     const evts = JSON.parse(localStorage.getItem('calEvents') || '[]');
-    evts.filter(e => e.date === dateISO).forEach(e => {
-      blocks.push({ ...e, color: CAL_COLORS[e.category] || CAL_COLORS.task });
+    evts.forEach(e => {
+      const seg = splitEventForDatePX(e, dateISO);
+      if (!seg) return;
+      blocks.push({
+        ...e,
+        startH: seg.startH,
+        dur: seg.dur,
+        title: seg.totalDays > 1 ? `${e.title} (${seg.dayIndex}/${seg.totalDays})` : e.title,
+        color: CAL_COLORS[e.category] || CAL_COLORS.task
+      });
     });
   } catch {}
   // 2. Study session logs
@@ -44339,12 +44446,18 @@ function freeSlots(dateISO) {
 }
 
 /* ── Build Google Calendar URL ── */
-function gcalUrl(name, dateISO, startH, endH) {
+function gcalUrl(name, dateISO, startH, endH, endDateISO) {
   const [y,m,d] = dateISO.split('-').map(Number);
   const fmt = h => `${String(Math.floor(h)).padStart(2,'0')}${String(Math.round((h-Math.floor(h))*60)).padStart(2,'0')}00`;
   const startDate = new Date(y, m-1, d);
-  const endDate = new Date(y, m-1, d);
-  if (endH <= startH) endDate.setDate(endDate.getDate() + 1); // overnight — end falls on the next day
+  let endDate;
+  if (endDateISO) {
+    const [ey,em,ed] = endDateISO.split('-').map(Number);
+    endDate = new Date(ey, em-1, ed);
+  } else {
+    endDate = new Date(y, m-1, d);
+    if (endH <= startH) endDate.setDate(endDate.getDate() + 1); // overnight — end falls on the next day
+  }
   const fmtDate = dt => `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}`;
   const ds = `${fmtDate(startDate)}T${fmt(startH)}`;
   const de = `${fmtDate(endDate)}T${fmt(endH)}`;
@@ -44879,8 +44992,8 @@ return {
   },
 
   /* ── Show GCal toast after save ── */
-  showGCalToast(name, dateISO, startH, endH) {
-    const url = gcalUrl(name, dateISO, startH, endH);
+  showGCalToast(name, dateISO, startH, endH, endDateISO) {
+    const url = gcalUrl(name, dateISO, startH, endH, endDateISO);
     const t = document.createElement('div');
     t.className = 'pxt-gcal-toast';
     t.innerHTML = `
@@ -45071,6 +45184,7 @@ return {
     CAL.saveSlot = function() {
       const name     = document.getElementById('calSlotName')?.value.trim();
       const dateISO  = document.getElementById('calSlotDate')?.value;
+      const endDateISO = document.getElementById('calSlotEndDate')?.value || dateISO;
       const startVal = document.getElementById('calSlotStartTime')?.value;
       const endVal   = document.getElementById('calSlotEndTime')?.value;
       const remMin   = parseInt(document.getElementById('calSlotReminder')?.value || '15');
@@ -45082,7 +45196,7 @@ return {
       _origSave(); // saves event, closes modal
 
       // Show GCal toast
-      PLANEXT.showGCalToast(name, dateISO, startH, endH);
+      PLANEXT.showGCalToast(name, dateISO, startH, endH, endDateISO);
 
       // Custom reminder (override the default 15-min one)
       if (remMin > 0) {
@@ -45144,6 +45258,15 @@ return {
       if (!events.length) return;
       const base = events[events.length - 1];
       if (!base) return;
+      if ((base.dur || 0) > 24) {
+        // Multi-day event — repeating it daily/weekly would create overlapping
+        // copies of a multi-day span, which doesn't make sense. Skip silently;
+        // the single event was already saved by _pxtSaveOrig() above.
+        if (typeof showNotification === 'function') {
+          showNotification('ℹ️ Repeat is skipped for multi-day events.', 'info');
+        }
+        return;
+      }
       const seriesId = `s${base.id}`;
       base.seriesId = seriesId;
       base.repeatType = repeatType;
