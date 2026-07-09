@@ -40987,13 +40987,30 @@ window.fcRenderTagChips = fcRenderTagChips;
         let resourceTitleTouched = false; // true once the user manually edits Title (stops auto-fill)
         let resourceTypeTouched = false;  // true once the user manually picks Type (stops auto-detect)
 
-        // Normalizes a URL for duplicate comparison: lowercase host, no protocol/www/trailing slash/query
+        // Normalizes a URL for duplicate comparison: lowercase host, no protocol/www/trailing slash.
+        // Query params ARE kept (many sites use them as the real identifier, e.g. ?share=xxx,
+        // ?v=xxx, ?id=xxx) — only known tracking/noise params are stripped, and the rest are
+        // sorted so param order doesn't cause false negatives.
+        const RESOURCE_URL_TRACKING_PARAMS = new Set([
+            'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+            'fbclid', 'gclid', 'msclkid', 'ref', 'si', 'igshid'
+        ]);
         function normalizeResourceUrl(url) {
             try {
                 const u = new URL(url);
                 let host = u.hostname.toLowerCase().replace(/^www\./, '');
                 let path = u.pathname.replace(/\/+$/, '');
-                return host + path;
+
+                const keep = [];
+                for (const [k, v] of u.searchParams.entries()) {
+                    if (!RESOURCE_URL_TRACKING_PARAMS.has(k.toLowerCase())) {
+                        keep.push(`${k.toLowerCase()}=${v}`);
+                    }
+                }
+                keep.sort();
+                const query = keep.length ? '?' + keep.join('&') : '';
+
+                return host + path + query;
             } catch (e) {
                 return (url || '').toLowerCase().trim().replace(/\/+$/, '');
             }
@@ -41075,11 +41092,57 @@ window.fcRenderTagChips = fcRenderTagChips;
 
             if (match) {
                 const statusLabel = { 'to-read': 'To Read', 'reading': 'Reading', 'completed': 'Completed' }[match.status] || match.status;
-                warningEl.innerHTML = `⚠️ Already in your library: <strong>${match.title}</strong> (${statusLabel})`;
+                warningEl.innerHTML = `⚠️ Already in your library: <strong>${match.title}</strong> (${statusLabel}) ` +
+                    `<button type="button" onclick="viewExistingResource('${match.id}')" style="margin-left:6px; padding:2px 8px; border:1px solid #f59e0b; border-radius:6px; background:transparent; color:#f59e0b; font-size:0.75rem; cursor:pointer;">View existing</button>`;
                 warningEl.style.display = 'block';
             } else {
                 warningEl.style.display = 'none';
             }
+        }
+
+        // Jumps from the duplicate-URL warning straight to the already-saved card:
+        // closes the Add/Edit modal, clears any filters that could be hiding it,
+        // scrolls it into view, and briefly highlights it.
+        function viewExistingResource(resourceId) {
+            closeResourceModal();
+
+            // Make sure the sidebar isn't collapsed
+            if (typeof expandResourceLibrary === 'function') expandResourceLibrary();
+
+            // Drop out of Listening Queue mode if active — it filters to a subset
+            if (listeningQueueMode) toggleListeningQueueMode();
+
+            // Reset filters/search/tags that might exclude this resource from the list
+            const typeFilter = document.getElementById('resourceTypeFilter');
+            const domainFilter = document.getElementById('resourceDomainFilter');
+            const purposeFilter = document.getElementById('resourcePurposeFilter');
+            const categoryFilter = document.getElementById('resourceCategoryFilter');
+            const statusFilter = document.getElementById('resourceStatusFilter');
+            const search = document.getElementById('resourceSearch');
+            if (typeFilter) typeFilter.value = 'all';
+            if (domainFilter) domainFilter.value = 'all';
+            if (purposeFilter) purposeFilter.value = 'all';
+            if (categoryFilter) categoryFilter.value = 'all';
+            if (statusFilter) statusFilter.value = 'all';
+            if (search) search.value = '';
+            if (typeof activeTagFilters !== 'undefined') activeTagFilters.clear();
+
+            filterResources();
+
+            // Scroll to and flash the card once it's rendered
+            setTimeout(() => {
+                const card = document.getElementById(`resource-card-${resourceId}`);
+                if (!card) return;
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const prevTransition = card.style.transition;
+                const prevShadow = card.style.boxShadow;
+                card.style.transition = 'box-shadow 0.3s ease';
+                card.style.boxShadow = '0 0 0 3px #f59e0b';
+                setTimeout(() => {
+                    card.style.boxShadow = prevShadow;
+                    setTimeout(() => { card.style.transition = prevTransition; }, 300);
+                }, 1600);
+            }, 100);
         }
 
         // Single entry point wired to the URL field's oninput
@@ -42317,6 +42380,14 @@ window.fcRenderTagChips = fcRenderTagChips;
                     icon.textContent = _rlOpen ? '▲' : '▼';
                     icon.style.transform = _rlOpen ? 'rotate(0deg)' : 'rotate(0deg)';
                 }
+            };
+            // Force the sidebar open (used by "View existing" so the target card is visible)
+            window.expandResourceLibrary = function(){
+                _rlOpen = true;
+                const body = document.getElementById('resourceLibraryBody');
+                const icon = document.getElementById('rlCollapseIcon');
+                if(body) body.style.display = '';
+                if(icon) icon.textContent = '▲';
             };
         })();
 
