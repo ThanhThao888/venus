@@ -44445,10 +44445,26 @@ function getBlocks(dateISO) {
     JSON.parse(localStorage.getItem('sleepSessions') || '[]').forEach(s => {
       if (!s.start || !s.end) return;
       const sd = new Date(s.start), ed = new Date(s.end);
-      const sISO = sd.toISOString().split('T')[0], eISO = ed.toISOString().split('T')[0];
+      // Use LOCAL date, not toISOString() (which is UTC) — in UTC+7, a
+      // session starting e.g. 04:40 local on 9 Jul is still 8 Jul in UTC,
+      // which silently bucketed it into the wrong day and made the block
+      // render as "00:00–11:11" instead of the real "04:40–11:11".
+      const sISO = toLocalDateStr(sd), eISO = toLocalDateStr(ed);
       if (sISO !== dateISO && eISO !== dateISO) return;
-      const startH = sISO === dateISO ? sd.getHours()+sd.getMinutes()/60 : 0;
-      const dur    = sISO === dateISO ? Math.min(s.duration||0, 24-startH) : ed.getHours()+ed.getMinutes()/60;
+      let startH, dur;
+      if (sISO === dateISO && eISO === dateISO) {
+        // Whole session falls within this single local day.
+        startH = sd.getHours() + sd.getMinutes() / 60;
+        dur = (ed - sd) / 3600000;
+      } else if (sISO === dateISO) {
+        // Started today, spills into tomorrow — show from start until midnight.
+        startH = sd.getHours() + sd.getMinutes() / 60;
+        dur = 24 - startH;
+      } else {
+        // Started yesterday, ends today — show from midnight until end time.
+        startH = 0;
+        dur = ed.getHours() + ed.getMinutes() / 60;
+      }
       if (dur > 0) blocks.push({ type:'sleep', title:'😴 Sleep', startH, dur, color: CAL_COLORS.sleep });
     });
   } catch {}
@@ -44504,7 +44520,7 @@ function gcalUrl(name, dateISO, startH, endH) {
 
 /* ── Month View Renderer ── */
 function renderMonth(year, month) {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = toLocalDateStr(new Date()); // local, not UTC — avoids an off-by-one "today" near midnight in UTC+7
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const DAY_HDR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -44962,7 +44978,7 @@ return {
 
   /* ── Export today → GCal ── */
   exportTodayToGCal() {
-    const iso = new Date().toISOString().split('T')[0];
+    const iso = toLocalDateStr(new Date()); // local, not UTC — avoids exporting the wrong day near midnight in UTC+7
     let evts = [];
     try { evts = JSON.parse(localStorage.getItem('calEvents')||'[]').filter(e=>e.date===iso); } catch{}
 
