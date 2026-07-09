@@ -10612,31 +10612,20 @@
 <div id="calSlotModal">
   <div class="cal-slot-box">
     <h4 id="calSlotTitle">➕ Add to this slot</h4>
+    <input type="hidden" id="calSlotDate" />
     <input type="hidden" id="calSlotEventId" value="" />
     <div>
       <label>Task / Event name</label>
       <input type="text" id="calSlotName" placeholder="e.g. Study CFA Ethics…" />
     </div>
-    <!-- Exact start date+time picker -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      <div>
-        <label>Start date</label>
-        <input type="date" id="calSlotDate" />
-      </div>
-      <div>
-        <label>Start time</label>
-        <input type="time" id="calSlotStartTime" />
-      </div>
+    <!-- Exact start/end date+time pickers (full datetime, supports multi-day events) -->
+    <div>
+      <label>Start time</label>
+      <input type="datetime-local" id="calSlotStartTime" />
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
-      <div>
-        <label>End date</label>
-        <input type="date" id="calSlotEndDate" />
-      </div>
-      <div>
-        <label>End time</label>
-        <input type="time" id="calSlotEndTime" />
-      </div>
+    <div>
+      <label>End time</label>
+      <input type="datetime-local" id="calSlotEndTime" />
     </div>
     <div id="calSlotDurDisplay" style="font-size:.78rem;color:#6366f1;font-weight:600;margin:-4px 0 8px;text-align:right;"></div>
     <div>
@@ -10738,8 +10727,13 @@ const CAL = (() => {
     return d.toLocaleDateString('vi-VN', opts);
   }
   function fmtH(h) {
-    const hh = Math.floor(h);
-    const mm = Math.round((h - hh) * 60);
+    // Wrap safely into 0-23h so a value that drifted past 24 (or below 0)
+    // never renders as nonsense like "30:36" — see fmtDateTimeRange() for
+    // the day-aware label used on event blocks themselves.
+    let wrapped = ((h % 24) + 24) % 24;
+    let hh = Math.floor(wrapped);
+    let mm = Math.round((wrapped - hh) * 60);
+    if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
     return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   }
 
@@ -10861,43 +10855,25 @@ const CAL = (() => {
         return blocks;
     }
 
-  /* Splits a (possibly multi-day) custom event into the portion that falls on
-     a given date. Returns null if the event doesn't touch that date at all. */
-  function splitEventForDate(ev, dateISO) {
-    const evStart = new Date(ev.date + 'T00:00:00');
-    evStart.setHours(Math.floor(ev.startH), Math.round((ev.startH - Math.floor(ev.startH)) * 60), 0, 0);
-    const evEnd = new Date(evStart.getTime() + (ev.dur || 0) * 3600000);
-
-    const dayStart = new Date(dateISO + 'T00:00:00');
-    const dayEnd = new Date(dayStart.getTime() + 24 * 3600000);
-
-    const segStart = evStart > dayStart ? evStart : dayStart;
-    const segEnd   = evEnd   < dayEnd   ? evEnd   : dayEnd;
-    if (segEnd <= segStart) return null;
-
-    const startH = (segStart - dayStart) / 3600000;
-    const dur    = (segEnd - segStart) / 3600000;
-    const evStartMidnight = new Date(ev.date + 'T00:00:00');
-    const totalDays = Math.max(1, Math.ceil((evEnd - evStartMidnight) / 86400000));
-    const dayIndex  = Math.floor((dayStart - evStartMidnight) / 86400000) + 1;
-
-    return { startH, dur, totalDays, dayIndex };
-  }
-
   /* 5. Combine all events for a date */
   function getAllBlocksForDate(dateISO) {
-    const custom = [];
-    getCalEvents().forEach(e => {
+    // Split each stored event against this specific day so genuine multi-day
+    // events (e.g. 20:50 → 06:30 two days later) show up — correctly clipped
+    // — on EVERY day they span, not just their start date.
+    const custom = getCalEvents().map(e => {
       const seg = splitEventForDate(e, dateISO);
-      if (!seg) return;
-      custom.push({
+      if (!seg) return null;
+      return {
         ...e,
         startH: seg.startH,
         dur: seg.dur,
-        title: seg.totalDays > 1 ? `${e.title} (${seg.dayIndex}/${seg.totalDays})` : e.title,
-        color: COLORS[e.category] || COLORS.task
-      });
-    });
+        color: COLORS[e.category] || COLORS.task,
+        _continuesFromPrev: seg.continuesFromPrev,
+        _continuesToNext: seg.continuesToNext,
+        _fullStart: seg.fullStart,
+        _fullEnd: seg.fullEnd,
+      };
+    }).filter(Boolean);
     return [
       ...custom,
       ...getSessionBlocks(dateISO),
@@ -10982,15 +10958,24 @@ const CAL = (() => {
       const isPastEvt = (dateISO < dateStr(now)) || (isToday && (b.startH + b.dur) < nowH);
       const pastClass = isPastEvt ? ' is-past-event' : '';
       const dragAttr  = isCustom ? ' data-draggable="true"' : '';
+      // Use the real start/end datetime when available (custom multi-day
+      // events) so the label never shows nonsense hours like "30:36" — it
+      // shows the actual end date instead. Falls back to the old same-day
+      // math for non-custom blocks (study/sleep/deadline).
+      const timeLabel = (b._fullStart && b._fullEnd)
+        ? fmtDateTimeRange(b._fullStart, b._fullEnd)
+        : `${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}`;
+      const contPrefix = b._continuesFromPrev ? '◂ ' : '';
+      const contSuffix = b._continuesToNext ? ' ▸' : '';
       html += `<div class="cal-event${pastClass}" data-event-id="${b.id || ''}"${dragAttr} style="
                   top:${top}px; height:${height}px;
                   width:${w}; left:${left};
                   background:${b.color};pointer-events:all;"
-               title="${b.title} • ${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}${isCustom?'\nDrag to move · resize from bottom':''}">
+               title="${b.title} • ${timeLabel}${isCustom?'\nDrag to move · resize from bottom':''}">
                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;">
                    <div style="min-width:0;flex:1;">
-                     <div class="cal-event-title">${b.title}${b.seriesId ? ' <span class="cal-recur-badge">🔁</span>' : ''}</div>
-                     ${height > 32 ? `<div class="cal-event-time">${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}</div>` : ''}
+                     <div class="cal-event-title">${contPrefix}${b.title}${contSuffix}${b.seriesId ? ' <span class="cal-recur-badge">🔁</span>' : ''}</div>
+                     ${height > 32 ? `<div class="cal-event-time">${timeLabel}</div>` : ''}
                    </div>
                    ${isCustom ? `<button onclick="event.stopPropagation();CAL.editSlot(${b.id})"
                      style="background:rgba(255,255,255,.25);border:none;border-radius:4px;
@@ -11239,41 +11224,30 @@ const CAL = (() => {
     return hh + mm / 60;
   }
 
-  /* ── Duration display ── */
+  /* ── Duration display ──
+     Start/End are now full datetime-local values (date + time), so this is
+     a genuine Date diff — it works correctly for same-day events, overnight
+     events, and events spanning several days, with no 24h assumption. */
   function updateDurDisplay() {
-    const sd = document.getElementById('calSlotDate').value;
-    const edEl = document.getElementById('calSlotEndDate');
-    const s = document.getElementById('calSlotStartTime').value;
-    const e = document.getElementById('calSlotEndTime').value;
+    const sVal = document.getElementById('calSlotStartTime').value;
+    const eVal = document.getElementById('calSlotEndTime').value;
     const el = document.getElementById('calSlotDurDisplay');
-    if (!sd || !edEl || !s || !e || !el) return;
-
-    // Auto-bump End date by +1 day the first time it looks like an overnight
-    // event (end time earlier than start time) and the user hasn't already
-    // pushed the end date out themselves. This keeps the common "9pm→6am"
-    // case frictionless while still letting multi-day plans set their own
-    // end date explicitly.
-    if (edEl.value <= sd && timeStrToH(e) <= timeStrToH(s)) {
-      const d = new Date(sd + 'T00:00:00');
-      d.setDate(d.getDate() + 1);
-      edEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    }
-
-    const startDT = new Date(`${sd}T${s}`);
-    const endDT   = new Date(`${edEl.value}T${e}`);
-    const diffMs = endDT - startDT;
-    if (diffMs <= 0) { el.textContent = '⚠️ End must be after start'; el.style.color='#ef4444'; return; }
-
-    const diffH = diffMs / 3600000;
-    const days = Math.floor(diffH / 24);
-    const hrs  = Math.floor(diffH % 24);
-    const mins = Math.round((diffH - Math.floor(diffH)) * 60);
+    if (!sVal || !eVal || !el) return;
+    const s = new Date(sVal);
+    const e = new Date(eVal);
+    if (isNaN(s) || isNaN(e)) return;
+    const diffMs = e - s;
+    if (diffMs <= 0) { el.textContent = '⚠️ End time must be after start time'; el.style.color = '#ef4444'; return; }
+    const totalMins = Math.round(diffMs / 60000);
+    const days = Math.floor(totalMins / 1440);
+    const hrs  = Math.floor((totalMins % 1440) / 60);
+    const mins = totalMins % 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days} ngày`);
+    if (hrs  > 0) parts.push(`${hrs}h`);
+    if (mins > 0) parts.push(`${mins}m`);
     el.style.color = '#6366f1';
-    let label = '⏱ ';
-    if (days > 0) label += `${days}d `;
-    if (hrs  > 0) label += `${hrs}h `;
-    if (mins > 0 || (days===0 && hrs===0)) label += `${mins}m`;
-    el.textContent = label.trim();
+    el.textContent = `⏱ ${parts.join(' ') || '0m'}${days > 0 ? ' (qua nhiều ngày)' : (toLocalDateStr(s) !== toLocalDateStr(e) ? ' (qua đêm, kết thúc hôm sau)' : '')}`;
   }
 
   /* ── Public API ── */
@@ -11354,13 +11328,13 @@ const CAL = (() => {
     openSlotModal(dateISO, startH, eventId) {
       // Snap to nearest 5 minutes
       const snappedH = Math.round(startH * 12) / 12; // nearest 5min
-      const endH = snappedH + 1;
+      const startDt = dateFromISOAndHour(dateISO, snappedH);
+      const endDt   = new Date(startDt.getTime() + 3600000); // default 1h duration
 
       document.getElementById('calSlotDate').value = dateISO;
-      document.getElementById('calSlotEndDate').value = dateISO; // default: single-day event
       document.getElementById('calSlotEventId').value = eventId || '';
-      document.getElementById('calSlotStartTime').value = hToTimeStr(snappedH);
-      document.getElementById('calSlotEndTime').value   = hToTimeStr(Math.min(endH, 23.99));
+      document.getElementById('calSlotStartTime').value = toLocalDatetimeStr(startDt);
+      document.getElementById('calSlotEndTime').value   = toLocalDatetimeStr(endDt);
       document.getElementById('calSlotName').value  = '';
       document.getElementById('calSlotNotes').value = '';
       document.getElementById('calSlotCategory').value = 'task';
@@ -11387,10 +11361,17 @@ const CAL = (() => {
 
       updateDurDisplay();
 
-      // Wire up date/time inputs
-      ['calSlotDate','calSlotStartTime','calSlotEndDate','calSlotEndTime'].forEach(id => {
-        document.getElementById(id).oninput = updateDurDisplay;
-      });
+      // Wire up time inputs. calSlotDate stays in sync with the start
+      // datetime's own date (other code — the repeat-preview, reminder
+      // scheduling — still reads calSlotDate as the event's anchor day).
+      const startInput = document.getElementById('calSlotStartTime');
+      startInput.oninput = () => {
+        updateDurDisplay();
+        if (startInput.value) {
+          document.getElementById('calSlotDate').value = startInput.value.slice(0, 10);
+        }
+      };
+      document.getElementById('calSlotEndTime').oninput = updateDurDisplay;
 
       document.getElementById('calSlotModal').classList.add('open');
       setTimeout(() => document.getElementById('calSlotName').focus(), 100);
@@ -11400,21 +11381,19 @@ const CAL = (() => {
       const ev = events.find(e => e.id === id);
       if (!ev) return;
       this.openSlotModal(ev.date, ev.startH, id);
-      // Pre-fill fields
+      // Pre-fill fields. Use the event's REAL start/end datetimes (not just
+      // hour-of-day) so genuine multi-day events — e.g. 20:50 one day →
+      // 06:30 the next — round-trip correctly instead of overflowing into
+      // an invalid time-only value like "30:36".
       setTimeout(() => {
+        const startDt = dateFromISOAndHour(ev.date, ev.startH);
+        const endDt   = new Date(startDt.getTime() + (ev.dur || 0) * 3600000);
         document.getElementById('calSlotName').value     = ev.title;
         document.getElementById('calSlotNotes').value    = ev.notes || '';
         document.getElementById('calSlotCategory').value = ev.category || 'task';
-        document.getElementById('calSlotStartTime').value = hToTimeStr(ev.startH);
-        // Compute the real end date+time from startH + dur — dur can span
-        // multiple days, so the end date isn't necessarily the same as the start date.
-        const startDT = new Date(ev.date + 'T00:00:00');
-        startDT.setHours(Math.floor(ev.startH), Math.round((ev.startH - Math.floor(ev.startH)) * 60), 0, 0);
-        const endDT = new Date(startDT.getTime() + (ev.dur || 0) * 3600000);
-        document.getElementById('calSlotEndDate').value =
-          `${endDT.getFullYear()}-${String(endDT.getMonth()+1).padStart(2,'0')}-${String(endDT.getDate()).padStart(2,'0')}`;
-        document.getElementById('calSlotEndTime').value =
-          `${String(endDT.getHours()).padStart(2,'0')}:${String(endDT.getMinutes()).padStart(2,'0')}`;
+        document.getElementById('calSlotStartTime').value = toLocalDatetimeStr(startDt);
+        document.getElementById('calSlotEndTime').value   = toLocalDatetimeStr(endDt);
+        document.getElementById('calSlotDate').value      = ev.date;
         updateDurDisplay();
         // Show series banner if this belongs to a series
         if (ev.seriesId) {
@@ -11470,30 +11449,33 @@ const CAL = (() => {
       if (!name) { document.getElementById('calSlotName').style.border='1.5px solid #ef4444'; return; }
       document.getElementById('calSlotName').style.border='';
 
-      const dateISO    = document.getElementById('calSlotDate').value;    // start date
-      const endDateISO = document.getElementById('calSlotEndDate').value || dateISO;
-      const eventId    = document.getElementById('calSlotEventId').value;
-      const startVal   = document.getElementById('calSlotStartTime').value;
-      const endVal     = document.getElementById('calSlotEndTime').value;
-      const category   = document.getElementById('calSlotCategory').value;
-      const notes      = document.getElementById('calSlotNotes').value.trim();
+      const eventId  = document.getElementById('calSlotEventId').value;
+      const startVal = document.getElementById('calSlotStartTime').value;
+      const endVal   = document.getElementById('calSlotEndTime').value;
+      const category = document.getElementById('calSlotCategory').value;
+      const notes    = document.getElementById('calSlotNotes').value.trim();
 
-      if (!dateISO || !startVal || !endVal) { alert('Please set start and end time'); return; }
-      const startDT = new Date(`${dateISO}T${startVal}`);
-      const endDT   = new Date(`${endDateISO}T${endVal}`);
-      if (isNaN(startDT.getTime()) || isNaN(endDT.getTime()) || endDT <= startDT) {
-        alert('End time must be after start time');
-        return;
-      }
-      const startH = timeStrToH(startVal);
-      const dur = (endDT - startDT) / 3600000; // hours — can exceed 24h for multi-day events
+      if (!startVal || !endVal) { alert('Please set start and end time'); return; }
+      const startDt = new Date(startVal);
+      const endDt   = new Date(endVal);
+      if (isNaN(startDt) || isNaN(endDt)) { alert('Please set start and end time'); return; }
+      if (endDt <= startDt) { alert('End time must be after start time'); return; }
+
+      // dateISO anchors the event to its start day; startH is the decimal
+      // hour within that day; dur is the REAL duration in hours and can now
+      // legitimately exceed 24 for genuine multi-day events (e.g. 20:50 one
+      // day → 06:30 two days later). Rendering splits this across every day
+      // the event actually spans — see splitEventForDate().
+      const dateISO = toLocalDateStr(startDt);
+      const startH  = startDt.getHours() + startDt.getMinutes() / 60;
+      const dur     = (endDt - startDt) / 3600000;
 
       let events = getCalEvents();
       if (eventId) {
         // Edit existing
         const idx = events.findIndex(e => e.id === parseInt(eventId));
         if (idx !== -1) {
-          events[idx] = { ...events[idx], date: dateISO, title: name, startH, dur, category, notes, color: COLORS[category] || COLORS.task };
+          events[idx] = { ...events[idx], title: name, date: dateISO, startH, dur, category, notes, color: COLORS[category] || COLORS.task };
         }
       } else {
         // New event
@@ -11519,6 +11501,78 @@ function toLocalDateStr(d) {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+}
+
+/* ── Full datetime helpers — support genuine multi-day events ──
+   The planner used to only store {date, startH, dur} and assume every event
+   finished within 24h of its start slot; anything longer just wrapped its
+   hour label into nonsense like "30:36". These helpers make multi-day spans
+   (e.g. 20:50 one day → 06:30 two days later) work correctly end-to-end. */
+
+// Date -> "YYYY-MM-DDTHH:MM" in LOCAL time, for <input type="datetime-local"> values.
+function toLocalDatetimeStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
+// Build an absolute Date from a "YYYY-MM-DD" base date + a decimal hour offset
+// (e.g. dateISO="2026-07-09", h=20.5 → 9 Jul 2026, 20:30, local time).
+function dateFromISOAndHour(dateISO, h) {
+    const d = new Date(dateISO + 'T00:00:00');
+    return new Date(d.getTime() + h * 3600000);
+}
+
+// Format an hour-of-day float (any range, including negative or 24+) → "HH:MM",
+// always wrapping safely into 0-23. Use fmtDateTimeRange() instead wherever a
+// real day boundary matters (i.e. displaying an event's actual end time).
+function fmtHourSafe(h) {
+    let wrapped = ((h % 24) + 24) % 24;
+    let hh = Math.floor(wrapped);
+    let mm = Math.round((wrapped - hh) * 60);
+    if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+// Human-friendly range label for a real start/end Date pair. Shows just the
+// two times when the event stays within one day, and adds the end date +
+// day-count for genuine multi-day spans (e.g. "20:50 → 06:30 T6 (+1 ngày)").
+function fmtDateTimeRange(start, end) {
+    const sISO = toLocalDateStr(start);
+    const eISO = toLocalDateStr(end);
+    const timeS = `${String(start.getHours()).padStart(2,'0')}:${String(start.getMinutes()).padStart(2,'0')}`;
+    const timeE = `${String(end.getHours()).padStart(2,'0')}:${String(end.getMinutes()).padStart(2,'0')}`;
+    if (sISO === eISO) return `${timeS}–${timeE}`;
+    const days = Math.round((new Date(eISO+'T00:00:00') - new Date(sISO+'T00:00:00')) / 86400000);
+    const dLabel = end.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit' });
+    return `${timeS} → ${dLabel} ${timeE} (+${days} ngày)`;
+}
+
+// Split a stored event {date, startH, dur} into just the portion that falls
+// on dateISO. Returns null if the event doesn't touch that day at all.
+// This is what lets a multi-day event render as a separate segment on EACH
+// day it spans (mirroring how sleep sessions already handle one midnight
+// crossing), instead of only ever showing on its start date.
+function splitEventForDate(e, dateISO) {
+    if (!e || !e.date || e.startH == null) return null;
+    const dayStart = new Date(dateISO + 'T00:00:00');
+    const dayEnd   = new Date(dayStart.getTime() + 24 * 3600000);
+    const evStart  = dateFromISOAndHour(e.date, e.startH);
+    const evEnd    = new Date(evStart.getTime() + (e.dur || 0) * 3600000);
+    const overlapStart = evStart > dayStart ? evStart : dayStart;
+    const overlapEnd   = evEnd   < dayEnd   ? evEnd   : dayEnd;
+    if (overlapStart >= overlapEnd) return null;
+    return {
+        startH: (overlapStart - dayStart) / 3600000,
+        dur:    (overlapEnd - overlapStart) / 3600000,
+        continuesFromPrev: evStart < dayStart,
+        continuesToNext:   evEnd   > dayEnd,
+        fullStart: evStart,
+        fullEnd:   evEnd
+    };
 }
 
 /* ── Vietnam Timezone Helpers ──
@@ -11918,17 +11972,20 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   CAL.saveSlot = function() {
     // Capture data before calling original (form still open)
     const name     = (document.getElementById('calSlotName')?.value || '').trim();
-    const dateISO  = document.getElementById('calSlotDate')?.value || '';
     const eventId  = document.getElementById('calSlotEventId')?.value;
     const startVal = document.getElementById('calSlotStartTime')?.value || '';
     const category = document.getElementById('calSlotCategory')?.value || 'task';
 
     _orig(); // runs original save + close
 
-    // After save, schedule reminder for the event
-    if (!name || !dateISO || !startVal) return;
-    const [hh, mm] = startVal.split(':').map(Number);
-    const startH = hh + mm / 60;
+    // After save, schedule reminder for the event. startVal is a full
+    // datetime-local string ("YYYY-MM-DDTHH:MM") — parse it as a real date
+    // rather than assuming "HH:MM".
+    if (!name || !startVal) return;
+    const startDt = new Date(startVal);
+    if (isNaN(startDt)) return;
+    const dateISO = toLocalDateStr(startDt);
+    const startH  = startDt.getHours() + startDt.getMinutes() / 60;
     // Use eventId if editing, else use recent timestamp as id (approximate)
     const id = eventId ? parseInt(eventId) : Date.now();
     REMINDER.onEventSaved({ id, date: dateISO, startH, title: name, category });
@@ -44342,49 +44399,31 @@ let _undoSnapshot = null; // { events: [...], label: string }
 
 /* ── Helper: format hour float → HH:MM ── */
 function fmtH(h) {
-  const hh = Math.floor(h), mm = Math.round((h-hh)*60);
+  // Wrap safely into 0-23h so a value that drifted past 24 (or below 0)
+  // never renders as nonsense like "30:36".
+  let wrapped = ((h % 24) + 24) % 24;
+  let hh = Math.floor(wrapped);
+  let mm = Math.round((wrapped - hh) * 60);
+  if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
   return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-}
-
-/* Splits a (possibly multi-day) custom event into the portion that falls on
-   a given date. Returns null if the event doesn't touch that date at all.
-   Mirrors CAL's internal splitEventForDate. */
-function splitEventForDatePX(ev, dateISO) {
-  const evStart = new Date(ev.date + 'T00:00:00');
-  evStart.setHours(Math.floor(ev.startH), Math.round((ev.startH - Math.floor(ev.startH)) * 60), 0, 0);
-  const evEnd = new Date(evStart.getTime() + (ev.dur || 0) * 3600000);
-
-  const dayStart = new Date(dateISO + 'T00:00:00');
-  const dayEnd = new Date(dayStart.getTime() + 24 * 3600000);
-
-  const segStart = evStart > dayStart ? evStart : dayStart;
-  const segEnd   = evEnd   < dayEnd   ? evEnd   : dayEnd;
-  if (segEnd <= segStart) return null;
-
-  const startH = (segStart - dayStart) / 3600000;
-  const dur    = (segEnd - segStart) / 3600000;
-  const evStartMidnight = new Date(ev.date + 'T00:00:00');
-  const totalDays = Math.max(1, Math.ceil((evEnd - evStartMidnight) / 86400000));
-  const dayIndex  = Math.floor((dayStart - evStartMidnight) / 86400000) + 1;
-
-  return { startH, dur, totalDays, dayIndex };
 }
 
 /* ── Get all events for a date (public, mirrors CAL internals) ── */
 function getBlocks(dateISO) {
   let blocks = [];
-  // 1. Custom cal events (multi-day aware)
+  // 1. Custom cal events — split against this day so multi-day events show
+  // up (correctly clipped) on every day they actually span.
   try {
     const evts = JSON.parse(localStorage.getItem('calEvents') || '[]');
     evts.forEach(e => {
-      const seg = splitEventForDatePX(e, dateISO);
+      const seg = splitEventForDate(e, dateISO);
       if (!seg) return;
       blocks.push({
-        ...e,
-        startH: seg.startH,
-        dur: seg.dur,
-        title: seg.totalDays > 1 ? `${e.title} (${seg.dayIndex}/${seg.totalDays})` : e.title,
-        color: CAL_COLORS[e.category] || CAL_COLORS.task
+        ...e, startH: seg.startH, dur: seg.dur,
+        color: CAL_COLORS[e.category] || CAL_COLORS.task,
+        _continuesFromPrev: seg.continuesFromPrev,
+        _continuesToNext: seg.continuesToNext,
+        _fullStart: seg.fullStart, _fullEnd: seg.fullEnd,
       });
     });
   } catch {}
@@ -44446,21 +44485,20 @@ function freeSlots(dateISO) {
 }
 
 /* ── Build Google Calendar URL ── */
-function gcalUrl(name, dateISO, startH, endH, endDateISO) {
+function gcalUrl(name, dateISO, startH, endH) {
   const [y,m,d] = dateISO.split('-').map(Number);
   const fmt = h => `${String(Math.floor(h)).padStart(2,'0')}${String(Math.round((h-Math.floor(h))*60)).padStart(2,'0')}00`;
   const startDate = new Date(y, m-1, d);
-  let endDate;
-  if (endDateISO) {
-    const [ey,em,ed] = endDateISO.split('-').map(Number);
-    endDate = new Date(ey, em-1, ed);
-  } else {
-    endDate = new Date(y, m-1, d);
-    if (endH <= startH) endDate.setDate(endDate.getDate() + 1); // overnight — end falls on the next day
-  }
+  // endH can now legitimately be >= 24 (or even >= 48) for genuine multi-day
+  // events — walk it forward the right number of whole days instead of only
+  // handling a single midnight crossing.
+  const dayOffset = Math.max(0, Math.floor(endH / 24));
+  const endHMod = endH - dayOffset * 24;
+  const endDate = new Date(y, m-1, d);
+  endDate.setDate(endDate.getDate() + (dayOffset || (endH <= startH ? 1 : 0)));
   const fmtDate = dt => `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}`;
   const ds = `${fmtDate(startDate)}T${fmt(startH)}`;
-  const de = `${fmtDate(endDate)}T${fmt(endH)}`;
+  const de = `${fmtDate(endDate)}T${fmt(dayOffset ? endHMod : endH)}`;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(name)}&dates=${ds}/${de}`;
 }
 
@@ -44958,12 +44996,14 @@ return {
     const rows = evts.map(ev => {
       const url = gcalUrl(ev.title, ev.date, ev.startH, ev.startH+(ev.dur||1));
       const color = catColors[ev.category||'task'] || '#6366f1';
+      const evStart = dateFromISOAndHour(ev.date, ev.startH);
+      const evEnd   = new Date(evStart.getTime() + (ev.dur||1) * 3600000);
       return `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-light);border-radius:10px;margin-bottom:7px;">
           <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:.88rem;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ev.title}</div>
-            <div style="font-size:.76rem;color:var(--text-muted);">${fmtH(ev.startH)} – ${fmtH(ev.startH+(ev.dur||1))}</div>
+            <div style="font-size:.76rem;color:var(--text-muted);">${fmtDateTimeRange(evStart, evEnd)}</div>
           </div>
           <a href="${url}" target="_blank" rel="noopener"
              style="flex-shrink:0;padding:5px 11px;background:#4285f4;color:#fff;border-radius:8px;font-size:.78rem;font-weight:700;text-decoration:none;white-space:nowrap;"
@@ -44992,8 +45032,8 @@ return {
   },
 
   /* ── Show GCal toast after save ── */
-  showGCalToast(name, dateISO, startH, endH, endDateISO) {
-    const url = gcalUrl(name, dateISO, startH, endH, endDateISO);
+  showGCalToast(name, dateISO, startH, endH) {
+    const url = gcalUrl(name, dateISO, startH, endH);
     const t = document.createElement('div');
     t.className = 'pxt-gcal-toast';
     t.innerHTML = `
@@ -45113,11 +45153,10 @@ return {
       CAL.openSlotModal(iso, startH);
       setTimeout(() => {
         const n = document.getElementById('calSlotName'); if(n) n.value = skillName;
-        const s = document.getElementById('calSlotStartTime'); if(s) s.value = fmtH(startH);
-        const e = document.getElementById('calSlotEndTime'); if(e) e.value = fmtH(endH);
+        const s = document.getElementById('calSlotStartTime'); if(s) s.value = toLocalDatetimeStr(dateFromISOAndHour(iso, startH));
+        const e = document.getElementById('calSlotEndTime'); if(e) e.value = toLocalDatetimeStr(dateFromISOAndHour(iso, endH));
         const c = document.getElementById('calSlotCategory'); if(c) c.value = 'study';
-        const dur = document.getElementById('calSlotDurDisplay');
-        if (dur) { const d = endH-startH; const h=Math.floor(d),mn=Math.round((d-h)*60); dur.style.color='#6366f1'; dur.textContent=`⏱ ${h>0?h+'h ':''}${mn>0?mn+'m':''}`; }
+        if (typeof updateDurDisplay === 'function') updateDurDisplay();
       }, 80);
     }, 200);
   },
@@ -45183,20 +45222,24 @@ return {
     const _origSave = CAL.saveSlot.bind(CAL);
     CAL.saveSlot = function() {
       const name     = document.getElementById('calSlotName')?.value.trim();
-      const dateISO  = document.getElementById('calSlotDate')?.value;
-      const endDateISO = document.getElementById('calSlotEndDate')?.value || dateISO;
       const startVal = document.getElementById('calSlotStartTime')?.value;
       const endVal   = document.getElementById('calSlotEndTime')?.value;
       const remMin   = parseInt(document.getElementById('calSlotReminder')?.value || '15');
 
-      if (!name || !dateISO || !startVal || !endVal) { _origSave(); return; }
-      const startH = parseInt(startVal.split(':')[0]) + parseInt(startVal.split(':')[1])/60;
-      const endH   = parseInt(endVal.split(':')[0])   + parseInt(endVal.split(':')[1])/60;
+      if (!name || !startVal || !endVal) { _origSave(); return; }
+      // Both fields are full datetime-local values now — parse as real
+      // dates so multi-day spans compute a correct (possibly >24h) endH.
+      const startDt = new Date(startVal);
+      const endDt   = new Date(endVal);
+      if (isNaN(startDt) || isNaN(endDt)) { _origSave(); return; }
+      const dateISO = toLocalDateStr(startDt);
+      const startH  = startDt.getHours() + startDt.getMinutes() / 60;
+      const endH    = startH + (endDt - startDt) / 3600000;
 
       _origSave(); // saves event, closes modal
 
       // Show GCal toast
-      PLANEXT.showGCalToast(name, dateISO, startH, endH, endDateISO);
+      PLANEXT.showGCalToast(name, dateISO, startH, endH);
 
       // Custom reminder (override the default 15-min one)
       if (remMin > 0) {
@@ -45258,15 +45301,6 @@ return {
       if (!events.length) return;
       const base = events[events.length - 1];
       if (!base) return;
-      if ((base.dur || 0) > 24) {
-        // Multi-day event — repeating it daily/weekly would create overlapping
-        // copies of a multi-day span, which doesn't make sense. Skip silently;
-        // the single event was already saved by _pxtSaveOrig() above.
-        if (typeof showNotification === 'function') {
-          showNotification('ℹ️ Repeat is skipped for multi-day events.', 'info');
-        }
-        return;
-      }
       const seriesId = `s${base.id}`;
       base.seriesId = seriesId;
       base.repeatType = repeatType;
