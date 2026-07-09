@@ -11204,12 +11204,14 @@ const CAL = (() => {
     const e = document.getElementById('calSlotEndTime').value;
     const el = document.getElementById('calSlotDurDisplay');
     if (!s || !e || !el) return;
-    const diff = timeStrToH(e) - timeStrToH(s);
-    if (diff <= 0) { el.textContent = '⚠️ End must be after start'; el.style.color='#ef4444'; return; }
+    let diff = timeStrToH(e) - timeStrToH(s);
+    if (diff === 0) { el.textContent = '⚠️ End must be after start'; el.style.color='#ef4444'; return; }
+    let overnight = false;
+    if (diff < 0) { diff += 24; overnight = true; } // wraps past midnight, e.g. 21:00 → 06:30 next day
     const hrs = Math.floor(diff);
     const mins = Math.round((diff - hrs) * 60);
     el.style.color = '#6366f1';
-    el.textContent = `⏱ ${hrs > 0 ? hrs+'h ' : ''}${mins > 0 ? mins+'m' : ''}`;
+    el.textContent = `⏱ ${hrs > 0 ? hrs+'h ' : ''}${mins > 0 ? mins+'m' : ''}${overnight ? ' (qua đêm, kết thúc hôm sau)' : ''}`;
   }
 
   /* ── Public API ── */
@@ -11406,8 +11408,9 @@ const CAL = (() => {
 
       if (!startVal || !endVal) { alert('Please set start and end time'); return; }
       const startH = timeStrToH(startVal);
-      const endH   = timeStrToH(endVal);
-      if (endH <= startH) { alert('End time must be after start time'); return; }
+      let endH   = timeStrToH(endVal);
+      if (endH === startH) { alert('End time must be after start time'); return; }
+      if (endH < startH) endH += 24; // overnight event — wraps into the next day (e.g. 21:00 → 06:30)
       const dur = endH - startH;
 
       let events = getCalEvents();
@@ -44339,8 +44342,12 @@ function freeSlots(dateISO) {
 function gcalUrl(name, dateISO, startH, endH) {
   const [y,m,d] = dateISO.split('-').map(Number);
   const fmt = h => `${String(Math.floor(h)).padStart(2,'0')}${String(Math.round((h-Math.floor(h))*60)).padStart(2,'0')}00`;
-  const ds = `${y}${String(m).padStart(2,'0')}${String(d).padStart(2,'0')}T${fmt(startH)}`;
-  const de = `${y}${String(m).padStart(2,'0')}${String(d).padStart(2,'0')}T${fmt(endH)}`;
+  const startDate = new Date(y, m-1, d);
+  const endDate = new Date(y, m-1, d);
+  if (endH <= startH) endDate.setDate(endDate.getDate() + 1); // overnight — end falls on the next day
+  const fmtDate = dt => `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}`;
+  const ds = `${fmtDate(startDate)}T${fmt(startH)}`;
+  const de = `${fmtDate(endDate)}T${fmt(endH)}`;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(name)}&dates=${ds}/${de}`;
 }
 
