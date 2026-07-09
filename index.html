@@ -10551,6 +10551,11 @@
         style="padding:5px 11px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
         🧠 What Now?
       </button>
+      <button onclick="PLANEXT.copyAgendaForAI()"
+        title="Copy schedule + to-do + deadlines as text — paste into an AI for planning help"
+        style="padding:5px 9px;background:rgba(99,102,241,.12);color:#6366f1;border:1px solid rgba(99,102,241,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
+        📋
+      </button>
       <button onclick="PLANEXT.undo()"
         style="padding:5px 11px;background:rgba(156,163,175,.12);color:#6b7280;border:1px solid rgba(156,163,175,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;"
         title="Undo last change (Ctrl+Z)">
@@ -44482,7 +44487,138 @@ function renderTodoList() {
 /* ── Public API ── */
 return {
 
-  /* ── Month view ── */
+  /* ── 📋 Copy Schedule + To-Do + Deadlines for pasting into an AI ── */
+  copyAgendaForAI(days = 14) {
+    const pad = n => String(n).padStart(2, '0');
+    const toISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const lines = [];
+    lines.push('PLANNER EXPORT — generated ' + new Date().toLocaleString('en-GB'));
+    lines.push('='.repeat(50));
+
+    // ── 1. Schedule for the next N days ──
+    lines.push('');
+    lines.push(`SCHEDULE (next ${days} days)`);
+    lines.push('-'.repeat(50));
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    for (let i = 0; i < days; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      const iso = toISO(d);
+      const label = `${WEEKDAYS[d.getDay()]}, ${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}` + (i === 0 ? ' (today)' : '');
+      let blocks = [];
+      try { blocks = getBlocks(iso); } catch {}
+      blocks.sort((a,b) => (a.startH||0) - (b.startH||0));
+      lines.push('');
+      lines.push('* ' + label);
+      if (!blocks.length) {
+        lines.push('  (no scheduled items)');
+      } else {
+        blocks.forEach(b => {
+          const start = fmtH(b.startH || 0);
+          const end   = fmtH((b.startH||0) + (b.dur||0));
+          const title = (b.title || b.name || b.type || 'Untitled').replace(/\s+/g,' ').trim();
+          lines.push(`  ${start}-${end}  ${title}`);
+        });
+      }
+    }
+
+    // ── 2. Open to-do items ──
+    lines.push('');
+    lines.push('='.repeat(50));
+    lines.push('TO-DO LIST (open items)');
+    lines.push('-'.repeat(50));
+    let todos = [];
+    try { todos = getTodos().filter(t => !t.done); } catch {}
+    if (!todos.length) {
+      lines.push('(no open to-do items)');
+    } else {
+      todos
+        .slice()
+        .sort((a,b) => TODO_ORDER.indexOf(a.priority) - TODO_ORDER.indexOf(b.priority))
+        .forEach(t => {
+          lines.push(`  [${t.priority || 'C'}] ${t.text}`);
+        });
+    }
+
+    // ── 3. Upcoming deadlines (goals + manual deadlines) ──
+    lines.push('');
+    lines.push('='.repeat(50));
+    lines.push('DEADLINES (upcoming)');
+    lines.push('-'.repeat(50));
+    const deadlineRows = [];
+    try {
+      JSON.parse(localStorage.getItem('goals') || '[]').forEach(g => {
+        if (!g.deadline) return;
+        if ((g.currentProgress || 0) >= (g.target || 1)) return; // done goals skipped
+        deadlineRows.push({ date: g.deadline.slice(0,10), label: 'Goal: ' + (g.title || 'Untitled goal') });
+      });
+    } catch {}
+    try {
+      JSON.parse(localStorage.getItem('deadlines') || '[]').forEach(d => {
+        if (!d.date || d.done) return;
+        deadlineRows.push({ date: d.date, label: (d.name || 'Untitled deadline') });
+      });
+    } catch {}
+    if (!deadlineRows.length) {
+      lines.push('(no deadlines set)');
+    } else {
+      deadlineRows
+        .sort((a,b) => a.date.localeCompare(b.date))
+        .forEach(r => lines.push(`  ${r.date}  ${r.label}`));
+    }
+
+    lines.push('');
+    lines.push('='.repeat(50));
+    lines.push('(Paste this to an AI assistant for help planning days, sleep, breaks, and study time.)');
+
+    const text = lines.join('\n');
+
+    const done = () => {
+      if (typeof showNotification === 'function') {
+        showNotification('📋 Planner data copied — paste it into your AI!', 'success');
+      }
+    };
+    const fail = () => {
+      if (typeof showNotification === 'function') {
+        showNotification('⚠️ Could not copy automatically — please copy manually.', 'error');
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {
+        // Fallback for contexts where the async clipboard API is blocked
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          done();
+        } catch (e) { fail(); }
+      });
+    } else {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        done();
+      } catch (e) { fail(); }
+    }
+  },
+
+
   openMonthView() {
     _inMonthView = true;
     _monthYear  = CAL.currentDate.getFullYear();
