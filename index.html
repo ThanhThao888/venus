@@ -3,7 +3,7 @@
 <head>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <title> Finance Career Skills Tracker </title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -67,6 +67,15 @@
             --glass-bg: rgba(30, 41, 59, 0.75);
             --glass-border: rgba(96, 165, 250, 0.25);
             --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Tắt cơ chế "auto text inflation" của Mobile Safari — đây là thứ khiến
+           một số tiêu đề (vd: "2‑Minute Launchpad") tự phồng to hơn cỡ chữ đã
+           khai báo trên iPhone, trong khi các trình duyệt khác (kể cả desktop)
+           không hề bị ảnh hưởng bởi thuộc tính này. */
+        html {
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
         }
 
         * {
@@ -446,6 +455,7 @@
             overflow-y: auto; 
             padding-right: 10px;
             -webkit-overflow-scrolling: touch;
+            min-width: 0;
         }
 
         .sidebar-card {
@@ -1586,7 +1596,7 @@
         
         @media (max-width: 1100px) {
             .main-content {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
             }
             .sidebar {
                 grid-row: 1;
@@ -2887,7 +2897,7 @@
             }
             
             .main-content {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
                 gap: 15px;
             }
             
@@ -10055,32 +10065,136 @@
             }
         }
 
-        /* ═══════════════════════════════════════════════════════════ */
-
         /* ═══════════════════════════════════════════════════════════
-           MOBILE HORIZONTAL-OVERFLOW FIX
-           Root cause: .sidebar-title uses a fixed -25px negative
-           margin to "bleed" flush to its card's edges. On phones,
-           .container padding shrinks to 10px, but the title's -25px
-           bleed didn't shrink with it, so every card title pushed
-           ~15px past the screen edge on each side. Since the mobile
-           viewer can't scroll/zoom to reveal that overflow, the whole
-           layout looked clipped/oversized and unusable.
-           Fix: cap the bleed to match the container's mobile padding,
-           and add a safety net so no future overflow can trap the view.
+           THỐNG NHẤT KÍCH THƯỚC CARD TRÊN IPHONE (≤480px)
+           Chỉ áp dụng cho màn hình nhỏ (iPhone 15 = 393px CSS width),
+           không đụng tới desktop. Ép "Correlation Analytics",
+           "2‑Minute Launchpad" và "Your Progress" (sidebar-card) dùng
+           chung 1 khung padding / border-radius / margin để không còn
+           cảm giác "chỗ to chỗ nhỏ" khi cuộn từ trên xuống.
            ═══════════════════════════════════════════════════════════ */
-        @media (max-width: 768px) {
+        @media (max-width: 480px) {
+            .correlation-dashboard,
+            #adhdLaunchpad,
+            .sidebar-card,
+            .insomnia-analysis {
+                padding: 18px 16px !important;
+                border-radius: 16px !important;
+                margin-bottom: 18px !important;
+            }
+
+            /* Tiêu đề của 3 khối trên: cùng 1 cỡ chữ, cùng độ đậm */
+            .correlation-title,
+            .launchpad-header h3,
             .sidebar-title {
-                margin-left: -10px !important;
-                margin-right: -10px !important;
-                padding-left: 10px !important;
-                padding-right: 10px !important;
+                font-size: 1.15rem !important;
+                line-height: 1.3 !important;
+            }
+
+            /* QUAN TRỌNG: .sidebar-title dùng kỹ thuật "margin âm" để dải màu
+               tiêu đề tràn ra sát mép card (margin âm phải bằng đúng padding
+               của .sidebar-card). Trước đây nó luôn là -25px (khớp với
+               padding 25px của desktop). Khi ta đổi padding card thành
+               18px/16px ở trên, nếu không sửa luôn margin âm này thì dải
+               tiêu đề sẽ tràn lệch ra ngoài bo góc của card — đây chính là
+               nguyên nhân "vẫn lệch" dù đã đồng bộ padding. */
+            .sidebar-title {
+                margin: -18px -16px 16px -16px !important;
+                padding: 16px 16px 12px !important;
+                border-radius: 16px 16px 0 0 !important;
+            }
+
+            /* Container ngoài cùng: padding đều 2 bên, tránh lệch mép trái/phải
+               giữa các section khi cuộn */
+            .container {
+                padding-left: 12px !important;
+                padding-right: 12px !important;
+            }
+
+            /* Dynamic Island / notch: đảm bảo nút Dark Mode nổi không đè lên
+               tiêu đề đầu trang */
+            .dark-mode-container {
+                top: calc(8px + env(safe-area-inset-top)) !important;
+            }
+
+            /* ═══════════════════════════════════════════════════════
+               FIX THẬT SỰ: khối "🧠 Pattern Detection" / "Productivity
+               Patterns" được tạo bằng JS lúc runtime và bị gắn THẲNG vào
+               <body> (ngoài .container) vì selector nó tìm để chèn đúng
+               chỗ (#correlationAnalyticsSection / .dashboard-section)
+               không tồn tại. Đồng thời .pattern-stats dùng CSS Grid với
+               2 cột 1fr — nhưng grid item mặc định có min-width:auto nên
+               KHÔNG co nhỏ hơn nội dung của nó, khiến cả trang bị đẩy
+               rộng hơn màn hình (tràn ngang). Đây là nguyên nhân thật của
+               việc "to ra, vượt size màn hình". Style này có !important
+               vì CSS do JS chèn (<style id="pattern-styles">) luôn nằm
+               SAU trong cascade nên mặc định sẽ thắng nếu không ép buộc.
+               ═══════════════════════════════════════════════════════ */
+            #patternInsightsSection {
+                padding: 0 12px !important;
+                box-sizing: border-box !important;
+                max-width: 100vw !important;
+                overflow-x: hidden !important;
+            }
+            .pattern-insights-grid {
+                grid-template-columns: 1fr !important;
+                min-width: 0 !important;
+            }
+            .pattern-card {
+                padding: 16px !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+            .pattern-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 8px !important;
+                min-width: 0 !important;
+            }
+            .stat-item {
+                min-width: 0 !important;
+                padding: 8px !important;
+                overflow: hidden !important;
+            }
+            .stat-value {
+                font-size: 1.2rem !important;
+                word-break: break-word !important;
+            }
+            /* Lưới bảo hiểm: nếu có bất kỳ phần tử nào khác lỡ tràn ngang,
+               chặn nó lại thay vì để cả trang bị cuộn ngang */
+            html, body {
+                overflow-x: hidden !important;
+                max-width: 100vw !important;
+            }
+
+            /* ═══════════════════════════════════════════════════════
+               FIX TOÀN CỤC (không chỉ #patternInsightsSection): CSS Grid
+               item mặc định min-width:auto — không co nhỏ hơn nội dung
+               bên trong nó (số dài, chữ dài, badge...). Trên iPhone màn
+               hẹp, bất kỳ khung nào dùng "display:grid" (kể cả style
+               inline rải khắp file) đều có thể bị đẩy rộng ra khỏi màn
+               hình mà pinch-zoom của Safari KHÔNG sửa được, vì đó là lỗi
+               layout tràn ngang chứ không phải trình duyệt khóa zoom.
+               Selector [style*="grid"] bắt luôn các div grid viết inline. */
+            [style*="grid-template-columns"],
+            [style*="display:grid"],
+            [style*="display: grid"] {
+                max-width: 100% !important;
+            }
+            [style*="grid-template-columns"] > *,
+            [style*="display:grid"] > *,
+            [style*="display: grid"] > * {
+                min-width: 0 !important;
+                overflow-wrap: anywhere !important;
+            }
+            /* Tương tự cho Flexbox: flex item cũng mặc định không co nhỏ
+               hơn nội dung, cùng một họ lỗi gây tràn ngang trên iPhone. */
+            [style*="display:flex"] > *,
+            [style*="display: flex"] > * {
+                min-width: 0;
             }
         }
-        html, body {
-            overflow-x: hidden;
-            max-width: 100vw;
-        }
+        /* ═══════════════════════════════════════════════════════════ */
 </style>
 </head>
 <body>
@@ -10465,6 +10579,11 @@
         style="padding:5px 11px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
         🧠 What Now?
       </button>
+      <button onclick="PLANEXT.copyAgendaForAI()"
+        title="Copy schedule + to-do + deadlines as text — paste into an AI for planning help"
+        style="padding:5px 9px;background:rgba(99,102,241,.12);color:#6366f1;border:1px solid rgba(99,102,241,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
+        📋
+      </button>
       <button onclick="PLANEXT.undo()"
         style="padding:5px 11px;background:rgba(156,163,175,.12);color:#6b7280;border:1px solid rgba(156,163,175,.3);border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;"
         title="Undo last change (Ctrl+Z)">
@@ -10527,16 +10646,14 @@
       <label>Task / Event name</label>
       <input type="text" id="calSlotName" placeholder="e.g. Study CFA Ethics…" />
     </div>
-    <!-- Exact start time picker -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      <div>
-        <label>Start time</label>
-        <input type="time" id="calSlotStartTime" />
-      </div>
-      <div>
-        <label>End time</label>
-        <input type="time" id="calSlotEndTime" />
-      </div>
+    <!-- Exact start/end date+time pickers (full datetime, supports multi-day events) -->
+    <div>
+      <label>Start time</label>
+      <input type="datetime-local" id="calSlotStartTime" />
+    </div>
+    <div>
+      <label>End time</label>
+      <input type="datetime-local" id="calSlotEndTime" />
     </div>
     <div id="calSlotDurDisplay" style="font-size:.78rem;color:#6366f1;font-weight:600;margin:-4px 0 8px;text-align:right;"></div>
     <div>
@@ -10638,8 +10755,13 @@ const CAL = (() => {
     return d.toLocaleDateString('vi-VN', opts);
   }
   function fmtH(h) {
-    const hh = Math.floor(h);
-    const mm = Math.round((h - hh) * 60);
+    // Wrap safely into 0-23h so a value that drifted past 24 (or below 0)
+    // never renders as nonsense like "30:36" — see fmtDateTimeRange() for
+    // the day-aware label used on event blocks themselves.
+    let wrapped = ((h % 24) + 24) % 24;
+    let hh = Math.floor(wrapped);
+    let mm = Math.round((wrapped - hh) * 60);
+    if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
     return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   }
 
@@ -10763,9 +10885,23 @@ const CAL = (() => {
 
   /* 5. Combine all events for a date */
   function getAllBlocksForDate(dateISO) {
-    const custom = getCalEvents().filter(e => e.date === dateISO).map(e => ({
-      ...e, color: COLORS[e.category] || COLORS.task
-    }));
+    // Split each stored event against this specific day so genuine multi-day
+    // events (e.g. 20:50 → 06:30 two days later) show up — correctly clipped
+    // — on EVERY day they span, not just their start date.
+    const custom = getCalEvents().map(e => {
+      const seg = splitEventForDate(e, dateISO);
+      if (!seg) return null;
+      return {
+        ...e,
+        startH: seg.startH,
+        dur: seg.dur,
+        color: COLORS[e.category] || COLORS.task,
+        _continuesFromPrev: seg.continuesFromPrev,
+        _continuesToNext: seg.continuesToNext,
+        _fullStart: seg.fullStart,
+        _fullEnd: seg.fullEnd,
+      };
+    }).filter(Boolean);
     return [
       ...custom,
       ...getSessionBlocks(dateISO),
@@ -10850,15 +10986,24 @@ const CAL = (() => {
       const isPastEvt = (dateISO < dateStr(now)) || (isToday && (b.startH + b.dur) < nowH);
       const pastClass = isPastEvt ? ' is-past-event' : '';
       const dragAttr  = isCustom ? ' data-draggable="true"' : '';
+      // Use the real start/end datetime when available (custom multi-day
+      // events) so the label never shows nonsense hours like "30:36" — it
+      // shows the actual end date instead. Falls back to the old same-day
+      // math for non-custom blocks (study/sleep/deadline).
+      const timeLabel = (b._fullStart && b._fullEnd)
+        ? fmtDateTimeRange(b._fullStart, b._fullEnd)
+        : `${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}`;
+      const contPrefix = b._continuesFromPrev ? '◂ ' : '';
+      const contSuffix = b._continuesToNext ? ' ▸' : '';
       html += `<div class="cal-event${pastClass}" data-event-id="${b.id || ''}"${dragAttr} style="
                   top:${top}px; height:${height}px;
                   width:${w}; left:${left};
                   background:${b.color};pointer-events:all;"
-               title="${b.title} • ${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}${isCustom?'\nDrag to move · resize from bottom':''}">
+               title="${b.title} • ${timeLabel}${isCustom?'\nDrag to move · resize from bottom':''}">
                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;">
                    <div style="min-width:0;flex:1;">
-                     <div class="cal-event-title">${b.title}${b.seriesId ? ' <span class="cal-recur-badge">🔁</span>' : ''}</div>
-                     ${height > 32 ? `<div class="cal-event-time">${fmtH(b.startH)}–${fmtH(b.startH+b.dur)}</div>` : ''}
+                     <div class="cal-event-title">${contPrefix}${b.title}${contSuffix}${b.seriesId ? ' <span class="cal-recur-badge">🔁</span>' : ''}</div>
+                     ${height > 32 ? `<div class="cal-event-time">${timeLabel}</div>` : ''}
                    </div>
                    ${isCustom ? `<button onclick="event.stopPropagation();CAL.editSlot(${b.id})"
                      style="background:rgba(255,255,255,.25);border:none;border-radius:4px;
@@ -11107,18 +11252,30 @@ const CAL = (() => {
     return hh + mm / 60;
   }
 
-  /* ── Duration display ── */
+  /* ── Duration display ──
+     Start/End are now full datetime-local values (date + time), so this is
+     a genuine Date diff — it works correctly for same-day events, overnight
+     events, and events spanning several days, with no 24h assumption. */
   function updateDurDisplay() {
-    const s = document.getElementById('calSlotStartTime').value;
-    const e = document.getElementById('calSlotEndTime').value;
+    const sVal = document.getElementById('calSlotStartTime').value;
+    const eVal = document.getElementById('calSlotEndTime').value;
     const el = document.getElementById('calSlotDurDisplay');
-    if (!s || !e || !el) return;
-    const diff = timeStrToH(e) - timeStrToH(s);
-    if (diff <= 0) { el.textContent = '⚠️ End must be after start'; el.style.color='#ef4444'; return; }
-    const hrs = Math.floor(diff);
-    const mins = Math.round((diff - hrs) * 60);
+    if (!sVal || !eVal || !el) return;
+    const s = new Date(sVal);
+    const e = new Date(eVal);
+    if (isNaN(s) || isNaN(e)) return;
+    const diffMs = e - s;
+    if (diffMs <= 0) { el.textContent = '⚠️ End time must be after start time'; el.style.color = '#ef4444'; return; }
+    const totalMins = Math.round(diffMs / 60000);
+    const days = Math.floor(totalMins / 1440);
+    const hrs  = Math.floor((totalMins % 1440) / 60);
+    const mins = totalMins % 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days} ngày`);
+    if (hrs  > 0) parts.push(`${hrs}h`);
+    if (mins > 0) parts.push(`${mins}m`);
     el.style.color = '#6366f1';
-    el.textContent = `⏱ ${hrs > 0 ? hrs+'h ' : ''}${mins > 0 ? mins+'m' : ''}`;
+    el.textContent = `⏱ ${parts.join(' ') || '0m'}${days > 0 ? ' (qua nhiều ngày)' : (toLocalDateStr(s) !== toLocalDateStr(e) ? ' (qua đêm, kết thúc hôm sau)' : '')}`;
   }
 
   /* ── Public API ── */
@@ -11199,12 +11356,13 @@ const CAL = (() => {
     openSlotModal(dateISO, startH, eventId) {
       // Snap to nearest 5 minutes
       const snappedH = Math.round(startH * 12) / 12; // nearest 5min
-      const endH = snappedH + 1;
+      const startDt = dateFromISOAndHour(dateISO, snappedH);
+      const endDt   = new Date(startDt.getTime() + 3600000); // default 1h duration
 
       document.getElementById('calSlotDate').value = dateISO;
       document.getElementById('calSlotEventId').value = eventId || '';
-      document.getElementById('calSlotStartTime').value = hToTimeStr(snappedH);
-      document.getElementById('calSlotEndTime').value   = hToTimeStr(Math.min(endH, 23.99));
+      document.getElementById('calSlotStartTime').value = toLocalDatetimeStr(startDt);
+      document.getElementById('calSlotEndTime').value   = toLocalDatetimeStr(endDt);
       document.getElementById('calSlotName').value  = '';
       document.getElementById('calSlotNotes').value = '';
       document.getElementById('calSlotCategory').value = 'task';
@@ -11231,10 +11389,17 @@ const CAL = (() => {
 
       updateDurDisplay();
 
-      // Wire up time inputs
-      ['calSlotStartTime','calSlotEndTime'].forEach(id => {
-        document.getElementById(id).oninput = updateDurDisplay;
-      });
+      // Wire up time inputs. calSlotDate stays in sync with the start
+      // datetime's own date (other code — the repeat-preview, reminder
+      // scheduling — still reads calSlotDate as the event's anchor day).
+      const startInput = document.getElementById('calSlotStartTime');
+      startInput.oninput = () => {
+        updateDurDisplay();
+        if (startInput.value) {
+          document.getElementById('calSlotDate').value = startInput.value.slice(0, 10);
+        }
+      };
+      document.getElementById('calSlotEndTime').oninput = updateDurDisplay;
 
       document.getElementById('calSlotModal').classList.add('open');
       setTimeout(() => document.getElementById('calSlotName').focus(), 100);
@@ -11244,13 +11409,19 @@ const CAL = (() => {
       const ev = events.find(e => e.id === id);
       if (!ev) return;
       this.openSlotModal(ev.date, ev.startH, id);
-      // Pre-fill fields
+      // Pre-fill fields. Use the event's REAL start/end datetimes (not just
+      // hour-of-day) so genuine multi-day events — e.g. 20:50 one day →
+      // 06:30 the next — round-trip correctly instead of overflowing into
+      // an invalid time-only value like "30:36".
       setTimeout(() => {
+        const startDt = dateFromISOAndHour(ev.date, ev.startH);
+        const endDt   = new Date(startDt.getTime() + (ev.dur || 0) * 3600000);
         document.getElementById('calSlotName').value     = ev.title;
         document.getElementById('calSlotNotes').value    = ev.notes || '';
         document.getElementById('calSlotCategory').value = ev.category || 'task';
-        document.getElementById('calSlotStartTime').value = hToTimeStr(ev.startH);
-        document.getElementById('calSlotEndTime').value   = hToTimeStr(ev.startH + ev.dur);
+        document.getElementById('calSlotStartTime').value = toLocalDatetimeStr(startDt);
+        document.getElementById('calSlotEndTime').value   = toLocalDatetimeStr(endDt);
+        document.getElementById('calSlotDate').value      = ev.date;
         updateDurDisplay();
         // Show series banner if this belongs to a series
         if (ev.seriesId) {
@@ -11306,7 +11477,6 @@ const CAL = (() => {
       if (!name) { document.getElementById('calSlotName').style.border='1.5px solid #ef4444'; return; }
       document.getElementById('calSlotName').style.border='';
 
-      const dateISO  = document.getElementById('calSlotDate').value;
       const eventId  = document.getElementById('calSlotEventId').value;
       const startVal = document.getElementById('calSlotStartTime').value;
       const endVal   = document.getElementById('calSlotEndTime').value;
@@ -11314,17 +11484,26 @@ const CAL = (() => {
       const notes    = document.getElementById('calSlotNotes').value.trim();
 
       if (!startVal || !endVal) { alert('Please set start and end time'); return; }
-      const startH = timeStrToH(startVal);
-      const endH   = timeStrToH(endVal);
-      if (endH <= startH) { alert('End time must be after start time'); return; }
-      const dur = endH - startH;
+      const startDt = new Date(startVal);
+      const endDt   = new Date(endVal);
+      if (isNaN(startDt) || isNaN(endDt)) { alert('Please set start and end time'); return; }
+      if (endDt <= startDt) { alert('End time must be after start time'); return; }
+
+      // dateISO anchors the event to its start day; startH is the decimal
+      // hour within that day; dur is the REAL duration in hours and can now
+      // legitimately exceed 24 for genuine multi-day events (e.g. 20:50 one
+      // day → 06:30 two days later). Rendering splits this across every day
+      // the event actually spans — see splitEventForDate().
+      const dateISO = toLocalDateStr(startDt);
+      const startH  = startDt.getHours() + startDt.getMinutes() / 60;
+      const dur     = (endDt - startDt) / 3600000;
 
       let events = getCalEvents();
       if (eventId) {
         // Edit existing
         const idx = events.findIndex(e => e.id === parseInt(eventId));
         if (idx !== -1) {
-          events[idx] = { ...events[idx], title: name, startH, dur, category, notes, color: COLORS[category] || COLORS.task };
+          events[idx] = { ...events[idx], title: name, date: dateISO, startH, dur, category, notes, color: COLORS[category] || COLORS.task };
         }
       } else {
         // New event
@@ -11350,6 +11529,78 @@ function toLocalDateStr(d) {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+}
+
+/* ── Full datetime helpers — support genuine multi-day events ──
+   The planner used to only store {date, startH, dur} and assume every event
+   finished within 24h of its start slot; anything longer just wrapped its
+   hour label into nonsense like "30:36". These helpers make multi-day spans
+   (e.g. 20:50 one day → 06:30 two days later) work correctly end-to-end. */
+
+// Date -> "YYYY-MM-DDTHH:MM" in LOCAL time, for <input type="datetime-local"> values.
+function toLocalDatetimeStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
+// Build an absolute Date from a "YYYY-MM-DD" base date + a decimal hour offset
+// (e.g. dateISO="2026-07-09", h=20.5 → 9 Jul 2026, 20:30, local time).
+function dateFromISOAndHour(dateISO, h) {
+    const d = new Date(dateISO + 'T00:00:00');
+    return new Date(d.getTime() + h * 3600000);
+}
+
+// Format an hour-of-day float (any range, including negative or 24+) → "HH:MM",
+// always wrapping safely into 0-23. Use fmtDateTimeRange() instead wherever a
+// real day boundary matters (i.e. displaying an event's actual end time).
+function fmtHourSafe(h) {
+    let wrapped = ((h % 24) + 24) % 24;
+    let hh = Math.floor(wrapped);
+    let mm = Math.round((wrapped - hh) * 60);
+    if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+// Human-friendly range label for a real start/end Date pair. Shows just the
+// two times when the event stays within one day, and adds the end date +
+// day-count for genuine multi-day spans (e.g. "20:50 → 06:30 T6 (+1 ngày)").
+function fmtDateTimeRange(start, end) {
+    const sISO = toLocalDateStr(start);
+    const eISO = toLocalDateStr(end);
+    const timeS = `${String(start.getHours()).padStart(2,'0')}:${String(start.getMinutes()).padStart(2,'0')}`;
+    const timeE = `${String(end.getHours()).padStart(2,'0')}:${String(end.getMinutes()).padStart(2,'0')}`;
+    if (sISO === eISO) return `${timeS}–${timeE}`;
+    const days = Math.round((new Date(eISO+'T00:00:00') - new Date(sISO+'T00:00:00')) / 86400000);
+    const dLabel = end.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit' });
+    return `${timeS} → ${dLabel} ${timeE} (+${days} ngày)`;
+}
+
+// Split a stored event {date, startH, dur} into just the portion that falls
+// on dateISO. Returns null if the event doesn't touch that day at all.
+// This is what lets a multi-day event render as a separate segment on EACH
+// day it spans (mirroring how sleep sessions already handle one midnight
+// crossing), instead of only ever showing on its start date.
+function splitEventForDate(e, dateISO) {
+    if (!e || !e.date || e.startH == null) return null;
+    const dayStart = new Date(dateISO + 'T00:00:00');
+    const dayEnd   = new Date(dayStart.getTime() + 24 * 3600000);
+    const evStart  = dateFromISOAndHour(e.date, e.startH);
+    const evEnd    = new Date(evStart.getTime() + (e.dur || 0) * 3600000);
+    const overlapStart = evStart > dayStart ? evStart : dayStart;
+    const overlapEnd   = evEnd   < dayEnd   ? evEnd   : dayEnd;
+    if (overlapStart >= overlapEnd) return null;
+    return {
+        startH: (overlapStart - dayStart) / 3600000,
+        dur:    (overlapEnd - overlapStart) / 3600000,
+        continuesFromPrev: evStart < dayStart,
+        continuesToNext:   evEnd   > dayEnd,
+        fullStart: evStart,
+        fullEnd:   evEnd
+    };
 }
 
 /* ── Vietnam Timezone Helpers ──
@@ -11749,17 +12000,20 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   CAL.saveSlot = function() {
     // Capture data before calling original (form still open)
     const name     = (document.getElementById('calSlotName')?.value || '').trim();
-    const dateISO  = document.getElementById('calSlotDate')?.value || '';
     const eventId  = document.getElementById('calSlotEventId')?.value;
     const startVal = document.getElementById('calSlotStartTime')?.value || '';
     const category = document.getElementById('calSlotCategory')?.value || 'task';
 
     _orig(); // runs original save + close
 
-    // After save, schedule reminder for the event
-    if (!name || !dateISO || !startVal) return;
-    const [hh, mm] = startVal.split(':').map(Number);
-    const startH = hh + mm / 60;
+    // After save, schedule reminder for the event. startVal is a full
+    // datetime-local string ("YYYY-MM-DDTHH:MM") — parse it as a real date
+    // rather than assuming "HH:MM".
+    if (!name || !startVal) return;
+    const startDt = new Date(startVal);
+    if (isNaN(startDt)) return;
+    const dateISO = toLocalDateStr(startDt);
+    const startH  = startDt.getHours() + startDt.getMinutes() / 60;
     // Use eventId if editing, else use recent timestamp as id (approximate)
     const id = eventId ? parseInt(eventId) : Date.now();
     REMINDER.onEventSaved({ id, date: dateISO, startH, title: name, category });
@@ -13742,7 +13996,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 <script>
 (function() {
   const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  const todayKey = () => new Date().toISOString().slice(0, 10); // "2025-04-27"
+  const todayKey = () => toLocalDateStr(new Date()); // "2025-04-27" — local (VN) day, not UTC
 
   /* ════════════════════════════════════════
      TIMER STATE
@@ -21511,6 +21765,44 @@ window.DBP={
 
 
 
+        // --- Weighted random pick: skills with higher `importance` (1-5) have a
+        // proportionally higher chance of being picked, instead of every skill
+        // having an equal chance regardless of priority. ---
+        function pickWeightedRandomSkill(skillsList) {
+            const weights = skillsList.map(s => Math.max(1, s.importance || 3));
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            let r = Math.random() * totalWeight;
+            for (let i = 0; i < skillsList.length; i++) {
+                r -= weights[i];
+                if (r <= 0) return skillsList[i];
+            }
+            return skillsList[skillsList.length - 1]; // fallback (rounding safety)
+        }
+
+        // --- Avoid suggesting the same skill repeatedly within the same day.
+        // Tracked per mood, resets automatically when the date changes. ---
+        function getRecentlySuggestedSkills(mood) {
+            const today = toLocalDateStr(new Date()); // YYYY-MM-DD, local (VN) day
+            let store = {};
+            try {
+                store = JSON.parse(localStorage.getItem('suggestedSkillsToday') || '{}');
+            } catch (e) { store = {}; }
+            if (store.date !== today) {
+                store = { date: today }; // new day: reset tracking
+            }
+            return { store, today, seen: new Set(store[mood] || []) };
+        }
+
+        function rememberSuggestedSkill(mood, store, today, career, skillName) {
+            const key = `${career}-${skillName}`;
+            store.date = today;
+            store[mood] = store[mood] || [];
+            if (!store[mood].includes(key)) store[mood].push(key);
+            try {
+                localStorage.setItem('suggestedSkillsToday', JSON.stringify(store));
+            } catch (e) { /* non-critical, ignore quota errors */ }
+        }
+
         function suggestSkillByMood() {
             const suggestionDiv = document.getElementById('learningMoodWidget');
             const suggestionText = document.getElementById('learningMoodSkillText');
@@ -21554,11 +21846,19 @@ window.DBP={
                 return;
             }
 
-            // Pick random incomplete skill
-            const randomSkill = incompleteSkills[Math.floor(Math.random() * incompleteSkills.length)];
+            // Prefer skills not already suggested today for this mood; if every
+            // skill has already been shown today, fall back to the full list.
+            const { store, today, seen } = getRecentlySuggestedSkills(currentMood);
+            let pickPool = incompleteSkills.filter(s => !seen.has(`${s.career}-${s.name}`));
+            if (pickPool.length === 0) pickPool = incompleteSkills;
+
+            // Pick a skill, weighted by importance (higher importance = more likely)
+            const randomSkill = pickWeightedRandomSkill(pickPool);
             const career = randomSkill.career;
             const skillName = randomSkill.name;
             const careerData = skillsData[career];
+
+            rememberSuggestedSkill(currentMood, store, today, career, skillName);
 
             let foundSkill = null;
             Object.values(careerData.categories).some(category => {
@@ -26886,6 +27186,19 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // One-time cleanup: trim any existing backupHistory (from before this update)
+        // down to 1 entry to immediately free up localStorage space. Safe no-op if
+        // the key doesn't exist or is already small.
+        try {
+            const _existingBackups = JSON.parse(localStorage.getItem('backupHistory') || '[]');
+            if (Array.isArray(_existingBackups) && _existingBackups.length > 1) {
+                localStorage.setItem('backupHistory', JSON.stringify(_existingBackups.slice(0, 1)));
+                console.log('🧹 Đã dọn bớt backupHistory cũ, giải phóng dung lượng localStorage.');
+            }
+        } catch (e) {
+            console.warn('Không thể dọn backupHistory cũ:', e);
+        }
+
         function autoBackup() {
             try {
                 const backupData = {
@@ -26911,7 +27224,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 localStorage.setItem('autoBackup', dataStr);
                 const backups = JSON.parse(localStorage.getItem('backupHistory') || '[]');
                 backups.unshift(backupData);
-                if (backups.length > 3) backups.splice(3); 
+                if (backups.length > 1) backups.splice(1); 
                 localStorage.setItem('backupHistory', JSON.stringify(backups));
                 console.log('✅ Sao lưu tự động thành công');                
             } catch (e) {
@@ -27493,9 +27806,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const startDate = new Date(startTime);
                     const endDate = new Date(endTime);
                     
-                    const formatDateToKey = (date) => {
-                        return date.toISOString().split('T')[0];
-                    };
+                    const formatDateToKey = (date) => toLocalDateStr(date); // local (VN) day, not UTC
                     
                     if (formatDateToKey(startDate) === formatDateToKey(endDate)) {
                         const dateKey = formatDateToKey(startDate);
@@ -29034,7 +29345,7 @@ function calculateSleepStudyCorrelation() {
 
         // FIX 1: Assign entire session to the wake day (endDate).
         // Splitting at midnight created causality errors.
-        const formatDateToKey = (date) => date.toISOString().split('T')[0];
+        const formatDateToKey = (date) => toLocalDateStr(date); // local (VN) day, not UTC
         const endKey = formatDateToKey(endDate);
         sleepByDate[endKey] = Math.min(24, (sleepByDate[endKey] || 0) + durationHours);
     });
@@ -32151,7 +32462,7 @@ function getConfidenceColor(confidence) {
             
             const a = document.createElement('a');
             a.href = url;
-            a.download = `pattern-insights-${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `pattern-insights-${toLocalDateStr(new Date())}.json`; // local (VN) day, not UTC
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -36868,7 +37179,7 @@ function extractSleepFeatures(sleepSessions, studyData) {
         // Study performance (next day)
         const nextDay = new Date(startTime);
         nextDay.setDate(nextDay.getDate() + 1);
-        const nextDayStr = nextDay.toISOString().split('T')[0];
+        const nextDayStr = toLocalDateStr(nextDay); // local (VN) day, not UTC
         const nextDayStudy = parseFloat(studyData[nextDayStr] || 0);
         
         // Circadian timing
@@ -36879,7 +37190,7 @@ function extractSleepFeatures(sleepSessions, studyData) {
         
         return {
             sessionId: session.id || `session_${Date.now()}_${Math.random()}`,
-            date: startTime.toISOString().split('T')[0],
+            date: toLocalDateStr(startTime), // local (VN) day, not UTC
             bedtimeHour: parseFloat(bedtimeHour.toFixed(2)),
             wakeHour: parseFloat(wakeHour.toFixed(2)),
             duration: duration,
@@ -38512,7 +38823,7 @@ document.addEventListener('click', function(e) {
                 title.textContent = 'Add New Investment Analysis';
                 form.reset();
                 idInput.value = '';
-                document.getElementById('analysisDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('analysisDate').value = toLocalDateStr(new Date()); // local (VN) day, not UTC
                 document.getElementById('analysisStatus').value = 'active';
             }
             
@@ -38781,7 +39092,7 @@ document.addEventListener('click', function(e) {
                 title.textContent = 'Add New Deal';
                 form.reset();
                 idInput.value = '';
-                document.getElementById('dealDate').value = new Date().toISOString().split('T')[0]; 
+                document.getElementById('dealDate').value = toLocalDateStr(new Date()); // local (VN) day, not UTC
             }
             
             modal.style.display = 'block';
@@ -39476,7 +39787,7 @@ function exportFlashcards() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = toLocalDateStr(new Date()); // local (VN) day, not UTC
     a.href = url;
     a.download = `flashcards-backup-${stamp}.json`;
     document.body.appendChild(a);
@@ -40280,7 +40591,7 @@ function rateCard(difficulty) {
 
 function getNextCardToReview() {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = toLocalDateStr(now); // local (VN) day, not UTC
     
     // 1. Get cards due for review (nextReview <= now)
     const dueCards = flashcards.filter(card => {
@@ -40314,12 +40625,12 @@ function getNextCardToReview() {
 
 function getFlashcardDashboard() {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = toLocalDateStr(now); // local (VN) day, not UTC
     
     // Cards due today
     const dueToday = flashcards.filter(card => {
         const nextReviewDate = new Date(card.nextReview || card.lastReviewed);
-        return nextReviewDate.toISOString().split('T')[0] <= today;
+        return toLocalDateStr(nextReviewDate) <= today; // local (VN) day, not UTC
     }).length;
     
     // Average mastery
@@ -40842,13 +41153,30 @@ window.fcRenderTagChips = fcRenderTagChips;
         let resourceTitleTouched = false; // true once the user manually edits Title (stops auto-fill)
         let resourceTypeTouched = false;  // true once the user manually picks Type (stops auto-detect)
 
-        // Normalizes a URL for duplicate comparison: lowercase host, no protocol/www/trailing slash/query
+        // Normalizes a URL for duplicate comparison: lowercase host, no protocol/www/trailing slash.
+        // Query params ARE kept (many sites use them as the real identifier, e.g. ?share=xxx,
+        // ?v=xxx, ?id=xxx) — only known tracking/noise params are stripped, and the rest are
+        // sorted so param order doesn't cause false negatives.
+        const RESOURCE_URL_TRACKING_PARAMS = new Set([
+            'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+            'fbclid', 'gclid', 'msclkid', 'ref', 'si', 'igshid'
+        ]);
         function normalizeResourceUrl(url) {
             try {
                 const u = new URL(url);
                 let host = u.hostname.toLowerCase().replace(/^www\./, '');
                 let path = u.pathname.replace(/\/+$/, '');
-                return host + path;
+
+                const keep = [];
+                for (const [k, v] of u.searchParams.entries()) {
+                    if (!RESOURCE_URL_TRACKING_PARAMS.has(k.toLowerCase())) {
+                        keep.push(`${k.toLowerCase()}=${v}`);
+                    }
+                }
+                keep.sort();
+                const query = keep.length ? '?' + keep.join('&') : '';
+
+                return host + path + query;
             } catch (e) {
                 return (url || '').toLowerCase().trim().replace(/\/+$/, '');
             }
@@ -40930,11 +41258,58 @@ window.fcRenderTagChips = fcRenderTagChips;
 
             if (match) {
                 const statusLabel = { 'to-read': 'To Read', 'reading': 'Reading', 'completed': 'Completed' }[match.status] || match.status;
-                warningEl.innerHTML = `⚠️ Already in your library: <strong>${match.title}</strong> (${statusLabel})`;
+                warningEl.innerHTML = `⚠️ Already in your library: <strong>${match.title}</strong> (${statusLabel})<br>` +
+                    `<span style="opacity:0.75; word-break:break-all;">Matched URL: ${match.url}</span> ` +
+                    `<button type="button" onclick="viewExistingResource('${match.id}')" style="margin-left:6px; padding:2px 8px; border:1px solid #f59e0b; border-radius:6px; background:transparent; color:#f59e0b; font-size:0.75rem; cursor:pointer;">View existing</button>`;
                 warningEl.style.display = 'block';
             } else {
                 warningEl.style.display = 'none';
             }
+        }
+
+        // Jumps from the duplicate-URL warning straight to the already-saved card:
+        // closes the Add/Edit modal, clears any filters that could be hiding it,
+        // scrolls it into view, and briefly highlights it.
+        function viewExistingResource(resourceId) {
+            closeResourceModal();
+
+            // Make sure the sidebar isn't collapsed
+            if (typeof expandResourceLibrary === 'function') expandResourceLibrary();
+
+            // Drop out of Listening Queue mode if active — it filters to a subset
+            if (listeningQueueMode) toggleListeningQueueMode();
+
+            // Reset filters/search/tags that might exclude this resource from the list
+            const typeFilter = document.getElementById('resourceTypeFilter');
+            const domainFilter = document.getElementById('resourceDomainFilter');
+            const purposeFilter = document.getElementById('resourcePurposeFilter');
+            const categoryFilter = document.getElementById('resourceCategoryFilter');
+            const statusFilter = document.getElementById('resourceStatusFilter');
+            const search = document.getElementById('resourceSearch');
+            if (typeFilter) typeFilter.value = 'all';
+            if (domainFilter) domainFilter.value = 'all';
+            if (purposeFilter) purposeFilter.value = 'all';
+            if (categoryFilter) categoryFilter.value = 'all';
+            if (statusFilter) statusFilter.value = 'all';
+            if (search) search.value = '';
+            if (typeof activeTagFilters !== 'undefined') activeTagFilters.clear();
+
+            filterResources();
+
+            // Scroll to and flash the card once it's rendered
+            setTimeout(() => {
+                const card = document.getElementById(`resource-card-${resourceId}`);
+                if (!card) return;
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const prevTransition = card.style.transition;
+                const prevShadow = card.style.boxShadow;
+                card.style.transition = 'box-shadow 0.3s ease';
+                card.style.boxShadow = '0 0 0 3px #f59e0b';
+                setTimeout(() => {
+                    card.style.boxShadow = prevShadow;
+                    setTimeout(() => { card.style.transition = prevTransition; }, 300);
+                }, 1600);
+            }, 100);
         }
 
         // Single entry point wired to the URL field's oninput
@@ -41879,7 +42254,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `resource-library-${new Date().toISOString().slice(0,10)}.json`;
+            a.download = `resource-library-${toLocalDateStr(new Date())}.json`; // local (VN) day, not UTC
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -42172,6 +42547,14 @@ window.fcRenderTagChips = fcRenderTagChips;
                     icon.textContent = _rlOpen ? '▲' : '▼';
                     icon.style.transform = _rlOpen ? 'rotate(0deg)' : 'rotate(0deg)';
                 }
+            };
+            // Force the sidebar open (used by "View existing" so the target card is visible)
+            window.expandResourceLibrary = function(){
+                _rlOpen = true;
+                const body = document.getElementById('resourceLibraryBody');
+                const icon = document.getElementById('rlCollapseIcon');
+                if(body) body.style.display = '';
+                if(icon) icon.textContent = '▲';
             };
         })();
 
@@ -42942,7 +43325,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             // A "streak day" is any calendar day on which at least one skill was
             // marked complete (via markDone). Consecutive days increment the
             // counter; a missed day resets it to 1 on the next completion.
-            function todayStr() { return new Date().toISOString().slice(0, 10); }
+            function todayStr() { return toLocalDateStr(new Date()); } // local (VN) day, not UTC
             function getStreak() {
                 try { return JSON.parse(localStorage.getItem('rdmStreak') || 'null') || { count: 0, lastDate: '' }; }
                 catch (e) { return { count: 0, lastDate: '' }; }
@@ -42952,7 +43335,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const today = todayStr();
                 if (s.lastDate === today) return s;
                 const y = new Date(); y.setDate(y.getDate() - 1);
-                const yesterday = y.toISOString().slice(0, 10);
+                const yesterday = toLocalDateStr(y); // local (VN) day, not UTC
                 s.count = (s.lastDate === yesterday) ? s.count + 1 : 1;
                 s.lastDate = today;
                 try { localStorage.setItem('rdmStreak', JSON.stringify(s)); } catch (e) {}
@@ -43679,7 +44062,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         title: `🎯 ${focusSkill.name.split(' (')[0]}`,
                         type: 'skill_mastery',
                         target: focusSkill.hours,
-                        deadline: deadline.toISOString().slice(0, 10),
+                        deadline: toLocalDateStr(deadline), // local (VN) day, not UTC
                         career: track,
                         skillName: focusSkill.studyHoursKeys[0],
                         currentProgress: getRoadmapSkillHours(track, focusSkill),
@@ -44043,18 +44426,32 @@ let _undoSnapshot = null; // { events: [...], label: string }
 
 /* ── Helper: format hour float → HH:MM ── */
 function fmtH(h) {
-  const hh = Math.floor(h), mm = Math.round((h-hh)*60);
+  // Wrap safely into 0-23h so a value that drifted past 24 (or below 0)
+  // never renders as nonsense like "30:36".
+  let wrapped = ((h % 24) + 24) % 24;
+  let hh = Math.floor(wrapped);
+  let mm = Math.round((wrapped - hh) * 60);
+  if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
   return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
 }
 
 /* ── Get all events for a date (public, mirrors CAL internals) ── */
 function getBlocks(dateISO) {
   let blocks = [];
-  // 1. Custom cal events
+  // 1. Custom cal events — split against this day so multi-day events show
+  // up (correctly clipped) on every day they actually span.
   try {
     const evts = JSON.parse(localStorage.getItem('calEvents') || '[]');
-    evts.filter(e => e.date === dateISO).forEach(e => {
-      blocks.push({ ...e, color: CAL_COLORS[e.category] || CAL_COLORS.task });
+    evts.forEach(e => {
+      const seg = splitEventForDate(e, dateISO);
+      if (!seg) return;
+      blocks.push({
+        ...e, startH: seg.startH, dur: seg.dur,
+        color: CAL_COLORS[e.category] || CAL_COLORS.task,
+        _continuesFromPrev: seg.continuesFromPrev,
+        _continuesToNext: seg.continuesToNext,
+        _fullStart: seg.fullStart, _fullEnd: seg.fullEnd,
+      });
     });
   } catch {}
   // 2. Study session logs
@@ -44075,10 +44472,26 @@ function getBlocks(dateISO) {
     JSON.parse(localStorage.getItem('sleepSessions') || '[]').forEach(s => {
       if (!s.start || !s.end) return;
       const sd = new Date(s.start), ed = new Date(s.end);
-      const sISO = sd.toISOString().split('T')[0], eISO = ed.toISOString().split('T')[0];
+      // Use LOCAL date, not toISOString() (which is UTC) — in UTC+7, a
+      // session starting e.g. 04:40 local on 9 Jul is still 8 Jul in UTC,
+      // which silently bucketed it into the wrong day and made the block
+      // render as "00:00–11:11" instead of the real "04:40–11:11".
+      const sISO = toLocalDateStr(sd), eISO = toLocalDateStr(ed);
       if (sISO !== dateISO && eISO !== dateISO) return;
-      const startH = sISO === dateISO ? sd.getHours()+sd.getMinutes()/60 : 0;
-      const dur    = sISO === dateISO ? Math.min(s.duration||0, 24-startH) : ed.getHours()+ed.getMinutes()/60;
+      let startH, dur;
+      if (sISO === dateISO && eISO === dateISO) {
+        // Whole session falls within this single local day.
+        startH = sd.getHours() + sd.getMinutes() / 60;
+        dur = (ed - sd) / 3600000;
+      } else if (sISO === dateISO) {
+        // Started today, spills into tomorrow — show from start until midnight.
+        startH = sd.getHours() + sd.getMinutes() / 60;
+        dur = 24 - startH;
+      } else {
+        // Started yesterday, ends today — show from midnight until end time.
+        startH = 0;
+        dur = ed.getHours() + ed.getMinutes() / 60;
+      }
       if (dur > 0) blocks.push({ type:'sleep', title:'😴 Sleep', startH, dur, color: CAL_COLORS.sleep });
     });
   } catch {}
@@ -44118,14 +44531,23 @@ function freeSlots(dateISO) {
 function gcalUrl(name, dateISO, startH, endH) {
   const [y,m,d] = dateISO.split('-').map(Number);
   const fmt = h => `${String(Math.floor(h)).padStart(2,'0')}${String(Math.round((h-Math.floor(h))*60)).padStart(2,'0')}00`;
-  const ds = `${y}${String(m).padStart(2,'0')}${String(d).padStart(2,'0')}T${fmt(startH)}`;
-  const de = `${y}${String(m).padStart(2,'0')}${String(d).padStart(2,'0')}T${fmt(endH)}`;
+  const startDate = new Date(y, m-1, d);
+  // endH can now legitimately be >= 24 (or even >= 48) for genuine multi-day
+  // events — walk it forward the right number of whole days instead of only
+  // handling a single midnight crossing.
+  const dayOffset = Math.max(0, Math.floor(endH / 24));
+  const endHMod = endH - dayOffset * 24;
+  const endDate = new Date(y, m-1, d);
+  endDate.setDate(endDate.getDate() + (dayOffset || (endH <= startH ? 1 : 0)));
+  const fmtDate = dt => `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}`;
+  const ds = `${fmtDate(startDate)}T${fmt(startH)}`;
+  const de = `${fmtDate(endDate)}T${fmt(dayOffset ? endHMod : endH)}`;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(name)}&dates=${ds}/${de}`;
 }
 
 /* ── Month View Renderer ── */
 function renderMonth(year, month) {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = toLocalDateStr(new Date()); // local, not UTC — avoids an off-by-one "today" near midnight in UTC+7
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const DAY_HDR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -44266,7 +44688,138 @@ function renderTodoList() {
 /* ── Public API ── */
 return {
 
-  /* ── Month view ── */
+  /* ── 📋 Copy Schedule + To-Do + Deadlines for pasting into an AI ── */
+  copyAgendaForAI(days = 14) {
+    const pad = n => String(n).padStart(2, '0');
+    const toISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const lines = [];
+    lines.push('PLANNER EXPORT — generated ' + new Date().toLocaleString('en-GB'));
+    lines.push('='.repeat(50));
+
+    // ── 1. Schedule for the next N days ──
+    lines.push('');
+    lines.push(`SCHEDULE (next ${days} days)`);
+    lines.push('-'.repeat(50));
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    for (let i = 0; i < days; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      const iso = toISO(d);
+      const label = `${WEEKDAYS[d.getDay()]}, ${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}` + (i === 0 ? ' (today)' : '');
+      let blocks = [];
+      try { blocks = getBlocks(iso); } catch {}
+      blocks.sort((a,b) => (a.startH||0) - (b.startH||0));
+      lines.push('');
+      lines.push('* ' + label);
+      if (!blocks.length) {
+        lines.push('  (no scheduled items)');
+      } else {
+        blocks.forEach(b => {
+          const start = fmtH(b.startH || 0);
+          const end   = fmtH((b.startH||0) + (b.dur||0));
+          const title = (b.title || b.name || b.type || 'Untitled').replace(/\s+/g,' ').trim();
+          lines.push(`  ${start}-${end}  ${title}`);
+        });
+      }
+    }
+
+    // ── 2. Open to-do items ──
+    lines.push('');
+    lines.push('='.repeat(50));
+    lines.push('TO-DO LIST (open items)');
+    lines.push('-'.repeat(50));
+    let todos = [];
+    try { todos = getTodos().filter(t => !t.done); } catch {}
+    if (!todos.length) {
+      lines.push('(no open to-do items)');
+    } else {
+      todos
+        .slice()
+        .sort((a,b) => TODO_ORDER.indexOf(a.priority) - TODO_ORDER.indexOf(b.priority))
+        .forEach(t => {
+          lines.push(`  [${t.priority || 'C'}] ${t.text}`);
+        });
+    }
+
+    // ── 3. Upcoming deadlines (goals + manual deadlines) ──
+    lines.push('');
+    lines.push('='.repeat(50));
+    lines.push('DEADLINES (upcoming)');
+    lines.push('-'.repeat(50));
+    const deadlineRows = [];
+    try {
+      JSON.parse(localStorage.getItem('goals') || '[]').forEach(g => {
+        if (!g.deadline) return;
+        if ((g.currentProgress || 0) >= (g.target || 1)) return; // done goals skipped
+        deadlineRows.push({ date: g.deadline.slice(0,10), label: 'Goal: ' + (g.title || 'Untitled goal') });
+      });
+    } catch {}
+    try {
+      JSON.parse(localStorage.getItem('deadlines') || '[]').forEach(d => {
+        if (!d.date || d.done) return;
+        deadlineRows.push({ date: d.date, label: (d.name || 'Untitled deadline') });
+      });
+    } catch {}
+    if (!deadlineRows.length) {
+      lines.push('(no deadlines set)');
+    } else {
+      deadlineRows
+        .sort((a,b) => a.date.localeCompare(b.date))
+        .forEach(r => lines.push(`  ${r.date}  ${r.label}`));
+    }
+
+    lines.push('');
+    lines.push('='.repeat(50));
+    lines.push('(Paste this to an AI assistant for help planning days, sleep, breaks, and study time.)');
+
+    const text = lines.join('\n');
+
+    const done = () => {
+      if (typeof showNotification === 'function') {
+        showNotification('📋 Planner data copied — paste it into your AI!', 'success');
+      }
+    };
+    const fail = () => {
+      if (typeof showNotification === 'function') {
+        showNotification('⚠️ Could not copy automatically — please copy manually.', 'error');
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {
+        // Fallback for contexts where the async clipboard API is blocked
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          done();
+        } catch (e) { fail(); }
+      });
+    } else {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        done();
+      } catch (e) { fail(); }
+    }
+  },
+
+
   openMonthView() {
     _inMonthView = true;
     _monthYear  = CAL.currentDate.getFullYear();
@@ -44452,7 +45005,7 @@ return {
 
   /* ── Export today → GCal ── */
   exportTodayToGCal() {
-    const iso = new Date().toISOString().split('T')[0];
+    const iso = toLocalDateStr(new Date()); // local, not UTC — avoids exporting the wrong day near midnight in UTC+7
     let evts = [];
     try { evts = JSON.parse(localStorage.getItem('calEvents')||'[]').filter(e=>e.date===iso); } catch{}
 
@@ -44486,12 +45039,14 @@ return {
     const rows = evts.map(ev => {
       const url = gcalUrl(ev.title, ev.date, ev.startH, ev.startH+(ev.dur||1));
       const color = catColors[ev.category||'task'] || '#6366f1';
+      const evStart = dateFromISOAndHour(ev.date, ev.startH);
+      const evEnd   = new Date(evStart.getTime() + (ev.dur||1) * 3600000);
       return `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-light);border-radius:10px;margin-bottom:7px;">
           <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:.88rem;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ev.title}</div>
-            <div style="font-size:.76rem;color:var(--text-muted);">${fmtH(ev.startH)} – ${fmtH(ev.startH+(ev.dur||1))}</div>
+            <div style="font-size:.76rem;color:var(--text-muted);">${fmtDateTimeRange(evStart, evEnd)}</div>
           </div>
           <a href="${url}" target="_blank" rel="noopener"
              style="flex-shrink:0;padding:5px 11px;background:#4285f4;color:#fff;border-radius:8px;font-size:.78rem;font-weight:700;text-decoration:none;white-space:nowrap;"
@@ -44641,11 +45196,10 @@ return {
       CAL.openSlotModal(iso, startH);
       setTimeout(() => {
         const n = document.getElementById('calSlotName'); if(n) n.value = skillName;
-        const s = document.getElementById('calSlotStartTime'); if(s) s.value = fmtH(startH);
-        const e = document.getElementById('calSlotEndTime'); if(e) e.value = fmtH(endH);
+        const s = document.getElementById('calSlotStartTime'); if(s) s.value = toLocalDatetimeStr(dateFromISOAndHour(iso, startH));
+        const e = document.getElementById('calSlotEndTime'); if(e) e.value = toLocalDatetimeStr(dateFromISOAndHour(iso, endH));
         const c = document.getElementById('calSlotCategory'); if(c) c.value = 'study';
-        const dur = document.getElementById('calSlotDurDisplay');
-        if (dur) { const d = endH-startH; const h=Math.floor(d),mn=Math.round((d-h)*60); dur.style.color='#6366f1'; dur.textContent=`⏱ ${h>0?h+'h ':''}${mn>0?mn+'m':''}`; }
+        if (typeof updateDurDisplay === 'function') updateDurDisplay();
       }, 80);
     }, 200);
   },
@@ -44711,14 +45265,19 @@ return {
     const _origSave = CAL.saveSlot.bind(CAL);
     CAL.saveSlot = function() {
       const name     = document.getElementById('calSlotName')?.value.trim();
-      const dateISO  = document.getElementById('calSlotDate')?.value;
       const startVal = document.getElementById('calSlotStartTime')?.value;
       const endVal   = document.getElementById('calSlotEndTime')?.value;
       const remMin   = parseInt(document.getElementById('calSlotReminder')?.value || '15');
 
-      if (!name || !dateISO || !startVal || !endVal) { _origSave(); return; }
-      const startH = parseInt(startVal.split(':')[0]) + parseInt(startVal.split(':')[1])/60;
-      const endH   = parseInt(endVal.split(':')[0])   + parseInt(endVal.split(':')[1])/60;
+      if (!name || !startVal || !endVal) { _origSave(); return; }
+      // Both fields are full datetime-local values now — parse as real
+      // dates so multi-day spans compute a correct (possibly >24h) endH.
+      const startDt = new Date(startVal);
+      const endDt   = new Date(endVal);
+      if (isNaN(startDt) || isNaN(endDt)) { _origSave(); return; }
+      const dateISO = toLocalDateStr(startDt);
+      const startH  = startDt.getHours() + startDt.getMinutes() / 60;
+      const endH    = startH + (endDt - startDt) / 3600000;
 
       _origSave(); // saves event, closes modal
 
