@@ -17183,16 +17183,112 @@ window.DBP={
                         style="width:52px; padding:3px 5px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-light); color:var(--text-dark); font-size:0.78rem; text-align:center;">h
                 </div>
             </div>
+            <!-- ===== BEDTIME CALCULATOR (tính đến Sleep Onset Latency thay đổi mỗi ngày) ===== -->
+            <div style="margin: 10px 0 12px;">
+                <button type="button" id="sleepCalcToggleBtn" onclick="toggleSleepCalc()"
+                    class="add-time-btn" style="width:100%; background:#8e44ad; display:flex; align-items:center; justify-content:center; gap:6px;">
+                    🧮 Tính giờ ngủ phù hợp
+                </button>
+                <div id="sleepCalcPanel" style="display:none; margin-top:12px; padding:14px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-light);">
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
+                        Tính theo chu kỳ ngủ 90 phút — có cộng thêm thời gian bạn thực tế cần để <b>vào giấc</b> (Sleep Onset Latency), vì mỗi đêm thời gian này khác nhau.
+                    </div>
+
+                    <!-- Mode toggle -->
+                    <div style="display:flex; gap:6px; margin-bottom:10px;">
+                        <button type="button" id="sleepCalcModeWakeBtn" onclick="setSleepCalcMode('wake')"
+                            style="flex:1; padding:7px 4px; border-radius:8px; border:1.5px solid var(--primary); background:var(--primary); color:#fff; font-size:0.76rem; cursor:pointer;">
+                            🌅 Tôi biết giờ muốn DẬY
+                        </button>
+                        <button type="button" id="sleepCalcModeBedBtn" onclick="setSleepCalcMode('bed')"
+                            style="flex:1; padding:7px 4px; border-radius:8px; border:1.5px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); font-size:0.76rem; cursor:pointer;">
+                            🛏️ Tôi biết giờ sẽ LÊN GIƯỜNG
+                        </button>
+                    </div>
+
+                    <div style="margin-bottom:10px;">
+                        <label id="sleepCalcTimeLabel" style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:5px; color:var(--text-dark);">
+                            Giờ muốn thức dậy
+                        </label>
+                        <input type="time" id="sleepCalcTargetTime" value="06:00"
+                            style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                    </div>
+
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:5px; color:var(--text-dark);">
+                            Đêm nay bạn nghĩ mình sẽ vào giấc kiểu nào?
+                        </label>
+                        <select id="sleepCalcSOL" onchange="onSleepCalcSOLChange()"
+                            style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <option value="5">😴 Mệt, gục ngủ ngay (~5 phút)</option>
+                            <option value="15" selected>🙂 Bình thường (~15 phút)</option>
+                            <option value="25">📱 Có dùng laptop/điện thoại trước đó, dễ trằn trọc (~25 phút)</option>
+                            <option value="custom">✏️ Tự nhập số phút</option>
+                        </select>
+                        <input type="number" id="sleepCalcCustomSOL" min="0" max="120" step="1" placeholder="Số phút để vào giấc"
+                            style="display:none; width:100%; margin-top:6px; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                    </div>
+
+                    <button type="button" class="add-time-btn" onclick="computeSleepCalc()" style="width:100%; background:#27ae60; margin-bottom:12px;">
+                        ✅ Tính giờ tối ưu
+                    </button>
+
+                    <div id="sleepCalcResults"></div>
+
+                    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:10px; line-height:1.55; border-top:1px dashed var(--border-color); padding-top:8px;">
+                        💡 <b>Mẹo:</b> khi trằn trọc, đừng mở điện thoại lên để chỉnh lại báo thức — ánh sáng xanh ức chế melatonin thêm, khiến bạn càng khó vào giấc hơn. Hãy chọn sẵn phương án phù hợp với "kiểu vào giấc" tối nay ở trên, đặt báo thức một lần rồi úp điện thoại xuống/để xa giường.
+                    </div>
+                </div>
+            </div>
+
             <div id="sleepStatus" style="text-align: center; font-size: 1.1rem; margin: 10px 0;">
                 😴 Ready to sleep
             </div>
             <div id="sleepTimerDisplay" style="font-size: 2rem; text-align: center; font-weight: bold; color: var(--primary); margin: 10px 0; display: none;">
                 00:00:00
             </div>
+            <div id="sleepMarkAsleepRow" style="display:none; margin: 0 0 10px;">
+                <button class="add-time-btn" onclick="markFellAsleep()" style="width:100%; background:#9b59b6;">😴 Vừa ngủ (đánh dấu lúc vào giấc)</button>
+            </div>
+            <div id="sleepMarkAsleepConfirm" style="display:none; text-align:center; font-size:0.78rem; color: var(--text-muted); margin: -4px 0 10px;"></div>
 
             <!-- Sleep Stats Summary -->
             <div id="sleepStatsRow" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 12px 0;"></div>
-            
+
+            <!-- Cảnh báo chủ động: SOL tăng đáng kể so với giai đoạn trước -->
+            <div id="solAlertBanner" style="display:none; margin: 4px 0 12px; padding:12px 34px 12px 14px; background: rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius: var(--radius-md); position:relative;">
+                <button onclick="dismissSolAlert()" aria-label="Đóng" style="position:absolute; top:8px; right:10px; background:none; border:none; font-size:1.1rem; cursor:pointer; color:var(--text-muted); line-height:1; padding:2px;">×</button>
+                <div id="solAlertText" style="font-size:0.85rem; line-height:1.55; color:var(--text-dark);"></div>
+            </div>
+
+            <!-- Mini SOL Trend Chart -->
+            <div id="solTrendWrap" style="display:none; margin: 4px 0 14px; padding:10px 10px 6px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
+                    <span style="font-size:0.78rem; font-weight:600; color:var(--text-muted);">⏱️ Xu hướng SOL (phút vào giấc)</span>
+                    <span id="solTrendDelta" style="font-size:0.75rem; font-weight:600;"></span>
+                </div>
+                <div style="height:64px;">
+                    <canvas id="solTrendChart"></canvas>
+                </div>
+            </div>
+
+            <!-- SOL vs Ghi chú (Notes) Correlation -->
+            <div id="solNoteCorrelationWrap" style="display:none; margin: 4px 0 14px; padding:12px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="font-size:0.78rem; font-weight:600; color:var(--text-muted); margin-bottom:8px;">
+                    🔎 SOL theo ghi chú đêm <span style="font-weight:400;">(so với các đêm khác)</span>
+                </div>
+                <div id="solNoteCorrelationCards" style="display:flex; flex-direction:column; gap:6px;"></div>
+                <div id="solNoteCorrelationEmpty" style="display:none; font-size:0.73rem; color:var(--text-muted); text-align:center; padding:6px 2px;">
+                    Chưa đủ dữ liệu ghi chú để so sánh (cần ≥2 đêm mỗi nhóm). Hãy ghi chú khi thêm session thủ công, vd: "dùng laptop", "cà phê", "stress"...
+                </div>
+                <div style="margin-top:10px; display:flex; gap:6px;">
+                    <input type="text" id="solNoteCustomKeyword" placeholder="Từ khoá khác (vd: tập gym, rượu bia...)"
+                        style="flex:1; min-width:0; font-size:0.78rem; padding:7px 9px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark);">
+                    <button onclick="addCustomSolKeywordCheck()"
+                        style="font-size:0.75rem; padding:7px 12px; border-radius:6px; border:none; background:var(--primary); color:#fff; cursor:pointer; white-space:nowrap;">So sánh</button>
+                </div>
+            </div>
+
             <!-- Control Buttons -->
             <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                 <button id="startSleepBtn" class="add-time-btn" onclick="startSleepTracking()" style="flex: 1; background: #27ae60;">▶ Start</button>
@@ -22065,6 +22161,13 @@ window.DBP={
                 sleepChart.options.scales.x.ticks.color = textColor;
                 sleepChart.update();
             }
+            if (solTrendChart) {
+                const textColor = isDark ? '#94a3b8' : '#94a3b8';
+                solTrendChart.options.scales.y.ticks.color = textColor;
+                solTrendChart.options.scales.x.ticks.color = textColor;
+                solTrendChart.options.scales.y.grid.color = isDark ? 'rgba(148,163,184,0.1)' : 'rgba(148,163,184,0.15)';
+                solTrendChart.update();
+            }
             if (dailyStudyChart) {
                 const textColor = isDark ? '#cbd5e1' : '#666';
                 dailyStudyChart.options.scales.y.ticks.color = textColor;
@@ -26090,10 +26193,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // ===== SLEEP TRACKER =====
         let sleepStartTime = null;
+        let sleepAsleepMarkTime = null; // Lúc người dùng bấm "😴 Vừa ngủ" trong khi đang track -> để tính SOL thực tế
         let isSleeping = false;
         let sleepInterval = null;
+        let pendingSleepSession = null; // Session awaiting quick note/quality before being saved (see openQuickSleepNoteModal)
         sleepSessions = JSON.parse(localStorage.getItem('sleepSessions')) || [];
         let sleepChart = null;
+        let solTrendChart = null;
 
         // ✅ Mục tiêu giờ ngủ (mặc định 8h, lưu riêng cho từng user trong localStorage)
         const SLEEP_GOAL_KEY = 'sleepGoalHours';
@@ -26119,12 +26225,442 @@ document.addEventListener('DOMContentLoaded', function() {
             return [...sleepSessions].sort((a, b) => a.start - b.start);
         }
 
+        // ===== Trung bình SOL thực tế từ các session đã ghi nhận =====
+        function getRecentRealSOLStats(maxSamples = 14) {
+            const withSOL = getSortedSleepSessions()
+                .filter(s => typeof s.sol === 'number' && !isNaN(s.sol) && s.sol >= 0)
+                .sort((a, b) => b.start - a.start) // mới nhất trước
+                .slice(0, maxSamples);
+            if (withSOL.length === 0) return null;
+            const avg = withSOL.reduce((sum, s) => sum + s.sol, 0) / withSOL.length;
+            return { avg: Math.round(avg), count: withSOL.length };
+        }
+
+        // ===== Mini biểu đồ xu hướng SOL theo thời gian =====
+        // Vẽ đường SOL (phút vào giấc) của tối đa 14 đêm gần nhất có dữ liệu thực tế,
+        // kèm % thay đổi giữa nửa đầu và nửa sau của chuỗi để thấy nhanh xu hướng tăng/giảm.
+        function renderSolTrendChart() {
+            const wrap = document.getElementById('solTrendWrap');
+            const ctx = document.getElementById('solTrendChart');
+            const deltaEl = document.getElementById('solTrendDelta');
+            if (!wrap || !ctx) return;
+
+            const withSOL = getSortedSleepSessions()
+                .filter(s => typeof s.sol === 'number' && !isNaN(s.sol) && s.sol >= 0)
+                .slice(-14); // tối đa 14 đêm gần nhất, đúng thứ tự thời gian
+
+            // Cần tối thiểu 3 điểm dữ liệu mới đủ để vẽ xu hướng có ý nghĩa
+            if (withSOL.length < 3) {
+                wrap.style.display = 'none';
+                if (solTrendChart) { solTrendChart.destroy(); solTrendChart = null; }
+                return;
+            }
+            wrap.style.display = 'block';
+
+            const labels = withSOL.map(s => {
+                const d = new Date(s.start);
+                return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+            });
+            const solValues = withSOL.map(s => s.sol);
+
+            // So sánh trung bình nửa sau vs nửa đầu của chuỗi để hiện mũi tên xu hướng
+            const mid = Math.floor(withSOL.length / 2);
+            const firstHalf = solValues.slice(0, mid);
+            const secondHalf = solValues.slice(mid);
+            const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+            const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+            const pctChange = avgFirst > 0 ? ((avgSecond - avgFirst) / avgFirst) * 100 : 0;
+
+            if (deltaEl) {
+                if (Math.abs(pctChange) < 5) {
+                    deltaEl.textContent = '→ Ổn định';
+                    deltaEl.style.color = 'var(--text-muted)';
+                } else if (pctChange > 0) {
+                    deltaEl.textContent = `↑ +${Math.round(pctChange)}%`;
+                    deltaEl.style.color = '#ef4444';
+                } else {
+                    deltaEl.textContent = `↓ ${Math.round(pctChange)}%`;
+                    deltaEl.style.color = '#10b981';
+                }
+            }
+
+            const isDark = document.body.classList.contains('dark-mode');
+            const lineColor = '#8b5cf6';
+
+            if (solTrendChart) {
+                solTrendChart.destroy();
+            }
+
+            solTrendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'SOL (phút)',
+                        data: solValues,
+                        borderColor: lineColor,
+                        backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                        borderWidth: 2,
+                        pointRadius: 2.5,
+                        pointBackgroundColor: lineColor,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => `${context.parsed.y} phút để vào giấc`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: isDark ? '#94a3b8' : '#94a3b8', font: { size: 9 }, maxRotation: 0 },
+                            grid: { display: false }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: isDark ? '#94a3b8' : '#94a3b8', font: { size: 9 }, stepSize: 15 },
+                            grid: { color: isDark ? 'rgba(148,163,184,0.1)' : 'rgba(148,163,184,0.15)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ===== Cảnh báo chủ động khi SOL trung bình tăng đáng kể =====
+        // So sánh trung bình SOL của tối đa 7 đêm gần nhất (có dữ liệu thực tế)
+        // với 7 đêm ngay trước đó. Chỉ tính là "đáng kể" khi tăng > 50%.
+        const SOL_ALERT_THRESHOLD_PCT = 50;
+        const SOL_ALERT_DISMISS_KEY = 'solAlertDismissedSignature';
+
+        function getSolTrendComparison() {
+            const withSOL = getSortedSleepSessions()
+                .filter(s => typeof s.sol === 'number' && !isNaN(s.sol) && s.sol >= 0);
+
+            const last7 = withSOL.slice(-7);
+            const prev7 = withSOL.slice(-14, -7);
+
+            // Cần ít nhất 3 đêm ở mỗi giai đoạn thì so sánh mới đủ tin cậy,
+            // tránh cảnh báo giả chỉ vì 1-2 đêm bất thường.
+            if (last7.length < 3 || prev7.length < 3) return null;
+
+            const avgLast = last7.reduce((s, x) => s + x.sol, 0) / last7.length;
+            const avgPrev = prev7.reduce((s, x) => s + x.sol, 0) / prev7.length;
+            if (avgPrev <= 0) return null;
+
+            const pctChange = ((avgLast - avgPrev) / avgPrev) * 100;
+            const lastSessionStart = last7[last7.length - 1].start;
+
+            return {
+                avgLast, avgPrev, pctChange, lastSessionStart,
+                lastCount: last7.length, prevCount: prev7.length
+            };
+        }
+
+        function renderSolAlert() {
+            const banner = document.getElementById('solAlertBanner');
+            const textEl = document.getElementById('solAlertText');
+            if (!banner || !textEl) return;
+
+            const cmp = getSolTrendComparison();
+            if (!cmp || cmp.pctChange <= SOL_ALERT_THRESHOLD_PCT) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            // Mỗi lần dữ liệu thay đổi (đêm gần nhất khác đi) sẽ hiện lại,
+            // nhưng nếu người dùng đã bấm đóng cho đúng bộ dữ liệu hiện tại thì không lặp lại.
+            const signature = String(cmp.lastSessionStart);
+            if (localStorage.getItem(SOL_ALERT_DISMISS_KEY) === signature) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            textEl.innerHTML = `⚠️ <strong>SOL của bạn đang tăng</strong> — trung bình ${Math.round(cmp.avgLast)} phút để vào giấc trong ${cmp.lastCount} đêm gần nhất, so với ${Math.round(cmp.avgPrev)} phút ở ${cmp.prevCount} đêm trước đó (tăng ${Math.round(cmp.pctChange)}%). Có thể do dùng màn hình trước giờ ngủ nhiều hơn — cân nhắc giảm ánh sáng xanh 30–60 phút trước giờ lên giường.`;
+            banner.dataset.signature = signature;
+            banner.style.display = 'block';
+        }
+
+        function dismissSolAlert() {
+            const banner = document.getElementById('solAlertBanner');
+            if (banner) {
+                if (banner.dataset.signature) {
+                    localStorage.setItem(SOL_ALERT_DISMISS_KEY, banner.dataset.signature);
+                }
+                banner.style.display = 'none';
+            }
+        }
+
+        // ===== SOL vs Ghi chú (Notes) Correlation =====
+        // Gom nhóm các đêm có ghi chú chứa từ khoá (vd: "laptop", "cà phê", "stress")
+        // và so sánh SOL trung bình của nhóm đó với các đêm còn lại, để lộ ra yếu tố
+        // nào đang thực sự kéo dài thời gian vào giấc — thay vì chỉ đoán mò.
+
+        // Bỏ dấu tiếng Việt + hạ chữ thường, để so khớp không phụ thuộc cách gõ dấu.
+        function normalizeVN(str) {
+            return String(str || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/đ/gi, 'd')
+                .toLowerCase();
+        }
+
+        const SOL_KEYWORD_GROUPS = [
+            { id: 'laptop',   label: '💻 Laptop / màn hình',
+              keywords: ['laptop', 'may tinh', 'dien thoai', 'man hinh', 'xem phim', 'luot', 'tiktok', 'facebook'] },
+            { id: 'caffeine', label: '☕ Cà phê / caffeine',
+              keywords: ['ca phe', 'caffeine', 'cafe', 'tra xanh', 'nuoc tang luc', 'energy drink', 'tra sua'] },
+            { id: 'stress',   label: '😣 Stress / lo âu',
+              keywords: ['stress', 'lo au', 'ap luc', 'cang thang', 'deadline', 'cai nhau', 'lo lang', 'suy nghi nhieu'] }
+        ];
+
+        const CUSTOM_SOL_KEYWORDS_KEY = 'customSolKeywords';
+        let customSolKeywords = [];
+        try { customSolKeywords = JSON.parse(localStorage.getItem(CUSTOM_SOL_KEYWORDS_KEY)) || []; } catch { customSolKeywords = []; }
+
+        function addCustomSolKeywordCheck() {
+            const input = document.getElementById('solNoteCustomKeyword');
+            if (!input) return;
+            const raw = input.value.trim();
+            if (!raw) return;
+            const norm = normalizeVN(raw);
+            customSolKeywords.unshift({ id: 'custom-' + Date.now(), label: `🔍 "${raw}"`, keywords: [norm], removable: true });
+            customSolKeywords = customSolKeywords.slice(0, 5); // giới hạn 5 nhóm tuỳ chỉnh để gọn giao diện
+            localStorage.setItem(CUSTOM_SOL_KEYWORDS_KEY, JSON.stringify(customSolKeywords));
+            input.value = '';
+            renderSolNoteCorrelation();
+        }
+
+        function removeCustomSolKeyword(id) {
+            customSolKeywords = customSolKeywords.filter(g => g.id !== id);
+            localStorage.setItem(CUSTOM_SOL_KEYWORDS_KEY, JSON.stringify(customSolKeywords));
+            renderSolNoteCorrelation();
+        }
+
+        function renderSolNoteCorrelation() {
+            const wrap = document.getElementById('solNoteCorrelationWrap');
+            const cardsEl = document.getElementById('solNoteCorrelationCards');
+            const emptyEl = document.getElementById('solNoteCorrelationEmpty');
+            if (!wrap || !cardsEl) return;
+
+            const withSol = sleepSessions.filter(s => typeof s.sol === 'number' && !isNaN(s.sol) && s.sol >= 0);
+            if (withSol.length < 4) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+
+            const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+            const groups = [...SOL_KEYWORD_GROUPS, ...customSolKeywords];
+            let htmlCards = '';
+            let anyValid = false;
+
+            groups.forEach(g => {
+                const matched = [];
+                const rest = [];
+                withSol.forEach(s => {
+                    const noteNorm = normalizeVN(s.notes || '');
+                    const isMatch = noteNorm && g.keywords.some(k => noteNorm.includes(k));
+                    (isMatch ? matched : rest).push(s.sol);
+                });
+                // Cần tối thiểu 2 đêm ở mỗi phía thì so sánh mới có ý nghĩa thống kê tối thiểu
+                if (matched.length < 2 || rest.length < 2) return;
+                anyValid = true;
+
+                const avgMatched = avg(matched);
+                const avgRest = avg(rest);
+                const diff = avgMatched - avgRest;
+                const diffPct = avgRest > 0 ? (diff / avgRest) * 100 : 0;
+                const worse = diff > 0;
+
+                htmlCards += `
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; background:var(--bg-white); border-radius:8px; border:1px solid var(--border-color);">
+                        <div style="font-size:0.8rem; min-width:0;">
+                            <div style="font-weight:600; color:var(--text-dark);">${g.label}</div>
+                            <div style="font-size:0.68rem; color:var(--text-muted);">${matched.length} đêm có · ${rest.length} đêm khác</div>
+                        </div>
+                        <div style="text-align:right; white-space:nowrap;">
+                            <div style="font-size:0.85rem; font-weight:700; color:${worse ? '#ef4444' : '#10b981'};">
+                                ${Math.round(avgMatched)}p ${worse ? '↑' : '↓'} so với ${Math.round(avgRest)}p
+                            </div>
+                            <div style="font-size:0.66rem; color:var(--text-muted);">${worse ? '+' : ''}${Math.round(diffPct)}% SOL</div>
+                        </div>
+                        ${g.removable ? `<button onclick="removeCustomSolKeyword('${g.id}')" title="Xoá" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.9rem;padding:0 2px;">✕</button>` : ''}
+                    </div>`;
+            });
+
+            if (!anyValid) {
+                cardsEl.innerHTML = '';
+                if (emptyEl) emptyEl.style.display = 'block';
+            } else {
+                cardsEl.innerHTML = htmlCards;
+                if (emptyEl) emptyEl.style.display = 'none';
+            }
+        }
+
+        function refreshSleepCalcAutoOption() {
+            const sel = document.getElementById('sleepCalcSOL');
+            if (!sel) return;
+            const existing = document.getElementById('sleepCalcSOLAuto');
+            const stats = getRecentRealSOLStats();
+            // Cần tối thiểu 3 đêm có dữ liệu SOL thực tế mới đủ tin cậy để gợi ý
+            if (stats && stats.count >= 3) {
+                const label = `🧠 Trung bình thực tế của bạn (~${stats.avg} phút, ${stats.count} đêm gần đây)`;
+                if (existing) {
+                    existing.value = String(stats.avg);
+                    existing.textContent = label;
+                } else {
+                    const opt = document.createElement('option');
+                    opt.id = 'sleepCalcSOLAuto';
+                    opt.value = String(stats.avg);
+                    opt.textContent = label;
+                    // Chèn lên đầu danh sách để dễ thấy nhất, vì đây là dữ liệu cá nhân hoá
+                    sel.insertBefore(opt, sel.firstChild);
+                }
+            } else if (existing) {
+                existing.remove();
+            }
+            return stats;
+        }
+
+        // ===== BEDTIME CALCULATOR (tính chu kỳ 90' + Sleep Onset Latency thay đổi) =====
+        let sleepCalcMode = 'wake'; // 'wake' = biết giờ muốn dậy | 'bed' = biết giờ sẽ lên giường
+
+        function toggleSleepCalc() {
+            const panel = document.getElementById('sleepCalcPanel');
+            if (!panel) return;
+            const isHidden = panel.style.display === 'none' || !panel.style.display;
+            panel.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) {
+                const sel = document.getElementById('sleepCalcSOL');
+                const autoStats = refreshSleepCalcAutoOption();
+                // Khôi phục lựa chọn SOL gần nhất của người dùng
+                const savedSOL = localStorage.getItem('sleepCalcLastSOL');
+                if (savedSOL && sel) {
+                    const matchOption = [...sel.options].find(o => o.value === savedSOL);
+                    if (matchOption) {
+                        sel.value = savedSOL;
+                    } else {
+                        sel.value = 'custom';
+                        const customInput = document.getElementById('sleepCalcCustomSOL');
+                        customInput.value = savedSOL;
+                        customInput.style.display = 'block';
+                    }
+                } else if (autoStats && autoStats.count >= 3 && sel) {
+                    // Chưa có lựa chọn nào được lưu trước đó -> ưu tiên gợi ý dựa trên dữ liệu thật
+                    sel.value = String(autoStats.avg);
+                }
+            }
+        }
+
+        function setSleepCalcMode(mode) {
+            sleepCalcMode = mode;
+            const wakeBtn = document.getElementById('sleepCalcModeWakeBtn');
+            const bedBtn = document.getElementById('sleepCalcModeBedBtn');
+            const label = document.getElementById('sleepCalcTimeLabel');
+            const timeInput = document.getElementById('sleepCalcTargetTime');
+            if (mode === 'wake') {
+                wakeBtn.style.background = 'var(--primary)'; wakeBtn.style.color = '#fff'; wakeBtn.style.borderColor = 'var(--primary)';
+                bedBtn.style.background = 'var(--bg-white)'; bedBtn.style.color = 'var(--text-dark)'; bedBtn.style.borderColor = 'var(--border-color)';
+                label.textContent = 'Giờ muốn thức dậy';
+                timeInput.value = '06:00';
+            } else {
+                bedBtn.style.background = 'var(--primary)'; bedBtn.style.color = '#fff'; bedBtn.style.borderColor = 'var(--primary)';
+                wakeBtn.style.background = 'var(--bg-white)'; wakeBtn.style.color = 'var(--text-dark)'; wakeBtn.style.borderColor = 'var(--border-color)';
+                label.textContent = 'Giờ bạn sẽ lên giường (nằm xuống)';
+                timeInput.value = '22:15';
+            }
+            const resultsEl = document.getElementById('sleepCalcResults');
+            if (resultsEl) resultsEl.innerHTML = '';
+        }
+
+        function onSleepCalcSOLChange() {
+            const sel = document.getElementById('sleepCalcSOL');
+            const custom = document.getElementById('sleepCalcCustomSOL');
+            custom.style.display = sel.value === 'custom' ? 'block' : 'none';
+        }
+
+        function getSleepCalcSOLMinutes() {
+            const sel = document.getElementById('sleepCalcSOL');
+            if (sel.value === 'custom') {
+                const v = parseFloat(document.getElementById('sleepCalcCustomSOL').value);
+                return (!isNaN(v) && v >= 0) ? v : 15;
+            }
+            return parseFloat(sel.value);
+        }
+
+        function computeSleepCalc() {
+            const targetStr = document.getElementById('sleepCalcTargetTime').value;
+            if (!targetStr) { showNotification('⏰ Vui lòng chọn giờ.', 'warning'); return; }
+            const solMinutes = getSleepCalcSOLMinutes();
+
+            // Lưu lựa chọn SOL để lần sau mở lại panel sẽ nhớ
+            const selVal = document.getElementById('sleepCalcSOL').value;
+            localStorage.setItem('sleepCalcLastSOL', selVal === 'custom' ? String(solMinutes) : selVal);
+
+            const [h, m] = targetStr.split(':').map(Number);
+            const target = new Date();
+            target.setHours(h, m, 0, 0);
+
+            const cycles = [3, 4, 5, 6];
+            const rows = cycles.map(c => {
+                const totalMinutes = c * 90 + solMinutes;
+                const other = (sleepCalcMode === 'wake')
+                    ? new Date(target.getTime() - totalMinutes * 60000)   // target = giờ dậy -> tính giờ lên giường
+                    : new Date(target.getTime() + totalMinutes * 60000);  // target = giờ lên giường -> tính giờ dậy
+                const durationHours = (c * 90 / 60).toFixed(1);
+                const recommended = (c === 5 || c === 6);
+                return { c, other, durationHours, recommended };
+            });
+
+            const fmt = (d) => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+            const otherDayNote = (d) => (d.getDate() !== target.getDate()) ? ' (khác ngày)' : '';
+
+            let html = `<div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+                    <thead>
+                        <tr style="border-bottom:1.5px solid var(--border-color);">
+                            <th style="text-align:left; padding:6px 4px;">Chu kỳ</th>
+                            <th style="text-align:left; padding:6px 4px;">Ngủ</th>
+                            <th style="text-align:left; padding:6px 4px;">${sleepCalcMode === 'wake' ? 'Nên lên giường lúc' : 'Sẽ thức dậy lúc'}</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+            rows.forEach(r => {
+                html += `<tr style="${r.recommended ? 'background:rgba(39,174,96,0.12);' : ''} border-bottom:1px solid var(--border-color);">
+                    <td style="padding:6px 4px;">${r.c} chu kỳ ${r.recommended ? '⭐' : ''}</td>
+                    <td style="padding:6px 4px;">${r.durationHours}h</td>
+                    <td style="padding:6px 4px; font-weight:700; color:${r.recommended ? '#27ae60' : 'var(--text-dark)'};">${fmt(r.other)}${otherDayNote(r.other)}</td>
+                </tr>`;
+            });
+            html += `</tbody></table></div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px;">
+                    ⭐ = khuyến nghị (5–6 chu kỳ, 7.5–9h ngủ). Đã cộng thêm ${solMinutes} phút thời gian vào giấc dự kiến vào các mốc giờ trên.
+                </div>`;
+
+            document.getElementById('sleepCalcResults').innerHTML = html;
+        }
+
+        function markFellAsleep() {
+            if (!isSleeping || !sleepStartTime || sleepAsleepMarkTime) return;
+            sleepAsleepMarkTime = Date.now();
+            localStorage.setItem('sleepAsleepMarkTime', sleepAsleepMarkTime);
+            const solMin = Math.max(0, Math.round((sleepAsleepMarkTime - sleepStartTime) / 60000));
+            updateSleepUI();
+            showNotification(`😴 Đã đánh dấu: mất ${solMin} phút để vào giấc.`, 'success');
+        }
+
         function startSleepTracking() {
             if (isSleeping) return;
             sleepStartTime = Date.now();
+            sleepAsleepMarkTime = null;
             isSleeping = true;
             localStorage.setItem('sleepStartTime', sleepStartTime);
             localStorage.setItem('isSleeping', 'true');
+            localStorage.removeItem('sleepAsleepMarkTime');
             
             updateSleepUI();
             
@@ -26146,10 +26682,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Force-clear without saving — used when session is clearly corrupted
                 isSleeping = false;
                 sleepStartTime = null;
+                sleepAsleepMarkTime = null;
                 if (sleepInterval) clearInterval(sleepInterval);
                 sleepInterval = null;
                 localStorage.removeItem('sleepStartTime');
                 localStorage.removeItem('isSleeping');
+                localStorage.removeItem('sleepAsleepMarkTime');
                 updateSleepUI();
                 showNotification('🗑️ Sleep session cleared (not saved).', 'info');
                 return;
@@ -26168,26 +26706,113 @@ document.addEventListener('DOMContentLoaded', function() {
                 duration: parseFloat(durationHours.toFixed(2)),
                 startFormatted: new Date(sleepStartTime).toLocaleString('vi-VN'),
                 endFormatted: new Date(endTime).toLocaleString('vi-VN'),
-                manual: false
+                manual: false,
+                sol: (sleepAsleepMarkTime && sleepAsleepMarkTime > sleepStartTime && sleepAsleepMarkTime < endTime)
+                    ? Math.round((sleepAsleepMarkTime - sleepStartTime) / 60000)
+                    : null,
+                quality: 0,
+                notes: ''
             };
-            
-            sleepSessions.push(session);
-            saveSleepData();
-            
+
+            // Reset timer/UI state right away — saving is finalized once the
+            // quick note modal below is confirmed or skipped.
             isSleeping = false;
             sleepStartTime = null;
+            sleepAsleepMarkTime = null;
             if (sleepInterval) clearInterval(sleepInterval);
             sleepInterval = null;
             localStorage.removeItem('sleepStartTime');
             localStorage.removeItem('isSleeping');
-            
+            localStorage.removeItem('sleepAsleepMarkTime');
             updateSleepUI();
+
+            openQuickSleepNoteModal(session);
+        }
+
+        // Finalizes an auto-tracked sleep session (called after the quick note
+        // modal is confirmed or skipped) — pushes to storage and refreshes all
+        // sleep-related views.
+        function finalizeSleepSession(session) {
+            sleepSessions.push(session);
+            saveSleepData();
+
             renderSleepHistory();
             renderSleepChart();
             renderSleepStats();
             updateCorrelationAnalytics();
-            
+
             showNotification(`☀️ Woke up! You slept for ${session.duration} hours.`, 'success');
+        }
+
+        // Lightweight modal shown right after Stop, so notes/quality can be
+        // captured while still fresh instead of requiring a later manual edit.
+        function openQuickSleepNoteModal(session) {
+            closeQuickSleepNoteModal();
+
+            const html = `
+                <div id="quickSleepNoteModal" class="modal-overlay">
+                    <div class="modal-content" style="max-width:400px;">
+                        <div class="modal-header">
+                            <h3>☀️ Đêm nay thế nào?</h3>
+                            <button class="modal-close-btn" onclick="skipQuickSleepNote()">&times;</button>
+                        </div>
+                        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:14px;">
+                            Bạn vừa ngủ ${session.duration}h. Ghi nhanh vài chữ trong khi còn nhớ — tuỳ chọn, có thể bỏ qua.
+                        </div>
+                        <div class="form-group">
+                            <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Chất lượng giấc ngủ</label>
+                            <div id="quickSleepQuality" style="display:flex; gap:8px; justify-content:center; margin-bottom:4px;">
+                                ${[1,2,3,4,5].map(n => `<button type="button" data-q="${n}" onclick="selectSleepQuality('quickSleepQuality',${n})"
+                                    style="width:36px;height:36px;border-radius:50%;border:2px solid var(--border-color);background:var(--bg-light);cursor:pointer;font-size:1.1rem;transition:all 0.15s;"
+                                    title="${['😫 Rất tệ','😞 Tệ','😐 Bình thường','😊 Tốt','😄 Rất tốt'][n-1]}">${['😫','😞','😐','😊','😄'][n-1]}</button>`).join('')}
+                            </div>
+                            <input type="hidden" id="quickSleepQualityVal" value="0">
+                            <div style="text-align:center;font-size:0.8rem;color:var(--text-muted);" id="quickSleepQualityLabel">Chưa chọn</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="quickSleepNotes" style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Ghi chú <span style="font-weight:400;color:var(--text-muted);">(tuỳ chọn)</span></label>
+                            <textarea id="quickSleepNotes" placeholder="VD: uống cà phê buổi tối, stress công việc, ngủ trưa..." rows="2" autofocus
+                                style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-light);color:var(--text-dark);font-size:0.9rem;resize:vertical;font-family:inherit;"></textarea>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary" onclick="skipQuickSleepNote()">Bỏ qua</button>
+                            <button type="button" class="btn-primary" onclick="confirmQuickSleepNote()">💾 Lưu</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const wrapper = document.createElement('div');
+            wrapper.id = 'quickSleepNoteModalWrapper';
+            wrapper.innerHTML = html;
+            document.body.appendChild(wrapper);
+
+            pendingSleepSession = session;
+        }
+
+        function closeQuickSleepNoteModal() {
+            const el = document.getElementById('quickSleepNoteModalWrapper');
+            if (el) el.remove();
+        }
+
+        function skipQuickSleepNote() {
+            if (!pendingSleepSession) { closeQuickSleepNoteModal(); return; }
+            const session = pendingSleepSession;
+            pendingSleepSession = null;
+            closeQuickSleepNoteModal();
+            finalizeSleepSession(session);
+        }
+
+        function confirmQuickSleepNote() {
+            if (!pendingSleepSession) { closeQuickSleepNoteModal(); return; }
+            const session = pendingSleepSession;
+            pendingSleepSession = null;
+
+            session.quality = parseInt(document.getElementById('quickSleepQualityVal')?.value || '0');
+            session.notes = document.getElementById('quickSleepNotes')?.value.trim() || '';
+
+            closeQuickSleepNoteModal();
+            finalizeSleepSession(session);
         }
 
 
@@ -26228,6 +26853,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <input type="datetime-local" id="manualSleepEnd" value="${defaultEnd}" required>
                             </div>
                             <div id="manualSleepDuration" class="duration-display">Duration: -- hours</div>
+                            <div class="form-group">
+                                <label for="manualSleepSOL" style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">
+                                    Đêm đó mất bao lâu để vào giấc? <span style="font-weight:400;color:var(--text-muted);">(phút, tuỳ chọn)</span>
+                                </label>
+                                <input type="number" id="manualSleepSOL" min="0" max="180" step="1" placeholder="VD: 15"
+                                    style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-light);color:var(--text-dark);font-size:0.9rem;">
+                                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">
+                                    Tính từ lúc nằm xuống đến lúc thực sự ngủ. Ghi lại vài đêm để 🧮 Bedtime Calculator tự tính trung bình thực tế của bạn thay vì phải chọn thủ công.
+                                </div>
+                            </div>
                             <div class="form-group">
                                 <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Chất lượng giấc ngủ</label>
                                 <div id="manualSleepQuality" style="display:flex; gap:8px; justify-content:center; margin-bottom:4px;">
@@ -26540,7 +27175,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     }),
                     manual: true,
                     quality: parseInt(document.getElementById('manualSleepQualityVal')?.value || '0'),
-                    notes: document.getElementById('manualSleepNotes')?.value.trim() || ''
+                    notes: document.getElementById('manualSleepNotes')?.value.trim() || '',
+                    sol: (() => {
+                        const raw = document.getElementById('manualSleepSOL')?.value;
+                        const v = parseFloat(raw);
+                        return (raw !== '' && !isNaN(v) && v >= 0 && v <= 180) ? v : null;
+                    })()
                 };
                 
                 // Add to sleep sessions
@@ -26877,6 +27517,19 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('sleepTimerDisplay').style.display = isSleeping ? 'block' : 'none';
             document.getElementById('startSleepBtn').style.display = isSleeping ? 'none' : 'block';
             document.getElementById('stopSleepBtn').style.display = isSleeping ? 'block' : 'none';
+
+            const markRow = document.getElementById('sleepMarkAsleepRow');
+            const markConfirm = document.getElementById('sleepMarkAsleepConfirm');
+            if (markRow) markRow.style.display = (isSleeping && !sleepAsleepMarkTime) ? 'block' : 'none';
+            if (markConfirm) {
+                if (isSleeping && sleepAsleepMarkTime) {
+                    const solMin = Math.max(0, Math.round((sleepAsleepMarkTime - sleepStartTime) / 60000));
+                    markConfirm.style.display = 'block';
+                    markConfirm.textContent = `✅ Đã ghi: mất ${solMin} phút để vào giấc đêm nay.`;
+                } else {
+                    markConfirm.style.display = 'none';
+                }
+            }
             // Always hide force-reset row on UI update; updateSleepDisplay will re-show if needed
             const forceRow = document.getElementById('sleepForceResetRow');
             if (forceRow) forceRow.style.display = 'none';
@@ -27002,6 +27655,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Chuỗi đủ giấc</div></div>
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
                 `;
+                const wrap = document.getElementById('solTrendWrap');
+                if (wrap) wrap.style.display = 'none';
+                const alertBanner = document.getElementById('solAlertBanner');
+                if (alertBanner) alertBanner.style.display = 'none';
+                const noteCorrWrap = document.getElementById('solNoteCorrelationWrap');
+                if (noteCorrWrap) noteCorrWrap.style.display = 'none';
                 return;
             }
 
@@ -27028,15 +27687,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${streakColor};">${streak} 🔥</div><div class="sleep-stat-label">Chuỗi đủ giấc</div></div>
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${debtColor};">${debt.toFixed(1)}h</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
             `;
+
+            renderSolTrendChart();
+            renderSolAlert();
+            renderSolNoteCorrelation();
         }
 
         function loadSleepData() {
             const savedIsSleeping = localStorage.getItem('isSleeping') === 'true';
             const savedStartTime = localStorage.getItem('sleepStartTime');
+            const savedAsleepMarkTime = localStorage.getItem('sleepAsleepMarkTime');
             
             if (savedIsSleeping && savedStartTime) {
                 isSleeping = true;
                 sleepStartTime = parseInt(savedStartTime);
+                sleepAsleepMarkTime = savedAsleepMarkTime ? parseInt(savedAsleepMarkTime) : null;
                 updateSleepUI();
                 if (sleepInterval) clearInterval(sleepInterval);
                 sleepInterval = setInterval(updateSleepDisplay, 1000);
@@ -33289,6 +33954,53 @@ function generateInsomniaRecommendations(analysis) {
         });
     }
 
+    // Circadian phase-shift recommendations (e.g. daytime/reversed sleep schedule)
+    const circadian = analysis.circadianDisruption;
+    if (circadian?.phaseShift === 'daytime_sleeper') {
+        recommendations.push({
+            priority: 'high',
+            action: '🔄 SHIFT SLEEP WINDOW GRADUALLY, NOT ALL AT ONCE',
+            rationale: `${circadian.daytimeSleepPercentage}% of your recorded sleep falls in daylight hours (6am-6pm) — your body clock looks inverted or "free-running." The circadian clock only re-entrains about 1h per day, so move bedtime/wake time 15-30min earlier every 2-3 days rather than forcing an overnight switch.`,
+            urgency: 'this_week'
+        });
+        recommendations.push({
+            priority: 'medium',
+            action: '🌞 ANCHOR WITH LIGHT: BRIGHT ON WAKING, DIM BEFORE BED',
+            rationale: 'Get bright light (ideally sunlight) within 30min of your target wake time every day, and dim lights/screens 2h before your target bedtime. Light exposure timing is the strongest input your circadian clock responds to — stronger than willpower or caffeine timing.',
+            urgency: 'this_week'
+        });
+    }
+
+    if (circadian?.socialJetlag >= 2) {
+        recommendations.push({
+            priority: 'medium',
+            action: '⚖️ CLOSE THE WEEKDAY–WEEKEND BEDTIME GAP',
+            rationale: `Your bedtime shifts by roughly ${circadian.socialJetlag}h between weekdays and weekends ("social jetlag"). Each shift re-triggers a mini jet-lag effect on your circadian clock. Try keeping wake time within about 1h across all 7 days, even if you allow bedtime itself to vary slightly.`,
+            urgency: 'this_week'
+        });
+    }
+
+    // Fragmented / nap-based debt repayment pattern
+    const recovery = analysis.recoveryPatterns;
+    if (recovery && !recovery.insufficientData) {
+        if (recovery.cumulativeDebt > 8 && analysis.sleepFragmentation?.isFragmented) {
+            recommendations.push({
+                priority: 'high',
+                action: '🧩 CONSOLIDATE INTO ONE LONGER SLEEP BLOCK',
+                rationale: `You're repaying roughly ${recovery.cumulativeDebt}h of accumulated sleep debt mostly through short, split sessions rather than one continuous block. Deep (slow-wave) and REM sleep — the stages responsible for physical recovery and memory consolidation — occur in ~90min cycles late in a sleep episode and are disproportionately lost when sleep is chopped up. One 7-9h block repays debt far more effectively than several short naps adding up to the same hours.`,
+                urgency: 'this_week'
+            });
+        }
+        if (recovery.hasRecoveryPatterns && recovery.recoveryEfficiency > 0 && recovery.recoveryEfficiency < 0.5) {
+            recommendations.push({
+                priority: 'medium',
+                action: '📉 CATCH-UP SLEEP ISN\'T FULLY REPAYING YOUR DEBT',
+                rationale: `Only about ${Math.round(recovery.recoveryEfficiency * 100)}% of your sleep debt is being recovered by your current catch-up sessions. Large one-off "recovery sleeps" can themselves disrupt circadian timing. A more effective approach is smaller, consistent nightly increases (30-60min extra per night) sustained over several days.`,
+                urgency: 'this_week'
+            });
+        }
+    }
+
     // Add general recommendations if less than 3 specific ones
     if (recommendations.length < 3) {
         recommendations.push({
@@ -37817,7 +38529,6 @@ function renderOptimalSleepWindow() {
             <div class="optimal-sleep-hybrid">
                 <div class="hybrid-header">
                     <h3>🤖 Optimal Sleep Window Detection</h3>
-                    <div class="ml-badge">Smart Analytics</div>
                 </div>
                 <div class="error-state">
                     <p>Need at least 3 sleep sessions for analysis</p>
@@ -37850,7 +38561,6 @@ function renderOptimalSleepWindow() {
             <div class="optimal-sleep-hybrid">
                 <div class="hybrid-header">
                     <h3>🤖 Optimal Sleep Window Detection</h3>
-                    <div class="ml-badge">Smart Analytics</div>
                 </div>
                 <div class="error-state">
                     <p>❌ Analysis Error</p>
@@ -37873,9 +38583,6 @@ function renderOptimalSleepWindow() {
             <!-- Header -->
             <div class="hybrid-header">
                 <h3>🤖 Optimal Sleep Window Detection</h3>
-                <div class="ml-badge">
-                    🪄 Smart Analytics
-                </div>
             </div>
             
             <!-- ML Results Section -->
@@ -38145,7 +38852,7 @@ function renderOptimalSleepWindow() {
 
             <!-- Insights -->
             <div class="insights-section">
-                <div class="section-title">💡 Smart Analytics Insights</div>
+                <div class="section-title">💡 Insights</div>
                 ${insights.map(insight => `
                     <div class="insight-card ${insight.impact}">
                         <div class="insight-header">
@@ -38189,7 +38896,7 @@ function renderOptimalSleepWindow() {
             <div class="stats-footer">
                 <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
                     <div>
-                        <strong>Smart Analytics Stats:</strong>
+                        <strong>Analysis Stats:</strong>
                         <div style="margin-top: 8px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
                             <span>Total Sessions: ${metadata.totalSessions}</span>
                             <span>Analyzed: ${metadata.analyzedSessions}</span>
@@ -38493,7 +39200,7 @@ window.refreshOptimalSleepWindow = refreshOptimalSleepWindow;
 
 console.log('🚀 Optimal Sleep Window Detection System loaded!');
 console.log('🔍 Features:');
-console.log('   • 📊 Smart Analytics');
+console.log('   • 📊 Personalized sleep insights');
 console.log('   • 🎯 Performance Scoring with Study Data');
 console.log('   • 📊 Interactive Efficiency Heatmap');
 console.log('   • 🌙 Circadian Rhythm Alignment');
