@@ -10679,14 +10679,27 @@
     <div id="calSlotRepeatWrap">
       <label>🔁 Repeat</label>
       <select id="calSlotRepeat" style="width:100%;padding:9px 11px;border:1px solid var(--border-color);border-radius:8px;font-size:.9rem;background:var(--bg-light);color:var(--text-dark);"
-              onchange="document.getElementById('calSlotRepeatCountWrap').style.display=this.value!=='none'?'block':'none'">
+              onchange="PLANEXT.onRepeatTypeChange(this.value)">
         <option value="none">No repeat</option>
         <option value="daily">Every day</option>
-        <option value="weekly">Every week</option>
+        <option value="weekly">Every week (same day)</option>
+        <option value="weekdays">Custom days (e.g. Mon/Wed/Fri)</option>
       </select>
     </div>
+    <div id="calSlotWeekdaysWrap" style="display:none;margin-bottom:12px;padding:10px;background:rgba(99,102,241,.07);border-radius:8px;border:1px solid rgba(99,102,241,.18);">
+      <label style="font-size:.8rem;font-weight:700;color:#6366f1;display:block;margin-bottom:8px;">Lặp lại vào các ngày nào?</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <label class="calSlotWeekdayLbl"><input type="checkbox" class="calSlotWeekdayChk" value="1"><span>T2</span></label>
+        <label class="calSlotWeekdayLbl"><input type="checkbox" class="calSlotWeekdayChk" value="2"><span>T3</span></label>
+        <label class="calSlotWeekdayLbl"><input type="checkbox" class="calSlotWeekdayChk" value="3"><span>T4</span></label>
+        <label class="calSlotWeekdayLbl"><input type="checkbox" class="calSlotWeekdayChk" value="4"><span>T5</span></label>
+        <label class="calSlotWeekdayLbl"><input type="checkbox" class="calSlotWeekdayChk" value="5"><span>T6</span></label>
+        <label class="calSlotWeekdayLbl"><input type="checkbox" class="calSlotWeekdayChk" value="6"><span>T7</span></label>
+        <label class="calSlotWeekdayLbl"><input type="checkbox" class="calSlotWeekdayChk" value="0"><span>CN</span></label>
+      </div>
+    </div>
     <div id="calSlotRepeatCountWrap">
-      <label style="font-size:.8rem;font-weight:700;color:#6366f1;display:block;margin-bottom:6px;">How many times?</label>
+      <label id="calSlotRepeatCountLabel" style="font-size:.8rem;font-weight:700;color:#6366f1;display:block;margin-bottom:6px;">How many times?</label>
       <div style="display:flex;align-items:center;gap:10px;">
         <input type="number" id="calSlotRepeatCount" value="7" min="2" max="90"
                style="width:80px;padding:8px;border:1px solid var(--border-color);border-radius:8px;font-size:.9rem;background:var(--bg-light);color:var(--text-dark);">
@@ -11373,9 +11386,12 @@ const CAL = (() => {
       // Reset recurring fields
       const repeatSel = document.getElementById('calSlotRepeat');
       const repeatWrap = document.getElementById('calSlotRepeatCountWrap');
+      const weekdaysWrap = document.getElementById('calSlotWeekdaysWrap');
       const seriesBanner = document.getElementById('calSlotSeriesBanner');
       if (repeatSel)  { repeatSel.value = 'none'; }
       if (repeatWrap) { repeatWrap.style.display = 'none'; }
+      if (weekdaysWrap) { weekdaysWrap.style.display = 'none'; }
+      document.querySelectorAll('.calSlotWeekdayChk').forEach(cb => cb.checked = false);
       if (seriesBanner) { seriesBanner.style.display = 'none'; }
 
       // Show/hide delete button
@@ -11437,6 +11453,8 @@ const CAL = (() => {
           // Hide repeat selector when editing
           const rw = document.getElementById('calSlotRepeatWrap');
           if (rw) rw.style.display = 'none';
+          const wdw = document.getElementById('calSlotWeekdaysWrap');
+          if (wdw) wdw.style.display = 'none';
         }
       }, 20);
     },
@@ -45569,6 +45587,31 @@ window.fcRenderTagChips = fcRenderTagChips;
   border-radius: 8px;
   border: 1px solid rgba(99,102,241,.18);
 }
+.calSlotWeekdayLbl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border-color);
+  background: var(--bg-white);
+  color: var(--text-dark);
+  font-size: .78rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition);
+}
+.calSlotWeekdayLbl input {
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+.calSlotWeekdayLbl:has(input:checked) {
+  border-color: #6366f1;
+  background: #6366f1;
+  color: #fff;
+}
 #calSlotSeriesBanner {
   display: none;
   margin-bottom: 12px;
@@ -46208,6 +46251,30 @@ return {
     document.querySelectorAll('[data-filter]').forEach(b=>b.style.opacity='1');
     this._rerender();
   },
+
+  /* ── Repeat type UI toggle (none / daily / weekly / weekdays) ── */
+  onRepeatTypeChange(value) {
+    const countWrap = document.getElementById('calSlotRepeatCountWrap');
+    const weekdaysWrap = document.getElementById('calSlotWeekdaysWrap');
+    const countLabel = document.getElementById('calSlotRepeatCountLabel');
+    if (countWrap) countWrap.style.display = value !== 'none' ? 'block' : 'none';
+    if (weekdaysWrap) weekdaysWrap.style.display = value === 'weekdays' ? 'block' : 'none';
+    if (countLabel) countLabel.textContent = value === 'weekdays' ? 'Lặp trong bao nhiêu tuần?' : 'How many times?';
+    if (value === 'weekdays') {
+      // Pre-check the weekday matching the event's own date, as a sensible default
+      const baseDate = document.getElementById('calSlotDate')?.value;
+      if (baseDate) {
+        const dow = new Date(baseDate + 'T00:00:00').getDay();
+        const anyChecked = Array.from(document.querySelectorAll('.calSlotWeekdayChk')).some(cb => cb.checked);
+        if (!anyChecked) {
+          const cb = document.querySelector(`.calSlotWeekdayChk[value="${dow}"]`);
+          if (cb) cb.checked = true;
+        }
+      }
+      const countInput = document.getElementById('calSlotRepeatCount');
+      if (countInput && (countInput.value === '7' || !countInput.value)) countInput.value = 8;
+    }
+  },
   _rerender() {
     if (_inMonthView) this.openMonthView();
     else CAL._render();
@@ -46546,9 +46613,11 @@ return {
     CAL.saveSlot = function() {
       const repeatType  = document.getElementById('calSlotRepeat')?.value  || 'none';
       const repeatCount = parseInt(document.getElementById('calSlotRepeatCount')?.value || '7');
+      const weekdaySet  = new Set(Array.from(document.querySelectorAll('.calSlotWeekdayChk:checked')).map(cb => parseInt(cb.value)));
       const eventId     = document.getElementById('calSlotEventId')?.value;
       _pxtSaveOrig();  // saves base event, closes modal
       if (repeatType === 'none' || eventId) return; // no repeat for edits
+      if (repeatType === 'weekdays' && weekdaySet.size === 0) return; // nothing selected, nothing to do
       // Get base event (last saved)
       const events = JSON.parse(localStorage.getItem('calEvents') || '[]');
       if (!events.length) return;
@@ -46558,18 +46627,40 @@ return {
       base.seriesId = seriesId;
       base.repeatType = repeatType;
       const copies = [];
-      for (let i = 1; i < Math.min(repeatCount, 90); i++) {
-        const d = new Date(base.date + 'T00:00:00');
-        if (repeatType === 'daily')  d.setDate(d.getDate() + i);
-        else                         d.setDate(d.getDate() + i * 7);
-        const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        copies.push({
-          id: base.id + i, date: iso,
-          startH: base.startH, dur: base.dur,
-          title: base.title, category: base.category,
-          notes: base.notes, color: base.color,
-          seriesId, repeatType,
-        });
+      if (repeatType === 'weekdays') {
+        // repeatCount here means "how many weeks" — walk day-by-day and keep
+        // only the days-of-week the person checked (e.g. Mon/Wed/Fri).
+        const weeks = Math.min(repeatCount, 52);
+        const totalDays = weeks * 7;
+        let seq = 1;
+        for (let i = 1; i <= totalDays; i++) {
+          const d = new Date(base.date + 'T00:00:00');
+          d.setDate(d.getDate() + i);
+          if (!weekdaySet.has(d.getDay())) continue;
+          const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          copies.push({
+            id: base.id + seq, date: iso,
+            startH: base.startH, dur: base.dur,
+            title: base.title, category: base.category,
+            notes: base.notes, color: base.color,
+            seriesId, repeatType,
+          });
+          seq++;
+        }
+      } else {
+        for (let i = 1; i < Math.min(repeatCount, 90); i++) {
+          const d = new Date(base.date + 'T00:00:00');
+          if (repeatType === 'daily')  d.setDate(d.getDate() + i);
+          else                         d.setDate(d.getDate() + i * 7);
+          const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          copies.push({
+            id: base.id + i, date: iso,
+            startH: base.startH, dur: base.dur,
+            title: base.title, category: base.category,
+            notes: base.notes, color: base.color,
+            seriesId, repeatType,
+          });
+        }
       }
       events[events.length - 1] = base;
       events.push(...copies);
@@ -46577,8 +46668,8 @@ return {
       // Re-render + notify
       if (typeof render === 'function') render();
       if (typeof showNotification === 'function') {
-        const label = repeatType === 'daily' ? 'mỗi ngày' : 'mỗi tuần';
-        showNotification(`🔁 Đã tạo series ${repeatCount} events (${label})!`, 'success');
+        const label = repeatType === 'daily' ? 'mỗi ngày' : repeatType === 'weekdays' ? `${copies.length + 1} lần theo lịch tuần` : 'mỗi tuần';
+        showNotification(`🔁 Đã tạo series ${repeatType === 'weekdays' ? copies.length + 1 : repeatCount} events (${label})!`, 'success');
       }
     };
 
@@ -46591,7 +46682,22 @@ return {
       const preview = document.getElementById('calSlotRepeatPreview');
       if (!preview||!t||t==='none') return;
       const baseDate = document.getElementById('calSlotDate')?.value;
-      if (baseDate && n >= 2) {
+      if (!baseDate) return;
+      if (t === 'weekdays') {
+        const weekdaySet = new Set(Array.from(document.querySelectorAll('.calSlotWeekdayChk:checked')).map(cb => parseInt(cb.value)));
+        if (!weekdaySet.size) { preview.textContent = 'Chọn ít nhất 1 ngày trong tuần'; return; }
+        const weeks = Math.min(n, 52);
+        let count = 0, lastIso = baseDate;
+        for (let i = 1; i <= weeks*7; i++) {
+          const d = new Date(baseDate + 'T00:00:00');
+          d.setDate(d.getDate() + i);
+          if (weekdaySet.has(d.getDay())) { count++; lastIso = d.toISOString().split('T')[0]; }
+        }
+        const endD = new Date(lastIso + 'T00:00:00');
+        preview.textContent = `→ ${count + 1} buổi, đến ${endD.toLocaleDateString('vi-VN',{day:'numeric',month:'long'})}`;
+        return;
+      }
+      if (n >= 2) {
         const d = new Date(baseDate + 'T00:00:00');
         if (t === 'daily')  d.setDate(d.getDate() + n - 1);
         else                d.setDate(d.getDate() + (n-1)*7);
@@ -46600,6 +46706,7 @@ return {
     }
     if (repCount) repCount.addEventListener('input', updateRepeatPreview);
     if (repSel)   repSel.addEventListener('change', updateRepeatPreview);
+    document.querySelectorAll('.calSlotWeekdayChk').forEach(cb => cb.addEventListener('change', updateRepeatPreview));
 
     // ── Drag-to-resize system ──
     PLANEXT._initDragResize();
