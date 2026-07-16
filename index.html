@@ -10418,10 +10418,30 @@
 }
 #calSlotModal.open { display:flex; }
 .cal-slot-box {
-    background:var(--bg-white); border-radius:16px; padding:24px;
+    background:var(--bg-white); border-radius:16px;
     width:100%; max-width:380px;
+    max-height:88vh;
+    display:flex; flex-direction:column;
     box-shadow:0 20px 50px rgba(0,0,0,.25);
     animation:calSlideIn .25s ease;
+    overflow:hidden;
+}
+.cal-slot-box-header {
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; padding:20px 24px 12px; flex-shrink:0;
+    border-bottom:1px solid var(--border-color);
+}
+.cal-slot-box-header h4 { margin:0; }
+.cal-slot-close-x {
+    flex-shrink:0; width:30px; height:30px; border-radius:8px;
+    border:1px solid var(--border-color); background:var(--bg-light);
+    color:var(--text-muted); font-size:1rem; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:var(--transition);
+}
+.cal-slot-close-x:hover { background:#ef4444; border-color:#ef4444; color:#fff; }
+.cal-slot-box-body {
+    overflow-y:auto; padding:16px 24px 4px; flex:1 1 auto;
 }
 .cal-slot-box h4 { margin:0 0 16px; font-size:1.05rem; font-weight:700; color:var(--text-dark); }
 .cal-slot-box label { display:block; font-size:.8rem; font-weight:600; color:var(--text-muted); margin-bottom:4px; }
@@ -10432,7 +10452,7 @@
     border-radius:8px; font-size:.9rem; background:var(--bg-light);
     color:var(--text-dark); margin-bottom:12px;
 }
-.cal-slot-actions { display:flex; gap:8px; }
+.cal-slot-actions { display:flex; gap:8px; flex-shrink:0; padding:14px 24px 20px; border-top:1px solid var(--border-color); }
 .cal-slot-save {
     flex:1; padding:10px; background:linear-gradient(135deg,#6366f1,#8b5cf6);
     color:#fff; border:none; border-radius:8px; font-weight:700;
@@ -10640,7 +10660,11 @@
 <!-- Quick-add / edit slot modal -->
 <div id="calSlotModal">
   <div class="cal-slot-box">
-    <h4 id="calSlotTitle">➕ Add to this slot</h4>
+    <div class="cal-slot-box-header">
+      <h4 id="calSlotTitle">➕ Add to this slot</h4>
+      <button type="button" class="cal-slot-close-x" onclick="CAL.closeSlotModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="cal-slot-box-body">
     <input type="hidden" id="calSlotDate" />
     <input type="hidden" id="calSlotEventId" value="" />
     <div>
@@ -10722,6 +10746,7 @@
         style="display:inline-block;padding:6px 14px;background:#4285f4;color:#fff;border-radius:7px;font-size:.82rem;font-weight:700;text-decoration:none;">
         Open Google Calendar →
       </a>
+    </div>
     </div>
     <div class="cal-slot-actions">
       <button class="cal-slot-cancel" onclick="CAL.closeSlotModal()">Cancel</button>
@@ -11665,12 +11690,11 @@ document.addEventListener('keydown', e => {
   }
 });
 
-/* ── Click outside to close ── */
+/* ── Click outside to close (calendar modal only — the task/event modal
+   is closed only via its ✕ button, Cancel button, or Escape, since
+   accidental outside clicks were wiping in-progress edits) ── */
 document.getElementById('calendarModal').addEventListener('click', e => {
   if (e.target === document.getElementById('calendarModal')) CAL.close();
-});
-document.getElementById('calSlotModal').addEventListener('click', e => {
-  if (e.target === document.getElementById('calSlotModal')) CAL.closeSlotModal();
 });
 </script>
 
@@ -17356,6 +17380,7 @@ window.DBP={
                 <div style="display:flex; gap:6px; margin-bottom:12px;">
                     <button type="button" class="wln-tab-btn" data-tab="log" onclick="Wellness.setTab('log')">📝 Log hôm nay</button>
                     <button type="button" class="wln-tab-btn" data-tab="weight" onclick="Wellness.setTab('weight')">⚖️ Cân nặng</button>
+                    <button type="button" class="wln-tab-btn" data-tab="supp" onclick="Wellness.setTab('supp')">💊 Supplement</button>
                     <button type="button" class="wln-tab-btn" data-tab="review" onclick="Wellness.setTab('review')">📊 Tuần này</button>
                 </div>
 
@@ -17424,6 +17449,45 @@ window.DBP={
                         <canvas id="wlnWeightChart"></canvas>
                     </div>
                     <div id="wlnWeightTrendNote" style="font-size:0.78rem; color:var(--text-muted); text-align:center;"></div>
+                </div>
+
+                <!-- ===== TAB: SUPPLEMENT / PILLS ===== -->
+                <div id="wlnTabSupp" class="wln-tab-panel" style="display:none;">
+                    <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.5; margin-bottom:10px;">
+                        Bấm vào chất đã lưu → chỉ cần nhập hàm lượng. Chất mới thì bấm "+ Chất mới" (chỉ nhập tên 1 lần duy nhất, lần sau tự có sẵn).
+                    </div>
+
+                    <div id="wlnSuppPresets" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>
+
+                    <div id="wlnSuppNewForm" style="display:none; margin-bottom:12px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+                        <input id="wlnSuppNewName" placeholder="Tên chất (VD: Zinc, Sắt, Vitamin D...)" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                        <div style="display:flex; gap:6px; margin-bottom:8px;">
+                            <input id="wlnSuppNewDose" type="number" step="any" placeholder="Hàm lượng" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <select id="wlnSuppNewUnit" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <option value="mg">mg</option>
+                                <option value="mcg">mcg (µg)</option>
+                                <option value="IU">IU</option>
+                                <option value="viên">viên</option>
+                                <option value="ml">ml</option>
+                                <option value="g">g</option>
+                                <option value="khác">khác</option>
+                            </select>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" class="add-time-btn" style="flex:1; background:#27ae60;" onclick="Wellness.saveNewSupp()">+ Lưu &amp; log</button>
+                            <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6;" onclick="Wellness.closeNewSupp()">Hủy</button>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:6px; margin-bottom:14px;">
+                        <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.8rem;" onclick="Wellness.openNewSupp()">➕ Chất mới</button>
+                    </div>
+
+                    <div style="font-size:0.82rem; font-weight:600; color:var(--text-dark); margin-bottom:6px;">Hôm nay đã dùng</div>
+                    <div id="wlnSuppLogList" style="margin-bottom:14px; display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;"></div>
+
+                    <button type="button" class="add-time-btn" style="width:100%; background:#3b82f6;" onclick="Wellness.copySuppData()">📋 Copy data (để hỏi Gemini)</button>
+                    <div id="wlnSuppCopyMsg" style="display:none; font-size:0.75rem; color:#27ae60; text-align:center; margin-top:6px;">✓ Đã copy toàn bộ lịch sử supplement vào clipboard!</div>
                 </div>
 
                 <!-- ===== TAB: WEEKLY REVIEW ===== -->
@@ -17546,6 +17610,12 @@ window.DBP={
                 }
                 if (!data.days) data.days = {};
                 if (!data.weights) data.weights = {};
+                if (!data.suppPresets) data.suppPresets = [];
+                if (!data.suppLogs) data.suppLogs = {};
+            }
+            function getSuppLog(key) {
+                if (!data.suppLogs[key]) data.suppLogs[key] = [];
+                return data.suppLogs[key];
             }
             function save() {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -17577,8 +17647,10 @@ window.DBP={
                 document.querySelectorAll('.wln-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
                 document.getElementById('wlnTabLog').style.display = tab === 'log' ? 'block' : 'none';
                 document.getElementById('wlnTabWeight').style.display = tab === 'weight' ? 'block' : 'none';
+                document.getElementById('wlnTabSupp').style.display = tab === 'supp' ? 'block' : 'none';
                 document.getElementById('wlnTabReview').style.display = tab === 'review' ? 'block' : 'none';
                 if (tab === 'weight') renderWeightTab();
+                if (tab === 'supp') renderSuppTab();
                 if (tab === 'review') renderReviewTab();
             }
 
@@ -17820,6 +17892,135 @@ window.DBP={
                 });
             }
 
+            function renderSuppPresets() {
+                const wrap = document.getElementById('wlnSuppPresets');
+                if (!data.suppPresets.length) {
+                    wrap.innerHTML = `<div style="font-size:0.76rem; color:var(--text-muted);">Chưa có chất nào được lưu — bấm "+ Chất mới" bên dưới.</div>`;
+                    return;
+                }
+                wrap.innerHTML = data.suppPresets.map((p, i) =>
+                    `<button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetSupp(${i})">💊 ${p.name} <span style="color:var(--text-muted);">(${p.unit})</span></button>`
+                ).join('');
+            }
+
+            function addPresetSupp(i) {
+                const p = data.suppPresets[i];
+                if (!p) return;
+                const input = prompt(`Hàm lượng ${p.name} (${p.unit})?`, p.lastDose != null ? p.lastDose : '');
+                if (input === null) return;
+                const dose = parseFloat(input);
+                if (isNaN(dose) || dose <= 0) { alert('Nhập số hợp lệ nhé.'); return; }
+                p.lastDose = dose;
+                const log = getSuppLog(todayKey());
+                log.push({ name: p.name, unit: p.unit, dose, t: Date.now() });
+                save();
+                renderSuppLogList();
+            }
+
+            function openNewSupp() {
+                document.getElementById('wlnSuppNewForm').style.display = 'block';
+            }
+
+            function closeNewSupp() {
+                document.getElementById('wlnSuppNewForm').style.display = 'none';
+                document.getElementById('wlnSuppNewName').value = '';
+                document.getElementById('wlnSuppNewDose').value = '';
+            }
+
+            function saveNewSupp() {
+                const name = document.getElementById('wlnSuppNewName').value.trim();
+                const dose = parseFloat(document.getElementById('wlnSuppNewDose').value);
+                const unit = document.getElementById('wlnSuppNewUnit').value;
+                if (!name) { alert('Nhập tên chất trước đã nhé.'); return; }
+                if (isNaN(dose) || dose <= 0) { alert('Nhập hàm lượng hợp lệ nhé.'); return; }
+
+                let preset = data.suppPresets.find(p => p.name.toLowerCase() === name.toLowerCase() && p.unit === unit);
+                if (!preset) {
+                    preset = { name, unit, lastDose: dose };
+                    data.suppPresets.push(preset);
+                } else {
+                    preset.lastDose = dose;
+                }
+
+                const log = getSuppLog(todayKey());
+                log.push({ name: preset.name, unit: preset.unit, dose, t: Date.now() });
+                save();
+                closeNewSupp();
+                renderSuppTab();
+            }
+
+            function removeSuppLog(idx) {
+                const log = getSuppLog(todayKey());
+                log.splice(idx, 1);
+                save();
+                renderSuppLogList();
+            }
+
+            function renderSuppLogList() {
+                const log = getSuppLog(todayKey());
+                const list = document.getElementById('wlnSuppLogList');
+                if (!log.length) {
+                    list.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:8px 0;">Chưa log chất nào hôm nay.</div>`;
+                    return;
+                }
+                list.innerHTML = log.map((s, i) => `
+                    <div class="wln-log-item">
+                        <span>💊 ${s.name} — ${s.dose}${s.unit}</span>
+                        <button onclick="Wellness.removeSuppLog(${i})">✕</button>
+                    </div>
+                `).join('');
+            }
+
+            function renderSuppTab() {
+                renderSuppPresets();
+                renderSuppLogList();
+            }
+
+            function copySuppData() {
+                const dayKeys = Object.keys(data.suppLogs).sort();
+                if (!dayKeys.length) { alert('Chưa có dữ liệu supplement nào để copy.'); return; }
+
+                let text = `SUPPLEMENT / THUỐC LOG (xuất ngày ${todayKey()})\n`;
+                text += `Ghi chú: đây là dữ liệu thô, nhờ bạn đóng vai chuyên gia dinh dưỡng phân tích giúp tôi xem có liều nào vượt ngưỡng khuyến nghị hàng ngày, có tương tác/trùng lặp chất nào cần lưu ý không.\n\n`;
+
+                dayKeys.forEach(k => {
+                    const entries = data.suppLogs[k];
+                    if (!entries.length) return;
+                    text += `Ngày ${k}:\n`;
+                    entries.forEach(e => {
+                        text += `- ${e.name}: ${e.dose}${e.unit}\n`;
+                    });
+                    text += `\n`;
+                });
+
+                const finish = () => {
+                    const msg = document.getElementById('wlnSuppCopyMsg');
+                    msg.style.display = 'block';
+                    setTimeout(() => { msg.style.display = 'none'; }, 2500);
+                };
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(finish).catch(() => {
+                        fallbackCopy(text);
+                        finish();
+                    });
+                } else {
+                    fallbackCopy(text);
+                    finish();
+                }
+            }
+
+            function fallbackCopy(text) {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(ta);
+            }
+
             function init() {
                 load();
                 renderFoodPresets();
@@ -17835,7 +18036,8 @@ window.DBP={
 
             return {
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
-                removeFood, addWater, logWorkout, saveWeeklyWeight
+                removeFood, addWater, logWorkout, saveWeeklyWeight,
+                addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData
             };
         })();
         </script>
