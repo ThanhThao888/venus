@@ -27330,6 +27330,39 @@ document.addEventListener('DOMContentLoaded', function() {
             const target = new Date();
             target.setHours(h, m, 0, 0);
 
+            // Nếu giờ dậy đã chọn rơi vào quá khứ trong ngày hôm nay (vd: bây giờ 23h, chọn dậy 6h) -> hiểu là ngày mai
+            const now = new Date();
+            if (target <= now) target.setDate(target.getDate() + 1);
+
+            const fmt = (d) => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+            const otherDayNote = (d) => (d.getDate() !== target.getDate()) ? ' (khác ngày)' : '';
+
+            // ── Cảnh báo "thực tế ngay bây giờ": khi giờ dậy quá gần hiện tại,
+            // bảng đếm-ngược-từ-giờ-dậy sẽ ra các mốc lên giường đã trôi qua -> vô nghĩa.
+            // Thay vào đó tính XUÔI từ bây giờ xem kịp bao nhiêu chu kỳ trọn.
+            let urgentHtml = '';
+            if (sleepCalcMode === 'wake') {
+                const availMin = (target.getTime() - now.getTime()) / 60000;
+                const usableMin = availMin - solMinutes;
+                const fullCycles = Math.max(0, Math.floor(usableMin / 90));
+                if (availMin <= 8 * 60) { // chỉ cảnh báo khi giờ dậy trong vòng 8h tới, tức là "đêm nay/tối nay" chứ không phải kế hoạch xa
+                    const availH = (availMin / 60).toFixed(1);
+                    if (fullCycles === 0) {
+                        urgentHtml = `<div style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.4); border-radius:10px; padding:12px; margin-bottom:14px; font-size:0.82rem; line-height:1.5;">
+                            ⚠️ <b>Bây giờ là ${fmt(now)}</b>, chỉ còn <b>${availH}h</b> nữa tới giờ dậy bạn chọn — không đủ cho 1 chu kỳ ngủ trọn (90 phút). Nếu ngủ lúc này, giấc ngủ dễ bị cắt giữa chu kỳ sâu, dậy sẽ mệt hơn là <b>thức luôn</b>.<br>
+                            Bảng bên dưới chỉ tính lùi từ giờ dậy — dùng để lên kế hoạch cho <b>đêm sau</b>, không áp dụng cho đêm nay nữa.
+                        </div>`;
+                    } else {
+                        const sleepH = (fullCycles * 90 / 60).toFixed(1);
+                        const wakeIfSleepNow = new Date(now.getTime() + (fullCycles * 90 + solMinutes) * 60000);
+                        urgentHtml = `<div style="background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius:10px; padding:12px; margin-bottom:14px; font-size:0.82rem; line-height:1.5;">
+                            ⏰ <b>Bây giờ là ${fmt(now)}</b>, chỉ còn ${availH}h tới giờ dậy đã chọn. Nếu ngủ <b>NGAY bây giờ</b>, bạn chỉ kịp <b>${fullCycles} chu kỳ trọn (${sleepH}h)</b> — ít hơn mức khuyến nghị (5–6 chu kỳ). Để dậy đúng lúc hết chu kỳ (đỡ mệt), đặt báo thức lúc khoảng <b>${fmt(wakeIfSleepNow)}</b> thay vì đúng ${fmt(target)}.<br>
+                            Bảng bên dưới tính lùi từ giờ dậy bạn chọn — chỉ có ý nghĩa nếu dùng để lên kế hoạch cho <b>đêm sau</b>.
+                        </div>`;
+                    }
+                }
+            }
+
             const cycles = [3, 4, 5, 6];
             const rows = cycles.map(c => {
                 const totalMinutes = c * 90 + solMinutes;
@@ -27341,10 +27374,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return { c, other, durationHours, recommended };
             });
 
-            const fmt = (d) => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-            const otherDayNote = (d) => (d.getDate() !== target.getDate()) ? ' (khác ngày)' : '';
-
-            let html = `<div style="overflow-x:auto;">
+            let html = urgentHtml + `<div style="overflow-x:auto;">
                 <table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
                     <thead>
                         <tr style="border-bottom:1.5px solid var(--border-color);">
