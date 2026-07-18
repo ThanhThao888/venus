@@ -36621,10 +36621,23 @@ function calculateSleepDebtWithInterest(sleepSessions = []) {
         let maxConsecDeficit = 0;
         let maxConsecSurplus = 0;
         
-        sorted.forEach((session, index) => {
-            const deficit = IDEAL_SLEEP - session.duration;
-            const date = new Date(session.start);
-            const dateStr = toLocalDateStr(date);
+        // Gom các session theo NGÀY trước khi so với mục tiêu — hỗ trợ ngủ đa pha
+        // (polyphasic). Nếu tính riêng từng session, ai ngủ 2-3 giấc/ngày sẽ luôn bị
+        // tính "thiếu" nhiều lần dù tổng giờ ngủ trong ngày đã đủ.
+        const byDate = {};
+        sorted.forEach(session => {
+            const dateStr = toLocalDateStr(new Date(session.start));
+            if (!byDate[dateStr]) {
+                byDate[dateStr] = { date: dateStr, duration: 0, sessionCount: 0 };
+            }
+            byDate[dateStr].duration += session.duration;
+            byDate[dateStr].sessionCount += 1;
+        });
+        const dailyTotals = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+
+        dailyTotals.forEach(day => {
+            const deficit = IDEAL_SLEEP - day.duration;
+            const dateStr = day.date;
             
             if (deficit > 0) {
                 // Accumulate debt with compound interest
@@ -36639,10 +36652,11 @@ function calculateSleepDebtWithInterest(sleepSessions = []) {
                     hours: parseFloat(deficit.toFixed(1)),
                     debt: parseFloat(cumulativeDebt.toFixed(1)),
                     interest: parseFloat((cumulativeDebt * INTEREST_RATE).toFixed(1)),
-                    sessionDuration: parseFloat(session.duration.toFixed(1))
+                    sessionDuration: parseFloat(day.duration.toFixed(1)),
+                    sessionCount: day.sessionCount
                 });
                 
-                console.log(`📉 ${dateStr}: Slept ${session.duration}h → Deficit ${deficit.toFixed(1)}h → Total debt: ${cumulativeDebt.toFixed(1)}h`);
+                console.log(`📉 ${dateStr}: Slept ${day.duration.toFixed(1)}h across ${day.sessionCount} session(s) → Deficit ${deficit.toFixed(1)}h → Total debt: ${cumulativeDebt.toFixed(1)}h`);
                 
             } else {
                 // Repay debt (but not 100% efficient)
@@ -36659,10 +36673,11 @@ function calculateSleepDebtWithInterest(sleepSessions = []) {
                     hours: parseFloat(surplus.toFixed(1)),
                     repayment: parseFloat(repayment.toFixed(1)),
                     debt: parseFloat(cumulativeDebt.toFixed(1)),
-                    sessionDuration: parseFloat(session.duration.toFixed(1))
+                    sessionDuration: parseFloat(day.duration.toFixed(1)),
+                    sessionCount: day.sessionCount
                 });
                 
-                console.log(`📈 ${dateStr}: Slept ${session.duration}h → Surplus ${surplus.toFixed(1)}h → Repaid ${repayment.toFixed(1)}h → Debt: ${cumulativeDebt.toFixed(1)}h`);
+                console.log(`📈 ${dateStr}: Slept ${day.duration.toFixed(1)}h across ${day.sessionCount} session(s) → Surplus ${surplus.toFixed(1)}h → Repaid ${repayment.toFixed(1)}h → Debt: ${cumulativeDebt.toFixed(1)}h`);
             }
         });
         
@@ -36682,7 +36697,7 @@ function calculateSleepDebtWithInterest(sleepSessions = []) {
         const avgSurplus = surplusDays > 0 ? totalSurplus / surplusDays : 0;
         
         const totalSleepHours = sorted.reduce((sum, s) => sum + s.duration, 0);
-        const avgSleepPerNight = sorted.length > 0 ? totalSleepHours / sorted.length : 0;
+        const avgSleepPerNight = dailyTotals.length > 0 ? totalSleepHours / dailyTotals.length : 0;
         
         // Generate recovery plan
         const recoveryPlan = generateDebtRecoveryPlan(cumulativeDebt);
@@ -36708,7 +36723,8 @@ function calculateSleepDebtWithInterest(sleepSessions = []) {
                 deficitDays: deficitDays,
                 surplusDays: surplusDays,
                 avgSleepPerNight: parseFloat(avgSleepPerNight.toFixed(1)),
-                sessionsTracked: sorted.length
+                sessionsTracked: sorted.length,
+                daysTracked: dailyTotals.length
             },
             patterns: {
                 longestDeficitStreak: maxConsecDeficit,
