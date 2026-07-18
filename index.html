@@ -38001,11 +38001,11 @@ const optimalSleepHybridCSS = `
     
     .heatmap-grid {
         display: grid;
-        grid-template-columns: 70px repeat(7, minmax(0, 1fr));
+        grid-template-columns: 70px repeat(var(--heatmap-cols, 7), minmax(0, 1fr));
         gap: 6px;
         font-family: 'SF Mono', 'Courier New', monospace;
         font-size: 0.8rem;
-        min-width: 480px;
+        min-width: var(--heatmap-min-width, 480px);
     }
     
     .heatmap-cell {
@@ -38495,9 +38495,9 @@ const optimalSleepHybridCSS = `
         }
         
         .heatmap-grid {
-            grid-template-columns: 50px repeat(7, minmax(0, 1fr));
+            grid-template-columns: 50px repeat(var(--heatmap-cols, 7), minmax(0, 1fr));
             font-size: 0.7rem;
-            min-width: 400px;
+            min-width: var(--heatmap-min-width-sm, 400px);
         }
         
         .heatmap-container {
@@ -38557,8 +38557,8 @@ const optimalSleepHybridCSS = `
         }
         
         .heatmap-grid {
-            grid-template-columns: 42px repeat(7, minmax(0, 1fr));
-            min-width: 340px;
+            grid-template-columns: 42px repeat(var(--heatmap-cols, 7), minmax(0, 1fr));
+            min-width: var(--heatmap-min-width-xs, 340px);
             gap: 4px;
         }
         
@@ -38900,10 +38900,45 @@ function findBestPerformingWindow(clusters) {
 }
 
 // ========== HEATMAP GENERATION ==========
+// Builds a contiguous hour range (with 1h padding on each side) from the person's
+// actual sessions, instead of a hardcoded window. Falls back to sensible defaults
+// when there isn't enough data yet.
+function buildDynamicHourRange(scoredSessions, key, isBedtime) {
+    const DEFAULT_BED = [20, 21, 22, 23, 0, 1, 2];   // 8pm-2am fallback
+    const DEFAULT_WAKE = [4, 5, 6, 7, 8, 9, 10];      // 4am-10am fallback
+    const fallback = isBedtime ? DEFAULT_BED : DEFAULT_WAKE;
+
+    if (!scoredSessions || scoredSessions.length === 0) return fallback;
+
+    const rawHours = scoredSessions.map(s => Math.floor(s[key])).filter(h => !isNaN(h));
+    if (rawHours.length === 0) return fallback;
+
+    if (isBedtime) {
+        // Bedtimes wrap past midnight (e.g. 23 -> 0 -> 1). Shift hours before noon by
+        // +24 so "evening -> early morning" stays a contiguous increasing range.
+        const shifted = rawHours.map(h => (h < 12 ? h + 24 : h));
+        let min = Math.min(...shifted) - 1;
+        let max = Math.max(...shifted) + 1;
+        if (max - min < 4) { const mid = (min + max) / 2; min = Math.floor(mid - 2); max = Math.ceil(mid + 2); }
+        if (max - min > 9) max = min + 9; // cap width so the grid stays readable
+        const arr = [];
+        for (let h = min; h <= max; h++) arr.push(((h % 24) + 24) % 24);
+        return arr;
+    } else {
+        let min = Math.max(0, Math.min(...rawHours) - 1);
+        let max = Math.min(23, Math.max(...rawHours) + 1);
+        if (max - min < 4) { max = Math.min(23, min + 4); min = Math.max(0, max - 4); }
+        if (max - min > 9) max = min + 9;
+        const arr = [];
+        for (let h = min; h <= max; h++) arr.push(h);
+        return arr;
+    }
+}
+
 function generateEfficiencyHeatmap(scoredSessions) {
     const heatmap = [];
-    const bedtimeHours = [20, 21, 22, 23, 0, 1, 2]; // 8pm-2am
-    const wakeHours = [4, 5, 6, 7, 8, 9, 10]; // 4am-10am
+    const bedtimeHours = buildDynamicHourRange(scoredSessions, 'bedtimeHour', true);
+    const wakeHours = buildDynamicHourRange(scoredSessions, 'wakeHour', false);
     
     // Initialize heatmap matrix
     // scoreSum/matchCount track the running total and number of sessions that landed in
@@ -39501,11 +39536,29 @@ function renderOptimalSleepWindow() {
             <div class="heatmap-section">
                 <div class="section-title">🎯 Sleep Efficiency Heatmap</div>
                 <div class="heatmap-container">
-                    <div class="heatmap-grid">
+                    ${(() => {
+                        // Lấy đúng khoảng giờ từ dữ liệu heatmap (đã tự co giãn theo session thật),
+                        // thay vì danh sách cứng 8PM-2AM / 4AM-10AM.
+                        const bedHoursList = heatmap[0] ? heatmap[0].cells.map(c => c.bedHour) : [];
+                        const wakeHoursList = heatmap.map(r => r.wakeHour);
+                        const hourLabel = (h) => {
+                            const hh = ((Math.round(h) % 24) + 24) % 24;
+                            const period = hh >= 12 ? 'PM' : 'AM';
+                            const disp = hh % 12 === 0 ? 12 : hh % 12;
+                            return `${disp}${period}`;
+                        };
+                        const gridVars = `--heatmap-cols:${bedHoursList.length}; --heatmap-min-width:${Math.max(400, 70 + bedHoursList.length * 55)}px; --heatmap-min-width-sm:${Math.max(320, 50 + bedHoursList.length * 48)}px; --heatmap-min-width-xs:${Math.max(260, 42 + bedHoursList.length * 40)}px;`;
+                        const bedLo = hourLabel(Math.min(...bedHoursList.map(h => h < 12 ? h + 24 : h)) % 24);
+                        const bedHi = hourLabel(Math.max(...bedHoursList.map(h => h < 12 ? h + 24 : h)) % 24);
+                        const wakeLo = hourLabel(Math.min(...wakeHoursList));
+                        const wakeHi = hourLabel(Math.max(...wakeHoursList));
+                        window.__heatmapRangeLabels = { bedLo, bedHi, wakeLo, wakeHi };
+                        return `
+                    <div class="heatmap-grid" style="${gridVars}">
                         <!-- Header row -->
                         <div></div>
-                        ${['8PM', '9PM', '10PM', '11PM', '12AM', '1AM', '2AM'].map(time => 
-                            `<div style="text-align: center; color: rgba(255,255,255,0.6); padding: 10px 4px; font-weight: 600; font-size: 0.75rem;">${time}</div>`
+                        ${bedHoursList.map(bh => 
+                            `<div style="text-align: center; color: rgba(255,255,255,0.6); padding: 10px 4px; font-weight: 600; font-size: 0.75rem;">${hourLabel(bh)}</div>`
                         ).join('')}
                         
                         <!-- Data rows -->
@@ -39538,7 +39591,8 @@ function renderOptimalSleepWindow() {
 
 
                         `).join('')}
-                    </div>
+                    </div>`;
+                    })()}
                     
                     <!-- Legend -->
                     <div class="heatmap-legend">
@@ -39568,8 +39622,8 @@ function renderOptimalSleepWindow() {
                     <div class="heatmap-guide">
                         <div class="heatmap-guide-title">📖 How to Read This Heatmap</div>
                         <div class="heatmap-guide-content">
-                            <div><strong>Rows (Vertical):</strong> Your wake-up time (4AM - 10AM)</div>
-                            <div><strong>Columns (Horizontal):</strong> Your bedtime (8PM - 2AM)</div>
+                            <div><strong>Rows (Vertical):</strong> Your wake-up time (${window.__heatmapRangeLabels ? window.__heatmapRangeLabels.wakeLo + ' - ' + window.__heatmapRangeLabels.wakeHi : '4AM - 10AM'}, based on your actual sessions)</div>
+                            <div><strong>Columns (Horizontal):</strong> Your bedtime (${window.__heatmapRangeLabels ? window.__heatmapRangeLabels.bedLo + ' - ' + window.__heatmapRangeLabels.bedHi : '8PM - 2AM'}, based on your actual sessions)</div>
                             <div><strong>Numbers:</strong> Performance score (higher = better sleep quality)</div>
                             <div><strong>🔵 Green cells:</strong> Best performance zones (90-100%)</div>
                             <div><strong>🟡 Yellow border:</strong> Your current sleep schedule</div>
