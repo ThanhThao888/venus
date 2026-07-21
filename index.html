@@ -17591,8 +17591,18 @@ window.DBP={
             let weightChartInstance = null;
             let weekChartInstance = null;
 
+            /* Dùng giờ LOCAL, không dùng toISOString() (luôn là UTC).
+               VN đi trước UTC 7 tiếng nên bất kỳ lúc nào từ 00:00–06:59 giờ VN,
+               toISOString() sẽ trả về NGÀY HÔM QUA -> log bị gắn nhầm ngày. */
+            function wlnLocalDateStr(d) {
+                d = d || new Date();
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }
             function todayKey() {
-                return new Date().toISOString().split('T')[0];
+                return wlnLocalDateStr();
             }
             function isoWeekKey(d) {
                 const date = new Date(d.getTime());
@@ -17631,7 +17641,7 @@ window.DBP={
                 for (let i = 6; i >= 0; i--) {
                     const d = new Date();
                     d.setDate(d.getDate() - i);
-                    keys.push(d.toISOString().split('T')[0]);
+                    keys.push(wlnLocalDateStr(d));
                 }
                 return keys;
             }
@@ -17846,7 +17856,15 @@ window.DBP={
 
                 keys.forEach(k => {
                     const day = data.days[k];
-                    if (!day) { dailyCal.push(0); dailySugar.push(0); return; }
+                    // Chỉ tính là "đã log" khi có dữ liệu THẬT (nước > 0, có món ăn,
+                    // hoặc có tập luyện) — trước đây chỉ cần data.days[k] tồn tại là
+                    // tính (kể cả entry rỗng do getDay() tự tạo lúc mở app/chuyển tab).
+                    const hasRealData = day && (
+                        (day.water || 0) > 0 ||
+                        (day.foods && day.foods.length > 0) ||
+                        (day.workout && day.workout.minutes > 0)
+                    );
+                    if (!hasRealData) { dailyCal.push(0); dailySugar.push(0); return; }
                     loggedDays++;
                     const cal = day.foods.reduce((s, f) => s + (f.cal || 0), 0);
                     const sugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0);
