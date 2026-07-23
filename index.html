@@ -17388,7 +17388,7 @@ window.DBP={
                 <div id="wlnTabLog" class="wln-tab-panel">
 
                     <!-- Quick totals -->
-                    <div id="wlnTotalsRow" style="display:grid; grid-template-columns: repeat(3,1fr); gap:8px; margin-bottom:14px;"></div>
+                    <div id="wlnTotalsRow" style="display:grid; grid-template-columns: repeat(3,1fr); gap:8px; margin-bottom:14px; grid-auto-rows:1fr;"></div>
 
                     <!-- Water -->
                     <div style="margin-bottom:14px;">
@@ -17411,9 +17411,13 @@ window.DBP={
                         </div>
                         <div id="wlnCustomFoodForm" style="display:none; margin-top:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
                             <input id="wlnCustomName" placeholder="Tên món" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                            <div style="display:flex; gap:6px; margin-bottom:8px;">
+                            <div style="display:flex; gap:6px; margin-bottom:6px;">
                                 <input id="wlnCustomCal" type="number" placeholder="Kcal" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                                 <input id="wlnCustomSugar" type="number" placeholder="Đường (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            </div>
+                            <div style="display:flex; gap:6px; margin-bottom:8px;">
+                                <input id="wlnCustomNatri" type="number" placeholder="Natri/muối (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomKali" type="number" placeholder="Kali (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             </div>
                             <button type="button" class="add-time-btn" style="width:100%; background:#27ae60;" onclick="Wellness.addCustomFood()">+ Thêm vào log</button>
                         </div>
@@ -17504,20 +17508,6 @@ window.DBP={
             </div>
         </div>
 
-        <!-- ===== Modal: nhập hàm lượng supplement (thay cho prompt()) ===== -->
-        <div id="wlnSuppDoseModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center; padding:16px;">
-            <div style="background:var(--bg-white); border-radius:var(--radius-sm); padding:18px; width:min(320px, 92vw); box-shadow:0 12px 34px rgba(0,0,0,0.3);">
-                <div id="wlnSuppDoseModalTitle" style="font-size:0.95rem; font-weight:600; color:var(--text-dark); margin-bottom:12px;"></div>
-                <input id="wlnSuppDoseModalInput" type="number" step="any" inputmode="decimal" placeholder="Hàm lượng"
-                    style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark); font-size:1rem; margin-bottom:14px;"
-                    onkeydown="if(event.key==='Enter'){event.preventDefault(); Wellness.confirmSuppDose();}">
-                <div style="display:flex; gap:8px;">
-                    <button type="button" class="add-time-btn" style="flex:1; background:#27ae60;" onclick="Wellness.confirmSuppDose()">✓ Lưu</button>
-                    <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6;" onclick="Wellness.closeSuppDoseModal()">Hủy</button>
-                </div>
-            </div>
-        </div>
-
         <style>
             .wln-tab-btn {
                 flex: 1;
@@ -17581,23 +17571,58 @@ window.DBP={
                 font-size: 0.68rem;
                 color: var(--text-muted);
             }
+            .wln-dose-modal-overlay {
+                position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+                z-index: 100000; display: flex; align-items: center; justify-content: center;
+                padding: 20px;
+            }
+            .wln-dose-modal-box {
+                background: var(--bg-white); border-radius: 14px; padding: 24px;
+                max-width: 340px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            }
+            .wln-dose-modal-box .wln-dose-icon { font-size: 2.2rem; text-align: center; margin-bottom: 8px; }
+            .wln-dose-modal-box h4 { margin: 0 0 4px; font-size: 1.05rem; text-align: center; color: var(--text-dark); }
+            .wln-dose-modal-box .wln-dose-sub { font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-bottom: 16px; }
+            .wln-dose-input-row { display: flex; gap: 8px; margin-bottom: 18px; }
+            .wln-dose-input-row input {
+                flex: 1; padding: 10px; border: 1.5px solid var(--border-color); border-radius: 8px;
+                background: var(--bg-light); color: var(--text-dark); font-size: 1rem; text-align: center;
+            }
+            .wln-dose-input-row .wln-dose-unit {
+                display: flex; align-items: center; padding: 0 12px; font-size: 0.85rem;
+                color: var(--text-muted); font-weight: 600; background: var(--bg-light); border-radius: 8px;
+            }
+            .wln-dose-quick-row { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; justify-content: center; }
+            .wln-dose-quick-btn {
+                padding: 5px 12px; border-radius: 14px; border: 1px solid var(--border-color);
+                background: var(--bg-light); color: var(--text-dark); font-size: 0.78rem; cursor: pointer;
+            }
+            .wln-dose-quick-btn:hover { border-color: var(--primary); color: var(--primary); }
+            .wln-dose-actions { display: flex; gap: 8px; }
+            .wln-dose-actions button { flex: 1; padding: 11px; border: none; border-radius: 9px; font-weight: 700; font-size: 0.92rem; cursor: pointer; }
+            .wln-dose-cancel { background: var(--bg-light); color: var(--text-muted); }
+            .wln-dose-save { background: linear-gradient(135deg, #27ae60, #16a085); color: #fff; }
         </style>
 
         <script>
         const Wellness = (function () {
             const STORAGE_KEY = 'wellnessTrackerData_v1';
             const FOOD_PRESETS = [
-                { name: 'Mì gói', cal: 380, sugar: 2, emoji: '🍜' },
-                { name: 'Cà phê sữa', cal: 120, sugar: 14, emoji: '☕' },
-                { name: 'Nước ngọt (lon)', cal: 140, sugar: 35, emoji: '🥤' },
-                { name: 'Trà sữa', cal: 350, sugar: 40, emoji: '🧋' },
-                { name: 'Cơm (1 chén)', cal: 200, sugar: 0, emoji: '🍚' },
-                { name: 'Trứng luộc', cal: 70, sugar: 0, emoji: '🥚' },
-                { name: 'Ức gà 100g', cal: 165, sugar: 0, emoji: '🍗' },
-                { name: 'Sữa chua ko đường', cal: 100, sugar: 5, emoji: '🥣' },
-                { name: 'Salad/rau', cal: 50, sugar: 0, emoji: '🥗' }
+                { name: 'Mì gói', cal: 380, sugar: 2, natri: 1700, kali: 120, emoji: '🍜' },
+                { name: 'Cà phê sữa', cal: 120, sugar: 14, natri: 40, kali: 150, emoji: '☕' },
+                { name: 'Nước ngọt (lon)', cal: 140, sugar: 35, natri: 15, kali: 5, emoji: '🥤' },
+                { name: 'Trà sữa', cal: 350, sugar: 40, natri: 85, kali: 100, emoji: '🧋' },
+                { name: 'Cơm (1 chén)', cal: 200, sugar: 0, natri: 1, kali: 40, emoji: '🍚' },
+                { name: 'Trứng luộc', cal: 70, sugar: 0, natri: 70, kali: 65, emoji: '🥚' },
+                { name: 'Ức gà 100g', cal: 165, sugar: 0, natri: 75, kali: 256, emoji: '🍗' },
+                { name: 'Sữa chua ko đường', cal: 100, sugar: 5, natri: 50, kali: 150, emoji: '🥣' },
+                { name: 'Salad/rau', cal: 50, sugar: 0, natri: 15, kali: 200, emoji: '🥗' }
             ];
+            // Natri/Kali là ước tính tham khảo (USDA), không phải số đo chính xác từng món ăn thực tế.
+            // Sửa trực tiếp trong mảng này nếu bạn có số liệu chính xác hơn cho món hay ăn.
             const SUGAR_BUDGET = 15; // g/day, per "Strategic Sugar Containment"
+            const SODIUM_BUDGET = 1500; // mg/day — mức khuyến nghị cho người cao huyết áp (thấp hơn mức chung 2300mg).
+                                          // Đây là số tham khảo chung, không phải chỉ định y tế — điều chỉnh theo tư vấn bác sĩ.
 
             let data = null;
             let currentTab = 'log';
@@ -17688,7 +17713,7 @@ window.DBP={
             function addPresetFood(i) {
                 const f = FOOD_PRESETS[i];
                 const day = getDay(todayKey());
-                day.foods.push({ name: f.name, cal: f.cal, sugar: f.sugar, t: Date.now() });
+                day.foods.push({ name: f.name, cal: f.cal, sugar: f.sugar, natri: f.natri || 0, kali: f.kali || 0, t: Date.now() });
                 save();
                 renderLogTab();
             }
@@ -17702,13 +17727,17 @@ window.DBP={
                 const name = document.getElementById('wlnCustomName').value.trim();
                 const cal = parseFloat(document.getElementById('wlnCustomCal').value) || 0;
                 const sugar = parseFloat(document.getElementById('wlnCustomSugar').value) || 0;
+                const natri = parseFloat(document.getElementById('wlnCustomNatri').value) || 0;
+                const kali = parseFloat(document.getElementById('wlnCustomKali').value) || 0;
                 if (!name) { alert('Nhập tên món trước đã nhé.'); return; }
                 const day = getDay(todayKey());
-                day.foods.push({ name, cal, sugar, t: Date.now() });
+                day.foods.push({ name, cal, sugar, natri, kali, t: Date.now() });
                 save();
                 document.getElementById('wlnCustomName').value = '';
                 document.getElementById('wlnCustomCal').value = '';
                 document.getElementById('wlnCustomSugar').value = '';
+                document.getElementById('wlnCustomNatri').value = '';
+                document.getElementById('wlnCustomKali').value = '';
                 document.getElementById('wlnCustomFoodForm').style.display = 'none';
                 renderLogTab();
             }
@@ -17739,11 +17768,16 @@ window.DBP={
                 const day = getDay(todayKey());
                 const totalCal = day.foods.reduce((s, f) => s + (f.cal || 0), 0);
                 const totalSugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0);
+                const totalNatri = day.foods.reduce((s, f) => s + (f.natri || 0), 0);
+                const totalKali = day.foods.reduce((s, f) => s + (f.kali || 0), 0);
                 const row = document.getElementById('wlnTotalsRow');
                 const sugarColor = totalSugar > SUGAR_BUDGET ? '#e74c3c' : '#2ecc71';
+                const natriColor = totalNatri > SODIUM_BUDGET ? '#e74c3c' : '#2ecc71';
                 row.innerHTML = `
                     <div class="wln-stat-box"><div class="wln-stat-val">${Math.round(totalCal)}</div><div class="wln-stat-label">kcal hôm nay</div></div>
                     <div class="wln-stat-box"><div class="wln-stat-val" style="color:${sugarColor};">${totalSugar}g</div><div class="wln-stat-label">đường (mục tiêu &lt;${SUGAR_BUDGET}g)</div></div>
+                    <div class="wln-stat-box"><div class="wln-stat-val" style="color:${natriColor};">${Math.round(totalNatri)}mg</div><div class="wln-stat-label">🧂 natri (mục tiêu &lt;${SODIUM_BUDGET}mg)</div></div>
+                    <div class="wln-stat-box"><div class="wln-stat-val">${Math.round(totalKali)}mg</div><div class="wln-stat-label">kali</div></div>
                     <div class="wln-stat-box"><div class="wln-stat-val">${day.water || 0}</div><div class="wln-stat-label">ly nước</div></div>
                 `;
                 document.getElementById('wlnWaterCount').textContent = `${day.water || 0} ly`;
@@ -17758,7 +17792,7 @@ window.DBP={
                 }
                 list.innerHTML = day.foods.map((f, i) => `
                     <div class="wln-log-item">
-                        <span>${f.name} — ${f.cal}kcal${f.sugar ? `, ${f.sugar}g đường` : ''}</span>
+                        <span>${f.name} — ${f.cal}kcal${f.sugar ? `, ${f.sugar}g đường` : ''}${f.natri ? `, ${f.natri}mg natri` : ''}${f.kali ? `, ${f.kali}mg kali` : ''}</span>
                         <button onclick="Wellness.removeFood(${i})">✕</button>
                     </div>
                 `).join('');
@@ -17865,8 +17899,8 @@ window.DBP={
 
             function renderReviewTab() {
                 const keys = last7Keys();
-                let cupsCoffeeSoda = 0, workoutDays = 0, sugarOverDays = 0, loggedDays = 0, totalWater = 0;
-                const dailyCal = [], dailySugar = [];
+                let cupsCoffeeSoda = 0, workoutDays = 0, sugarOverDays = 0, natriOverDays = 0, loggedDays = 0, totalWater = 0, totalKali = 0;
+                const dailyCal = [], dailySugar = [], dailyNatri = [];
 
                 keys.forEach(k => {
                     const day = data.days[k];
@@ -17878,14 +17912,19 @@ window.DBP={
                         (day.foods && day.foods.length > 0) ||
                         (day.workout && day.workout.minutes > 0)
                     );
-                    if (!hasRealData) { dailyCal.push(0); dailySugar.push(0); return; }
+                    if (!hasRealData) { dailyCal.push(0); dailySugar.push(0); dailyNatri.push(0); return; }
                     loggedDays++;
                     const cal = day.foods.reduce((s, f) => s + (f.cal || 0), 0);
                     const sugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0);
+                    const natri = day.foods.reduce((s, f) => s + (f.natri || 0), 0);
+                    const kali = day.foods.reduce((s, f) => s + (f.kali || 0), 0);
                     dailyCal.push(Math.round(cal));
                     dailySugar.push(sugar);
+                    dailyNatri.push(Math.round(natri));
                     if (sugar > SUGAR_BUDGET) sugarOverDays++;
+                    if (natri > SODIUM_BUDGET) natriOverDays++;
                     totalWater += (day.water || 0);
+                    totalKali += kali;
                     if (day.workout && day.workout.minutes > 0) workoutDays++;
                     day.foods.forEach(f => {
                         if (f.name === 'Cà phê sữa' || f.name === 'Nước ngọt (lon)' || f.name === 'Trà sữa') cupsCoffeeSoda++;
@@ -17895,10 +17934,13 @@ window.DBP={
                 document.getElementById('wlnReviewStreak').textContent = `📅 Đã log ${loggedDays}/7 ngày tuần này`;
 
                 const avgWater = loggedDays ? (totalWater / loggedDays).toFixed(1) : 0;
+                const avgKali = loggedDays ? Math.round(totalKali / loggedDays) : 0;
                 document.getElementById('wlnReviewSummary').innerHTML = `
                     <div class="wln-log-item"><span>☕🥤 Cà phê sữa / nước ngọt / trà sữa</span><span><b>${cupsCoffeeSoda}</b> lần</span></div>
                     <div class="wln-log-item"><span>🏋️ Số ngày có tập luyện</span><span><b>${workoutDays}</b>/7</span></div>
                     <div class="wln-log-item"><span>🍬 Số ngày vượt ngân sách đường</span><span><b>${sugarOverDays}</b>/7</span></div>
+                    <div class="wln-log-item"><span>🧂 Số ngày vượt ngân sách natri</span><span><b>${natriOverDays}</b>/7</span></div>
+                    <div class="wln-log-item"><span>🍌 Trung bình kali/ngày</span><span><b>${avgKali}</b>mg</span></div>
                     <div class="wln-log-item"><span>💧 Trung bình ly nước/ngày</span><span><b>${avgWater}</b></span></div>
                 `;
 
@@ -17910,7 +17952,8 @@ window.DBP={
                         labels: keys.map(k => k.slice(5)),
                         datasets: [
                             { label: 'Kcal', data: dailyCal, backgroundColor: 'rgba(59,130,246,0.6)', yAxisID: 'y' },
-                            { label: 'Đường (g)', data: dailySugar, backgroundColor: 'rgba(231,76,60,0.6)', yAxisID: 'y1' }
+                            { label: 'Đường (g)', data: dailySugar, backgroundColor: 'rgba(231,76,60,0.6)', yAxisID: 'y1' },
+                            { label: 'Natri (mg)', data: dailyNatri, backgroundColor: 'rgba(243,156,18,0.6)', yAxisID: 'y' }
                         ]
                     },
                     options: {
@@ -17935,37 +17978,86 @@ window.DBP={
                 ).join('');
             }
 
-            let _suppDoseModalIdx = null;
+            let _wlnPendingDoseIndex = null;
 
             function addPresetSupp(i) {
                 const p = data.suppPresets[i];
                 if (!p) return;
-                _suppDoseModalIdx = i;
-                document.getElementById('wlnSuppDoseModalTitle').textContent = `Hàm lượng ${p.name} (${p.unit})?`;
-                const input = document.getElementById('wlnSuppDoseModalInput');
-                input.value = p.lastDose != null ? p.lastDose : '';
-                document.getElementById('wlnSuppDoseModal').style.display = 'flex';
-                setTimeout(() => { input.focus(); input.select(); }, 50);
+                _wlnPendingDoseIndex = i;
+                openSuppDoseModal(p);
+            }
+
+            function openSuppDoseModal(preset) {
+                closeSuppDoseModal();
+
+                const suggestions = [
+                    Math.round(preset.lastDose * 100) / 100,
+                    Math.round(preset.lastDose * 2 * 100) / 100,
+                    Math.round((preset.lastDose / 2) * 100) / 100
+                ].filter((v, idx, arr) => v > 0 && arr.indexOf(v) === idx);
+
+                const html = `
+                    <div class="wln-dose-modal-overlay" id="wlnDoseModalOverlay">
+                        <div class="wln-dose-modal-box">
+                            <div class="wln-dose-icon">💊</div>
+                            <h4>${preset.name}</h4>
+                            <div class="wln-dose-sub">Hàm lượng lần này là bao nhiêu?</div>
+                            <div class="wln-dose-input-row">
+                                <input type="number" id="wlnDoseInput" step="any" value="${preset.lastDose != null ? preset.lastDose : ''}" autofocus>
+                                <div class="wln-dose-unit">${preset.unit}</div>
+                            </div>
+                            ${suggestions.length ? `
+                            <div class="wln-dose-quick-row">
+                                ${suggestions.map(v => `<button type="button" class="wln-dose-quick-btn" onclick="Wellness._setDoseInput(${v})">${v}${preset.unit}</button>`).join('')}
+                            </div>` : ''}
+                            <div class="wln-dose-actions">
+                                <button type="button" class="wln-dose-cancel" onclick="Wellness._closeDoseModal()">Hủy</button>
+                                <button type="button" class="wln-dose-save" onclick="Wellness._confirmDoseModal()">✓ Lưu ngay</button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+
+                const input = document.getElementById('wlnDoseInput');
+                input.focus();
+                input.select();
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') confirmSuppDoseModal();
+                    if (e.key === 'Escape') closeSuppDoseModal();
+                });
+                document.getElementById('wlnDoseModalOverlay').addEventListener('click', (e) => {
+                    if (e.target.id === 'wlnDoseModalOverlay') closeSuppDoseModal();
+                });
+            }
+
+            function setDoseInput(val) {
+                const input = document.getElementById('wlnDoseInput');
+                if (input) input.value = val;
             }
 
             function closeSuppDoseModal() {
-                document.getElementById('wlnSuppDoseModal').style.display = 'none';
-                _suppDoseModalIdx = null;
+                const el = document.getElementById('wlnDoseModalOverlay');
+                if (el) el.remove();
+                _wlnPendingDoseIndex = null;
             }
 
-            function confirmSuppDose() {
-                if (_suppDoseModalIdx === null) { closeSuppDoseModal(); return; }
-                const p = data.suppPresets[_suppDoseModalIdx];
+            function confirmSuppDoseModal() {
+                const input = document.getElementById('wlnDoseInput');
+                const dose = parseFloat(input?.value);
+                if (isNaN(dose) || dose <= 0) {
+                    input.style.borderColor = '#ef4444';
+                    input.focus();
+                    return;
+                }
+                const p = data.suppPresets[_wlnPendingDoseIndex];
                 if (!p) { closeSuppDoseModal(); return; }
-                const input = document.getElementById('wlnSuppDoseModalInput');
-                const dose = parseFloat(input.value);
-                if (isNaN(dose) || dose <= 0) { alert('Nhập số hợp lệ nhé.'); return; }
+
                 p.lastDose = dose;
                 const log = getSuppLog(todayKey());
                 log.push({ name: p.name, unit: p.unit, dose, t: Date.now() });
                 save();
-                renderSuppLogList();
                 closeSuppDoseModal();
+                renderSuppLogList();
             }
 
             function openNewSupp() {
@@ -18089,7 +18181,9 @@ window.DBP={
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
                 removeFood, addWater, logWorkout, saveWeeklyWeight,
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
-                closeSuppDoseModal, confirmSuppDose
+                _setDoseInput: setDoseInput,
+                _closeDoseModal: closeSuppDoseModal,
+                _confirmDoseModal: confirmSuppDoseModal
             };
         })();
         </script>
