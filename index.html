@@ -17402,6 +17402,18 @@ window.DBP={
                         </div>
                     </div>
 
+                    <!-- Caffeine (Quick-Tap Macro) -->
+                    <div style="margin-bottom:14px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                            <span style="font-size:0.85rem; font-weight:600; color:var(--text-dark);">☕ Caffeine</span>
+                            <span id="wlnCaffeineTotal" style="font-size:0.85rem; color:var(--text-muted);">0mg</span>
+                        </div>
+                        <button type="button" class="add-time-btn" style="width:100%; background:#8b5e3c; margin-bottom:6px;" onclick="Wellness.addPresetCaffeine(0,true)">☕+💧 Cà phê &amp; bù nước (1 chạm)</button>
+                        <div id="wlnCaffeinePresets" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;"></div>
+                        <div id="wlnCaffeineWarning" style="display:none; font-size:0.75rem; color:#e74c3c; margin-bottom:6px; line-height:1.4;"></div>
+                        <div id="wlnCaffeineLogList" style="display:flex; flex-direction:column; gap:5px; max-height:120px; overflow-y:auto;"></div>
+                    </div>
+
                     <!-- Quick food log -->
                     <div style="margin-bottom:14px;">
                         <div style="font-size:0.85rem; font-weight:600; color:var(--text-dark); margin-bottom:6px;">🍽️ Log món ăn nhanh</div>
@@ -17425,6 +17437,22 @@ window.DBP={
 
                     <!-- Today's food log list -->
                     <div id="wlnFoodLogList" style="margin-bottom:14px; display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;"></div>
+
+                    <!-- Fasting Window (16:8) -->
+                    <div style="margin-bottom:14px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                            <span style="font-size:0.85rem; font-weight:600; color:var(--text-dark);">⏱️ Fasting Window</span>
+                            <button type="button" style="background:none; border:none; cursor:pointer; font-size:0.9rem; color:var(--text-muted);" onclick="Wellness.toggleFastingSettings()">⚙️</button>
+                        </div>
+                        <div id="wlnFastingSettings" style="display:none; margin-bottom:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:4px;">Mục tiêu cửa sổ ăn (giờ) — VD: 16:8 → nhập 8</label>
+                            <input type="number" id="wlnFastingGoalInput" min="1" max="16" step="0.5" style="width:100%; margin-bottom:8px; padding:6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onchange="Wellness.setFastingGoal(this.value)">
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:4px;">Giờ cắt caffeine (tránh ảnh hưởng giấc ngủ)</label>
+                            <input type="time" id="wlnCaffeineCutoffInput" style="width:100%; padding:6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onchange="Wellness.setCaffeineCutoff(this.value)">
+                        </div>
+                        <div id="wlnFastingBox" style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;"></div>
+                        <button type="button" class="add-time-btn" style="width:100%; background:#95a5a6; font-size:0.78rem;" onclick="Wellness.markMealNow()">🍽️ Đánh dấu đang ăn (không tính kcal)</button>
+                    </div>
 
                     <!-- Workout -->
                     <div style="margin-bottom:6px;">
@@ -17624,6 +17652,19 @@ window.DBP={
             const SODIUM_BUDGET = 1500; // mg/day — mức khuyến nghị cho người cao huyết áp (thấp hơn mức chung 2300mg).
                                           // Đây là số tham khảo chung, không phải chỉ định y tế — điều chỉnh theo tư vấn bác sĩ.
 
+            const CAFFEINE_PRESETS = [
+                { name: 'Cà phê đen', mg: 95, emoji: '☕' },
+                { name: 'Cà phê sữa', mg: 80, emoji: '☕' },
+                { name: 'Espresso', mg: 63, emoji: '☕' },
+                { name: 'Trà', mg: 40, emoji: '🍵' },
+                { name: 'Trà sữa', mg: 30, emoji: '🧋' },
+                { name: 'Nước tăng lực', mg: 80, emoji: '🥤' }
+            ];
+            // Số mg là ước tính tham khảo (1 ly/lon tiêu chuẩn), không phải số đo chính xác — sửa trực tiếp nếu cần.
+            const CAFFEINE_DAILY_LIMIT = 400; // mg/day — mức an toàn chung theo FDA cho người lớn khỏe mạnh, không phải chỉ định y tế cá nhân.
+            const DEFAULT_FASTING_GOAL_H = 8; // 16:8 -> cửa sổ ăn mục tiêu 8 tiếng
+            const DEFAULT_CAFFEINE_CUTOFF_H = 14; // 14:00 — leverage point: tránh caffeine muộn để giữ RHR thấp/HRV cao khi ngủ
+
             let data = null;
             let currentTab = 'log';
             let collapsed = false;
@@ -17661,6 +17702,9 @@ window.DBP={
                 if (!data.weights) data.weights = {};
                 if (!data.suppPresets) data.suppPresets = [];
                 if (!data.suppLogs) data.suppLogs = {};
+                if (!data.settings) data.settings = {};
+                if (data.settings.fastingWindowHours == null) data.settings.fastingWindowHours = DEFAULT_FASTING_GOAL_H;
+                if (data.settings.caffeineCutoffHour == null) data.settings.caffeineCutoffHour = DEFAULT_CAFFEINE_CUTOFF_H;
             }
             function getSuppLog(key) {
                 if (!data.suppLogs[key]) data.suppLogs[key] = [];
@@ -17671,8 +17715,9 @@ window.DBP={
             }
             function getDay(key) {
                 if (!data.days[key]) {
-                    data.days[key] = { water: 0, foods: [], workout: null };
+                    data.days[key] = { water: 0, foods: [], workout: null, caffeine: [] };
                 }
+                if (!data.days[key].caffeine) data.days[key].caffeine = []; // backward-compat cho data cũ
                 return data.days[key];
             }
             function last7Keys() {
@@ -17764,6 +17809,134 @@ window.DBP={
                 renderLogTab();
             }
 
+            /* ===== CAFFEINE ===== */
+            function addCaffeine(mg, name, alsoWater) {
+                const day = getDay(todayKey());
+                day.caffeine.push({ name, mg, t: Date.now() });
+                if (alsoWater) {
+                    day.water = Math.max(0, (day.water || 0) + 1);
+                    day.lastWaterAt = Date.now();
+                }
+                save();
+                renderLogTab();
+            }
+            function addPresetCaffeine(i, alsoWater) {
+                const p = CAFFEINE_PRESETS[i];
+                if (!p) return;
+                addCaffeine(p.mg, p.name, !!alsoWater);
+            }
+            function removeCaffeine(idx) {
+                const day = getDay(todayKey());
+                day.caffeine.splice(idx, 1);
+                save();
+                renderLogTab();
+            }
+            function renderCaffeinePresets() {
+                const wrap = document.getElementById('wlnCaffeinePresets');
+                if (!wrap) return;
+                wrap.innerHTML = CAFFEINE_PRESETS.map((p, i) =>
+                    `<button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetCaffeine(${i},false)">${p.emoji} ${p.name} (${p.mg}mg)</button>`
+                ).join('');
+            }
+            function renderCaffeineSection() {
+                const day = getDay(todayKey());
+                const total = day.caffeine.reduce((s, c) => s + (c.mg || 0), 0);
+                const totalEl = document.getElementById('wlnCaffeineTotal');
+                if (totalEl) {
+                    totalEl.textContent = `${total}mg / ${CAFFEINE_DAILY_LIMIT}mg`;
+                    totalEl.style.color = total > CAFFEINE_DAILY_LIMIT ? '#e74c3c' : 'var(--text-muted)';
+                }
+                const cutoffHour = data.settings.caffeineCutoffHour;
+                const lateCaffeine = day.caffeine.filter(c => new Date(c.t).getHours() >= cutoffHour);
+                const warnEl = document.getElementById('wlnCaffeineWarning');
+                if (warnEl) {
+                    if (lateCaffeine.length) {
+                        warnEl.style.display = 'block';
+                        warnEl.textContent = `⚠️ ${lateCaffeine.length} lần nạp caffeine sau ${String(cutoffHour).padStart(2, '0')}:00 — dễ làm tăng nhịp tim khi ngủ (RHR) và giảm HRV.`;
+                    } else {
+                        warnEl.style.display = 'none';
+                    }
+                }
+                const listEl = document.getElementById('wlnCaffeineLogList');
+                if (listEl) {
+                    listEl.innerHTML = day.caffeine.length
+                        ? day.caffeine.map((c, i) => `
+                            <div class="wln-log-item">
+                                <span>${c.name} — ${c.mg}mg <span style="color:var(--text-muted); font-size:0.72rem;">(${new Date(c.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
+                                <button onclick="Wellness.removeCaffeine(${i})">✕</button>
+                            </div>`).join('')
+                        : `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:4px 0;">Chưa log caffeine hôm nay.</div>`;
+                }
+            }
+
+            /* ===== FASTING WINDOW (16:8) ===== */
+            // Cửa sổ ăn được TỰ TÍNH từ thời điểm bữa ăn đầu tiên và cuối cùng trong
+            // ngày (day.foods đã có sẵn timestamp) — không cần nhập liệu thêm.
+            function computeFastingStats(day) {
+                const foods = (day.foods || []).slice().sort((a, b) => a.t - b.t);
+                if (!foods.length) return null;
+                const first = foods[0].t;
+                const last = foods[foods.length - 1].t;
+                return {
+                    first, last,
+                    eatingHours: (last - first) / 3600000,
+                    fastingSinceLastH: (Date.now() - last) / 3600000
+                };
+            }
+            function markMealNow() {
+                // Đánh dấu nhanh thời điểm đang ăn mà không cần log chi tiết kcal —
+                // vẫn tính vào cửa sổ ăn/nhịn (frictionless logging).
+                const day = getDay(todayKey());
+                day.foods.push({ name: 'Bữa ăn (đánh dấu nhanh)', cal: 0, sugar: 0, natri: 0, kali: 0, t: Date.now() });
+                save();
+                renderLogTab();
+            }
+            let fastingSettingsOpen = false;
+            function toggleFastingSettings() {
+                fastingSettingsOpen = !fastingSettingsOpen;
+                const el = document.getElementById('wlnFastingSettings');
+                if (el) el.style.display = fastingSettingsOpen ? 'block' : 'none';
+                if (fastingSettingsOpen) {
+                    document.getElementById('wlnFastingGoalInput').value = data.settings.fastingWindowHours;
+                    document.getElementById('wlnCaffeineCutoffInput').value = `${String(data.settings.caffeineCutoffHour).padStart(2, '0')}:00`;
+                }
+            }
+            function setFastingGoal(v) {
+                const val = parseFloat(v);
+                if (!val || val <= 0) return;
+                data.settings.fastingWindowHours = val;
+                save();
+                renderFastingSection();
+            }
+            function setCaffeineCutoff(v) {
+                const hour = parseInt(String(v).split(':')[0], 10);
+                if (isNaN(hour)) return;
+                data.settings.caffeineCutoffHour = hour;
+                save();
+                renderCaffeineSection();
+            }
+            function renderFastingSection() {
+                const day = getDay(todayKey());
+                const box = document.getElementById('wlnFastingBox');
+                if (!box) return;
+                const target = data.settings.fastingWindowHours;
+                const stats = computeFastingStats(day);
+                const fmtTime = t => new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                if (!stats) {
+                    box.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:4px 0;">Chưa log bữa ăn nào — cửa sổ ăn sẽ tự tính khi bạn log món đầu tiên (hoặc bấm "Đánh dấu đang ăn").</div>`;
+                    return;
+                }
+                const overTarget = stats.eatingHours > target;
+                const color = overTarget ? '#e74c3c' : '#2ecc71';
+                box.innerHTML = `
+                    <div class="wln-log-item"><span>🍽️ Bữa đầu tiên</span><span><b>${fmtTime(stats.first)}</b></span></div>
+                    <div class="wln-log-item"><span>🍽️ Bữa gần nhất</span><span><b>${fmtTime(stats.last)}</b></span></div>
+                    <div class="wln-log-item"><span>⏱️ Cửa sổ ăn hôm nay</span><span style="color:${color};"><b>${stats.eatingHours.toFixed(1)}h</b> / mục tiêu ${target}h</span></div>
+                    <div class="wln-log-item"><span>🌙 Đã nhịn kể từ bữa cuối</span><span><b>${stats.fastingSinceLastH.toFixed(1)}h</b></span></div>
+                    ${overTarget ? `<div style="font-size:0.75rem; color:#e74c3c; line-height:1.4;">⚠️ Cửa sổ ăn đã vượt mục tiêu ${target}h — bữa cuối càng gần giờ ngủ, RHR khi ngủ càng dễ tăng và HRV càng dễ giảm.</div>` : ''}
+                `;
+            }
+
             function renderTotals() {
                 const day = getDay(todayKey());
                 const totalCal = day.foods.reduce((s, f) => s + (f.cal || 0), 0);
@@ -17832,6 +18005,8 @@ window.DBP={
             function renderLogTab() {
                 renderTotals();
                 renderFoodLogList();
+                renderCaffeineSection();
+                renderFastingSection();
                 renderWorkoutStatus();
                 renderReminderBanner();
             }
@@ -17900,6 +18075,8 @@ window.DBP={
             function renderReviewTab() {
                 const keys = last7Keys();
                 let cupsCoffeeSoda = 0, workoutDays = 0, sugarOverDays = 0, natriOverDays = 0, loggedDays = 0, totalWater = 0, totalKali = 0;
+                let caffeineTotalWeek = 0, caffeineLoggedDays = 0, caffeineOverDays = 0, lateCaffeineDays = 0;
+                let eatingWindowSum = 0, eatingWindowDays = 0;
                 const dailyCal = [], dailySugar = [], dailyNatri = [];
 
                 keys.forEach(k => {
@@ -17910,7 +18087,8 @@ window.DBP={
                     const hasRealData = day && (
                         (day.water || 0) > 0 ||
                         (day.foods && day.foods.length > 0) ||
-                        (day.workout && day.workout.minutes > 0)
+                        (day.workout && day.workout.minutes > 0) ||
+                        (day.caffeine && day.caffeine.length > 0)
                     );
                     if (!hasRealData) { dailyCal.push(0); dailySugar.push(0); dailyNatri.push(0); return; }
                     loggedDays++;
@@ -17929,12 +18107,23 @@ window.DBP={
                     day.foods.forEach(f => {
                         if (f.name === 'Cà phê sữa' || f.name === 'Nước ngọt (lon)' || f.name === 'Trà sữa') cupsCoffeeSoda++;
                     });
+                    if (day.caffeine && day.caffeine.length) {
+                        const dayCaffeine = day.caffeine.reduce((s, c) => s + (c.mg || 0), 0);
+                        caffeineTotalWeek += dayCaffeine;
+                        caffeineLoggedDays++;
+                        if (dayCaffeine > CAFFEINE_DAILY_LIMIT) caffeineOverDays++;
+                        if (day.caffeine.some(c => new Date(c.t).getHours() >= data.settings.caffeineCutoffHour)) lateCaffeineDays++;
+                    }
+                    const fStats = computeFastingStats(day);
+                    if (fStats) { eatingWindowSum += fStats.eatingHours; eatingWindowDays++; }
                 });
 
                 document.getElementById('wlnReviewStreak').textContent = `📅 Đã log ${loggedDays}/7 ngày tuần này`;
 
                 const avgWater = loggedDays ? (totalWater / loggedDays).toFixed(1) : 0;
                 const avgKali = loggedDays ? Math.round(totalKali / loggedDays) : 0;
+                const avgCaffeine = caffeineLoggedDays ? Math.round(caffeineTotalWeek / caffeineLoggedDays) : 0;
+                const avgEatingWindow = eatingWindowDays ? (eatingWindowSum / eatingWindowDays).toFixed(1) : '—';
                 document.getElementById('wlnReviewSummary').innerHTML = `
                     <div class="wln-log-item"><span>☕🥤 Cà phê sữa / nước ngọt / trà sữa</span><span><b>${cupsCoffeeSoda}</b> lần</span></div>
                     <div class="wln-log-item"><span>🏋️ Số ngày có tập luyện</span><span><b>${workoutDays}</b>/7</span></div>
@@ -17942,6 +18131,10 @@ window.DBP={
                     <div class="wln-log-item"><span>🧂 Số ngày vượt ngân sách natri</span><span><b>${natriOverDays}</b>/7</span></div>
                     <div class="wln-log-item"><span>🍌 Trung bình kali/ngày</span><span><b>${avgKali}</b>mg</span></div>
                     <div class="wln-log-item"><span>💧 Trung bình ly nước/ngày</span><span><b>${avgWater}</b></span></div>
+                    <div class="wln-log-item"><span>☕ Trung bình caffeine/ngày</span><span><b>${avgCaffeine}</b>mg</span></div>
+                    <div class="wln-log-item"><span>⚠️ Ngày vượt ${CAFFEINE_DAILY_LIMIT}mg caffeine</span><span><b>${caffeineOverDays}</b>/7</span></div>
+                    <div class="wln-log-item"><span>🌙 Ngày caffeine sau ${String(data.settings.caffeineCutoffHour).padStart(2,'0')}:00</span><span><b>${lateCaffeineDays}</b>/7</span></div>
+                    <div class="wln-log-item"><span>⏱️ Trung bình cửa sổ ăn/ngày</span><span><b>${avgEatingWindow}</b>h</span></div>
                 `;
 
                 const ctx = document.getElementById('wlnWeekChart');
@@ -18167,9 +18360,11 @@ window.DBP={
             function init() {
                 load();
                 renderFoodPresets();
+                renderCaffeinePresets();
                 setTab('log');
                 renderLogTab();
                 setInterval(renderReminderBanner, 5 * 60 * 1000);
+                setInterval(renderFastingSection, 60 * 1000); // cập nhật "đã nhịn bao lâu" mỗi phút
             }
 
             document.addEventListener('DOMContentLoaded', init);
@@ -18181,6 +18376,8 @@ window.DBP={
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
                 removeFood, addWater, logWorkout, saveWeeklyWeight,
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
+                addPresetCaffeine, removeCaffeine,
+                markMealNow, toggleFastingSettings, setFastingGoal, setCaffeineCutoff,
                 _setDoseInput: setDoseInput,
                 _closeDoseModal: closeSuppDoseModal,
                 _confirmDoseModal: confirmSuppDoseModal
