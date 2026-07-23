@@ -17416,7 +17416,7 @@ window.DBP={
 
                     <!-- Quick food log -->
                     <div style="margin-bottom:14px;">
-                        <div style="font-size:0.85rem; font-weight:600; color:var(--text-dark); margin-bottom:6px;">🍽️ Log món ăn</div>
+                        <div style="font-size:0.85rem; font-weight:600; color:var(--text-dark); margin-bottom:6px;">🍽️ Log món ăn nhanh</div>
                         <div id="wlnFoodPresets" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
                         <div style="display:flex; gap:6px;">
                             <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.8rem;" onclick="Wellness.openCustomFood()">✏️ Món khác...</button>
@@ -17451,7 +17451,18 @@ window.DBP={
                             <input type="time" id="wlnCaffeineCutoffInput" style="width:100%; padding:6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onchange="Wellness.setCaffeineCutoff(this.value)">
                         </div>
                         <div id="wlnFastingBox" style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;"></div>
-                        <button type="button" class="add-time-btn" style="width:100%; background:#95a5a6; font-size:0.78rem;" onclick="Wellness.markMealNow()">🍽️ Đánh dấu đang ăn (không tính kcal)</button>
+                        <div style="display:flex; gap:6px; margin-bottom:6px;">
+                            <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6; font-size:0.78rem;" onclick="Wellness.markMealNow()">🍽️ Ăn ngay bây giờ</button>
+                            <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.78rem;" onclick="Wellness.toggleManualMealForm()">🕐 Nhập giờ khác...</button>
+                        </div>
+                        <div id="wlnManualMealForm" style="display:none; margin-bottom:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+                            <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; line-height:1.4;">Dùng khi quên log lúc đang ăn (VD: đi chơi với bạn bè không mang điện thoại) — nhập lại đúng ngày giờ đã ăn, hệ thống sẽ tự gắn vào đúng ngày.</div>
+                            <input type="datetime-local" id="wlnManualMealTime" style="width:100%; margin-bottom:8px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <div style="display:flex; gap:6px;">
+                                <button type="button" class="add-time-btn" style="flex:1; background:#27ae60;" onclick="Wellness.addManualMeal()">+ Lưu mốc ăn</button>
+                                <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6;" onclick="Wellness.toggleManualMealForm()">Hủy</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Workout -->
@@ -17891,6 +17902,84 @@ window.DBP={
                 save();
                 renderLogTab();
             }
+
+            function toDatetimeLocalValue(ts) {
+                const d = new Date(ts);
+                const pad = n => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            }
+
+            // Nhập lại mốc ăn cho lúc quên log (VD: đi chơi không mang điện thoại) —
+            // tự gắn vào đúng ngày dựa trên ngày giờ đã chọn, không cứng theo "hôm nay".
+            function toggleManualMealForm() {
+                const form = document.getElementById('wlnManualMealForm');
+                const opening = form.style.display === 'none';
+                form.style.display = opening ? 'block' : 'none';
+                if (opening) {
+                    document.getElementById('wlnManualMealTime').value = toDatetimeLocalValue(Date.now());
+                }
+            }
+            function addManualMeal() {
+                const input = document.getElementById('wlnManualMealTime');
+                if (!input.value) { alert('Chọn ngày giờ đã ăn nhé.'); return; }
+                const ts = new Date(input.value).getTime();
+                if (isNaN(ts)) { alert('Ngày giờ không hợp lệ.'); return; }
+                if (ts > Date.now() + 5 * 60000) { alert('Không thể chọn thời điểm trong tương lai.'); return; }
+                const key = wlnLocalDateStr(new Date(ts));
+                const day = getDay(key);
+                day.foods.push({ name: 'Bữa ăn (nhập thủ công)', cal: 0, sugar: 0, natri: 0, kali: 0, t: ts });
+                save();
+                document.getElementById('wlnManualMealForm').style.display = 'none';
+                if (key === todayKey()) {
+                    renderLogTab();
+                } else {
+                    alert(`Đã lưu mốc ăn vào ngày ${key} (khác hôm nay).`);
+                }
+            }
+
+            // Sửa giờ cho 1 món đã log — hữu ích khi log trễ và cần chỉnh lại đúng thời điểm thật.
+            let _wlnEditFoodIdx = null;
+            function openEditFoodTime(i) {
+                closeEditFoodTime();
+                _wlnEditFoodIdx = i;
+                const day = getDay(todayKey());
+                const f = day.foods[i];
+                if (!f) return;
+                const html = `
+                    <div class="wln-dose-modal-overlay" id="wlnEditTimeOverlay">
+                        <div class="wln-dose-modal-box">
+                            <div class="wln-dose-icon">🕐</div>
+                            <h4>${f.name}</h4>
+                            <div class="wln-dose-sub">Sửa lại đúng thời điểm đã ăn</div>
+                            <input type="datetime-local" id="wlnEditFoodTimeInput" value="${toDatetimeLocalValue(f.t)}" style="width:100%; margin-bottom:16px; padding:9px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-white); color:var(--text-dark); font-size:0.95rem;">
+                            <div class="wln-dose-actions">
+                                <button type="button" class="wln-dose-cancel" onclick="Wellness._closeEditFoodTime()">Hủy</button>
+                                <button type="button" class="wln-dose-save" onclick="Wellness._confirmEditFoodTime()">✓ Lưu</button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+                document.getElementById('wlnEditTimeOverlay').addEventListener('click', (e) => {
+                    if (e.target.id === 'wlnEditTimeOverlay') closeEditFoodTime();
+                });
+            }
+            function closeEditFoodTime() {
+                const el = document.getElementById('wlnEditTimeOverlay');
+                if (el) el.remove();
+                _wlnEditFoodIdx = null;
+            }
+            function confirmEditFoodTime() {
+                const input = document.getElementById('wlnEditFoodTimeInput');
+                if (!input.value) { input.style.borderColor = '#ef4444'; return; }
+                const ts = new Date(input.value).getTime();
+                if (isNaN(ts)) { input.style.borderColor = '#ef4444'; return; }
+                const day = getDay(todayKey());
+                const f = day.foods[_wlnEditFoodIdx];
+                if (f) f.t = ts;
+                save();
+                closeEditFoodTime();
+                renderLogTab();
+            }
             let fastingSettingsOpen = false;
             function toggleFastingSettings() {
                 fastingSettingsOpen = !fastingSettingsOpen;
@@ -17965,8 +18054,11 @@ window.DBP={
                 }
                 list.innerHTML = day.foods.map((f, i) => `
                     <div class="wln-log-item">
-                        <span>${f.name} — ${f.cal}kcal${f.sugar ? `, ${f.sugar}g đường` : ''}${f.natri ? `, ${f.natri}mg natri` : ''}${f.kali ? `, ${f.kali}mg kali` : ''}</span>
-                        <button onclick="Wellness.removeFood(${i})">✕</button>
+                        <span>${f.name} — ${f.cal}kcal${f.sugar ? `, ${f.sugar}g đường` : ''}${f.natri ? `, ${f.natri}mg natri` : ''}${f.kali ? `, ${f.kali}mg kali` : ''} <span style="color:var(--text-muted); font-size:0.7rem;">(${new Date(f.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
+                        <span style="display:flex; gap:6px;">
+                            <button onclick="Wellness.openEditFoodTime(${i})" title="Sửa giờ">🕐</button>
+                            <button onclick="Wellness.removeFood(${i})">✕</button>
+                        </span>
                     </div>
                 `).join('');
             }
@@ -18378,9 +18470,12 @@ window.DBP={
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
                 addPresetCaffeine, removeCaffeine,
                 markMealNow, toggleFastingSettings, setFastingGoal, setCaffeineCutoff,
+                toggleManualMealForm, addManualMeal, openEditFoodTime,
                 _setDoseInput: setDoseInput,
                 _closeDoseModal: closeSuppDoseModal,
-                _confirmDoseModal: confirmSuppDoseModal
+                _confirmDoseModal: confirmSuppDoseModal,
+                _closeEditFoodTime: closeEditFoodTime,
+                _confirmEditFoodTime: confirmEditFoodTime
             };
         })();
         </script>
