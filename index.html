@@ -17504,6 +17504,20 @@ window.DBP={
             </div>
         </div>
 
+        <!-- ===== Modal: nhập hàm lượng supplement (thay cho prompt()) ===== -->
+        <div id="wlnSuppDoseModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center; padding:16px;">
+            <div style="background:var(--bg-white); border-radius:var(--radius-sm); padding:18px; width:min(320px, 92vw); box-shadow:0 12px 34px rgba(0,0,0,0.3);">
+                <div id="wlnSuppDoseModalTitle" style="font-size:0.95rem; font-weight:600; color:var(--text-dark); margin-bottom:12px;"></div>
+                <input id="wlnSuppDoseModalInput" type="number" step="any" inputmode="decimal" placeholder="Hàm lượng"
+                    style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark); font-size:1rem; margin-bottom:14px;"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault(); Wellness.confirmSuppDose();}">
+                <div style="display:flex; gap:8px;">
+                    <button type="button" class="add-time-btn" style="flex:1; background:#27ae60;" onclick="Wellness.confirmSuppDose()">✓ Lưu</button>
+                    <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6;" onclick="Wellness.closeSuppDoseModal()">Hủy</button>
+                </div>
+            </div>
+        </div>
+
         <style>
             .wln-tab-btn {
                 flex: 1;
@@ -17921,18 +17935,37 @@ window.DBP={
                 ).join('');
             }
 
+            let _suppDoseModalIdx = null;
+
             function addPresetSupp(i) {
                 const p = data.suppPresets[i];
                 if (!p) return;
-                const input = prompt(`Hàm lượng ${p.name} (${p.unit})?`, p.lastDose != null ? p.lastDose : '');
-                if (input === null) return;
-                const dose = parseFloat(input);
+                _suppDoseModalIdx = i;
+                document.getElementById('wlnSuppDoseModalTitle').textContent = `Hàm lượng ${p.name} (${p.unit})?`;
+                const input = document.getElementById('wlnSuppDoseModalInput');
+                input.value = p.lastDose != null ? p.lastDose : '';
+                document.getElementById('wlnSuppDoseModal').style.display = 'flex';
+                setTimeout(() => { input.focus(); input.select(); }, 50);
+            }
+
+            function closeSuppDoseModal() {
+                document.getElementById('wlnSuppDoseModal').style.display = 'none';
+                _suppDoseModalIdx = null;
+            }
+
+            function confirmSuppDose() {
+                if (_suppDoseModalIdx === null) { closeSuppDoseModal(); return; }
+                const p = data.suppPresets[_suppDoseModalIdx];
+                if (!p) { closeSuppDoseModal(); return; }
+                const input = document.getElementById('wlnSuppDoseModalInput');
+                const dose = parseFloat(input.value);
                 if (isNaN(dose) || dose <= 0) { alert('Nhập số hợp lệ nhé.'); return; }
                 p.lastDose = dose;
                 const log = getSuppLog(todayKey());
                 log.push({ name: p.name, unit: p.unit, dose, t: Date.now() });
                 save();
                 renderSuppLogList();
+                closeSuppDoseModal();
             }
 
             function openNewSupp() {
@@ -18055,7 +18088,8 @@ window.DBP={
             return {
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
                 removeFood, addWater, logWorkout, saveWeeklyWeight,
-                addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData
+                addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
+                closeSuppDoseModal, confirmSuppDose
             };
         })();
         </script>
