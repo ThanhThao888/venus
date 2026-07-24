@@ -17418,123 +17418,149 @@ window.DBP={
                     <button type="button" class="wln-tab-btn" data-tab="review" onclick="Wellness.setTab('review')">📊 Tuần này</button>
                 </div>
 
-                <!-- ===== TAB: LOG HÔM NAY ===== -->
+                <!-- ===== TAB: LOG HÔM NAY (dashboard chỉ hiển thị phân tích — input nằm hết trong modal riêng từng loại) ===== -->
                 <div id="wlnTabLog" class="wln-tab-panel">
 
-                    <!-- Quick totals -->
-                    <div id="wlnTotalsRow" style="display:grid; grid-template-columns: repeat(3,1fr); gap:8px; margin-bottom:10px; grid-auto-rows:1fr;"></div>
+                    <!-- Quick totals: số liệu + % ngân sách, KHÔNG có nút bấm -->
+                    <div id="wlnTotalsRow" style="display:grid; grid-template-columns: repeat(2,1fr); gap:8px; margin-bottom:10px;"></div>
 
-                    <!-- Water / Caffeine compact chips -->
+                    <!-- Water / Caffeine — bấm vào chip để mở modal nhập riêng -->
                     <div class="wln-summary-chip-row">
-                        <div class="wln-summary-chip">
-                            <span class="wln-chip-label">💧 Nước lọc</span>
+                        <div class="wln-summary-chip wln-clickable" onclick="Wellness.openWaterModal()" role="button" tabindex="0">
+                            <span class="wln-chip-label">💧 Nước lọc<span class="wln-chip-chevron">›</span></span>
                             <span class="wln-chip-value" id="wlnWaterCount">0 ly</span>
                         </div>
-                        <div class="wln-summary-chip">
-                            <span class="wln-chip-label">☕ Caffeine / 400mg</span>
+                        <div class="wln-summary-chip wln-clickable" onclick="Wellness.openCaffeineModal()" role="button" tabindex="0">
+                            <span class="wln-chip-label">☕ Caffeine<span class="wln-chip-chevron">›</span></span>
                             <span class="wln-chip-value" id="wlnCaffeineTotal">0mg</span>
+                            <div class="wln-bar-track"><div class="wln-bar-fill" id="wlnCaffeineBar" style="width:0%;"></div></div>
                         </div>
                     </div>
                     <div id="wlnCaffeineWarning" style="display:none; font-size:0.75rem; color:#e74c3c; margin-bottom:10px; line-height:1.4;"></div>
                     <div id="wlnCaffeineLogList" style="display:flex; flex-direction:column; gap:5px; max-height:100px; overflow-y:auto; margin-bottom:12px;"></div>
 
                     <!-- Today's food log -->
-                    <div style="font-size:0.85rem; font-weight:600; color:var(--text-dark); margin-bottom:6px;">🍽️ Đã ăn hôm nay</div>
+                    <div class="wln-section-header-row">
+                        <span class="wln-section-header-label">🍽️ Đã ăn hôm nay</span>
+                        <button type="button" class="wln-add-trigger" onclick="Wellness.openFoodModal()" title="Log món ăn" aria-label="Log món ăn">+</button>
+                    </div>
                     <div id="wlnFoodLogList" style="margin-bottom:14px; display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;"></div>
 
                     <!-- Fasting status -->
-                    <div style="font-size:0.85rem; font-weight:600; color:var(--text-dark); margin-bottom:6px;">⏱️ Fasting Window</div>
+                    <div class="wln-section-header-row">
+                        <span class="wln-section-header-label">⏱️ Fasting Window</span>
+                        <button type="button" class="wln-add-trigger" onclick="Wellness.openFastingModal()" title="Giờ ăn / cài đặt" aria-label="Giờ ăn / cài đặt">+</button>
+                    </div>
                     <div id="wlnFastingBox" style="display:flex; flex-direction:column; gap:5px; margin-bottom:14px;"></div>
 
                     <!-- Workout status -->
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-                        <span style="font-size:0.85rem; font-weight:600; color:var(--text-dark);">🏋️ Tập luyện hôm nay</span>
-                        <span id="wlnWorkoutStatus" style="font-size:0.82rem; color:var(--text-muted);">Chưa log</span>
+                    <div class="wln-section-header-row" style="margin-bottom:6px;">
+                        <span class="wln-section-header-label">🏋️ Tập luyện hôm nay</span>
+                        <span style="display:flex; align-items:center; gap:8px;">
+                            <span id="wlnWorkoutStatus" style="font-size:0.82rem; color:var(--text-muted);">Chưa log</span>
+                            <button type="button" class="wln-add-trigger" onclick="Wellness.openWorkoutModal()" title="Log vận động" aria-label="Log vận động">+</button>
+                        </span>
                     </div>
-
-                    <button type="button" class="wln-open-log-btn" onclick="Wellness.openLogModal()">📝 Nhập liệu hôm nay</button>
                 </div>
 
-                <!-- ===== LOG ENTRY MODAL (all inputs live here) ===== -->
-                <div class="wln-dose-modal-overlay" id="wlnLogModalOverlay" style="display:none;" onclick="if(event.target===this) Wellness.closeLogModal()">
+                <!-- ===== MODAL: 💧 NƯỚC LỌC ===== -->
+                <div class="wln-dose-modal-overlay" id="wlnWaterModalOverlay" style="display:none;" onclick="if(event.target===this) Wellness.closeWaterModal()">
+                    <div class="wln-log-modal-box" style="max-width:320px;">
+                        <div class="wln-log-modal-header">
+                            <h4 style="margin:0;">💧 Nước lọc hôm nay</h4>
+                            <button type="button" class="wln-log-modal-close" onclick="Wellness.closeWaterModal()">&times;</button>
+                        </div>
+                        <div id="wlnWaterModalCount" style="text-align:center; font-size:2.3rem; font-weight:700; color:var(--primary); margin-bottom:18px;">0 ly</div>
+                        <div style="display:flex; gap:8px;">
+                            <button type="button" class="add-time-btn" style="flex:1; background:#2980b9;" onclick="Wellness.addWater(-1)">−1</button>
+                            <button type="button" class="add-time-btn" style="flex:1; background:#3498db;" onclick="Wellness.addWater(1)">+1 ly</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== MODAL: ☕ CAFFEINE ===== -->
+                <div class="wln-dose-modal-overlay" id="wlnCaffeineModalOverlay" style="display:none;" onclick="if(event.target===this) Wellness.closeCaffeineModal()">
+                    <div class="wln-log-modal-box" style="max-width:400px;">
+                        <div class="wln-log-modal-header">
+                            <h4 style="margin:0;">☕ Caffeine hôm nay</h4>
+                            <button type="button" class="wln-log-modal-close" onclick="Wellness.closeCaffeineModal()">&times;</button>
+                        </div>
+                        <div id="wlnCaffeineModalTotal" style="text-align:center; font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;"></div>
+                        <button type="button" class="add-time-btn" style="width:100%; background:#8b5e3c; margin-bottom:10px;" onclick="Wellness.addPresetCaffeine(0,true)">☕+💧 Cà phê &amp; bù nước (1 chạm)</button>
+                        <div id="wlnCaffeinePresets" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+                    </div>
+                </div>
+
+                <!-- ===== MODAL: 🍽️ LOG MÓN ĂN ===== -->
+                <div class="wln-dose-modal-overlay" id="wlnFoodModalOverlay" style="display:none;" onclick="if(event.target===this) Wellness.closeFoodModal()">
                     <div class="wln-log-modal-box">
                         <div class="wln-log-modal-header">
-                            <h4 style="margin:0;">📝 Nhập liệu hôm nay</h4>
-                            <button type="button" class="wln-log-modal-close" onclick="Wellness.closeLogModal()">&times;</button>
+                            <h4 style="margin:0;">🍽️ Log món ăn</h4>
+                            <button type="button" class="wln-log-modal-close" onclick="Wellness.closeFoodModal()">&times;</button>
                         </div>
-
-                        <!-- Water -->
-                        <div class="wln-log-modal-section">
-                            <div class="wln-log-modal-section-title">💧 Nước lọc</div>
-                            <div style="display:flex; gap:6px;">
-                                <button type="button" class="add-time-btn" style="flex:1; background:#3498db;" onclick="Wellness.addWater(1)">+1 ly</button>
-                                <button type="button" class="add-time-btn" style="flex:1; background:#2980b9;" onclick="Wellness.addWater(-1)">-1</button>
-                            </div>
+                        <div id="wlnFoodModalTotal" style="text-align:center; font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;"></div>
+                        <div id="wlnFoodPresets" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.8rem;" onclick="Wellness.openCustomFood()">✏️ Món khác...</button>
                         </div>
-
-                        <!-- Caffeine -->
-                        <div class="wln-log-modal-section">
-                            <div class="wln-log-modal-section-title">☕ Caffeine</div>
-                            <button type="button" class="add-time-btn" style="width:100%; background:#8b5e3c; margin-bottom:6px;" onclick="Wellness.addPresetCaffeine(0,true)">☕+💧 Cà phê &amp; bù nước (1 chạm)</button>
-                            <div id="wlnCaffeinePresets" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
-                        </div>
-
-                        <!-- Quick food log -->
-                        <div class="wln-log-modal-section">
-                            <div class="wln-log-modal-section-title">🍽️ Log món ăn nhanh</div>
-                            <div id="wlnFoodPresets" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
-                            <div style="display:flex; gap:6px;">
-                                <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.8rem;" onclick="Wellness.openCustomFood()">✏️ Món khác...</button>
-                            </div>
-                            <div id="wlnCustomFoodForm" style="display:none; margin-top:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
-                                <input id="wlnCustomName" placeholder="Tên món" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                <div style="display:flex; gap:6px; margin-bottom:6px;">
-                                    <input id="wlnCustomCal" type="number" placeholder="Kcal" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                    <input id="wlnCustomSugar" type="number" placeholder="Đường (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                </div>
-                                <div style="display:flex; gap:6px; margin-bottom:8px;">
-                                    <input id="wlnCustomNatri" type="number" placeholder="Natri/muối (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                    <input id="wlnCustomKali" type="number" placeholder="Kali (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                </div>
-                                <button type="button" class="add-time-btn" style="width:100%; background:#27ae60;" onclick="Wellness.addCustomFood()">+ Thêm vào log</button>
-                            </div>
-                        </div>
-
-                        <!-- Fasting settings & meal marking -->
-                        <div class="wln-log-modal-section">
-                            <div class="wln-log-modal-section-title">
-                                <span>⏱️ Fasting Window</span>
-                                <button type="button" style="background:none; border:none; cursor:pointer; font-size:0.9rem; color:var(--text-muted);" onclick="Wellness.toggleFastingSettings()">⚙️</button>
-                            </div>
-                            <div id="wlnFastingSettings" style="display:none; margin-bottom:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
-                                <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:4px;">Mục tiêu cửa sổ ăn (giờ) — VD: 16:8 → nhập 8</label>
-                                <input type="number" id="wlnFastingGoalInput" min="1" max="16" step="0.5" style="width:100%; margin-bottom:8px; padding:6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onchange="Wellness.setFastingGoal(this.value)">
-                                <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:4px;">Giờ cắt caffeine (tránh ảnh hưởng giấc ngủ)</label>
-                                <input type="time" id="wlnCaffeineCutoffInput" style="width:100%; padding:6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onchange="Wellness.setCaffeineCutoff(this.value)">
-                            </div>
+                        <div id="wlnCustomFoodForm" style="display:none; margin-top:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+                            <input id="wlnCustomName" placeholder="Tên món" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             <div style="display:flex; gap:6px; margin-bottom:6px;">
-                                <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6; font-size:0.78rem;" onclick="Wellness.markMealNow()">🍽️ Ăn ngay bây giờ</button>
-                                <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.78rem;" onclick="Wellness.toggleManualMealForm()">🕐 Nhập giờ khác...</button>
+                                <input id="wlnCustomCal" type="number" placeholder="Kcal" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomSugar" type="number" placeholder="Đường (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             </div>
-                            <div id="wlnManualMealForm" style="display:none; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
-                                <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; line-height:1.4;">Dùng khi quên log lúc đang ăn (VD: đi chơi với bạn bè không mang điện thoại) — nhập lại đúng ngày giờ đã ăn, hệ thống sẽ tự gắn vào đúng ngày.</div>
-                                <input type="datetime-local" id="wlnManualMealTime" style="width:100%; margin-bottom:8px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                <div style="display:flex; gap:6px;">
-                                    <button type="button" class="add-time-btn" style="flex:1; background:#27ae60;" onclick="Wellness.addManualMeal()">+ Lưu mốc ăn</button>
-                                    <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6;" onclick="Wellness.toggleManualMealForm()">Hủy</button>
-                                </div>
+                            <div style="display:flex; gap:6px; margin-bottom:8px;">
+                                <input id="wlnCustomNatri" type="number" placeholder="Natri/muối (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomKali" type="number" placeholder="Kali (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            </div>
+                            <button type="button" class="add-time-btn" style="width:100%; background:#27ae60;" onclick="Wellness.addCustomFood()">+ Thêm vào log</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== MODAL: ⏱️ FASTING WINDOW & GIỜ ĂN ===== -->
+                <div class="wln-dose-modal-overlay" id="wlnFastingModalOverlay" style="display:none;" onclick="if(event.target===this) Wellness.closeFastingModal()">
+                    <div class="wln-log-modal-box">
+                        <div class="wln-log-modal-header">
+                            <h4 style="margin:0;">⏱️ Fasting Window &amp; Giờ ăn</h4>
+                            <button type="button" class="wln-log-modal-close" onclick="Wellness.closeFastingModal()">&times;</button>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+                            <button type="button" style="background:none; border:none; cursor:pointer; font-size:0.78rem; color:var(--text-muted);" onclick="Wellness.toggleFastingSettings()">⚙️ Cài đặt</button>
+                        </div>
+                        <div id="wlnFastingSettings" style="display:none; margin-bottom:12px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:4px;">Mục tiêu cửa sổ ăn (giờ) — VD: 16:8 → nhập 8</label>
+                            <input type="number" id="wlnFastingGoalInput" min="1" max="16" step="0.5" style="width:100%; margin-bottom:8px; padding:6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onchange="Wellness.setFastingGoal(this.value)">
+                            <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:4px;">Giờ cắt caffeine (tránh ảnh hưởng giấc ngủ)</label>
+                            <input type="time" id="wlnCaffeineCutoffInput" style="width:100%; padding:6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onchange="Wellness.setCaffeineCutoff(this.value)">
+                        </div>
+                        <div style="display:flex; gap:6px; margin-bottom:6px;">
+                            <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6; font-size:0.78rem;" onclick="Wellness.markMealNow()">🍽️ Ăn ngay bây giờ</button>
+                            <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.78rem;" onclick="Wellness.toggleManualMealForm()">🕐 Nhập giờ khác...</button>
+                        </div>
+                        <div id="wlnManualMealForm" style="display:none; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+                            <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; line-height:1.4;">Dùng khi quên log lúc đang ăn (VD: đi chơi với bạn bè không mang điện thoại) — nhập lại đúng ngày giờ đã ăn, hệ thống sẽ tự gắn vào đúng ngày.</div>
+                            <input type="datetime-local" id="wlnManualMealTime" style="width:100%; margin-bottom:8px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <div style="display:flex; gap:6px;">
+                                <button type="button" class="add-time-btn" style="flex:1; background:#27ae60;" onclick="Wellness.addManualMeal()">+ Lưu mốc ăn</button>
+                                <button type="button" class="add-time-btn" style="flex:1; background:#95a5a6;" onclick="Wellness.toggleManualMealForm()">Hủy</button>
                             </div>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Workout -->
-                        <div class="wln-log-modal-section">
-                            <div class="wln-log-modal-section-title">🏋️ Tập luyện hôm nay</div>
-                            <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                                <button type="button" class="add-time-btn" style="background:#e67e22; font-size:0.78rem;" onclick="Wellness.logWorkout('Đi bộ nhanh', 10)">🚶 Đi bộ 10p</button>
-                                <button type="button" class="add-time-btn" style="background:#e67e22; font-size:0.78rem;" onclick="Wellness.logWorkout('Bài tập nhẹ tại nhà', 15)">🧘 Nhẹ 15p</button>
-                                <button type="button" class="add-time-btn" style="background:#e67e22; font-size:0.78rem;" onclick="Wellness.logWorkout('Gym / Cardio', 30)">💪 Gym 30p</button>
-                                <button type="button" class="add-time-btn" style="background:#95a5a6; font-size:0.78rem;" onclick="Wellness.logWorkout('Nghỉ', 0)">😴 Hôm nay nghỉ</button>
-                            </div>
+                <!-- ===== MODAL: 🏋️ TẬP LUYỆN ===== -->
+                <div class="wln-dose-modal-overlay" id="wlnWorkoutModalOverlay" style="display:none;" onclick="if(event.target===this) Wellness.closeWorkoutModal()">
+                    <div class="wln-log-modal-box" style="max-width:360px;">
+                        <div class="wln-log-modal-header">
+                            <h4 style="margin:0;">🏋️ Tập luyện hôm nay</h4>
+                            <button type="button" class="wln-log-modal-close" onclick="Wellness.closeWorkoutModal()">&times;</button>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <button type="button" class="add-time-btn" style="background:#e67e22; font-size:0.78rem;" onclick="Wellness.logWorkout('Đi bộ nhanh', 10)">🚶 Đi bộ 10p</button>
+                            <button type="button" class="add-time-btn" style="background:#e67e22; font-size:0.78rem;" onclick="Wellness.logWorkout('Bài tập nhẹ tại nhà', 15)">🧘 Nhẹ 15p</button>
+                            <button type="button" class="add-time-btn" style="background:#e67e22; font-size:0.78rem;" onclick="Wellness.logWorkout('Gym / Cardio', 30)">💪 Gym 30p</button>
+                            <button type="button" class="add-time-btn" style="background:#95a5a6; font-size:0.78rem;" onclick="Wellness.logWorkout('Nghỉ', 0)">😴 Hôm nay nghỉ</button>
                         </div>
                     </div>
                 </div>
@@ -17720,12 +17746,6 @@ window.DBP={
                 font-size: 0.85rem; font-weight: 600; color: var(--text-dark); margin-bottom: 8px;
                 display: flex; align-items: center; justify-content: space-between;
             }
-            .wln-open-log-btn {
-                width: 100%; padding: 12px; border: none; border-radius: 10px; cursor: pointer;
-                background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff;
-                font-size: 0.92rem; font-weight: 700; margin-top: 4px;
-            }
-            .wln-open-log-btn:hover { filter: brightness(1.08); }
             .wln-summary-chip-row { display: flex; gap: 8px; margin-bottom: 10px; }
             .wln-summary-chip {
                 flex: 1; padding: 9px 10px; background: var(--bg-light); border: 1px solid var(--border-color);
@@ -17733,6 +17753,27 @@ window.DBP={
             }
             .wln-summary-chip .wln-chip-label { font-size: 0.68rem; color: var(--text-muted); }
             .wln-summary-chip .wln-chip-value { font-size: 0.92rem; font-weight: 700; color: var(--text-dark); }
+
+            /* Compact dashboard -> focused modal per action (thay cho 1 modal to nhét hết) */
+            .wln-clickable { cursor: pointer; transition: var(--transition); }
+            .wln-clickable:hover { border-color: var(--primary); }
+            .wln-chip-chevron { opacity: 0.5; margin-left: 3px; }
+            .wln-bar-track {
+                height: 5px; background: var(--border-color); border-radius: 3px;
+                overflow: hidden; margin-top: 6px;
+            }
+            .wln-bar-fill { height: 100%; border-radius: 3px; background: #2ecc71; transition: width 0.3s ease; }
+            .wln-section-header-row {
+                display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+            }
+            .wln-section-header-label { font-size: 0.85rem; font-weight: 600; color: var(--text-dark); }
+            .wln-add-trigger {
+                width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
+                background: var(--primary); color: #fff; font-size: 0.95rem; font-weight: 700; line-height: 1;
+                cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+                flex-shrink: 0; transition: var(--transition);
+            }
+            .wln-add-trigger:hover { filter: brightness(1.1); transform: scale(1.06); }
         </style>
 
         <script>
@@ -17851,12 +17892,41 @@ window.DBP={
                 if (tab === 'review') renderReviewTab();
             }
 
-            function openLogModal() {
-                document.getElementById('wlnLogModalOverlay').style.display = 'flex';
+            /* Mỗi loại log có modal riêng, nhỏ gọn, đúng 1 việc — bấm vào chip/nút "+"
+               tương ứng ở dashboard để mở, thay vì gộp hết vào 1 modal to. */
+            function openWaterModal() {
+                document.getElementById('wlnWaterModalOverlay').style.display = 'flex';
+            }
+            function closeWaterModal() {
+                document.getElementById('wlnWaterModalOverlay').style.display = 'none';
             }
 
-            function closeLogModal() {
-                document.getElementById('wlnLogModalOverlay').style.display = 'none';
+            function openCaffeineModal() {
+                document.getElementById('wlnCaffeineModalOverlay').style.display = 'flex';
+            }
+            function closeCaffeineModal() {
+                document.getElementById('wlnCaffeineModalOverlay').style.display = 'none';
+            }
+
+            function openFoodModal() {
+                document.getElementById('wlnFoodModalOverlay').style.display = 'flex';
+            }
+            function closeFoodModal() {
+                document.getElementById('wlnFoodModalOverlay').style.display = 'none';
+            }
+
+            function openFastingModal() {
+                document.getElementById('wlnFastingModalOverlay').style.display = 'flex';
+            }
+            function closeFastingModal() {
+                document.getElementById('wlnFastingModalOverlay').style.display = 'none';
+            }
+
+            function openWorkoutModal() {
+                document.getElementById('wlnWorkoutModalOverlay').style.display = 'flex';
+            }
+            function closeWorkoutModal() {
+                document.getElementById('wlnWorkoutModalOverlay').style.display = 'none';
             }
 
             function renderFoodPresets() {
@@ -17952,11 +18022,19 @@ window.DBP={
             function renderCaffeineSection() {
                 const day = getDay(todayKey());
                 const total = day.caffeine.reduce((s, c) => s + (c.mg || 0), 0);
+                const overLimit = total > CAFFEINE_DAILY_LIMIT;
                 const totalEl = document.getElementById('wlnCaffeineTotal');
                 if (totalEl) {
                     totalEl.textContent = `${total}mg / ${CAFFEINE_DAILY_LIMIT}mg`;
-                    totalEl.style.color = total > CAFFEINE_DAILY_LIMIT ? '#e74c3c' : 'var(--text-muted)';
+                    totalEl.style.color = overLimit ? '#e74c3c' : 'var(--text-dark)';
                 }
+                const barEl = document.getElementById('wlnCaffeineBar');
+                if (barEl) {
+                    barEl.style.width = `${Math.min(100, (total / CAFFEINE_DAILY_LIMIT) * 100)}%`;
+                    barEl.style.background = overLimit ? '#e74c3c' : '#2ecc71';
+                }
+                const modalTotalEl = document.getElementById('wlnCaffeineModalTotal');
+                if (modalTotalEl) modalTotalEl.textContent = `Hôm nay: ${total}mg / ${CAFFEINE_DAILY_LIMIT}mg`;
                 const cutoffHour = data.settings.caffeineCutoffHour;
                 const lateCaffeine = day.caffeine.filter(c => new Date(c.t).getHours() >= cutoffHour);
                 const warnEl = document.getElementById('wlnCaffeineWarning');
@@ -18117,10 +18195,12 @@ window.DBP={
                 }
                 const overTarget = stats.eatingHours > target;
                 const color = overTarget ? '#e74c3c' : '#2ecc71';
+                const pct = Math.min(100, (stats.eatingHours / target) * 100);
                 box.innerHTML = `
                     <div class="wln-log-item"><span>🍽️ Bữa đầu tiên</span><span><b>${fmtTime(stats.first)}</b></span></div>
                     <div class="wln-log-item"><span>🍽️ Bữa gần nhất</span><span><b>${fmtTime(stats.last)}</b></span></div>
                     <div class="wln-log-item"><span>⏱️ Cửa sổ ăn hôm nay</span><span style="color:${color};"><b>${stats.eatingHours.toFixed(1)}h</b> / mục tiêu ${target}h</span></div>
+                    <div class="wln-bar-track" style="margin:-3px 2px 3px;"><div class="wln-bar-fill" style="width:${pct}%; background:${color};"></div></div>
                     <div class="wln-log-item"><span>🌙 Đã nhịn kể từ bữa cuối</span><span><b>${stats.fastingSinceLastH.toFixed(1)}h</b></span></div>
                     ${overTarget ? `<div style="font-size:0.75rem; color:#e74c3c; line-height:1.4;">⚠️ Cửa sổ ăn đã vượt mục tiêu ${target}h — bữa cuối càng gần giờ ngủ, RHR khi ngủ càng dễ tăng và HRV càng dễ giảm.</div>` : ''}
                 `;
@@ -18135,14 +18215,27 @@ window.DBP={
                 const row = document.getElementById('wlnTotalsRow');
                 const sugarColor = totalSugar > SUGAR_BUDGET ? '#e74c3c' : '#2ecc71';
                 const natriColor = totalNatri > SODIUM_BUDGET ? '#e74c3c' : '#2ecc71';
+                const sugarPct = Math.min(100, (totalSugar / SUGAR_BUDGET) * 100);
+                const natriPct = Math.min(100, (totalNatri / SODIUM_BUDGET) * 100);
                 row.innerHTML = `
                     <div class="wln-stat-box"><div class="wln-stat-val">${Math.round(totalCal)}</div><div class="wln-stat-label">kcal hôm nay</div></div>
-                    <div class="wln-stat-box"><div class="wln-stat-val" style="color:${sugarColor};">${totalSugar}g</div><div class="wln-stat-label">đường (mục tiêu &lt;${SUGAR_BUDGET}g)</div></div>
-                    <div class="wln-stat-box"><div class="wln-stat-val" style="color:${natriColor};">${Math.round(totalNatri)}mg</div><div class="wln-stat-label">🧂 natri (mục tiêu &lt;${SODIUM_BUDGET}mg)</div></div>
                     <div class="wln-stat-box"><div class="wln-stat-val">${Math.round(totalKali)}mg</div><div class="wln-stat-label">kali</div></div>
-                    <div class="wln-stat-box"><div class="wln-stat-val">${day.water || 0}</div><div class="wln-stat-label">ly nước</div></div>
+                    <div class="wln-stat-box">
+                        <div class="wln-stat-val" style="color:${sugarColor};">${totalSugar}g</div>
+                        <div class="wln-stat-label">đường (mục tiêu &lt;${SUGAR_BUDGET}g)</div>
+                        <div class="wln-bar-track"><div class="wln-bar-fill" style="width:${sugarPct}%; background:${sugarColor};"></div></div>
+                    </div>
+                    <div class="wln-stat-box">
+                        <div class="wln-stat-val" style="color:${natriColor};">${Math.round(totalNatri)}mg</div>
+                        <div class="wln-stat-label">🧂 natri (mục tiêu &lt;${SODIUM_BUDGET}mg)</div>
+                        <div class="wln-bar-track"><div class="wln-bar-fill" style="width:${natriPct}%; background:${natriColor};"></div></div>
+                    </div>
                 `;
                 document.getElementById('wlnWaterCount').textContent = `${day.water || 0} ly`;
+                const waterModalEl = document.getElementById('wlnWaterModalCount');
+                if (waterModalEl) waterModalEl.textContent = `${day.water || 0} ly`;
+                const foodModalTotalEl = document.getElementById('wlnFoodModalTotal');
+                if (foodModalTotalEl) foodModalTotalEl.textContent = `Hôm nay: ${Math.round(totalCal)} kcal, ${totalSugar}g đường`;
             }
 
             function renderFoodLogList() {
@@ -18571,7 +18664,11 @@ window.DBP={
                 addPresetCaffeine, removeCaffeine,
                 markMealNow, toggleFastingSettings, setFastingGoal, setCaffeineCutoff,
                 toggleManualMealForm, addManualMeal, openEditFoodTime,
-                openLogModal, closeLogModal,
+                openWaterModal, closeWaterModal,
+                openCaffeineModal, closeCaffeineModal,
+                openFoodModal, closeFoodModal,
+                openFastingModal, closeFastingModal,
+                openWorkoutModal, closeWorkoutModal,
                 _setDoseInput: setDoseInput,
                 _closeDoseModal: closeSuppDoseModal,
                 _confirmDoseModal: confirmSuppDoseModal,
