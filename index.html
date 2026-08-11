@@ -2083,6 +2083,60 @@
         }
         /* --- END GOAL MANAGEMENT --- */
 
+        /* =====================================================
+           GOAL CARD — small additions on top of the existing
+           .goal-item design system above (renderGoalCard now
+           uses those classes instead of inline styles). Only
+           adding what wasn't already covered.
+           ===================================================== */
+        .goal-status-badge.soon {
+            background-color: #fef3c7;
+            color: #d97706;
+            border: 1px solid #f59e0b;
+        }
+        .dark-mode .goal-status-badge.soon {
+            background-color: #78350f;
+            color: #fde68a;
+            border: 1px solid #f59e0b;
+        }
+
+        .goal-progress-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+        .goal-progress-percent { font-weight: 700; }
+
+        .goal-forecast-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            font-size: 0.85rem;
+            margin-top: 6px;
+        }
+        .goal-forecast-grid span { color: var(--text-muted); }
+
+        .goal-created {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .goal-action-btn.primary {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        .goal-action-btn.primary:hover {
+            background: var(--primary);
+            filter: brightness(0.92);
+        }
+        /* ===== END GOAL CARD ADDITIONS ===== */
+
         /* --- COURSE ACTION BUTTONS --- */
         .course-action-btn {
             padding: 8px 16px;
@@ -23581,80 +23635,6 @@ window.DBP={
             getRandomMeme();
             updateDailyStudyDisplay();
 
-
-            // --- GOAL PROGRESS CHART ---
-            let goalProgressChart = null;
-            function initGoalProgressChart() {
-                const ctx = document.getElementById('goalProgressChart').getContext('2d');                
-                if (goalProgressChart) {
-                    goalProgressChart.destroy();
-                }
-                const filteredGoals = goals.filter(g => g.career === currentCareer);
-                const totalGoals = filteredGoals.length;
-                const completedGoals = filteredGoals.filter(g => getGoalStatus(g) === 'completed').length;
-                const completionRate = totalGoals > 0 ? Math.round((completedGoals / totalGoals) * 100) : 0;
-                const data = {
-                    labels: ['Completed', 'Remaining'],
-                    datasets: [{
-                        data: [completedGoals, totalGoals - completedGoals],
-                        backgroundColor: [
-                            '#10b981', 
-                            '#e2e8f0'  
-                        ],
-                        borderColor: [
-                            '#059669',
-                            '#cbd5e1'
-                        ],
-                        borderWidth: 2,
-                        cutout: '70%'
-                    }]
-                };
-                const options = {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const label = context.label || '';
-                                    const value = context.raw || 0;
-                                    return `${label}: ${value}`;
-                                }
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: `${completionRate}% Complete`,
-                            font: {
-                                size: 16,
-                                weight: 'bold'
-                            },
-                            color: (getComputedStyle(document.documentElement).getPropertyValue('--text-dark').trim() || '#1e293b'),
-                            padding: 10
-                        }
-                    },
-                    animation: {
-                        duration: 1000,
-                        easing: 'easeOutBounce'
-                    }
-                };
-                goalProgressChart = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: data,
-                    options: options
-                });
-                document.getElementById('goalProgressSummary').textContent = `${completedGoals}/${totalGoals} goals completed`;
-            }
-
-
-            function updateGoalProgressChart() {
-                if (document.getElementById('goalProgressChart')) {
-                    initGoalProgressChart();
-                }
-            }            
             loadSleepData(); 
             document.querySelector(`.mood-btn[data-mood="${currentMood}"]`).classList.add('active');
             suggestSkillByMood();
@@ -26903,24 +26883,6 @@ window.DBP={
         }
 
 
-
-
-        function openUpdateCustomGoalModal(id) {
-            const goal = goals.find(g => g.id === id);
-            if (!goal || goal.type !== 'custom') return;
-            
-            document.getElementById('updateGoalId').value = goal.id;
-            document.getElementById('updateGoalValue').value = goal.currentProgress || 0;
-            document.getElementById('updateCustomGoalModal').style.display = 'flex';
-        }
-
-        function closeUpdateCustomGoalModal() {
-            document.getElementById('updateCustomGoalModal').style.display = 'none';
-        }
-
-
-
-
         function quickAddStudyTime(goalId) {
             const goal = goals.find(g => g.id === goalId);
             if (!goal) {
@@ -27407,21 +27369,6 @@ window.DBP={
             localStorage.setItem('completedGoalsExpanded', !isExpanded);
         }
 
-
-        function toggleCompletedGoals() {
-            const list = document.querySelector('.completed-goals-list');
-            const icon = document.querySelector('.completed-section .toggle-icon');
-            
-            if (!list || !icon) return;
-            
-            const isExpanded = list.style.display !== 'none';
-            
-            list.style.display = isExpanded ? 'none' : 'block';
-            icon.style.transform = isExpanded ? 'rotate(-90deg)' : 'rotate(0)';
-            
-            localStorage.setItem('completedGoalsExpanded', !isExpanded);
-        }
-
         // Calculate Goal Forecast (7-day average + estimated completion)
         function calculateGoalForecast(goal) {
             if (goal.type === 'custom' || goal.currentProgress >= goal.target) {
@@ -27463,19 +27410,21 @@ window.DBP={
                 active: { 
                     badge: '🚀 Active', 
                     color: '#3b82f6',
-                    bgColor: 'rgba(59, 130, 246, 0.1)',
                     borderColor: '#3b82f6'
+                },
+                soon: {
+                    badge: '⏰ Due Soon',
+                    color: '#d97706',
+                    borderColor: '#f59e0b'
                 },
                 overdue: { 
                     badge: '⏰ Overdue', 
                     color: '#ef4444',
-                    bgColor: 'rgba(239, 68, 68, 0.1)',
                     borderColor: '#ef4444'
                 },
                 completed: { 
                     badge: '✅ Completed', 
                     color: '#10b981',
-                    bgColor: 'rgba(16, 185, 129, 0.1)',
                     borderColor: '#10b981'
                 }
             };
@@ -27491,77 +27440,60 @@ window.DBP={
                 ? formatDate(goal.deadline)
                 : 'No deadline';
             
-            const deadlineClass = status === 'overdue' 
-                ? 'style="color: #ef4444; font-weight: 600;"'
-                : status === 'soon' 
-                ? 'style="color: #f59e0b; font-weight: 600;"'
-                : '';
+            const deadlineModifier = (status === 'overdue' || status === 'soon') ? status : '';
             
             return `
-                <div class="goal-item" data-id="${goal.id}" 
-                    style="background: var(--bg-white); border-radius: 12px; padding: 20px; margin-bottom: 16px; border-left: 4px solid ${config.borderColor}; box-shadow: var(--shadow-sm); transition: all 0.3s ease;">
+                <div class="goal-item" data-id="${goal.id}" style="border-left-color: ${config.borderColor};">
                     
                     <!-- Header -->
-                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                    <div class="goal-header">
                         <div style="flex: 1; min-width: 200px;">
-                            <div style="font-size: 1.15rem; font-weight: 700; color: var(--text-dark); margin-bottom: 6px; line-height: 1.3;">
-                                ${typeIcons[goal.type]} ${escapeHtml(goal.title)}
-                            </div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted);">
-                                ${getGoalTypeLabel(goal)} ${goal.skillName ? `• ${goal.skillName}` : ''}
+                            <div class="goal-title">${typeIcons[goal.type]} ${escapeHtml(goal.title)}</div>
+                            <div class="goal-type" style="margin-top: 6px; display: inline-flex;">
+                                ${getGoalTypeLabel(goal)}${goal.skillName ? ` • ${goal.skillName}` : ''}
                             </div>
                         </div>
-                        <span style="padding: 6px 14px; background: ${config.bgColor}; color: ${config.color}; border-radius: 20px; font-size: 0.8rem; font-weight: 600; white-space: nowrap;">
-                            ${config.badge}
-                        </span>
+                        <span class="goal-status-badge ${status}">${config.badge}</span>
                     </div>
                     
                     <!-- Progress Bar -->
-                    <div style="margin: 16px 0;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-dark);">
-                                ${goal.currentProgress.toFixed(1)} / ${goal.target} ${goal.type === 'custom' ? 'items' : 'hours'}
-                            </span>
-                            <span style="font-size: 0.9rem; font-weight: 700; color: ${config.color};">
-                                ${progressPercent.toFixed(0)}%
-                            </span>
-                        </div>
-                        <div style="width: 100%; height: 10px; background: var(--border-color); border-radius: 10px; overflow: hidden;">
-                            <div style="height: 100%; width: ${Math.min(100, progressPercent)}%; background: linear-gradient(90deg, ${config.color}, ${config.color}dd); border-radius: 10px; transition: width 0.5s ease;"></div>
-                        </div>
+                    <div class="goal-progress-row">
+                        <span>${goal.currentProgress.toFixed(1)} / ${goal.target} ${goal.type === 'custom' ? 'items' : 'hours'}</span>
+                        <span class="goal-progress-percent" style="color: ${config.color};">${progressPercent.toFixed(0)}%</span>
+                    </div>
+                    <div class="goal-progress-container">
+                        <div class="goal-progress-fill ${status === 'completed' ? 'completed' : ''}" style="width: ${Math.min(100, progressPercent)}%;"></div>
                     </div>
                     
                     <!-- Forecast Section -->
                     ${forecast && status !== 'completed' ? `
-                        <div style="background: rgba(59, 130, 246, 0.05); padding: 12px; border-radius: 8px; margin: 12px 0; border-left: 3px solid #3b82f6;">
-                            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">
-                                📊 <strong>Progress Forecast</strong>
-                            </div>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; font-size: 0.85rem;">
+                        <div class="goal-forecast">
+                            📊 <strong>Progress Forecast</strong>
+                            <div class="goal-forecast-grid">
                                 <div>
-                                    <span style="color: var(--text-muted);">7-day avg:</span>
-                                    <strong style="color: var(--text-dark);"> ${forecast.dailyAverage}h/day</strong>
+                                    <span>7-day avg:</span>
+                                    <strong> ${forecast.dailyAverage}h/day</strong>
                                 </div>
                                 <div>
-                                    <span style="color: var(--text-muted);">Est. completion:</span>
+                                    <span>Est. completion:</span>
                                     <strong style="color: ${forecast.isRealistic ? '#10b981' : '#f59e0b'};"> ${forecast.estimatedDate}</strong>
                                 </div>
                                 <div>
-                                    <span style="color: var(--text-muted);">Days left:</span>
-                                    <strong style="color: var(--text-dark);"> ~${forecast.daysUntilCompletion}</strong>
+                                    <span>Days left:</span>
+                                    <strong> ~${forecast.daysUntilCompletion}</strong>
                                 </div>
                             </div>
                         </div>
                     ` : ''}
                     
                     <!-- Meta Info -->
-                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin: 12px 0; font-size: 0.85rem; color: var(--text-muted);">
-                        <div>📅 Deadline: <strong ${deadlineClass}>${deadlineText}</strong></div>
-                        ${goal.createdAt ? `<div>🕐 Created: ${formatDate(goal.createdAt)}</div>` : ''}
+                    <div class="goal-meta">
+                        <span class="goal-deadline ${deadlineModifier}"><span class="goal-icon">📅</span> ${deadlineText}</span>
+                        ${goal.createdAt ? `<span class="goal-created"><span class="goal-icon">🕐</span> Created: ${formatDate(goal.createdAt)}</span>` : ''}
                     </div>
                     
                     <!-- Actions -->
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+                    <div class="goal-actions">
                         ${renderGoalActionButtons(goal, status)}
                     </div>
                 </div>
@@ -27584,8 +27516,7 @@ window.DBP={
             // ✅ Update Progress (ONLY for custom goals)
             if (goal.type === 'custom') {
                 buttons += `
-                    <button onclick="openUpdateCustomGoalModal('${goal.id}')" 
-                        style="padding: 8px 14px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
+                    <button onclick="openUpdateCustomGoalModal('${goal.id}')" class="goal-action-btn primary">
                         ✏️ Update Progress
                     </button>
                 `;
@@ -27593,54 +27524,22 @@ window.DBP={
             
             // ✅ Edit Goal
             buttons += `
-                <button onclick="openEditGoalModal('${goal.id}')" 
-                    style="padding: 8px 14px; background: var(--bg-light); color: var(--text-dark); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
+                <button onclick="openEditGoalModal('${goal.id}')" class="goal-action-btn edit">
                     ✏️ Edit
                 </button>
             `;
             
-            // ✅ DELETE BUTTON for completed goals (v9: no archive, just delete)
-            if (status === 'completed') {
-                buttons += `
-                    <button onclick="deleteGoal('${goal.id}')" 
-                        style="padding: 8px 14px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
-                        🗑️ Delete
-                    </button>
-                `;
-            } else {
-                buttons += `
-                    <button onclick="deleteGoal('${goal.id}')" 
-                        style="padding: 8px 14px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
-                        🗑️ Delete
-                    </button>
-                `;
-            }
+            // ✅ DELETE BUTTON (v9: no archive, just delete — same for active/completed)
+            buttons += `
+                <button onclick="deleteGoal('${goal.id}')" class="goal-action-btn delete">
+                    🗑️ Delete
+                </button>
+            `;
             
             return buttons;
         }
 
 
-
-
-
-
-
-
-
-
-
-// ===== CALCULATE GOAL PROGRESS =====
-function calculateGoalProgress(goal) {
-    // For study_hours goals, sum up sessions
-    if (goal.type === 'study_hours') {
-        const sessions = JSON.parse(localStorage.getItem('studySessions') || '[]');
-        return sessions
-            .filter(s => s.courseId === goal.courseId)
-            .reduce((total, s) => total + (parseFloat(s.duration) || 0), 0);
-    }
-    // For custom and skill_mastery goals, use stored progress
-    return goal.currentProgress || 0;
-}
 
 // ===== HELPER FUNCTIONS =====
 function getGoalTypeIcon(type) {
