@@ -18515,15 +18515,29 @@ window.DBP={
                 <div id="wlnReminderBanner" style="display:none; margin:8px 0 12px; padding:10px 12px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius:var(--radius-md); font-size:0.82rem; line-height:1.5; color:var(--text-dark);"></div>
 
                 <!-- Tabs -->
-                <div style="display:flex; gap:6px; margin-bottom:12px;">
+                <div style="display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap;">
                     <button type="button" class="wln-tab-btn" data-tab="log" onclick="Wellness.setTab('log')">📝 Log hôm nay</button>
                     <button type="button" class="wln-tab-btn" data-tab="weight" onclick="Wellness.setTab('weight')">⚖️ Cân nặng</button>
+                    <button type="button" class="wln-tab-btn" data-tab="sleep" onclick="Wellness.setTab('sleep')">😴 Giấc ngủ</button>
                     <button type="button" class="wln-tab-btn" data-tab="supp" onclick="Wellness.setTab('supp')">💊 Supplement</button>
                     <button type="button" class="wln-tab-btn" data-tab="review" onclick="Wellness.setTab('review')">📊 Tuần này</button>
                 </div>
 
                 <!-- ===== TAB: LOG HÔM NAY (dashboard chỉ hiển thị phân tích — input nằm hết trong modal riêng từng loại) ===== -->
                 <div id="wlnTabLog" class="wln-tab-panel">
+
+                    <!-- Mood/Energy quick check-in -->
+                    <div class="wln-section-header-row" style="margin-bottom:6px;">
+                        <span class="wln-section-header-label">🙂 Cảm giác hiện tại</span>
+                        <span id="wlnMoodLast" style="font-size:0.78rem; color:var(--text-muted);">Chưa log</span>
+                    </div>
+                    <div style="display:flex; gap:6px; margin-bottom:14px;">
+                        <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(1)" title="Tệ">😞</button>
+                        <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(2)" title="Không ổn">😐</button>
+                        <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(3)" title="Bình thường">🙂</button>
+                        <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(4)" title="Tốt">😊</button>
+                        <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(5)" title="Tuyệt vời">🤩</button>
+                    </div>
 
                     <!-- Quick totals: số liệu + % ngân sách, KHÔNG có nút bấm -->
                     <div id="wlnTotalsRow" style="display:grid; grid-template-columns: repeat(2,1fr); gap:8px; margin-bottom:10px;"></div>
@@ -18603,6 +18617,9 @@ window.DBP={
                         <div id="wlnCustomCaffeineForm" style="display:none; margin-top:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
                             <input id="wlnCustomCaffeineName" placeholder="Tên (VD: Cà phê pha máy, Redbull...)" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             <input id="wlnCustomCaffeineMg" type="number" min="0" step="1" placeholder="Hàm lượng caffeine (mg)" style="width:100%; margin-bottom:8px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <label style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:var(--text-muted); margin-bottom:8px; cursor:pointer;">
+                                <input type="checkbox" id="wlnCustomCaffeineSaveAsPreset"> ⭐ Lưu làm preset để dùng nhanh lần sau
+                            </label>
                             <button type="button" class="add-time-btn" style="width:100%; background:#27ae60;" onclick="Wellness.addCustomCaffeine()">+ Thêm vào log</button>
                         </div>
                     </div>
@@ -18630,6 +18647,9 @@ window.DBP={
                                 <input id="wlnCustomNatri" type="number" placeholder="Natri/muối (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                                 <input id="wlnCustomKali" type="number" placeholder="Kali (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             </div>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:var(--text-muted); margin-bottom:8px; cursor:pointer;">
+                                <input type="checkbox" id="wlnCustomFoodSaveAsPreset"> ⭐ Lưu làm preset để dùng nhanh lần sau
+                            </label>
                             <button type="button" class="add-time-btn" style="width:100%; background:#27ae60;" onclick="Wellness.addCustomFood()">+ Thêm vào log</button>
                         </div>
                     </div>
@@ -18682,6 +18702,29 @@ window.DBP={
                     </div>
                 </div>
 
+                <!-- ===== MODAL: 😴 GIẤC NGỦ ===== -->
+                <div class="wln-dose-modal-overlay" id="wlnSleepModalOverlay" style="display:none;" onclick="if(event.target===this) Wellness.closeSleepModal()">
+                    <div class="wln-log-modal-box" style="max-width:360px;">
+                        <div class="wln-log-modal-header">
+                            <h4 style="margin:0;">😴 Giấc ngủ đêm qua</h4>
+                            <button type="button" class="wln-log-modal-close" onclick="Wellness.closeSleepModal()">&times;</button>
+                        </div>
+                        <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:4px;">Giờ đi ngủ (tối qua)</label>
+                        <input type="time" id="wlnSleepBedInput" style="width:100%; margin-bottom:12px; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                        <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:4px;">Giờ thức dậy (sáng nay)</label>
+                        <input type="time" id="wlnSleepWakeInput" style="width:100%; margin-bottom:14px; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                        <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:6px;">Chất lượng giấc ngủ</label>
+                        <div style="display:flex; gap:6px; margin-bottom:16px;">
+                            <button type="button" class="wln-mood-btn" data-q="1" onclick="Wellness.selectSleepQuality(1)">😞</button>
+                            <button type="button" class="wln-mood-btn" data-q="2" onclick="Wellness.selectSleepQuality(2)">😐</button>
+                            <button type="button" class="wln-mood-btn" data-q="3" onclick="Wellness.selectSleepQuality(3)">🙂</button>
+                            <button type="button" class="wln-mood-btn" data-q="4" onclick="Wellness.selectSleepQuality(4)">😊</button>
+                            <button type="button" class="wln-mood-btn" data-q="5" onclick="Wellness.selectSleepQuality(5)">🤩</button>
+                        </div>
+                        <button type="button" class="add-time-btn" style="width:100%; background:#27ae60;" onclick="Wellness.saveSleepLog()">✓ Lưu giấc ngủ</button>
+                    </div>
+                </div>
+
                 <!-- ===== TAB: CÂN NẶNG (WEEKLY) ===== -->
                 <div id="wlnTabWeight" class="wln-tab-panel" style="display:none;">
                     <div style="font-size:0.8rem; color:var(--text-muted); line-height:1.5; margin-bottom:10px;">
@@ -18696,6 +18739,19 @@ window.DBP={
                         <canvas id="wlnWeightChart"></canvas>
                     </div>
                     <div id="wlnWeightTrendNote" style="font-size:0.78rem; color:var(--text-muted); text-align:center;"></div>
+                </div>
+
+                <!-- ===== TAB: GIẤC NGỦ ===== -->
+                <div id="wlnTabSleep" class="wln-tab-panel" style="display:none;">
+                    <div style="font-size:0.8rem; color:var(--text-muted); line-height:1.5; margin-bottom:10px;">
+                        Log giờ ngủ mỗi sáng để nhìn rõ caffeine muộn / cửa sổ ăn trễ ảnh hưởng giấc ngủ ra sao qua thời gian.
+                    </div>
+                    <div id="wlnSleepTodayBox" style="display:flex; flex-direction:column; gap:5px; margin-bottom:12px;"></div>
+                    <button type="button" class="add-time-btn" style="width:100%; background:#6d5dd3; margin-bottom:14px;" onclick="Wellness.openSleepModal()">😴 Log giấc ngủ đêm qua</button>
+                    <div class="chart-container" style="height:150px; margin-bottom:10px;">
+                        <canvas id="wlnSleepChart"></canvas>
+                    </div>
+                    <div id="wlnSleepTrendNote" style="font-size:0.78rem; color:var(--text-muted); text-align:center;"></div>
                 </div>
 
                 <!-- ===== TAB: SUPPLEMENT / PILLS ===== -->
@@ -18744,9 +18800,18 @@ window.DBP={
                     <div class="chart-container" style="height:150px;">
                         <canvas id="wlnWeekChart"></canvas>
                     </div>
+                    <div class="chart-container" style="height:130px; margin-top:14px;">
+                        <canvas id="wlnCaffeineWeekChart"></canvas>
+                    </div>
                     <div style="font-size:0.75rem; color:var(--text-muted); margin-top:10px; line-height:1.5;">
                         💡 Nhìn pattern cả tuần, không chấm điểm từng ngày. Nếu có 1-2 ngày "lệch quỹ đạo", đó là dữ liệu — không phải thất bại.
                     </div>
+                    <div style="display:flex; gap:8px; margin-top:16px;">
+                        <button type="button" class="add-time-btn" style="flex:1; background:#3b82f6; font-size:0.8rem;" onclick="Wellness.exportAllData()">💾 Export backup</button>
+                        <button type="button" class="add-time-btn" style="flex:1; background:#7f8c8d; font-size:0.8rem;" onclick="document.getElementById('wlnImportFile').click()">📂 Import</button>
+                    </div>
+                    <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px; line-height:1.4;">Export ra file JSON để backup hoặc chuyển sang máy khác. Import sẽ ghi đè toàn bộ dữ liệu hiện tại.</div>
+                    <input type="file" id="wlnImportFile" accept=".json" style="display:none" onchange="Wellness.importAllData(this)">
                 </div>
             </div>
         </div>
@@ -18911,6 +18976,24 @@ window.DBP={
                 border-left: 3px solid #e74c3c;
                 background: rgba(231, 76, 60, 0.08);
             }
+
+            /* Mood/Energy check-in + Sleep quality picker — dùng chung 1 kiểu nút emoji */
+            .wln-mood-btn {
+                flex: 1; padding: 8px 0; font-size: 1.3rem; line-height: 1;
+                border-radius: 10px; border: 1.5px solid var(--border-color);
+                background: var(--bg-light); cursor: pointer; transition: var(--transition);
+            }
+            .wln-mood-btn:hover { border-color: var(--primary); transform: scale(1.08); }
+            .wln-mood-btn.active { border-color: var(--primary); background: rgba(59, 130, 246, 0.12); transform: scale(1.05); }
+
+            /* Preset do người dùng tự lưu — có nút ✕ nhỏ ở góc để xóa */
+            .wln-preset-wrap { position: relative; display: inline-flex; }
+            .wln-preset-del-btn {
+                position: absolute; top: -6px; right: -6px; width: 16px; height: 16px;
+                border-radius: 50%; background: #e74c3c; color: #fff; border: none;
+                font-size: 0.6rem; line-height: 1; cursor: pointer; padding: 0;
+                display: flex; align-items: center; justify-content: center;
+            }
         </style>
 
         <script>
@@ -18951,6 +19034,9 @@ window.DBP={
             let collapsed = false;
             let weightChartInstance = null;
             let weekChartInstance = null;
+            let sleepChartInstance = null;
+            let caffeineWeekChartInstance = null;
+            let _wlnSleepQuality = 3;
 
             /* Dùng giờ LOCAL, không dùng toISOString() (luôn là UTC).
                VN đi trước UTC 7 tiếng nên bất kỳ lúc nào từ 00:00–06:59 giờ VN,
@@ -18998,6 +19084,9 @@ window.DBP={
                 if (!data.weights) data.weights = {};
                 if (!data.suppPresets) data.suppPresets = [];
                 if (!data.suppLogs) data.suppLogs = {};
+                if (!data.foodPresets) data.foodPresets = [];
+                if (!data.caffeinePresets) data.caffeinePresets = [];
+                if (!data.sleepLogs) data.sleepLogs = {};
                 if (!data.settings) data.settings = {};
                 if (data.settings.fastingWindowHours == null) data.settings.fastingWindowHours = DEFAULT_FASTING_GOAL_H;
                 if (data.settings.caffeineCutoffHour == null) data.settings.caffeineCutoffHour = DEFAULT_CAFFEINE_CUTOFF_H;
@@ -19037,9 +19126,11 @@ window.DBP={
                 document.querySelectorAll('.wln-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
                 document.getElementById('wlnTabLog').style.display = tab === 'log' ? 'block' : 'none';
                 document.getElementById('wlnTabWeight').style.display = tab === 'weight' ? 'block' : 'none';
+                document.getElementById('wlnTabSleep').style.display = tab === 'sleep' ? 'block' : 'none';
                 document.getElementById('wlnTabSupp').style.display = tab === 'supp' ? 'block' : 'none';
                 document.getElementById('wlnTabReview').style.display = tab === 'review' ? 'block' : 'none';
                 if (tab === 'weight') renderWeightTab();
+                if (tab === 'sleep') renderSleepTab();
                 if (tab === 'supp') renderSuppTab();
                 if (tab === 'review') renderReviewTab();
             }
@@ -19087,9 +19178,30 @@ window.DBP={
 
             function renderFoodPresets() {
                 const wrap = document.getElementById('wlnFoodPresets');
-                wrap.innerHTML = FOOD_PRESETS.map((f, i) =>
-                    `<button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetFood(${i})">${f.emoji} ${f.name}</button>`
-                ).join('');
+                const builtins = FOOD_PRESETS.map((f, i) =>
+                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetFood(${i})">${f.emoji} ${f.name}</button></span>`
+                );
+                const customs = (data.foodPresets || []).map((f, i) =>
+                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addCustomPresetFood(${i})">⭐ ${f.name}</button><button type="button" class="wln-preset-del-btn" onclick="event.stopPropagation();Wellness.removeFoodPreset(${i})" title="Xóa preset">✕</button></span>`
+                );
+                wrap.innerHTML = builtins.concat(customs).join('');
+            }
+
+            function addCustomPresetFood(i) {
+                const f = (data.foodPresets || [])[i];
+                if (!f) return;
+                const day = getDay(todayKey());
+                day.foods.push({ name: f.name, cal: f.cal, sugar: f.sugar, natri: f.natri || 0, kali: f.kali || 0, t: Date.now() });
+                save();
+                renderLogTab();
+            }
+
+            function removeFoodPreset(i) {
+                if (!data.foodPresets || !data.foodPresets[i]) return;
+                if (!confirm(`Xóa preset "${data.foodPresets[i].name}"?`)) return;
+                data.foodPresets.splice(i, 1);
+                save();
+                renderFoodPresets();
             }
 
             function addPresetFood(i) {
@@ -19114,6 +19226,15 @@ window.DBP={
                 if (!name) { alert('Nhập tên món trước đã nhé.'); return; }
                 const day = getDay(todayKey());
                 day.foods.push({ name, cal, sugar, natri, kali, t: Date.now() });
+                const saveAsPreset = document.getElementById('wlnCustomFoodSaveAsPreset');
+                if (saveAsPreset && saveAsPreset.checked) {
+                    if (!data.foodPresets) data.foodPresets = [];
+                    if (!data.foodPresets.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+                        data.foodPresets.push({ name, cal, sugar, natri, kali });
+                    }
+                    saveAsPreset.checked = false;
+                    renderFoodPresets();
+                }
                 save();
                 document.getElementById('wlnCustomName').value = '';
                 document.getElementById('wlnCustomCal').value = '';
@@ -19144,6 +19265,114 @@ window.DBP={
                 day.workout = { type, minutes, t: Date.now() };
                 save();
                 renderLogTab();
+            }
+
+            /* ===== MOOD / ENERGY CHECK-IN ===== */
+            function logMood(score) {
+                const day = getDay(todayKey());
+                if (!day.moods) day.moods = [];
+                day.moods.push({ score, t: Date.now() });
+                save();
+                renderMoodStatus();
+            }
+            function renderMoodStatus() {
+                const day = getDay(todayKey());
+                const el = document.getElementById('wlnMoodLast');
+                if (!el) return;
+                const moods = day.moods || [];
+                if (!moods.length) { el.textContent = 'Chưa log'; return; }
+                const last = moods[moods.length - 1];
+                const emojis = ['', '😞', '😐', '🙂', '😊', '🤩'];
+                el.textContent = `${emojis[last.score] || ''} lúc ${new Date(last.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+            }
+
+            /* ===== SLEEP TRACKER ===== */
+            // Giờ ngủ luôn gắn tối HÔM QUA, giờ dậy gắn sáng HÔM NAY — log này thuộc về ngày hôm nay (ngày thức dậy).
+            function openSleepModal() {
+                document.getElementById('wlnSleepModalOverlay').style.display = 'flex';
+                const key = todayKey();
+                const existing = data.sleepLogs[key];
+                document.getElementById('wlnSleepBedInput').value = existing
+                    ? `${String(new Date(existing.bed).getHours()).padStart(2, '0')}:${String(new Date(existing.bed).getMinutes()).padStart(2, '0')}`
+                    : '23:00';
+                document.getElementById('wlnSleepWakeInput').value = existing
+                    ? `${String(new Date(existing.wake).getHours()).padStart(2, '0')}:${String(new Date(existing.wake).getMinutes()).padStart(2, '0')}`
+                    : nowTimeValue();
+                _wlnSleepQuality = existing ? existing.quality : 3;
+                document.querySelectorAll('#wlnSleepModalOverlay .wln-mood-btn').forEach(b => b.classList.toggle('active', +b.dataset.q === _wlnSleepQuality));
+            }
+            function closeSleepModal() {
+                document.getElementById('wlnSleepModalOverlay').style.display = 'none';
+            }
+            function selectSleepQuality(q) {
+                _wlnSleepQuality = q;
+                document.querySelectorAll('#wlnSleepModalOverlay .wln-mood-btn').forEach(b => b.classList.toggle('active', +b.dataset.q === q));
+            }
+            function saveSleepLog() {
+                const bedVal = document.getElementById('wlnSleepBedInput').value;
+                const wakeVal = document.getElementById('wlnSleepWakeInput').value;
+                if (!bedVal || !wakeVal) { alert('Nhập đủ giờ đi ngủ và giờ thức dậy nhé.'); return; }
+                const [bh, bm] = bedVal.split(':').map(Number);
+                const [wh, wm] = wakeVal.split(':').map(Number);
+                const wakeDate = new Date();
+                wakeDate.setHours(wh, wm, 0, 0);
+                const bedDate = new Date(wakeDate.getTime());
+                bedDate.setDate(bedDate.getDate() - 1);
+                bedDate.setHours(bh, bm, 0, 0);
+                const hours = (wakeDate.getTime() - bedDate.getTime()) / 3600000;
+                if (hours <= 0 || hours > 16) { alert('Giờ đi ngủ/thức dậy có vẻ không hợp lý, kiểm tra lại nhé.'); return; }
+                data.sleepLogs[todayKey()] = { bed: bedDate.getTime(), wake: wakeDate.getTime(), hours, quality: _wlnSleepQuality };
+                save();
+                closeSleepModal();
+                renderSleepTab();
+            }
+            function renderSleepTab() {
+                const key = todayKey();
+                const today = data.sleepLogs[key];
+                const box = document.getElementById('wlnSleepTodayBox');
+                const fmtTime = t => new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                const emojis = ['', '😞', '😐', '🙂', '😊', '🤩'];
+                if (box) {
+                    box.innerHTML = today
+                        ? `
+                            <div class="wln-log-item"><span>🌙 Đi ngủ</span><span><b>${fmtTime(today.bed)}</b></span></div>
+                            <div class="wln-log-item"><span>☀️ Thức dậy</span><span><b>${fmtTime(today.wake)}</b></span></div>
+                            <div class="wln-log-item"><span>⏱️ Tổng thời gian ngủ</span><span><b>${today.hours.toFixed(1)}h</b></span></div>
+                            <div class="wln-log-item"><span>${emojis[today.quality] || ''} Chất lượng</span><span><b>${today.quality}/5</b></span></div>
+                        `
+                        : `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:4px 0;">Chưa log giấc ngủ đêm qua.</div>`;
+                }
+                const keys = Object.keys(data.sleepLogs).sort().slice(-14); // 14 lần log gần nhất cho chart gọn
+                const ctx = document.getElementById('wlnSleepChart');
+                if (sleepChartInstance) sleepChartInstance.destroy();
+                if (ctx && keys.length) {
+                    sleepChartInstance = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: keys.map(k => k.slice(5)),
+                            datasets: [{
+                                label: 'Giờ ngủ',
+                                data: keys.map(k => data.sleepLogs[k].hours),
+                                backgroundColor: keys.map(k => data.sleepLogs[k].hours < 6 ? 'rgba(231,76,60,0.65)' : 'rgba(46,204,113,0.65)')
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: { y: { title: { display: true, text: 'giờ' }, suggestedMin: 0, suggestedMax: 10 } }
+                        }
+                    });
+                }
+                const noteEl = document.getElementById('wlnSleepTrendNote');
+                if (noteEl) {
+                    if (keys.length >= 2) {
+                        const avg = keys.reduce((s, k) => s + data.sleepLogs[k].hours, 0) / keys.length;
+                        noteEl.textContent = `Trung bình ${avg.toFixed(1)}h/đêm trong ${keys.length} lần log gần nhất.`;
+                    } else {
+                        noteEl.textContent = 'Cần thêm vài đêm dữ liệu để thấy xu hướng.';
+                    }
+                }
             }
 
             /* ===== CAFFEINE ===== */
@@ -19183,6 +19412,16 @@ window.DBP={
                 const ts = readCaffeineTimeInput();
                 if (ts === null) return;
                 addCaffeine(mg, name, ts);
+                const saveAsPreset = document.getElementById('wlnCustomCaffeineSaveAsPreset');
+                if (saveAsPreset && saveAsPreset.checked) {
+                    if (!data.caffeinePresets) data.caffeinePresets = [];
+                    if (!data.caffeinePresets.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+                        data.caffeinePresets.push({ name, mg });
+                    }
+                    saveAsPreset.checked = false;
+                    save();
+                    renderCaffeinePresets();
+                }
                 document.getElementById('wlnCustomCaffeineName').value = '';
                 document.getElementById('wlnCustomCaffeineMg').value = '';
                 document.getElementById('wlnCustomCaffeineForm').style.display = 'none';
@@ -19196,9 +19435,29 @@ window.DBP={
             function renderCaffeinePresets() {
                 const wrap = document.getElementById('wlnCaffeinePresets');
                 if (!wrap) return;
-                wrap.innerHTML = CAFFEINE_PRESETS.map((p, i) =>
-                    `<button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetCaffeine(${i})">${p.emoji} ${p.name} (${p.mg}mg)</button>`
-                ).join('');
+                const builtins = CAFFEINE_PRESETS.map((p, i) =>
+                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetCaffeine(${i})">${p.emoji} ${p.name} (${p.mg}mg)</button></span>`
+                );
+                const customs = (data.caffeinePresets || []).map((p, i) =>
+                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addCustomPresetCaffeine(${i})">⭐ ${p.name} (${p.mg}mg)</button><button type="button" class="wln-preset-del-btn" onclick="event.stopPropagation();Wellness.removeCaffeinePreset(${i})" title="Xóa preset">✕</button></span>`
+                );
+                wrap.innerHTML = builtins.concat(customs).join('');
+            }
+
+            function addCustomPresetCaffeine(i) {
+                const p = (data.caffeinePresets || [])[i];
+                if (!p) return;
+                const ts = readCaffeineTimeInput();
+                if (ts === null) return;
+                addCaffeine(p.mg, p.name, ts);
+            }
+
+            function removeCaffeinePreset(i) {
+                if (!data.caffeinePresets || !data.caffeinePresets[i]) return;
+                if (!confirm(`Xóa preset "${data.caffeinePresets[i].name}"?`)) return;
+                data.caffeinePresets.splice(i, 1);
+                save();
+                renderCaffeinePresets();
             }
 
             // Sửa giờ cho 1 lần log caffeine đã lưu — dùng khi log trễ hơn lúc uống thật
@@ -19527,6 +19786,7 @@ window.DBP={
                 renderCaffeineSection();
                 renderFastingSection();
                 renderWorkoutStatus();
+                renderMoodStatus();
                 renderReminderBanner();
             }
 
@@ -19596,10 +19856,19 @@ window.DBP={
                 let cupsCoffeeSoda = 0, workoutDays = 0, sugarOverDays = 0, natriOverDays = 0, loggedDays = 0, totalWater = 0, totalKali = 0;
                 let caffeineTotalWeek = 0, caffeineLoggedDays = 0, caffeineOverDays = 0, lateCaffeineDays = 0;
                 let eatingWindowSum = 0, eatingWindowDays = 0;
-                const dailyCal = [], dailySugar = [], dailyNatri = [];
+                let moodSum = 0, moodCount = 0, sleepHoursSum = 0, sleepDays = 0;
+                const dailyCal = [], dailySugar = [], dailyNatri = [], dailyCaffeine = [];
 
                 keys.forEach(k => {
                     const day = data.days[k];
+
+                    // Mood & sleep tính riêng, không phụ thuộc "hasRealData" của ăn uống/nước/tập luyện.
+                    if (day && day.moods && day.moods.length) {
+                        day.moods.forEach(m => { moodSum += (m.score || 0); moodCount++; });
+                    }
+                    const sleepLog = data.sleepLogs[k];
+                    if (sleepLog) { sleepHoursSum += sleepLog.hours; sleepDays++; }
+
                     // Chỉ tính là "đã log" khi có dữ liệu THẬT (nước > 0, có món ăn,
                     // hoặc có tập luyện) — trước đây chỉ cần data.days[k] tồn tại là
                     // tính (kể cả entry rỗng do getDay() tự tạo lúc mở app/chuyển tab).
@@ -19609,7 +19878,7 @@ window.DBP={
                         (day.workout && day.workout.minutes > 0) ||
                         (day.caffeine && day.caffeine.length > 0)
                     );
-                    if (!hasRealData) { dailyCal.push(0); dailySugar.push(0); dailyNatri.push(0); return; }
+                    if (!hasRealData) { dailyCal.push(0); dailySugar.push(0); dailyNatri.push(0); dailyCaffeine.push(0); return; }
                     loggedDays++;
                     const cal = day.foods.reduce((s, f) => s + (f.cal || 0), 0);
                     const sugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0);
@@ -19626,8 +19895,9 @@ window.DBP={
                     day.foods.forEach(f => {
                         if (f.name === 'Cà phê sữa' || f.name === 'Nước ngọt (lon)' || f.name === 'Trà sữa') cupsCoffeeSoda++;
                     });
+                    const dayCaffeine = (day.caffeine || []).reduce((s, c) => s + (c.mg || 0), 0);
+                    dailyCaffeine.push(Math.round(dayCaffeine));
                     if (day.caffeine && day.caffeine.length) {
-                        const dayCaffeine = day.caffeine.reduce((s, c) => s + (c.mg || 0), 0);
                         caffeineTotalWeek += dayCaffeine;
                         caffeineLoggedDays++;
                         if (dayCaffeine > CAFFEINE_DAILY_LIMIT) caffeineOverDays++;
@@ -19643,7 +19913,11 @@ window.DBP={
                 const avgKali = loggedDays ? Math.round(totalKali / loggedDays) : 0;
                 const avgCaffeine = caffeineLoggedDays ? Math.round(caffeineTotalWeek / caffeineLoggedDays) : 0;
                 const avgEatingWindow = eatingWindowDays ? (eatingWindowSum / eatingWindowDays).toFixed(1) : '—';
+                const avgMood = moodCount ? (moodSum / moodCount).toFixed(1) : '—';
+                const avgSleep = sleepDays ? (sleepHoursSum / sleepDays).toFixed(1) : '—';
                 document.getElementById('wlnReviewSummary').innerHTML = `
+                    <div class="wln-log-item"><span>🙂 Điểm cảm giác trung bình</span><span><b>${avgMood}</b>/5</span></div>
+                    <div class="wln-log-item"><span>😴 Trung bình giờ ngủ/đêm</span><span><b>${avgSleep}</b>h${sleepDays ? ` (${sleepDays}/7 đêm)` : ''}</span></div>
                     <div class="wln-log-item"><span>☕🥤 Cà phê sữa / nước ngọt / trà sữa</span><span><b>${cupsCoffeeSoda}</b> lần</span></div>
                     <div class="wln-log-item"><span>🏋️ Số ngày có tập luyện</span><span><b>${workoutDays}</b>/7</span></div>
                     <div class="wln-log-item"><span>🍬 Số ngày vượt ngân sách đường</span><span><b>${sugarOverDays}</b>/7</span></div>
@@ -19677,6 +19951,28 @@ window.DBP={
                         }
                     }
                 });
+
+                const cafCtx = document.getElementById('wlnCaffeineWeekChart');
+                if (caffeineWeekChartInstance) caffeineWeekChartInstance.destroy();
+                if (cafCtx) {
+                    caffeineWeekChartInstance = new Chart(cafCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: keys.map(k => k.slice(5)),
+                            datasets: [{
+                                label: 'Caffeine (mg)',
+                                data: dailyCaffeine,
+                                backgroundColor: dailyCaffeine.map(v => v > CAFFEINE_DAILY_LIMIT ? 'rgba(231,76,60,0.7)' : 'rgba(139,94,60,0.7)')
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false }, title: { display: true, text: 'Caffeine theo ngày (mg)', font: { size: 11 } } },
+                            scales: { y: { title: { display: true, text: 'mg' } } }
+                        }
+                    });
+                }
             }
 
             function renderSuppPresets() {
@@ -19876,6 +20172,55 @@ window.DBP={
                 document.body.removeChild(ta);
             }
 
+            /* ===== EXPORT / IMPORT TOÀN BỘ DỮ LIỆU (backup) ===== */
+            function exportAllData() {
+                const dataStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `wellness-backup-${todayKey()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+            function importAllData(input) {
+                const file = input.files[0];
+                if (!file) return;
+                if (!confirm('Import sẽ GHI ĐÈ toàn bộ dữ liệu Wellness Tracker hiện tại bằng file này. Tiếp tục?')) {
+                    input.value = '';
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const imported = JSON.parse(reader.result);
+                        if (!imported || typeof imported !== 'object' || !imported.days) throw new Error('invalid');
+                        data = imported;
+                        if (!data.days) data.days = {};
+                        if (!data.weights) data.weights = {};
+                        if (!data.suppPresets) data.suppPresets = [];
+                        if (!data.suppLogs) data.suppLogs = {};
+                        if (!data.foodPresets) data.foodPresets = [];
+                        if (!data.caffeinePresets) data.caffeinePresets = [];
+                        if (!data.sleepLogs) data.sleepLogs = {};
+                        if (!data.settings) data.settings = {};
+                        if (data.settings.fastingWindowHours == null) data.settings.fastingWindowHours = DEFAULT_FASTING_GOAL_H;
+                        if (data.settings.caffeineCutoffHour == null) data.settings.caffeineCutoffHour = DEFAULT_CAFFEINE_CUTOFF_H;
+                        save();
+                        renderFoodPresets();
+                        renderCaffeinePresets();
+                        renderSuppPresets();
+                        setTab(currentTab);
+                        renderLogTab();
+                        alert('Đã import dữ liệu thành công!');
+                    } catch (e) {
+                        alert('File không hợp lệ hoặc bị hỏng.');
+                    }
+                    input.value = '';
+                };
+                reader.readAsText(file);
+            }
+
             function init() {
                 load();
                 renderFoodPresets();
@@ -19897,6 +20242,9 @@ window.DBP={
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
                 addPresetCaffeine, removeCaffeine, toggleCustomCaffeineForm, addCustomCaffeine,
                 openEditCaffeineTime,
+                addCustomPresetFood, removeFoodPreset, addCustomPresetCaffeine, removeCaffeinePreset,
+                logMood, openSleepModal, closeSleepModal, selectSleepQuality, saveSleepLog,
+                exportAllData, importAllData,
                 markMealNow, toggleFastingSettings, setFastingGoal, setCaffeineCutoff,
                 toggleManualMealForm, addManualMeal, openEditFoodTime,
                 openWaterModal, closeWaterModal,
