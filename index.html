@@ -26700,7 +26700,7 @@ window.DBP={
         notes: course.notes || "" // Đảm bảo tất cả course đều có property notes (ghi chú cá nhân)
     }));
 
-        let courseReminderDismissed = false; // reset mỗi lần tải lại trang
+        let courseReminderDismissedCareers = new Set(); // reset mỗi lần tải lại trang
         let courseSearchQuery = '';
 
 
@@ -26774,6 +26774,18 @@ window.DBP={
             return '';
         }
 
+        // Escape an toàn cho GIÁ TRỊ THUỘC TÍNH HTML (khác escapeHtml ở chỗ này còn escape cả " và ')
+        // Cần dùng riêng vì escapeHtml() dùng textContent nên KHÔNG escape dấu nháy,
+        // mà nếu nhét thẳng vào data-tag="..." thì dấu " trong tag sẽ phá vỡ thuộc tính.
+        function escapeAttr(text) {
+            return String(text ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // --- Search / Tag filter state ---
         let activeCourseTagFilter = null;
 
@@ -26797,7 +26809,7 @@ window.DBP={
         }
 
         function dismissCourseReminder() {
-            courseReminderDismissed = true;
+            courseReminderDismissedCareers.add(currentCareer);
             const banner = document.getElementById('courseReminderBanner');
             if (banner) banner.style.display = 'none';
         }
@@ -26899,7 +26911,7 @@ window.DBP={
                 const deadlineClass = progressPercent >= 100 ? '' : getDeadlineClass(course.deadline);
                 const deadlineText = course.deadline ? `📅 ${formatDate(course.deadline)}` : '📅 N/A';
                 const tags = course.tags || [];
-                const tagsHtml = tags.length ? `<div class="course-tags-wrap">${tags.map(t => `<span class="course-tag-chip" onclick="setCourseTagFilter('${escapeHtml(t).replace(/'/g, "\\'")}')">${escapeHtml(t)}</span>`).join('')}</div>` : '';
+                const tagsHtml = tags.length ? `<div class="course-tags-wrap">${tags.map(t => `<span class="course-tag-chip" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</span>`).join('')}</div>` : '';
                 const hasNotes = course.notes && course.notes.trim() !== '';
             return `<div class="course-item" data-career="${course.career}" data-id="${course.id}" data-priority="${course.priority}">
                 <div class="course-header">
@@ -26923,7 +26935,7 @@ window.DBP={
                 <div class="course-note-preview" id="course-note-${course.id}">${escapeHtml(course.notes)}</div>
                 ` : ''}
                 <div class="course-actions">
-                    ${course.url && course.url.trim() !== '' ? `<button class="course-action-btn open-link" onclick="window.open('${course.url}', '_blank')">🔗 Open</button>` : ''}                
+                    ${course.url && course.url.trim() !== '' ? `<button class="course-action-btn open-link" data-course-url="${escapeAttr(course.url)}">🔗 Open</button>` : ''}                
                     <button class="course-action-btn add-hours" onclick="openAddHoursModal('${course.id}')">⏱️ Add Hours</button>
                     <button class="course-action-btn edit" onclick="openEditCourseModal('${course.id}')">✏️ Edit</button>
                     <button class="course-action-btn notes" onclick="openCourseNotesModal('${course.id}')" title="Add/edit notes">${hasNotes ? '📝 Notes' : '📝 Add note'}</button>
@@ -26931,6 +26943,16 @@ window.DBP={
                 </div>
             </div>`;
             }).join('');
+
+            // Gắn sự kiện click cho tag chip bằng data-attribute (an toàn với ký tự đặc biệt/dấu nháy)
+            container.querySelectorAll('.course-tag-chip[data-tag]').forEach(chip => {
+                chip.addEventListener('click', () => setCourseTagFilter(chip.dataset.tag));
+            });
+
+            // Gắn sự kiện click cho nút "Open" bằng data-attribute (an toàn với URL chứa dấu nháy)
+            container.querySelectorAll('.course-action-btn.open-link[data-course-url]').forEach(btn => {
+                btn.addEventListener('click', () => window.open(btn.dataset.courseUrl, '_blank'));
+            });
         }
 
         // --- Deadline reminder banner ---
@@ -26938,7 +26960,7 @@ window.DBP={
             const banner = document.getElementById('courseReminderBanner');
             if (!banner) return;
 
-            if (courseReminderDismissed) { banner.style.display = 'none'; return; }
+            if (courseReminderDismissedCareers.has(currentCareer)) { banner.style.display = 'none'; return; }
 
             const dueSoonOrOverdue = careerCourses.filter(c => {
                 const progressPercent = (c.hoursStudied / c.estimatedHours) * 100;
@@ -27003,9 +27025,14 @@ window.DBP={
             const sortedTags = Array.from(tagSet).sort((a, b) => a.localeCompare(b));
             bar.innerHTML = sortedTags.map(t => {
                 const active = t === activeCourseTagFilter;
-                return `<span class="course-tag-chip filter-chip ${active ? 'active' : ''}" onclick="setCourseTagFilter('${escapeHtml(t).replace(/'/g, "\\'")}')">${escapeHtml(t)}</span>`;
+                return `<span class="course-tag-chip filter-chip ${active ? 'active' : ''}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</span>`;
             }).join('') + (activeCourseTagFilter ? `<span class="course-tag-chip filter-chip clear-chip" onclick="setCourseTagFilter(null)">✕ Clear</span>` : '');
             bar.style.display = 'flex';
+
+            // Gắn sự kiện click cho tag chip bằng data-attribute (an toàn với ký tự đặc biệt/dấu nháy)
+            bar.querySelectorAll('.course-tag-chip[data-tag]').forEach(chip => {
+                chip.addEventListener('click', () => setCourseTagFilter(chip.dataset.tag));
+            });
         }
 
         // --- Modal Functions ---
