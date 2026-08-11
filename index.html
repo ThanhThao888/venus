@@ -19554,15 +19554,46 @@ window.DBP={
             /* ===== FASTING WINDOW (16:8) ===== */
             // Cửa sổ ăn được TỰ TÍNH từ thời điểm bữa ăn đầu tiên và cuối cùng trong
             // ngày (day.foods đã có sẵn timestamp) — không cần nhập liệu thêm.
-            function computeFastingStats(day) {
+            //
+            // Lưu ý quan trọng: chuỗi nhịn ăn thường BẮC CẦU qua nửa đêm (VD: ăn tối
+            // xong lúc 20:00 hôm qua, nhịn tới 12:00 trưa hôm nay). Nếu chỉ nhìn vào
+            // day.foods của riêng "hôm nay" thì đúng lúc người dùng đang nhịn và cần
+            // xem đồng hồ đếm nhất (trước khi ăn bữa đầu tiên trong ngày), hàm sẽ trả
+            // về null vì hôm nay chưa có gì để tính — mất hẳn phần hữu ích nhất của
+            // tính năng. Vì vậy khi bật opts.lookback, hàm sẽ tìm bữa ăn cuối gần nhất
+            // của những ngày trước đó để đồng hồ nhịn ăn chạy liên tục xuyên đêm.
+            function findLastMealBefore(dayKey) {
+                const keys = Object.keys(data.days).filter(k => k < dayKey).sort();
+                for (let i = keys.length - 1; i >= 0; i--) {
+                    const foods = data.days[keys[i]].foods;
+                    if (foods && foods.length) {
+                        return foods.reduce((max, f) => (f.t > max ? f.t : max), foods[0].t);
+                    }
+                }
+                return null;
+            }
+            function computeFastingStats(day, opts) {
+                opts = opts || {};
                 const foods = (day.foods || []).slice().sort((a, b) => a.t - b.t);
-                if (!foods.length) return null;
-                const first = foods[0].t;
-                const last = foods[foods.length - 1].t;
+                if (foods.length) {
+                    const first = foods[0].t;
+                    const last = foods[foods.length - 1].t;
+                    return {
+                        first, last,
+                        eatingHours: (last - first) / 3600000,
+                        fastingSinceLastH: (Date.now() - last) / 3600000,
+                        hasMealToday: true
+                    };
+                }
+                if (!opts.lookback) return null;
+                const lastPrev = findLastMealBefore(opts.dayKey || todayKey());
+                if (lastPrev == null) return null;
                 return {
-                    first, last,
-                    eatingHours: (last - first) / 3600000,
-                    fastingSinceLastH: (Date.now() - last) / 3600000
+                    first: null,
+                    last: lastPrev,
+                    eatingHours: 0,
+                    fastingSinceLastH: (Date.now() - lastPrev) / 3600000,
+                    hasMealToday: false
                 };
             }
             function markMealNow() {
@@ -19679,13 +19710,36 @@ window.DBP={
                 const day = getDay(todayKey());
                 const box = document.getElementById('wlnFastingBox');
                 if (!box) return;
-                const target = data.settings.fastingWindowHours;
-                const stats = computeFastingStats(day);
+                const target = data.settings.fastingWindowHours; // mục tiêu cửa sổ ĂN (giờ), VD 16:8 -> 8
+                const fastGoal = Math.max(1, 24 - target); // mục tiêu cửa sổ NHỊN tương ứng, VD 16:8 -> 16
+                const stats = computeFastingStats(day, { lookback: true, dayKey: todayKey() });
                 const fmtTime = t => new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
                 if (!stats) {
                     box.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:4px 0;">Chưa log bữa ăn nào — cửa sổ ăn sẽ tự tính khi bạn log món đầu tiên (hoặc bấm "Đánh dấu đang ăn").</div>`;
                     return;
                 }
+
+                if (!stats.hasMealToday) {
+                    // Hôm nay chưa ăn gì — vẫn đang trong chuỗi nhịn ăn bắc cầu từ bữa
+                    // cuối hôm qua (hoặc gần nhất trước đó). Đây chính là lúc người
+                    // dùng cần thấy đồng hồ đếm nhất, nên hiện tiến độ nhịn ăn thay vì
+                    // một dòng chữ trống không có số liệu.
+                    const overFastGoal = stats.fastingSinceLastH >= fastGoal;
+                    const color = overFastGoal ? '#2ecc71' : '#f39c12';
+                    const pct = Math.min(100, (stats.fastingSinceLastH / fastGoal) * 100);
+                    const remain = Math.max(0, fastGoal - stats.fastingSinceLastH);
+                    box.innerHTML = `
+                        <div class="wln-log-item"><span>🍽️ Bữa cuối gần nhất</span><span><b>${fmtTime(stats.last)}</b></span></div>
+                        <div class="wln-log-item"><span>🌙 Đang nhịn ăn</span><span style="color:${color};"><b>${stats.fastingSinceLastH.toFixed(1)}h</b> / mục tiêu ${fastGoal}h</span></div>
+                        <div class="wln-bar-track" style="margin:-3px 2px 3px;"><div class="wln-bar-fill" style="width:${pct}%; background:${color};"></div></div>
+                        <div style="font-size:0.75rem; color:${overFastGoal ? '#2ecc71' : 'var(--text-muted)'}; line-height:1.4;">
+                            ${overFastGoal ? '✅ Đã đạt mục tiêu nhịn — sẵn sàng mở bữa ăn đầu tiên bất cứ lúc nào.' : `⏳ Còn khoảng ${remain.toFixed(1)}h nữa là đạt mục tiêu nhịn ${fastGoal}h.`}
+                        </div>
+                    `;
+                    return;
+                }
+
                 const overTarget = stats.eatingHours > target;
                 const color = overTarget ? '#e74c3c' : '#2ecc71';
                 const pct = Math.min(100, (stats.eatingHours / target) * 100);
