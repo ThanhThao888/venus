@@ -14737,11 +14737,14 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dbp-block-stripe.work-stripe{background:#1d4ed8;}
 .dbp-block-stripe.break-stripe{background:#cbd5e1;}
 .dbp-block-stripe.long-stripe{background:#10b981;}
+.dbp-block.current{box-shadow:0 0 0 2px #f59e0b;background:rgba(245,158,11,0.08)!important;}
+.dbp-now-badge{background:#f59e0b;color:#fff;font-size:0.6rem;font-weight:800;padding:1px 6px;border-radius:10px;letter-spacing:0.04em;flex-shrink:0;animation:dbp-pulse 1.8s infinite;}
 .dbp-block-time{font-size:0.71rem;font-weight:700;color:var(--text-muted,#94a3b8);min-width:108px;font-family:'Courier New',monospace;flex-shrink:0;}
 .dbp-block-name{flex:1;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.dbp-block-dur{font-size:0.71rem;color:var(--text-muted,#94a3b8);min-width:30px;text-align:right;flex-shrink:0;display:flex;align-items:center;gap:3px;justify-content:flex-end;}
+.dbp-block-dur{font-size:0.71rem;color:var(--text-muted,#94a3b8);min-width:30px;text-align:right;flex-shrink:0;display:flex;align-items:center;gap:3px;justify-content:flex-end;flex-direction:column;line-height:1.3;}
 .dbp-block-dur .actual-time{color:#ef4444;font-weight:600;}
 .dbp-block-dur .actual-time.on-track{color:#10b981;}
+.dbp-streak-badge{font-size:1.1rem;}
 .dbp-block-actions{display:flex;gap:5px;align-items:center;flex-shrink:0;}
 .dbp-done-btn{padding:3px 8px;background:none;border:1.5px solid var(--border-color,#e2e8f0);border-radius:20px;font-size:0.78rem;cursor:pointer;color:var(--text-muted,#94a3b8);transition:all 0.2s;flex-shrink:0;}
 .dbp-done-btn:hover{border-color:#10b981;color:#10b981;}
@@ -14796,7 +14799,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 /* ─── ANALYTICS ─── */
 .dbp-analytics{background:linear-gradient(135deg,rgba(29,78,216,0.06),rgba(99,102,241,0.06));border:1px solid rgba(29,78,216,0.14);border-radius:12px;padding:14px 16px;margin-bottom:14px;}
 .dbp-analytics-title{font-size:0.77rem;font-weight:800;color:var(--text-dark,#1e293b);margin-bottom:10px;}
-.dbp-analytics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.dbp-analytics-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
 .dbp-analytics-stat{text-align:center;}
 .dbp-analytics-val{font-size:1.1rem;font-weight:800;color:#1d4ed8;}
 .dbp-analytics-key{font-size:0.63rem;color:var(--text-muted,#94a3b8);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;}
@@ -14902,7 +14905,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     .dbp-mood-btn { padding: 4px 8px; font-size: 0.72rem; }
     .dbp-reflection { min-height: 60px; font-size: 0.8rem; padding: 9px 10px; }
     .dbp-action-btn { padding: 10px; font-size: 0.78rem; }
-    .dbp-analytics-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .dbp-analytics-row { grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .dbp-analytics-val { font-size: 1rem; }
     .dbp-history-item { padding: 10px 12px; }
     .dbp-history-date { font-size: 0.7rem; }
@@ -15536,15 +15539,52 @@ function renderSchedule(blocks){
 
     gel('dbpActionRow').style.display='flex';
     gel('dbpSchedule').scrollIntoView({behavior:'smooth',block:'nearest'});
+    startLiveHighlight();
+}
+
+/* ─── ACTUAL TIME (planned vs actual, using idle CSS hooks) ─── */
+function actualTimeHtml(b){
+    if(b.actualDur==null) return '';
+    const onTrack = b.actualDur<=b.dur;
+    return `<span class="actual-time${onTrack?' on-track':''}">${onTrack?'✓':'+'+(b.actualDur-b.dur)+'m'}</span>`;
+}
+
+/* ─── LIVE "NOW" HIGHLIGHT ─── */
+let _liveInterval=null;
+function highlightCurrent(){
+    if(!_blocks.length) return;
+    const now=new Date();
+    document.querySelectorAll('.dbp-now-badge').forEach(el=>el.remove());
+    _blocks.forEach((b,i)=>{
+        const el=gel('dbpBk'+i); if(!el) return;
+        const isNow = now>=b.start && now<b.end;
+        el.classList.toggle('current', isNow);
+        if(isNow){
+            const nameEl=gel('dbpBkN'+i);
+            if(nameEl && !nameEl.querySelector('.dbp-now-badge')){
+                const badge=document.createElement('span');
+                badge.className='dbp-now-badge'; badge.textContent='NOW';
+                nameEl.insertAdjacentElement('afterend', badge);
+            }
+        }
+    });
+}
+function startLiveHighlight(){
+    stopLiveHighlight();
+    highlightCurrent();
+    _liveInterval=setInterval(highlightCurrent, 30000);
+}
+function stopLiveHighlight(){
+    if(_liveInterval){ clearInterval(_liveInterval); _liveInterval=null; }
 }
 
 /* ─── RENDER BLOCK ─── */
 function renderBlock(b,i){
     if(b.isBreak) return `
-        <div class="dbp-block ${b.cls||'break-short'}">
+        <div class="dbp-block ${b.cls||'break-short'}" id="dbpBk${i}">
             <div class="dbp-block-stripe ${b.cls==='break-long'?'long-stripe':'break-stripe'}"></div>
             <div class="dbp-block-time">${fmt(b.start)} – ${fmt(b.end)}</div>
-            <div class="dbp-block-name" style="color:var(--text-muted,#94a3b8);font-style:italic;">${b.name}</div>
+            <div class="dbp-block-name" id="dbpBkN${i}" style="color:var(--text-muted,#94a3b8);font-style:italic;">${b.name}</div>
             <div class="dbp-block-dur">${b.dur}m</div>
         </div>`;
     return `
@@ -15552,7 +15592,7 @@ function renderBlock(b,i){
             <div class="dbp-block-stripe work-stripe" id="dbpBkS${i}"></div>
             <div class="dbp-block-time">${fmt(b.start)} – ${fmt(b.end)}</div>
             <div class="dbp-block-name" id="dbpBkN${i}">${b.name}</div>
-            <div class="dbp-block-dur">${b.dur}m</div>
+            <div class="dbp-block-dur" id="dbpBkD${i}">${b.dur}m${actualTimeHtml(b)}</div>
             <div class="dbp-block-actions">
                 <button class="dbp-done-btn${b.done?' checked':''}" id="dbpDB${i}" onclick="DBP.markDone(${i})">${b.done?'✅':'○'}</button>
                 <button class="dbp-timer-btn" id="dbpTB${i}" onclick="DBP.toggleTimer(${i},${b.dur})">⏱ ${pad(Math.floor(b.dur/60))}:${pad(b.dur%60)}</button>
@@ -15583,9 +15623,15 @@ function renderBlock(b,i){
 function markDone(i){
     if(!_blocks[i])return;
     _blocks[i].done=!_blocks[i].done;
-    const bk=gel('dbpBk'+i), db=gel('dbpDB'+i);
+    if(_blocks[i].done && _blocks[i].actualStart && _blocks[i].actualDur==null){
+        _blocks[i].actualDur = Math.max(1, Math.round((Date.now()-_blocks[i].actualStart)/60000));
+    } else if(!_blocks[i].done){
+        _blocks[i].actualDur = null; // undo → clear so it can be re-timed
+    }
+    const bk=gel('dbpBk'+i), db=gel('dbpDB'+i), durEl=gel('dbpBkD'+i);
     if(bk){ bk.classList.toggle('done',_blocks[i].done); }
     if(db){ db.textContent=_blocks[i].done?'✅':'○'; db.classList.toggle('checked',_blocks[i].done); }
+    if(durEl){ durEl.innerHTML = `${_blocks[i].dur}m${actualTimeHtml(_blocks[i])}`; }
     if(_blocks[i].done) toast('✅ Block done!');
 
     // Sync done states vào temp storage để sống sót qua modal close/open
@@ -15636,8 +15682,13 @@ function startTimer(i){
         pauseTimer(_activeTimerIdx);
     }
 
+    if(window.Notification && Notification.permission==='default'){
+        Notification.requestPermission().catch(()=>{});
+    }
+
     t.running=true; t.startTs=Date.now(); t.baseRem=t.remaining;
     _activeTimerIdx = i;
+    if(_blocks[i] && !_blocks[i].actualStart) _blocks[i].actualStart = Date.now();
     const btn=gel('dbpTB'+i); if(btn)btn.classList.add('running');
 
     t.interval=setInterval(()=>{
@@ -15690,6 +15741,15 @@ function floatStop(){
 
 function onTimerDone(i){
     beep(); toast('⏰ Time\'s up! Great work!',3500);
+    try{
+        if(window.Notification && Notification.permission==='granted' && document.hidden){
+            const n=new Notification('⚡ Battle Plan — Time\'s up!',{
+                body:(_blocks[i]?.name||'Block')+' is done. Nice work!',
+                tag:'dbp-timer'
+            });
+            n.onclick=()=>{ window.focus(); n.close(); };
+        }
+    }catch(_){}
     const mr=gel('dbpMR'+i); if(mr)mr.style.display='block';
     if(_blocks[i]&&!_blocks[i].done) markDone(i);
     _activeTimerIdx=null;
@@ -15775,7 +15835,23 @@ function savePlan(){
     if(_activeTimerIdx !== null){ floatStop(); }
     // Reset _blocks để mở modal lại sẽ bắt đầu fresh
     _blocks=[]; _timers={};
+    stopLiveHighlight();
     toast('💾 Plan saved!');
+}
+
+/* ─── STREAK (consecutive days with a saved plan) ─── */
+function computeStreak(hist){
+    if(!hist.length) return 0;
+    const dayKey = d => { const x=new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
+    const days = new Set(hist.map(h=>dayKey(h.date)));
+    let streak=0, cursor=new Date();
+    // Nếu hôm nay chưa có plan, vẫn cho phép streak tính từ hôm qua trở về trước
+    if(!days.has(dayKey(cursor))) cursor.setDate(cursor.getDate()-1);
+    while(days.has(dayKey(cursor))){
+        streak++;
+        cursor.setDate(cursor.getDate()-1);
+    }
+    return streak;
 }
 
 /* ─── HISTORY ─── */
@@ -15787,6 +15863,7 @@ function renderHistory(){
     const wkFocus=wk.reduce((s,h)=>s+h.totalFocus,0);
     const moodLog=store.get('dbpMoodLog',[]);
     const lastMood=moodLog.length?moodLog[0].mood.split(' ')[0]:'–';
+    const streak=computeStreak(hist);
 
     const analytic=wk.length?`
         <div class="dbp-analytics">
@@ -15796,6 +15873,7 @@ function renderHistory(){
                 <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${wk.length}</div><div class="dbp-analytics-key">Sessions</div></div>
                 <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${wk.length?(wkFocus/wk.length/60).toFixed(1)+'h':'–'}</div><div class="dbp-analytics-key">Avg/Session</div></div>
                 <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${lastMood}</div><div class="dbp-analytics-key">Last Mood</div></div>
+                <div class="dbp-analytics-stat"><div class="dbp-analytics-val dbp-streak-badge">${streak>0?'🔥':'💤'} ${streak}</div><div class="dbp-analytics-key">Day Streak</div></div>
             </div>
         </div>`:'';
 
@@ -15878,6 +15956,7 @@ function open(){
 function close(){
     gel('dbpModal').classList.remove('open');
     document.body.style.overflow='';
+    stopLiveHighlight();
     // Float timer tự hiện nếu đang chạy (không cần làm gì thêm)
 }
 
