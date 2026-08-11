@@ -18590,8 +18590,21 @@ window.DBP={
                             <button type="button" class="wln-log-modal-close" onclick="Wellness.closeCaffeineModal()">&times;</button>
                         </div>
                         <div id="wlnCaffeineModalTotal" style="text-align:center; font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;"></div>
-                        <button type="button" class="add-time-btn" style="width:100%; background:#8b5e3c; margin-bottom:10px;" onclick="Wellness.addPresetCaffeine(0,true)">☕+💧 Cà phê &amp; bù nước (1 chạm)</button>
-                        <div id="wlnCaffeinePresets" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+
+                        <div class="wln-time-picker-row">
+                            <label for="wlnCaffeineTimeInput">🕐 Giờ uống</label>
+                            <input type="time" id="wlnCaffeineTimeInput">
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin:6px 0 12px; line-height:1.4;">Log trễ hơn lúc uống thật? Chỉnh lại giờ ở trên trước khi bấm loại đồ uống — hệ thống sẽ lưu đúng giờ này.</div>
+
+                        <div id="wlnCaffeinePresets" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>
+
+                        <button type="button" class="wln-food-preset-btn" style="width:100%; text-align:center; background:var(--bg-white); border-style:dashed;" onclick="Wellness.toggleCustomCaffeineForm()">✏️ Loại khác / nhập tay...</button>
+                        <div id="wlnCustomCaffeineForm" style="display:none; margin-top:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+                            <input id="wlnCustomCaffeineName" placeholder="Tên (VD: Cà phê pha máy, Redbull...)" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <input id="wlnCustomCaffeineMg" type="number" min="0" step="1" placeholder="Hàm lượng caffeine (mg)" style="width:100%; margin-bottom:8px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <button type="button" class="add-time-btn" style="width:100%; background:#27ae60;" onclick="Wellness.addCustomCaffeine()">+ Thêm vào log</button>
+                        </div>
                     </div>
                 </div>
 
@@ -18878,6 +18891,26 @@ window.DBP={
                 flex-shrink: 0; transition: var(--transition);
             }
             .wln-add-trigger:hover { filter: brightness(1.1); transform: scale(1.06); }
+
+            /* Time picker row (chọn/chỉnh giờ log — vd caffeine log trễ hơn lúc uống thật) */
+            .wln-time-picker-row {
+                display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                padding: 9px 12px; background: var(--bg-light); border: 1px solid var(--border-color);
+                border-radius: 10px;
+            }
+            .wln-time-picker-row label { font-size: 0.8rem; font-weight: 600; color: var(--text-dark); }
+            .wln-time-picker-row input[type="time"] {
+                border: 1.5px solid var(--border-color); border-radius: 7px; padding: 5px 9px;
+                background: var(--bg-white); color: var(--text-dark); font-size: 0.9rem; font-weight: 600;
+                cursor: pointer;
+            }
+            .wln-time-picker-row input[type="time"]:focus { outline: none; border-color: var(--primary); }
+
+            /* Log item bị muộn (sau giờ cắt caffeine) — viền trái đỏ để nhận diện nhanh trong danh sách */
+            .wln-log-item.wln-log-item-late {
+                border-left: 3px solid #e74c3c;
+                background: rgba(231, 76, 60, 0.08);
+            }
         </style>
 
         <script>
@@ -18931,6 +18964,21 @@ window.DBP={
             }
             function todayKey() {
                 return wlnLocalDateStr();
+            }
+            /* Giờ hiện tại dạng "HH:MM" để làm giá trị mặc định cho input[type=time] */
+            function nowTimeValue() {
+                const d = new Date();
+                return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            }
+            /* Chuyển giá trị "HH:MM" (chọn giờ tùy ý, luôn gắn vào NGÀY HÔM NAY) thành timestamp.
+               Dùng cho log caffeine để cho phép nhập đúng giờ đã uống thật, thay vì luôn là "bây giờ". */
+            function timeInputToTimestamp(timeStr) {
+                if (!timeStr) return Date.now();
+                const [h, m] = timeStr.split(':').map(Number);
+                if (isNaN(h) || isNaN(m)) return Date.now();
+                const d = new Date();
+                d.setHours(h, m, 0, 0);
+                return d.getTime();
             }
             function isoWeekKey(d) {
                 const date = new Date(d.getTime());
@@ -19007,6 +19055,10 @@ window.DBP={
 
             function openCaffeineModal() {
                 document.getElementById('wlnCaffeineModalOverlay').style.display = 'flex';
+                const timeInput = document.getElementById('wlnCaffeineTimeInput');
+                if (timeInput) timeInput.value = nowTimeValue();
+                const form = document.getElementById('wlnCustomCaffeineForm');
+                if (form) form.style.display = 'none';
             }
             function closeCaffeineModal() {
                 document.getElementById('wlnCaffeineModalOverlay').style.display = 'none';
@@ -19095,20 +19147,45 @@ window.DBP={
             }
 
             /* ===== CAFFEINE ===== */
-            function addCaffeine(mg, name, alsoWater) {
+            // ts (timestamp) lấy từ ô chọn giờ trong modal — cho phép log trễ hơn lúc uống thật
+            // (VD: uống lúc 11h nhưng 16h mới mở máy log) mà vẫn giữ đúng giờ thật cho cảnh báo cutoff.
+            function addCaffeine(mg, name, ts) {
                 const day = getDay(todayKey());
-                day.caffeine.push({ name, mg, t: Date.now() });
-                if (alsoWater) {
-                    day.water = Math.max(0, (day.water || 0) + 1);
-                    day.lastWaterAt = Date.now();
-                }
+                day.caffeine.push({ name, mg, t: ts || Date.now() });
                 save();
                 renderLogTab();
             }
-            function addPresetCaffeine(i, alsoWater) {
+            function readCaffeineTimeInput() {
+                const timeInput = document.getElementById('wlnCaffeineTimeInput');
+                const ts = timeInputToTimestamp(timeInput ? timeInput.value : null);
+                if (ts > Date.now() + 5 * 60000) {
+                    alert('Không thể chọn giờ trong tương lai.');
+                    return null;
+                }
+                return ts;
+            }
+            function addPresetCaffeine(i) {
                 const p = CAFFEINE_PRESETS[i];
                 if (!p) return;
-                addCaffeine(p.mg, p.name, !!alsoWater);
+                const ts = readCaffeineTimeInput();
+                if (ts === null) return;
+                addCaffeine(p.mg, p.name, ts);
+            }
+            function toggleCustomCaffeineForm() {
+                const form = document.getElementById('wlnCustomCaffeineForm');
+                form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            }
+            function addCustomCaffeine() {
+                const name = document.getElementById('wlnCustomCaffeineName').value.trim();
+                const mg = parseFloat(document.getElementById('wlnCustomCaffeineMg').value);
+                if (!name) { alert('Nhập tên loại đồ uống trước đã nhé.'); return; }
+                if (!mg || mg <= 0) { alert('Nhập hàm lượng caffeine (mg) hợp lệ.'); return; }
+                const ts = readCaffeineTimeInput();
+                if (ts === null) return;
+                addCaffeine(mg, name, ts);
+                document.getElementById('wlnCustomCaffeineName').value = '';
+                document.getElementById('wlnCustomCaffeineMg').value = '';
+                document.getElementById('wlnCustomCaffeineForm').style.display = 'none';
             }
             function removeCaffeine(idx) {
                 const day = getDay(todayKey());
@@ -19120,8 +19197,55 @@ window.DBP={
                 const wrap = document.getElementById('wlnCaffeinePresets');
                 if (!wrap) return;
                 wrap.innerHTML = CAFFEINE_PRESETS.map((p, i) =>
-                    `<button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetCaffeine(${i},false)">${p.emoji} ${p.name} (${p.mg}mg)</button>`
+                    `<button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetCaffeine(${i})">${p.emoji} ${p.name} (${p.mg}mg)</button>`
                 ).join('');
+            }
+
+            // Sửa giờ cho 1 lần log caffeine đã lưu — dùng khi log trễ hơn lúc uống thật
+            // hoặc quên chỉnh giờ lúc log (parity với tính năng sửa giờ món ăn).
+            let _wlnEditCaffeineIdx = null;
+            function openEditCaffeineTime(i) {
+                closeEditCaffeineTime();
+                _wlnEditCaffeineIdx = i;
+                const day = getDay(todayKey());
+                const c = day.caffeine[i];
+                if (!c) return;
+                const d = new Date(c.t);
+                const timeVal = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                const html = `
+                    <div class="wln-dose-modal-overlay" id="wlnEditCafTimeOverlay">
+                        <div class="wln-dose-modal-box">
+                            <div class="wln-dose-icon">🕐</div>
+                            <h4>${c.name}</h4>
+                            <div class="wln-dose-sub">Sửa lại đúng thời điểm đã uống</div>
+                            <input type="time" id="wlnEditCafTimeInput" value="${timeVal}" style="width:100%; margin-bottom:16px; padding:9px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-white); color:var(--text-dark); font-size:0.95rem; text-align:center;">
+                            <div class="wln-dose-actions">
+                                <button type="button" class="wln-dose-cancel" onclick="Wellness._closeEditCaffeineTime()">Hủy</button>
+                                <button type="button" class="wln-dose-save" onclick="Wellness._confirmEditCaffeineTime()">✓ Lưu</button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+                document.getElementById('wlnEditCafTimeOverlay').addEventListener('click', (e) => {
+                    if (e.target.id === 'wlnEditCafTimeOverlay') closeEditCaffeineTime();
+                });
+            }
+            function closeEditCaffeineTime() {
+                const el = document.getElementById('wlnEditCafTimeOverlay');
+                if (el) el.remove();
+                _wlnEditCaffeineIdx = null;
+            }
+            function confirmEditCaffeineTime() {
+                const input = document.getElementById('wlnEditCafTimeInput');
+                if (!input.value) { input.style.borderColor = '#ef4444'; return; }
+                const ts = timeInputToTimestamp(input.value);
+                if (ts > Date.now() + 5 * 60000) { alert('Không thể chọn giờ trong tương lai.'); return; }
+                const day = getDay(todayKey());
+                const c = day.caffeine[_wlnEditCaffeineIdx];
+                if (c) c.t = ts;
+                save();
+                closeEditCaffeineTime();
+                renderLogTab();
             }
             function renderCaffeineSection() {
                 const day = getDay(todayKey());
@@ -19153,11 +19277,17 @@ window.DBP={
                 const listEl = document.getElementById('wlnCaffeineLogList');
                 if (listEl) {
                     listEl.innerHTML = day.caffeine.length
-                        ? day.caffeine.map((c, i) => `
-                            <div class="wln-log-item">
-                                <span>${c.name} — ${c.mg}mg <span style="color:var(--text-muted); font-size:0.72rem;">(${new Date(c.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
-                                <button onclick="Wellness.removeCaffeine(${i})">✕</button>
-                            </div>`).join('')
+                        ? day.caffeine.map((c, i) => {
+                            const isLate = new Date(c.t).getHours() >= cutoffHour;
+                            return `
+                            <div class="wln-log-item${isLate ? ' wln-log-item-late' : ''}">
+                                <span>${isLate ? '🌙 ' : ''}${c.name} — ${c.mg}mg <span style="color:var(--text-muted); font-size:0.72rem;">(${new Date(c.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
+                                <span style="display:flex; gap:6px;">
+                                    <button onclick="Wellness.openEditCaffeineTime(${i})" title="Sửa giờ">🕐</button>
+                                    <button onclick="Wellness.removeCaffeine(${i})">✕</button>
+                                </span>
+                            </div>`;
+                        }).join('')
                         : `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:4px 0;">Chưa log caffeine hôm nay.</div>`;
                 }
             }
@@ -19765,7 +19895,8 @@ window.DBP={
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
                 removeFood, addWater, logWorkout, saveWeeklyWeight,
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
-                addPresetCaffeine, removeCaffeine,
+                addPresetCaffeine, removeCaffeine, toggleCustomCaffeineForm, addCustomCaffeine,
+                openEditCaffeineTime,
                 markMealNow, toggleFastingSettings, setFastingGoal, setCaffeineCutoff,
                 toggleManualMealForm, addManualMeal, openEditFoodTime,
                 openWaterModal, closeWaterModal,
@@ -19777,7 +19908,9 @@ window.DBP={
                 _closeDoseModal: closeSuppDoseModal,
                 _confirmDoseModal: confirmSuppDoseModal,
                 _closeEditFoodTime: closeEditFoodTime,
-                _confirmEditFoodTime: confirmEditFoodTime
+                _confirmEditFoodTime: confirmEditFoodTime,
+                _closeEditCaffeineTime: closeEditCaffeineTime,
+                _confirmEditCaffeineTime: confirmEditCaffeineTime
             };
         })();
         </script>
