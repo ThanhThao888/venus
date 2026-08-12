@@ -18457,6 +18457,21 @@ window.DBP={
                 <div id="sleepBriefCopyMsg" style="display:none; font-size:0.72rem; color:#10b981; margin-top:6px;">✅ Đã copy vào clipboard!</div>
             </div>
 
+            <!-- Cognitive Readiness Advisor — não hôm nay đang ở mức nào, nên học/làm gì,
+                 kèm chế độ riêng cho ngày làm ca đêm (#40 Energy-aware task routing) -->
+            <div id="cogReadinessWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);">🧠 Trạng thái não hôm nay</span>
+                    <span id="cogReadinessScoreBadge" style="font-size:0.78rem; font-weight:700; padding:2px 10px; border-radius:10px;"></span>
+                </div>
+                <div id="cogReadinessBody" style="font-size:0.82rem; line-height:1.7; color:var(--text-dark);"></div>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.8rem; font-weight:600; color:var(--text-dark); margin-top:10px; padding-top:10px; border-top:1px dashed var(--border-color);">
+                    <input type="checkbox" id="nightShiftToggle" onchange="setNightShiftToday(this.checked)" style="width:16px;height:16px;">
+                    🌙 Hôm nay làm ca đêm (thức xuyên đêm)
+                </label>
+                <div id="nightShiftGuidance" style="display:none; font-size:0.82rem; line-height:1.7; color:var(--text-dark); margin-top:8px; padding:10px; background:var(--bg-white); border-radius:8px; border:1px solid var(--border-color);"></div>
+            </div>
+
             <!-- Cảnh báo chủ động: SOL tăng đáng kể so với giai đoạn trước -->
             <div id="solAlertBanner" style="display:none; margin: 4px 0 12px; padding:12px 34px 12px 14px; background: rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius: var(--radius-md); position:relative;">
                 <button onclick="dismissSolAlert()" aria-label="Đóng" style="position:absolute; top:8px; right:10px; background:none; border:none; font-size:1.1rem; cursor:pointer; color:var(--text-muted); line-height:1; padding:2px;">×</button>
@@ -29787,6 +29802,23 @@ document.addEventListener('DOMContentLoaded', function() {
             const last7 = dailyTotals.slice(-7);
             const debt7 = last7.reduce((sum, d) => sum + Math.max(0, goal - d), 0);
 
+            // So sánh với mục tiêu đã lưu từ Calculator (#14) — chỉ hiện nếu mục tiêu đó
+            // thuộc về "tối hôm qua" (cùng eveningDateKeyForBedtime với session gần nhất).
+            let targetCompareHtml = '';
+            try {
+                const targetRaw = localStorage.getItem('sleepTonightTarget');
+                if (targetRaw) {
+                    const t = JSON.parse(targetRaw);
+                    if (t && typeof t.bedTime === 'number' && typeof t.wakeTime === 'number'
+                        && eveningDateKeyForBedtime(t.bedTime) === eveningDateKeyForBedtime(last.start)) {
+                        const bedDiffMin = Math.round((last.start - t.bedTime) / 60000);
+                        const wakeDiffMin = Math.round((last.end - t.wakeTime) / 60000);
+                        const fmtDiff = (m) => Math.abs(m) < 3 ? 'đúng giờ' : (m > 0 ? `trễ ${m}p` : `sớm ${Math.abs(m)}p`);
+                        targetCompareHtml = `<div style="margin-top:4px;">🎯 So với mục tiêu đã đặt: lên giường <b>${fmtDiff(bedDiffMin)}</b>, dậy <b>${fmtDiff(wakeDiffMin)}</b>.</div>`;
+                    }
+                }
+            } catch (e) {}
+
             // Chọn 1 insight mạnh nhất theo thứ tự ưu tiên: đêm qua có tag xấu > SE thấp > nợ ngủ cao > đều đặn kém
             let insight = null;
             if (last.auto_tags?.caffeineLate) insight = '☕ Đêm qua có caffeine sau giờ cutoff — có thể là nguyên nhân SOL kéo dài.';
@@ -29807,10 +29839,175 @@ document.addEventListener('DOMContentLoaded', function() {
             body.innerHTML = `
                 <div>😴 <b>${last.duration}h</b> đêm qua ${se !== null ? `· SE <b>${se.toFixed(0)}%</b>` : ''}</div>
                 <div>📉 Nợ ngủ 7đ: <b>${debt7.toFixed(1)}h</b> ${reg ? `· Đều đặn: <b>±${Math.round(reg.score)}p</b>` : ''}</div>
+                ${targetCompareHtml}
                 <div style="margin-top:4px;">${insight}</div>
                 <div style="margin-top:2px; color:var(--primary); font-weight:600;">👉 ${recommendation}</div>
             `;
             wrap.style.display = 'block';
+        }
+
+        // ===== Cognitive Readiness Advisor (#40 Energy-aware task routing) — không phải
+        // công cụ y tế, chỉ là gợi ý dựa trên dữ liệu bạn đã log (nợ ngủ 7đ, SE gần đây,
+        // đều đặn, số lần ngủ rời rạc hôm nay, và circadian trough đơn giản theo giờ hiện tại).
+        function computeCognitiveReadiness() {
+            const sorted = getSortedSleepSessions();
+            if (sorted.length === 0) return null;
+            const now = new Date();
+            const nowH = now.getHours() + now.getMinutes() / 60;
+            const goal = getSleepGoal();
+
+            const byDate = {};
+            sorted.forEach(s => {
+                const dateStr = toLocalDateStr(new Date(s.start));
+                byDate[dateStr] = (byDate[dateStr] || 0) + s.duration;
+            });
+            const dailyTotals = Object.values(byDate);
+            const last7 = dailyTotals.slice(-7);
+            const debt7 = last7.reduce((sum, d) => sum + Math.max(0, goal - d), 0);
+
+            // Phân mảnh hôm nay: đếm số session bắt đầu trong ngày hôm nay theo lịch
+            const todayStr = toLocalDateStr(now);
+            const fragmentCount = sorted.filter(s => toLocalDateStr(new Date(s.start)) === todayStr).length;
+
+            const recentWithSOL = sorted.filter(s => typeof s.sol === 'number' && !isNaN(s.sol)).slice(-3);
+            const seValues = recentWithSOL.map(computeSleepEfficiency).filter(v => v !== null);
+            const avgSE = seValues.length ? seValues.reduce((a, b) => a + b, 0) / seValues.length : null;
+
+            const reg = computeSleepRegularity(7);
+
+            let score = 100;
+            const factors = [];
+
+            if (debt7 > 0) {
+                score -= Math.min(35, debt7 * 5);
+                if (debt7 > 3) factors.push(`Nợ ngủ 7 ngày đang ở mức ${debt7.toFixed(1)}h`);
+            }
+            if (fragmentCount >= 3) {
+                score -= 25;
+                factors.push(`Ngủ hôm nay chia làm ${fragmentCount} đợt rời rạc — dù tổng giờ có vẻ đủ, ngủ ngắt quãng phục hồi kém hơn ngủ liền mạch`);
+            } else if (fragmentCount === 2) {
+                score -= 12;
+                factors.push('Ngủ hôm nay chia làm 2 đợt — phục hồi kém hơn ngủ liền mạch cùng số giờ');
+            }
+            if (avgSE !== null && avgSE < 75) {
+                score -= 20;
+                factors.push(`SE gần đây chỉ ${avgSE.toFixed(0)}% — giấc ngủ có dấu hiệu phân mảnh`);
+            } else if (avgSE !== null && avgSE < 85) {
+                score -= 10;
+            }
+            if (reg && reg.score > 60) {
+                score -= 10;
+                factors.push(`Giờ ngủ/dậy đang lệch ±${Math.round(reg.score)} phút — nhịp sinh học chưa ổn định`);
+            }
+
+            // Circadian trough đơn giản: 2h–5h sáng (đáy sâu nhất) và 13h–15h (dip sau ăn trưa)
+            let circadianNote = null;
+            if (!isSleeping) {
+                if (nowH >= 2 && nowH < 5) {
+                    score -= 25;
+                    circadianNote = 'Đang trong khung 2h–5h sáng — đáy circadian sâu nhất, hiệu suất tư duy phức tạp thấp nhất trong ngày dù đã ngủ đủ.';
+                } else if (nowH >= 13 && nowH < 15) {
+                    score -= 10;
+                    circadianNote = 'Đang trong khung sau bữa trưa (13h–15h) — dip tự nhiên, không phải dấu hiệu thiếu ngủ.';
+                }
+            }
+            score = Math.max(0, Math.min(100, Math.round(score)));
+
+            const label = score >= 75 ? '🟢 Cao' : score >= 50 ? '🟡 Trung bình' : score >= 25 ? '🟠 Thấp' : '🔴 Rất thấp';
+            const color = score >= 75 ? '#10b981' : score >= 50 ? '#f59e0b' : score >= 25 ? '#f97316' : '#ef4444';
+
+            let advice;
+            if (fragmentCount >= 2) {
+                advice = 'Ngủ rời rạc hôm nay khiến trí nhớ làm việc (working memory) yếu hơn bình thường dù không buồn ngủ rõ rệt. Né việc cần giữ nhiều thông tin cùng lúc (viết luận văn, phân tích phức tạp) — ưu tiên task đã quen tay, checklist, đọc lướt tài liệu. Nếu bắt buộc làm việc khó, chia đoạn 25 phút, nghỉ 5 phút giữa các đoạn.';
+            } else if (circadianNote && nowH < 5) {
+                advice = 'Nếu không bắt buộc, tránh học nội dung mới hoặc ra quyết định quan trọng lúc này — để dành cho task đơn giản, lặp lại.';
+            } else if (score >= 75) {
+                advice = 'Khung tốt cho việc cần tư duy sâu — làm phần khó nhất của luận văn/task trước, để việc lặt vặt lại sau.';
+            } else if (circadianNote) {
+                advice = 'Việc nhẹ, đọc tài liệu phù hợp hơn deep work trong khung giờ này.';
+            } else if (debt7 > 3) {
+                advice = 'Nợ ngủ đang tích luỹ — dồn việc quan trọng nhất vào 1–2 khung còn tỉnh táo nhất hôm nay, đừng dàn trải; tối nay ưu tiên trả nợ ngủ.';
+            } else {
+                advice = 'Mức ổn định — làm việc theo kế hoạch bình thường, nhưng vẫn nên xen kẽ task nặng/nhẹ để tránh mệt dồn.';
+            }
+
+            return { score, label, color, factors, advice, circadianNote, debt7, fragmentCount, avgSE, reg };
+        }
+
+        function renderCognitiveReadiness() {
+            const wrap = document.getElementById('cogReadinessWrap');
+            const badge = document.getElementById('cogReadinessScoreBadge');
+            const body = document.getElementById('cogReadinessBody');
+            if (!wrap || !badge || !body) return;
+
+            const info = computeCognitiveReadiness();
+            if (!info) { wrap.style.display = 'none'; return; }
+
+            badge.textContent = `${info.label} · ${info.score}/100`;
+            badge.style.background = `${info.color}22`;
+            badge.style.color = info.color;
+
+            const factorsHtml = info.factors.length
+                ? `<ul style="margin:4px 0 0; padding-left:18px;">${info.factors.map(f => `<li>${f}</li>`).join('')}</ul>`
+                : '';
+            body.innerHTML = `
+                ${info.circadianNote ? `<div>🕐 ${info.circadianNote}</div>` : ''}
+                ${factorsHtml}
+                <div style="margin-top:6px; color:var(--primary); font-weight:600;">👉 ${info.advice}</div>
+            `;
+            wrap.style.display = 'block';
+
+            renderNightShiftGuidance();
+        }
+
+        // ===== Night shift mode — hướng dẫn riêng cho ngày phải thức xuyên đêm làm việc,
+        // chia 3 giai đoạn theo giờ hiện tại: trước ca / trong ca / sau ca về nhà =====
+        const NIGHT_SHIFT_KEY = 'sleepNightShiftDate';
+
+        function isNightShiftToday() {
+            return localStorage.getItem(NIGHT_SHIFT_KEY) === toLocalDateStr(new Date());
+        }
+
+        function setNightShiftToday(checked) {
+            if (checked) localStorage.setItem(NIGHT_SHIFT_KEY, toLocalDateStr(new Date()));
+            else localStorage.removeItem(NIGHT_SHIFT_KEY);
+            renderNightShiftGuidance();
+        }
+
+        function renderNightShiftGuidance() {
+            const toggle = document.getElementById('nightShiftToggle');
+            const guidanceEl = document.getElementById('nightShiftGuidance');
+            if (!toggle || !guidanceEl) return;
+            const on = isNightShiftToday();
+            toggle.checked = on;
+            if (!on) { guidanceEl.style.display = 'none'; return; }
+
+            const now = new Date();
+            const nowH = now.getHours() + now.getMinutes() / 60;
+            let html;
+            if (nowH < 20) {
+                html = `
+                    <div style="font-weight:700; margin-bottom:4px;">🌆 Trước ca (dự kiến vào ca ~20h)</div>
+                    <div>• Nếu còn rảnh và chưa quá 17h, tranh thủ nap 90 phút (đúng 1 chu kỳ trọn) — tránh nap sau 17h vì sẽ khó vào giấc "core sleep" sau khi tan ca.</div>
+                    <div>• Dồn phần học/luận văn khó nhất vào khung còn tỉnh táo nhất chiều nay, trước khi chuẩn bị đồ ăn lúc 20h — đừng để dồn qua đêm.</div>
+                    <div>• Nếu dùng caffeine, uống liều đầu ngay trước/đầu ca thay vì rải đều suốt đêm, để không ảnh hưởng giấc ngủ core sau ca.</div>
+                `;
+            } else if (nowH >= 20 || nowH < 7) {
+                html = `
+                    <div style="font-weight:700; margin-bottom:4px;">🌙 Trong ca (20h–7h)</div>
+                    <div>• Não đang thức lệch nhịp sinh học — đừng kỳ vọng tư duy phức tạp ngang ban ngày. Nếu chen được việc học, chọn dạng ôn tập/đọc lại, không tạo nội dung mới.</div>
+                    <div>• Đáy circadian rơi vào khoảng 3h–5h sáng — nếu có khoảng nghỉ trong ca, đây là lúc dễ buồn ngủ nhất, không phải lúc để học.</div>
+                `;
+            } else {
+                html = `
+                    <div style="font-weight:700; margin-bottom:4px;">🌅 Sau ca (về nhà ~7h sáng)</div>
+                    <div>• Ngủ core ngay khi về — dùng 🧮 Calculator ở trên (chế độ "Tôi biết giờ sẽ LÊN GIƯỜNG", nhập ~07:00) để canh đúng số chu kỳ 90 phút, tránh dậy giữa giấc sâu.</div>
+                    <div>• Đừng học/làm luận văn ngay lúc vừa về — não đang ở mức thấp nhất sau thức đêm, quyết định/tư duy lúc này dễ sai. Ngủ trước.</div>
+                    <div>• Sau khi dậy, chờ thêm 30–60 phút (qua giai đoạn sleep inertia) rồi mới bắt đầu việc cần tư duy sâu nhất trong ngày.</div>
+                `;
+            }
+            guidanceEl.innerHTML = html;
+            guidanceEl.style.display = 'block';
         }
 
         // ===== Copy Sleep Context for AI — mirror pattern "📋 Copy Context for AI" đã có =====
@@ -29909,6 +30106,24 @@ document.addEventListener('DOMContentLoaded', function() {
             const mid = Math.floor(wakeMins.length / 2);
             const median = wakeMins.length % 2 === 1 ? wakeMins[mid] : (wakeMins[mid - 1] + wakeMins[mid]) / 2;
             return ((median % 1440) + 1440) % 1440; // trả về đúng phút-trong-ngày 0..1439
+        }
+
+        // ===== Wake Anchor Streak (#5) — thưởng ĐỀU ĐẶN dậy đúng giờ anchor, KHÔNG
+        // thưởng thời lượng ngủ (đúng anti-idea: không gamify thời lượng). Đếm số đêm
+        // liên tiếp gần nhất mà giờ dậy nằm trong ±30 phút quanh wake anchor (median 14đ).
+        function computeAnchorStreak(maxDays = 60) {
+            const sorted = getSortedSleepSessions();
+            if (sorted.length < 3) return null;
+            const anchorMin = computeWakeAnchorMinutes(14);
+            if (anchorMin === null) return null;
+            const anchorAnchored = ((anchorMin + 720) % 1440) - 720; // cùng không gian "neo trục 12h" với clockMinutesAnchored
+            let streak = 0;
+            for (let i = sorted.length - 1; i >= 0 && streak < maxDays; i--) {
+                const wakeAnchored = clockMinutesAnchored(sorted[i].end);
+                if (Math.abs(wakeAnchored - anchorAnchored) <= 30) streak++;
+                else break;
+            }
+            return { streak, anchorMin };
         }
 
         // Trả về { hh, mm, wakeAnchorMin, solMin } hoặc null nếu chưa đủ dữ liệu
@@ -30298,6 +30513,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // ===== BEDTIME CALCULATOR (tính chu kỳ 90' + Sleep Onset Latency thay đổi) =====
         let sleepCalcMode = 'wake'; // 'wake' = biết giờ muốn dậy | 'bed' = biết giờ sẽ lên giường
+        // Lưu lại rows/target của lần tính gần nhất để nút "💾 Đặt mục tiêu đêm nay" (#14)
+        // dùng lại mà không phải tính lại (và không lệch nếu form bị đổi sau khi tính).
+        let lastSleepCalcRows = null;
 
         function toggleSleepCalc() {
             const panel = document.getElementById('sleepCalcPanel');
@@ -30419,6 +30637,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 return { c, other, durationHours, recommended };
             });
 
+            // Lưu lại để nút "💾 Đặt mục tiêu đêm nay" (#14) dùng, không cần tính lại
+            lastSleepCalcRows = { rows, mode: sleepCalcMode, solMinutes, target: target.getTime() };
+
             let html = urgentHtml + `<div style="overflow-x:auto;">
                 <table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
                     <thead>
@@ -30441,7 +30662,39 @@ document.addEventListener('DOMContentLoaded', function() {
                     ⭐ = khuyến nghị (5–6 chu kỳ, 7.5–9h ngủ). Đã cộng thêm ${solMinutes} phút thời gian vào giấc dự kiến vào các mốc giờ trên.
                 </div>`;
 
+            const recRows = rows.filter(r => r.recommended);
+            if (recRows.length) {
+                html += `<div style="display:flex; gap:6px; margin-top:10px;">` +
+                    recRows.map(r => `<button type="button" onclick="saveSleepCalcTarget(${r.c})"
+                        style="flex:1; font-size:0.74rem; padding:8px 4px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">
+                        💾 Đặt mục tiêu đêm nay (${r.c} chu kỳ)
+                    </button>`).join('') +
+                    `</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px;">
+                        Đặt mục tiêu để sáng mai Morning Sleep Brief so sánh giờ ngủ/dậy thực tế với giờ bạn tính ở đây.
+                    </div>`;
+            }
+
             document.getElementById('sleepCalcResults').innerHTML = html;
+        }
+
+        // ===== Lưu kết quả calculator làm target đêm nay (#14) — reminder (#32) và
+        // Morning Brief (#41) sáng hôm sau sẽ so sánh "target vs thực tế". =====
+        function saveSleepCalcTarget(cycles) {
+            if (!lastSleepCalcRows) return;
+            const row = lastSleepCalcRows.rows.find(r => r.c === cycles);
+            if (!row) return;
+            const bedTime = lastSleepCalcRows.mode === 'wake' ? row.other.getTime() : lastSleepCalcRows.target;
+            const wakeTime = lastSleepCalcRows.mode === 'wake' ? lastSleepCalcRows.target : row.other.getTime();
+            if (bedTime <= Date.now()) {
+                showNotification('⚠️ Giờ lên giường của phương án này đã trôi qua (không đủ thời gian cho số chu kỳ đã chọn) — chỉnh lại giờ dậy/lên giường hoặc chọn phương án khác trước khi lưu.', 'warning');
+                return;
+            }
+            localStorage.setItem('sleepTonightTarget', JSON.stringify({
+                bedTime, wakeTime, cycles, solMinutes: lastSleepCalcRows.solMinutes, savedAt: Date.now()
+            }));
+            const fmtT = (ms) => new Date(ms).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+            showNotification(`💾 Đã đặt mục tiêu: lên giường ${fmtT(bedTime)} → dậy ${fmtT(wakeTime)}. Sáng mai brief sẽ so sánh với thực tế.`, 'success');
         }
 
         function markFellAsleep() {
@@ -31553,6 +31806,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">SE (7đ)</div></div>
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Đều đặn (7đ)</div></div>
+                    <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Anchor streak</div></div>
                 `;
                 const wrap = document.getElementById('solTrendWrap');
                 if (wrap) wrap.style.display = 'none';
@@ -31562,6 +31816,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (noteCorrWrap) noteCorrWrap.style.display = 'none';
                 const briefWrap = document.getElementById('sleepBriefWrap');
                 if (briefWrap) briefWrap.style.display = 'none';
+                const cogWrap = document.getElementById('cogReadinessWrap');
+                if (cogWrap) cogWrap.style.display = 'none';
                 updateSleepReminderStatus();
                 return;
             }
@@ -31609,18 +31865,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 ? `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${regularityColor(reg.score)};">±${Math.round(reg.score)}p</div><div class="sleep-stat-label">Đều đặn (${reg.nights}đ)</div></div>`
                 : `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:var(--text-muted);">—</div><div class="sleep-stat-label">Đều đặn (cần ≥3đ)</div></div>`;
 
+            // Wake Anchor Streak (#5) — badge riêng, thưởng đều đặn chứ không thưởng thời lượng
+            const anchorInfo = computeAnchorStreak();
+            const anchorBox = anchorInfo
+                ? `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${anchorInfo.streak >= 3 ? '#10b981' : 'var(--text-dark)'};">${anchorInfo.streak} 🎯</div><div class="sleep-stat-label" title="Wake anchor: ${String(Math.floor(anchorInfo.anchorMin / 60)).padStart(2, '0')}:${String(Math.round(anchorInfo.anchorMin % 60)).padStart(2, '0')}">Anchor streak</div></div>`
+                : `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:var(--text-muted);">—</div><div class="sleep-stat-label">Anchor streak (cần ≥3đ)</div></div>`;
+
+            // Chúc mừng mỗi mốc 5 đêm, chỉ 1 lần/mốc (tránh spam toast mỗi lần render)
+            if (anchorInfo && anchorInfo.streak > 0 && anchorInfo.streak % 5 === 0) {
+                const lastMilestone = parseInt(localStorage.getItem('sleepAnchorStreakMilestone') || '0', 10);
+                if (anchorInfo.streak > lastMilestone) {
+                    localStorage.setItem('sleepAnchorStreakMilestone', String(anchorInfo.streak));
+                    showNotification(`🎯 Anchor streak ${anchorInfo.streak} đêm! Giờ dậy đang rất đều đặn quanh mốc neo.`, 'success');
+                }
+            } else if (anchorInfo && anchorInfo.streak === 0) {
+                localStorage.removeItem('sleepAnchorStreakMilestone'); // gãy chuỗi -> mốc tiếp theo sẽ được chúc mừng lại từ đầu
+            }
+
             row.innerHTML = `
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${avgColor};">${avg7.toFixed(1)}h</div><div class="sleep-stat-label">TB ${last7.length} đêm</div></div>
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${streakColor};">${streak} 🔥</div><div class="sleep-stat-label">Chuỗi đủ giấc</div></div>
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${debtColor};">${debt.toFixed(1)}h</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
                 ${seBox}
                 ${regBox}
+                ${anchorBox}
             `;
 
             renderSolTrendChart();
             renderSolAlert();
             renderSolNoteCorrelation();
             renderSleepBrief();
+            renderCognitiveReadiness();
             updateSleepReminderStatus();
             scheduleSleepReminder();
         }
