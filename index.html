@@ -18472,6 +18472,15 @@ window.DBP={
                 <div id="nightShiftGuidance" style="display:none; font-size:0.82rem; line-height:1.7; color:var(--text-dark); margin-top:8px; padding:10px; background:var(--bg-white); border-radius:8px; border:1px solid var(--border-color);"></div>
             </div>
 
+            <!-- #27 Sleep → Focus correlation — đối chiếu SE/nợ ngủ đêm trước với
+                 Energy/Focus/Stress tự chấm trong Focus Session Notes -->
+            <div id="sleepFocusCorrWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);">😴→🎯 Ngủ ảnh hưởng Focus thế nào</span>
+                </div>
+                <div id="sleepFocusCorrBody" style="font-size:0.82rem; line-height:1.7; color:var(--text-dark);"></div>
+            </div>
+
             <!-- Cảnh báo chủ động: SOL tăng đáng kể so với giai đoạn trước -->
             <div id="solAlertBanner" style="display:none; margin: 4px 0 12px; padding:12px 34px 12px 14px; background: rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius: var(--radius-md); position:relative;">
                 <button onclick="dismissSolAlert()" aria-label="Đóng" style="position:absolute; top:8px; right:10px; background:none; border:none; font-size:1.1rem; cursor:pointer; color:var(--text-muted); line-height:1; padding:2px;">×</button>
@@ -19440,7 +19449,13 @@ window.DBP={
                 const loggedHourDecimal = loggedAt.getHours() + loggedAt.getMinutes() / 60;
                 if (loggedHourDecimal >= cutoffH && typeof showNotification === 'function') {
                     const cutoffLabel = `${String(Math.floor(cutoffH)).padStart(2, '0')}:${String(Math.round((cutoffH % 1) * 60)).padStart(2, '0')}`;
-                    showNotification(`☕ Quá cutoff (${cutoffLabel}) — caffeine muộn có thể kéo dài SOL tối nay`, 'warning');
+                    // Dự báo SOL cá nhân hoá nếu đã có đủ dữ liệu (idea #19: "+ dự báo SOL tăng");
+                    // chưa đủ dữ liệu thì lùi về câu chung chung như trước.
+                    const effect = typeof getCaffeineLateSOLEffect === 'function' ? getCaffeineLateSOLEffect() : null;
+                    const forecast = (effect && effect.diffMin >= 1)
+                        ? `dựa trên ${effect.n} đêm trước, SOL của bạn thường dài hơn ~${Math.round(effect.diffMin)} phút những đêm caffeine muộn như vậy`
+                        : 'caffeine muộn có thể kéo dài SOL tối nay';
+                    showNotification(`☕ Quá cutoff (${cutoffLabel}) — ${forecast}`, 'warning');
                 }
             }
             function readCaffeineTimeInput() {
@@ -21194,7 +21209,15 @@ window.DBP={
         <div class="chart-grid">
             <div class="chart-card">
                 <div class="chart-card-title">😴 Sleep vs Study Productivity</div>
-                <canvas id="sleepStudyChart" style="max-height: 300px;"></canvas>
+                <div class="correlation-filter-tabs" id="sleepMetricTabs" style="margin-bottom:8px;">
+                    <button class="corr-filter-btn active" onclick="setSleepMetricXAxis('hours')" data-metric="hours" title="Số giờ ngủ đêm hôm trước">Hours</button>
+                    <button class="corr-filter-btn"        onclick="setSleepMetricXAxis('se')"    data-metric="se"    title="Sleep Efficiency — TST/TIB × 100">SE</button>
+                    <button class="corr-filter-btn"        onclick="setSleepMetricXAxis('debt')"  data-metric="debt"  title="Nợ ngủ cộng dồn 7 ngày gần nhất">Nợ ngủ</button>
+                    <button class="corr-filter-btn"        onclick="setSleepMetricXAxis('reg')"   data-metric="reg"   title="Độ lệch chuẩn giờ ngủ/dậy trong 7 đêm gần nhất">Đều đặn</button>
+                </div>
+                <div id="sleepStudyChartHost">
+                    <canvas id="sleepStudyChart" style="max-height: 300px;"></canvas>
+                </div>
             </div>
             <div class="chart-card">
                 <div class="chart-card-title">🎯 Skills vs Goals Completion</div>
@@ -25788,6 +25811,7 @@ window.DBP={
                 });
             }
             checkHealthGuardrail();
+            renderSleepFocusCorrelation();
         }
 
 
@@ -29762,6 +29786,20 @@ document.addEventListener('DOMContentLoaded', function() {
             return { caffeineLate, lateMeal, exercise, lastMealT, workout, available: true };
         }
 
+        // #19 — dữ liệu để cá nhân hoá cảnh báo real-time caffeine muộn: so SOL trung
+        // bình những đêm có caffeineLate=true vs false (dựa trên chính dữ liệu đã log),
+        // để toast báo được số phút dự kiến thay vì câu chung chung "có thể kéo dài SOL".
+        function getCaffeineLateSOLEffect() {
+            const withSol = sleepSessions.filter(s =>
+                typeof s.sol === 'number' && !isNaN(s.sol) && s.sol >= 0 && s.auto_tags?.available);
+            const late = withSol.filter(s => s.auto_tags.caffeineLate).map(s => s.sol);
+            const ok = withSol.filter(s => !s.auto_tags.caffeineLate).map(s => s.sol);
+            if (late.length < 2 || ok.length < 2) return null; // cần tối thiểu 2 đêm mỗi nhóm
+            const avgLate = late.reduce((a, b) => a + b, 0) / late.length;
+            const avgOk = ok.reduce((a, b) => a + b, 0) / ok.length;
+            return { diffMin: avgLate - avgOk, n: late.length };
+        }
+
         // Render các chip tag (tự động + thủ công) — dùng chung cho Add & Edit modal
         function renderAutoTagChips(auto) {
             if (!auto || !auto.available) {
@@ -29958,6 +29996,129 @@ document.addEventListener('DOMContentLoaded', function() {
             wrap.style.display = 'block';
 
             renderNightShiftGuidance();
+        }
+
+        // ===== #27 Sleep → Focus correlation — nối dữ liệu SE/nợ ngủ đêm trước với
+        // Energy/Focus/Stress đã tự chấm trong Focus Session Notes, để chứng minh
+        // "ngủ = productivity" bằng dữ liệu của chính mình thay vì lý thuyết suông.
+        // Quy ước gán ngày: 1 phiên ngủ được tính cho NGÀY THỨC DẬY (endDate), y hệt
+        // calculateSleepStudyCorrelation() ở trên, để các module không lệch quy ước.
+        function buildSleepByWakeDay() {
+            const hoursByDate = {};
+            const seByDate = {}; // { date: [se, se, ...] }
+            (sleepSessions || []).forEach(s => {
+                if (!s?.start || !s?.end || !s?.duration) return;
+                const end = new Date(s.end);
+                if (isNaN(end.getTime())) return;
+                const key = toLocalDateStr(end);
+                hoursByDate[key] = (hoursByDate[key] || 0) + s.duration;
+                const se = computeSleepEfficiency(s);
+                if (se !== null) (seByDate[key] = seByDate[key] || []).push(se);
+            });
+            return { hoursByDate, seByDate };
+        }
+
+        function computeSleepFocusCorrelation() {
+            const rated = (sessionLogs || []).filter(l => l.energy || l.focus || l.stress);
+            if (rated.length < 4) return null; // quá ít để chia nhóm có ý nghĩa
+
+            const { hoursByDate, seByDate } = buildSleepByWakeDay();
+            const goal = getSleepGoal();
+
+            const paired = rated.map(l => {
+                // log.id = Date.now() lúc log session → dùng trực tiếp thay vì parse
+                // chuỗi timestamp locale (dễ vỡ khi đổi định dạng ngày/giờ).
+                const dateKey = toLocalDateStr(new Date(l.id));
+                const hours = hoursByDate[dateKey];
+                if (hours === undefined) return null;
+                const seArr = seByDate[dateKey];
+                const se = seArr && seArr.length ? seArr.reduce((a, b) => a + b, 0) / seArr.length : null;
+                return { energy: l.energy, focus: l.focus, stress: l.stress, hours, se, debt: Math.max(0, goal - hours) };
+            }).filter(Boolean);
+
+            if (paired.length < 4) return null;
+
+            const avg = (arr, key) => {
+                const vals = arr.map(p => p[key]).filter(v => typeof v === 'number' && !isNaN(v));
+                return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+            };
+
+            // Nhóm theo nợ ngủ — luôn tính được vì mọi phiên ngủ đều có duration
+            const goodDebt = paired.filter(p => p.debt <= 0.5);
+            const poorDebt = paired.filter(p => p.debt >= 2);
+            const debtCompare = (goodDebt.length >= 2 && poorDebt.length >= 2) ? {
+                nGood: goodDebt.length, nPoor: poorDebt.length,
+                energy: { good: avg(goodDebt, 'energy'), poor: avg(poorDebt, 'energy') },
+                focus:  { good: avg(goodDebt, 'focus'),  poor: avg(poorDebt, 'focus') },
+                stress: { good: avg(goodDebt, 'stress'), poor: avg(poorDebt, 'stress') },
+            } : null;
+
+            // Nhóm theo SE — chỉ tính được với các đêm đã log SOL
+            const withSE = paired.filter(p => p.se !== null);
+            const goodSE = withSE.filter(p => p.se >= 85);
+            const poorSE = withSE.filter(p => p.se < 75);
+            const seCompare = (goodSE.length >= 2 && poorSE.length >= 2) ? {
+                nGood: goodSE.length, nPoor: poorSE.length,
+                energy: { good: avg(goodSE, 'energy'), poor: avg(poorSE, 'energy') },
+                focus:  { good: avg(goodSE, 'focus'),  poor: avg(poorSE, 'focus') },
+                stress: { good: avg(goodSE, 'stress'), poor: avg(poorSE, 'stress') },
+            } : null;
+
+            // Chọn headline mạnh nhất: delta dương luôn nghĩa là "ngủ tốt → tốt hơn"
+            // (với stress, đảo dấu vì stress thấp mới là điều tốt).
+            const candidates = [];
+            [['debt', debtCompare], ['se', seCompare]].forEach(([source, cmp]) => {
+                if (!cmp) return;
+                ['energy', 'focus', 'stress'].forEach(metric => {
+                    const g = cmp[metric].good, p = cmp[metric].poor;
+                    if (g === null || p === null) return;
+                    candidates.push({
+                        source, metric,
+                        delta: metric === 'stress' ? (p - g) : (g - p),
+                        good: g, poor: p, n: Math.min(cmp.nGood, cmp.nPoor),
+                        label: metric === 'energy' ? 'Energy' : metric === 'focus' ? 'Focus' : 'Stress',
+                    });
+                });
+            });
+            candidates.sort((a, b) => b.delta - a.delta);
+
+            return { paired, debtCompare, seCompare, candidates, totalN: paired.length };
+        }
+
+        function renderSleepFocusCorrelation() {
+            const wrap = document.getElementById('sleepFocusCorrWrap');
+            const body = document.getElementById('sleepFocusCorrBody');
+            if (!wrap || !body) return;
+
+            const info = computeSleepFocusCorrelation();
+            if (!info || info.candidates.length === 0) { wrap.style.display = 'none'; return; }
+
+            const top = info.candidates[0];
+            const goodDesc = top.source === 'debt' ? 'nợ ngủ ≤0.5h' : 'SE ≥85%';
+            const poorDesc = top.source === 'debt' ? 'nợ ngủ ≥2h' : 'SE <75%';
+            const confidence = top.n >= 7 ? 'hiệu ứng khá rõ' : `n=${top.n}/nhóm — dữ liệu còn ít, chưa kết luận chắc`;
+
+            let direction;
+            if (top.delta < 0.3) {
+                direction = 'Chưa thấy khác biệt rõ ràng giữa ngày ngủ tốt và ngủ kém trong dữ liệu hiện tại.';
+            } else if (top.metric === 'stress') {
+                direction = `Stress ngày ${goodDesc} thấp hơn <b>${top.delta.toFixed(1)} điểm</b> (thang 1-5) so với ngày ${poorDesc}.`;
+            } else {
+                direction = `${top.label} ngày ${goodDesc} cao hơn <b>${top.delta.toFixed(1)} điểm</b> (thang 1-5) so với ngày ${poorDesc}.`;
+            }
+
+            const otherLines = info.candidates.slice(1, 3).filter(c => c.delta >= 0.15).map(c => {
+                const src = c.source === 'debt' ? 'nợ ngủ' : 'SE';
+                return `<li>${c.label} theo ${src}: ${c.good.toFixed(1)} (ngủ tốt) vs ${c.poor.toFixed(1)} (ngủ kém), n=${c.n}/nhóm</li>`;
+            }).join('');
+
+            body.innerHTML = `
+                <div>Dựa trên <b>${info.totalN}</b> phiên Focus Session đã chấm điểm Energy/Focus/Stress, đối chiếu với giấc ngủ đêm hôm trước:</div>
+                <div style="margin-top:6px; font-weight:600; color:var(--primary);">👉 ${direction}</div>
+                <div style="margin-top:2px; font-size:0.76rem; color:var(--text-muted);">${confidence}</div>
+                ${otherLines ? `<ul style="margin:8px 0 0; padding-left:18px; color:var(--text-muted); font-size:0.78rem;">${otherLines}</ul>` : ''}
+            `;
+            wrap.style.display = 'block';
         }
 
         // ===== Night shift mode — hướng dẫn riêng cho ngày phải thức xuyên đêm làm việc,
@@ -31896,6 +32057,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSolNoteCorrelation();
             renderSleepBrief();
             renderCognitiveReadiness();
+            renderSleepFocusCorrelation();
             updateSleepReminderStatus();
             scheduleSleepReminder();
         }
@@ -32382,13 +32544,122 @@ document.addEventListener('DOMContentLoaded', function() {
             container.innerHTML = html;
         }
 
+        // ===== #31 — X-axis switchable cho biểu đồ Sleep vs Study: mặc định vẫn là Hours
+        // (không đổi hành vi cũ / không đụng calculateSleepStudyCorrelation() gốc, vì hàm
+        // đó còn được renderCorrelationInsights() và detectInvertedURelationship() dùng —
+        // U-curve đó được tính riêng cho SỐ GIỜ NGỦ, không áp dụng cho SE/nợ ngủ/đều đặn).
+        // Chọn thêm SE / Nợ ngủ (7đ rolling) / Đều đặn (7đ rolling) — vì chất lượng kiến
+        // trúc giấc ngủ mới là biến xử lý thông tin thật sự, không phải số giờ nằm giường.
+        const SLEEP_METRIC_DEFS = {
+            hours: { label: 'Sleep Hours', unit: 'h' },
+            se:    { label: 'Sleep Efficiency', unit: '%' },
+            debt:  { label: 'Nợ ngủ (7đ)', unit: 'h' },
+            reg:   { label: 'Đều đặn (7đ)', unit: 'p' },
+        };
+        let sleepMetricXAxis = 'hours';
+
+        function setSleepMetricXAxis(metric) {
+            if (!SLEEP_METRIC_DEFS[metric]) return;
+            sleepMetricXAxis = metric;
+            document.querySelectorAll('#sleepMetricTabs .corr-filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.metric === metric);
+            });
+            renderSleepStudyChart();
+        }
+
+        // Độ lệch chuẩn giờ ngủ/dậy trong `nights` đêm gần nhất TÍNH ĐẾN endDate (không
+        // phải "bây giờ" như computeSleepRegularity) — để vẽ được 1 điểm/ngày trong quá khứ.
+        function computeRollingRegularityAsOf(sortedSessions, endDate, nights = 7) {
+            const cutoff = new Date(endDate);
+            cutoff.setHours(23, 59, 59, 999);
+            const upTo = sortedSessions.filter(s => new Date(s.start).getTime() <= cutoff.getTime());
+            const windowArr = upTo.slice(-nights);
+            if (windowArr.length < 3) return null;
+            const sdBed = stdDev(windowArr.map(s => clockMinutesAnchored(s.start)));
+            const sdWake = stdDev(windowArr.map(s => clockMinutesAnchored(s.end)));
+            if (sdBed === null || sdWake === null) return null;
+            return Math.max(sdBed, sdWake);
+        }
+
+        function calculateSleepMetricStudyCorrelation(metric = sleepMetricXAxis) {
+            if (metric === 'hours') return calculateSleepStudyCorrelation(); // giữ nguyên hành vi gốc
+
+            if (!sleepSessions || !dailyStudyData) return getEmptyResult("Missing input data");
+
+            let cutoffDate = null;
+            if (typeof correlationDaysFilter === 'number' && correlationDaysFilter > 0) {
+                cutoffDate = new Date();
+                cutoffDate.setDate(cutoffDate.getDate() - correlationDaysFilter);
+            }
+
+            const sorted = getSortedSleepSessions();
+            const { hoursByDate, seByDate } = buildSleepByWakeDay();
+            const goal = getSleepGoal();
+            const metricByDate = {};
+
+            if (metric === 'se') {
+                Object.keys(seByDate).forEach(k => {
+                    const arr = seByDate[k];
+                    if (arr && arr.length) metricByDate[k] = arr.reduce((a, b) => a + b, 0) / arr.length;
+                });
+            } else if (metric === 'debt') {
+                // Nợ ngủ cộng dồn 7 ngày, tính riêng cho từng ngày có dữ liệu giờ ngủ
+                // (không lọc theo cutoffDate ở bước này — cửa sổ rolling cần dữ liệu trước
+                // cutoff để chính xác ở các ngày đầu khoảng lọc).
+                const allDates = Object.keys(hoursByDate).sort();
+                allDates.forEach((dateKey, idx) => {
+                    const windowDates = allDates.slice(Math.max(0, idx - 6), idx + 1);
+                    metricByDate[dateKey] = windowDates.reduce((sum, d) => sum + Math.max(0, goal - (hoursByDate[d] || 0)), 0);
+                });
+            } else if (metric === 'reg') {
+                Object.keys(hoursByDate).forEach(dateKey => {
+                    const score = computeRollingRegularityAsOf(sorted, new Date(dateKey), 7);
+                    if (score !== null) metricByDate[dateKey] = score;
+                });
+            }
+
+            const pairedData = [];
+            Object.keys(dailyStudyData).sort().forEach(dateKey => {
+                if (cutoffDate && new Date(dateKey) < cutoffDate) return;
+                const metricVal = metricByDate[dateKey];
+                if (metricVal === undefined) return;
+                const studyHours = dailyStudyData[dateKey] || 0;
+                if (studyHours < 0 || studyHours > 24) return;
+                pairedData.push({
+                    sleep: parseFloat(metricVal.toFixed(metric === 'reg' ? 0 : 1)),
+                    study: parseFloat(studyHours.toFixed(1)),
+                    date: dateKey
+                });
+            });
+
+            if (pairedData.length < 2) return getEmptyResult("Insufficient data points", pairedData);
+
+            const sleepData = pairedData.map(d => d.sleep);
+            const studyData = pairedData.map(d => d.study);
+            const correlation = calculateCorrelation(sleepData, studyData);
+
+            return {
+                correlation: parseFloat(correlation.toFixed(3)),
+                sleepData, studyData, data: pairedData, matchedDays: pairedData.length, isValid: true,
+                sleepStats: {
+                    min: Math.min(...sleepData), max: Math.max(...sleepData),
+                    avg: parseFloat((sleepData.reduce((a, b) => a + b, 0) / sleepData.length).toFixed(1))
+                },
+                studyStats: {
+                    min: Math.min(...studyData), max: Math.max(...studyData),
+                    avg: parseFloat((studyData.reduce((a, b) => a + b, 0) / studyData.length).toFixed(1))
+                }
+            };
+        }
+
         let sleepStudyChart = null;
 
         function renderSleepStudyChart() {
-            const ctx = document.getElementById('sleepStudyChart');
-            if (!ctx) return;
+            const host = document.getElementById('sleepStudyChartHost');
+            if (!host) return;
 
-            const data = calculateSleepStudyCorrelation();
+            const metricDef = SLEEP_METRIC_DEFS[sleepMetricXAxis] || SLEEP_METRIC_DEFS.hours;
+            const data = calculateSleepMetricStudyCorrelation(sleepMetricXAxis);
 
             if (sleepStudyChart) {
                 sleepStudyChart.destroy();
@@ -32396,31 +32667,26 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             if (!data || !data.data || !Array.isArray(data.data) || data.data.length < 3) {
-                const parent = ctx.parentElement;
-                if (parent) {
-                    parent.innerHTML = `
-                        <div class="chart-card-title">😴 Sleep vs Study Productivity</div>
-                        <div class="no-data-message">
-                            <div style="margin-bottom:8px;">📊 Sleep vs Study Correlation</div>
-                            <div style="font-size:0.9rem;">
-                                Need at least 3 days with both sleep & study data.<br>
-                                <strong>Current:</strong> ${data?.data?.length || 0} matched days
-                            </div>
-                            ${data?.data?.length >= 1 ? `
-                                <div style="margin-top:12px;font-size:0.85rem;">
-                                    <strong>Recent data:</strong><br>
-                                    ${(data.data||[]).slice(-3).map((d,i)=>
-                                        `Day ${i+1}: ${d.sleep?.toFixed(1)||'?'}h sleep, ${d.study?.toFixed(1)||'?'}h study`
-                                    ).join('<br>')}
-                                </div>` : ''}
-                        </div>`;
-                }
+                host.innerHTML = `
+                    <div class="no-data-message">
+                        <div style="margin-bottom:8px;">📊 Sleep (${metricDef.label}) vs Study Correlation</div>
+                        <div style="font-size:0.9rem;">
+                            Need at least 3 days with both sleep & study data.<br>
+                            <strong>Current:</strong> ${data?.data?.length || 0} matched days
+                        </div>
+                        ${data?.data?.length >= 1 ? `
+                            <div style="margin-top:12px;font-size:0.85rem;">
+                                <strong>Recent data:</strong><br>
+                                ${(data.data||[]).slice(-3).map((d,i)=>
+                                    `Day ${i+1}: ${d.sleep?.toFixed(1)||'?'}${metricDef.unit} sleep, ${d.study?.toFixed(1)||'?'}h study`
+                                ).join('<br>')}
+                            </div>` : ''}
+                    </div>`;
                 return;
             }
 
             /* Resolve CSS variables for Chart.js (it cannot read them natively) */
             const cs       = getComputedStyle(document.documentElement);
-            const colDark  = cs.getPropertyValue('--text-dark').trim()  || '#1e293b';
             const colMuted = cs.getPropertyValue('--text-muted').trim() || '#64748b';
 
             /* Scatter data */
@@ -32438,8 +32704,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const canvas = document.createElement('canvas');
             canvas.id = 'sleepStudyChart';
             canvas.style.maxHeight = '300px';
-            ctx.parentElement.innerHTML = '<div class="chart-card-title">😴 Sleep vs Study Productivity</div>';
-            ctx.parentElement.appendChild(canvas);
+            host.innerHTML = '';
+            host.appendChild(canvas);
 
             sleepStudyChart = new Chart(canvas, {
                 type: 'scatter',
@@ -32474,7 +32740,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         tooltip: {
                             filter: item => item.datasetIndex === 0,
                             callbacks: {
-                                label: ctx => `Sleep: ${ctx.parsed.x.toFixed(1)}h, Study: ${ctx.parsed.y.toFixed(1)}h`
+                                label: ctx => `${metricDef.label}: ${ctx.parsed.x.toFixed(1)}${metricDef.unit}, Study: ${ctx.parsed.y.toFixed(1)}h`
                             }
                         },
                         title: {
@@ -32486,7 +32752,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     },
                     scales: {
                         x: {
-                            title: { display: true, text: 'Sleep Hours', color: colMuted },
+                            title: { display: true, text: `${metricDef.label} (${metricDef.unit})`, color: colMuted },
                             ticks: { color: colMuted }
                         },
                         y: {
@@ -32614,7 +32880,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (error) {
                 console.error('Error in renderSleepStudyChart:', error);
                 // Show error message in chart container
-                const container = document.getElementById('sleepStudyChart')?.parentElement;
+                const container = document.getElementById('sleepStudyChartHost');
                 if (container) {
                     container.innerHTML = `<div class="error-message">Error loading chart: ${error.message}</div>`;
                 }
