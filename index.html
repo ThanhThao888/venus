@@ -18424,6 +18424,15 @@ window.DBP={
                 </div>
             </div>
 
+            <!-- Smart Bedtime Reminder -->
+            <div style="margin: 0 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem; font-weight:600; color:var(--text-dark);">
+                    <input type="checkbox" id="sleepReminderToggle" onchange="setSleepReminderEnabled(this.checked)" style="width:16px;height:16px;">
+                    🔔 Nhắc giờ đi ngủ thông minh
+                </label>
+                <div id="sleepReminderStatus" style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.5;"></div>
+            </div>
+
             <div id="sleepStatus" style="text-align: center; font-size: 1.1rem; margin: 10px 0;">
                 😴 Ready to sleep
             </div>
@@ -18436,7 +18445,17 @@ window.DBP={
             <div id="sleepMarkAsleepConfirm" style="display:none; text-align:center; font-size:0.78rem; color: var(--text-muted); margin: -4px 0 10px;"></div>
 
             <!-- Sleep Stats Summary -->
-            <div id="sleepStatsRow" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 12px 0;"></div>
+            <div id="sleepStatsRow" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap:8px; margin: 12px 0;"></div>
+
+            <!-- Morning Sleep Brief — 4 dòng tóm tắt mỗi sáng, tái dùng tinh thần Deadline Brief -->
+            <div id="sleepBriefWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);">📋 Morning Sleep Brief</span>
+                    <button onclick="copySleepContextForAI()" style="font-size:0.72rem; padding:3px 10px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">📋 Copy for AI</button>
+                </div>
+                <div id="sleepBriefBody" style="font-size:0.82rem; line-height:1.7; color:var(--text-dark);"></div>
+                <div id="sleepBriefCopyMsg" style="display:none; font-size:0.72rem; color:#10b981; margin-top:6px;">✅ Đã copy vào clipboard!</div>
+            </div>
 
             <!-- Cảnh báo chủ động: SOL tăng đáng kể so với giai đoạn trước -->
             <div id="solAlertBanner" style="display:none; margin: 4px 0 12px; padding:12px 34px 12px 14px; background: rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius: var(--radius-md); position:relative;">
@@ -18477,6 +18496,9 @@ window.DBP={
                 <button id="startSleepBtn" class="add-time-btn" onclick="startSleepTracking()" style="flex: 1; background: #27ae60;">▶ Start</button>
                 <button id="stopSleepBtn" class="add-time-btn" onclick="stopSleepTracking()" style="flex: 1; background: #e74c3c; display: none;">⏸ Stop</button>
                 <button class="add-time-btn" onclick="openManualSleepModal()" style="flex: 1; background: #3498db;">➕ Manual</button>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <button onclick="logSameAsLastNight()" style="flex:1; font-size:0.8rem; padding:8px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-light); color:var(--text-dark); cursor:pointer;">🔁 Giống đêm qua (chỉ sửa giờ dậy)</button>
             </div>
             <!-- Force Reset — only shown when session is clearly corrupted (>24h) -->
             <div id="sleepForceResetRow" style="display:none; text-align:center; margin-bottom:10px;">
@@ -19105,6 +19127,18 @@ window.DBP={
                 if (!data.days[key].caffeine) data.days[key].caffeine = []; // backward-compat cho data cũ
                 return data.days[key];
             }
+            // ✅ Snapshot read-only cho module khác (Sleep Tracker) đọc — KHÔNG trả về
+            // tham chiếu gốc để tránh sửa nhầm dữ liệu Wellness từ bên ngoài module.
+            function getDaySummary(key) {
+                const day = data && data.days && data.days[key];
+                return {
+                    caffeine: day && day.caffeine ? day.caffeine.map(c => ({ name: c.name, mg: c.mg, t: c.t })) : [],
+                    foods: day && day.foods ? day.foods.map(f => ({ name: f.name, t: f.t })) : [],
+                    workout: day && day.workout ? { type: day.workout.type, minutes: day.workout.minutes, t: day.workout.t } : null,
+                    caffeineCutoffHour: (data && data.settings && data.settings.caffeineCutoffHour != null)
+                        ? data.settings.caffeineCutoffHour : DEFAULT_CAFFEINE_CUTOFF_H
+                };
+            }
             function last7Keys() {
                 const keys = [];
                 for (let i = 6; i >= 0; i--) {
@@ -19383,6 +19417,16 @@ window.DBP={
                 day.caffeine.push({ name, mg, t: ts || Date.now() });
                 save();
                 renderLogTab();
+                // ☕ Cảnh báo real-time nếu log sau giờ cutoff đã cài đặt — insight cá nhân
+                // hoá thay vì lời khuyên chung chung, đúng lúc để còn kịp đổi ý.
+                const cutoffH = (data.settings && data.settings.caffeineCutoffHour != null)
+                    ? data.settings.caffeineCutoffHour : DEFAULT_CAFFEINE_CUTOFF_H;
+                const loggedAt = new Date(ts || Date.now());
+                const loggedHourDecimal = loggedAt.getHours() + loggedAt.getMinutes() / 60;
+                if (loggedHourDecimal >= cutoffH && typeof showNotification === 'function') {
+                    const cutoffLabel = `${String(Math.floor(cutoffH)).padStart(2, '0')}:${String(Math.round((cutoffH % 1) * 60)).padStart(2, '0')}`;
+                    showNotification(`☕ Quá cutoff (${cutoffLabel}) — caffeine muộn có thể kéo dài SOL tối nay`, 'warning');
+                }
             }
             function readCaffeineTimeInput() {
                 const timeInput = document.getElementById('wlnCaffeineTimeInput');
@@ -20306,6 +20350,7 @@ window.DBP={
                 openFoodModal, closeFoodModal,
                 openFastingModal, closeFastingModal,
                 openWorkoutModal, closeWorkoutModal,
+                getDaySummary, wlnLocalDateStr,
                 _setDoseInput: setDoseInput,
                 _closeDoseModal: closeSuppDoseModal,
                 _confirmDoseModal: confirmSuppDoseModal,
@@ -29605,6 +29650,351 @@ document.addEventListener('DOMContentLoaded', function() {
             return [...sleepSessions].sort((a, b) => a.start - b.start);
         }
 
+        // ===== Sleep Efficiency (SE) — TST / TIB × 100, chuẩn y học giấc ngủ =====
+        // Chỉ tính được khi có SOL (thời gian vào giấc); awakenings mặc định 0 nếu
+        // chưa ghi (không suy diễn thêm — thiếu dữ liệu thì không phóng đại SE).
+        function computeSleepEfficiency(session) {
+            if (!session || typeof session.sol !== 'number' || isNaN(session.sol)) return null;
+            const tibMin = session.duration * 60;
+            if (!tibMin || tibMin <= 0) return null;
+            const awakenings = typeof session.awakenings_min === 'number' && !isNaN(session.awakenings_min)
+                ? session.awakenings_min : 0;
+            const tstMin = tibMin - session.sol - awakenings;
+            if (tstMin <= 0) return 0;
+            return Math.min(100, (tstMin / tibMin) * 100);
+        }
+
+        function seColor(se) {
+            if (se === null || se === undefined) return 'var(--text-muted)';
+            return se >= 90 ? '#10b981' : se >= 85 ? '#3b82f6' : se >= 75 ? '#f59e0b' : '#ef4444';
+        }
+
+        function seLabel(se) {
+            if (se === null || se === undefined) return '—';
+            return se >= 90 ? 'Xuất sắc' : se >= 85 ? 'Tốt' : se >= 75 ? 'Trung bình' : 'Phân mảnh';
+        }
+
+        // ===== Regularity Index — độ lệch chuẩn giờ lên giường & giờ dậy (7 đêm) =====
+        // Windred et al. 2024: tính đều đặn của giấc ngủ dự báo sức khỏe mạnh hơn cả
+        // thời lượng. Dùng phép "dịch trục 12h" để giờ quanh nửa đêm (23h & 1h) không
+        // bị tính lệch xa nhau giả tạo khi lấy độ lệch chuẩn thô.
+        function clockMinutesAnchored(ts) {
+            const d = new Date(ts);
+            const m = d.getHours() * 60 + d.getMinutes();
+            // Dịch để vùng "giữa trưa" (12h) trở thành điểm nối vòng thay vì nửa đêm,
+            // vì hầu hết giờ ngủ/dậy nằm trong khung 18h–12h, không cắt ngang điểm nối.
+            return ((m + 720) % 1440) - 720;
+        }
+
+        function stdDev(arr) {
+            if (!arr || arr.length < 2) return null;
+            const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+            const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
+            return Math.sqrt(variance);
+        }
+
+        // Trả về { sdBed, sdWake, score } tính theo phút, score = max(sdBed, sdWake)
+        // đúng công thức Regularity Index đã chốt trong roadmap.
+        function computeSleepRegularity(nights = 7) {
+            const sorted = getSortedSleepSessions().slice(-nights);
+            if (sorted.length < 3) return null; // cần tối thiểu vài đêm để độ lệch chuẩn có ý nghĩa
+            const bedMinutes = sorted.map(s => clockMinutesAnchored(s.start));
+            const wakeMinutes = sorted.map(s => clockMinutesAnchored(s.end));
+            const sdBed = stdDev(bedMinutes);
+            const sdWake = stdDev(wakeMinutes);
+            if (sdBed === null || sdWake === null) return null;
+            return { sdBed, sdWake, score: Math.max(sdBed, sdWake), nights: sorted.length };
+        }
+
+        function regularityColor(score) {
+            if (score === null || score === undefined) return 'var(--text-muted)';
+            return score <= 30 ? '#10b981' : score <= 60 ? '#f59e0b' : '#ef4444';
+        }
+
+        // ===== Auto-tag engine — đọc dữ liệu Wellness (caffeine/meal/workout) để tự
+        // gắn tag cho đêm ngủ, KHÔNG bắt nhập tay. Nguồn dữ liệu qua Wellness.getDaySummary
+        // (export read-only, xem module Wellness) — không đụng trực tiếp localStorage nội bộ.
+        // Giờ đi ngủ trước 5h sáng được coi là thuộc "buổi tối hôm trước" — vd ngủ lúc
+        // 00:30 thì caffeine/bữa ăn cần so là của ngày hôm trước, không phải ngày mới.
+        function eveningDateKeyForBedtime(bedTs) {
+            const d = new Date(bedTs);
+            if (d.getHours() < 5) d.setDate(d.getDate() - 1);
+            return toLocalDateStr(d);
+        }
+
+        function computeAutoTags(bedTs) {
+            const empty = { caffeineLate: false, lateMeal: false, exercise: false, lastMealT: null, workout: null, available: false };
+            if (typeof Wellness === 'undefined' || !Wellness || typeof Wellness.getDaySummary !== 'function') return empty;
+            if (!bedTs || isNaN(bedTs)) return empty;
+
+            const dateKey = eveningDateKeyForBedtime(bedTs);
+            const summary = Wellness.getDaySummary(dateKey);
+            const cutoffH = typeof summary.caffeineCutoffHour === 'number' ? summary.caffeineCutoffHour : 14;
+
+            const cutoffDate = new Date(bedTs);
+            if (cutoffDate.getHours() < 5) cutoffDate.setDate(cutoffDate.getDate() - 1);
+            cutoffDate.setHours(Math.floor(cutoffH), Math.round((cutoffH % 1) * 60), 0, 0);
+            const cutoffTs = cutoffDate.getTime();
+
+            const caffeineLate = (summary.caffeine || []).some(c => typeof c.t === 'number' && c.t >= cutoffTs && c.t <= bedTs);
+
+            const lastMealT = (summary.foods || []).reduce((max, f) => (typeof f.t === 'number' && f.t > max) ? f.t : max, 0) || null;
+            const lateMeal = !!(lastMealT && lastMealT <= bedTs && (bedTs - lastMealT) < 3 * 60 * 60 * 1000);
+
+            const workout = summary.workout && typeof summary.workout.t === 'number' ? summary.workout : null;
+            const exercise = !!workout;
+
+            return { caffeineLate, lateMeal, exercise, lastMealT, workout, available: true };
+        }
+
+        // Render các chip tag (tự động + thủ công) — dùng chung cho Add & Edit modal
+        function renderAutoTagChips(auto) {
+            if (!auto || !auto.available) {
+                return `<div style="font-size:0.72rem;color:var(--text-muted);">Không tìm thấy dữ liệu Wellness cho tối hôm đó (chưa log caffeine/ăn/tập, hoặc chưa mở tab Wellness).</div>`;
+            }
+            const chips = [];
+            if (auto.caffeineLate) chips.push(`<span style="font-size:0.75rem;background:rgba(245,158,11,0.15);color:#b45309;padding:2px 9px;border-radius:10px;">☕ Caffeine sau cutoff</span>`);
+            if (auto.lateMeal) chips.push(`<span style="font-size:0.75rem;background:rgba(245,158,11,0.15);color:#b45309;padding:2px 9px;border-radius:10px;">🍽️ Ăn trễ (&lt;3h trước ngủ)</span>`);
+            if (auto.exercise) chips.push(`<span style="font-size:0.75rem;background:rgba(16,185,129,0.15);color:#047857;padding:2px 9px;border-radius:10px;">🏋️ Có tập ${auto.workout?.minutes ? auto.workout.minutes + 'p' : ''}</span>`);
+            if (!chips.length) return `<div style="font-size:0.72rem;color:var(--text-muted);">Không có tag tự động nào cho tối hôm đó.</div>`;
+            return `<div style="display:flex;gap:6px;flex-wrap:wrap;">${chips.join('')}</div>`;
+        }
+
+        // ===== Morning Sleep Brief — 4 dòng: TST, SE, debt, regularity + 1 insight + 1 khuyến nghị =====
+        // ⚠️ Toàn bộ hàm dưới đây CHỈ dùng new Date()/getHours()/getMinutes()/setHours()
+        // (giờ LOCAL của máy, tức giờ VN) — KHÔNG dùng toISOString()/getUTCHours(), vì
+        // đó chính là bug múi giờ đã từng gặp (UTC lệch 7h so với giờ VN).
+        function renderSleepBrief() {
+            const wrap = document.getElementById('sleepBriefWrap');
+            const body = document.getElementById('sleepBriefBody');
+            if (!wrap || !body) return;
+
+            const sorted = getSortedSleepSessions();
+            if (sorted.length === 0) { wrap.style.display = 'none'; return; }
+
+            const last = sorted[sorted.length - 1];
+            const goal = getSleepGoal();
+            const se = computeSleepEfficiency(last);
+            const reg = computeSleepRegularity(7);
+
+            const byDate = {};
+            sorted.forEach(s => {
+                const dateStr = toLocalDateStr(new Date(s.start));
+                if (!byDate[dateStr]) byDate[dateStr] = 0;
+                byDate[dateStr] += s.duration;
+            });
+            const dailyTotals = Object.values(byDate);
+            const last7 = dailyTotals.slice(-7);
+            const debt7 = last7.reduce((sum, d) => sum + Math.max(0, goal - d), 0);
+
+            // Chọn 1 insight mạnh nhất theo thứ tự ưu tiên: đêm qua có tag xấu > SE thấp > nợ ngủ cao > đều đặn kém
+            let insight = null;
+            if (last.auto_tags?.caffeineLate) insight = '☕ Đêm qua có caffeine sau giờ cutoff — có thể là nguyên nhân SOL kéo dài.';
+            else if (last.auto_tags?.lateMeal) insight = '🍽️ Đêm qua ăn trễ (<3h trước khi ngủ) — có thể ảnh hưởng chất lượng giấc ngủ.';
+            else if (last.tags?.alcohol) insight = '🍺 Đêm qua có alcohol — REM thường bị ức chế những đêm như vậy.';
+            else if (se !== null && se < 85) insight = `📉 SE đêm qua chỉ ${se.toFixed(0)}% — giấc ngủ có dấu hiệu phân mảnh (nhiều lần tỉnh/SOL dài).`;
+            else if (debt7 > 5) insight = `⚠️ Nợ ngủ 7 ngày đang ở mức ${debt7.toFixed(1)}h — khá cao.`;
+            else if (reg && reg.score > 60) insight = `🌀 Giờ ngủ/dậy đang lệch ±${Math.round(reg.score)} phút trong 7 đêm — dấu hiệu social jetlag.`;
+            else insight = '✅ Không có tín hiệu bất thường nào nổi bật từ 7 đêm gần nhất.';
+
+            // 1 khuyến nghị duy nhất, ưu tiên hành động cụ thể nhất có thể làm ngay tối nay
+            let recommendation;
+            if (debt7 > 3) recommendation = `Tối nay thử lên giường sớm hơn ~${Math.min(60, Math.round(debt7 / 3 * 20))} phút để bắt đầu trả nợ ngủ.`;
+            else if (reg && reg.score > 30) recommendation = 'Cố định giờ dậy ngày mai trong khoảng ±30 phút so với hôm nay, kể cả cuối tuần.';
+            else if (se !== null && se < 90) recommendation = 'Tối nay tránh màn hình 60 phút trước giờ ngủ mục tiêu để giảm SOL.';
+            else recommendation = 'Duy trì nhịp hiện tại — đây là vùng vàng, đừng phá vỡ tính đều đặn.';
+
+            body.innerHTML = `
+                <div>😴 <b>${last.duration}h</b> đêm qua ${se !== null ? `· SE <b>${se.toFixed(0)}%</b>` : ''}</div>
+                <div>📉 Nợ ngủ 7đ: <b>${debt7.toFixed(1)}h</b> ${reg ? `· Đều đặn: <b>±${Math.round(reg.score)}p</b>` : ''}</div>
+                <div style="margin-top:4px;">${insight}</div>
+                <div style="margin-top:2px; color:var(--primary); font-weight:600;">👉 ${recommendation}</div>
+            `;
+            wrap.style.display = 'block';
+        }
+
+        // ===== Copy Sleep Context for AI — mirror pattern "📋 Copy Context for AI" đã có =====
+        function copySleepContextForAI() {
+            const sorted = getSortedSleepSessions().slice(-14); // 14 đêm gần nhất
+            if (sorted.length === 0) { alert('Chưa có dữ liệu giấc ngủ nào để copy.'); return; }
+
+            const goal = getSleepGoal();
+            const reg = computeSleepRegularity(7);
+
+            let text = `SLEEP DATA EXPORT (14 đêm gần nhất, xuất lúc ${new Date().toLocaleString('vi-VN')})\n`;
+            text += `Mục tiêu ngủ: ${goal}h/đêm. Regularity Index (7đ, max SD giờ ngủ/dậy): ${reg ? Math.round(reg.score) + ' phút' : 'chưa đủ dữ liệu'}.\n`;
+            text += `Ghi chú: nhờ bạn phân tích pattern giấc ngủ của tôi — đêm nào bất thường, factor nào (caffeine/ăn trễ/alcohol/tập luyện/screen) tương quan với SOL hoặc SE thấp.\n\n`;
+
+            sorted.forEach(s => {
+                const se = computeSleepEfficiency(s);
+                const d = new Date(s.start);
+                const dateLabel = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+                const tagList = [];
+                if (s.tags?.screen) tagList.push('screen');
+                if (s.tags?.alcohol) tagList.push('alcohol');
+                if (s.auto_tags?.caffeineLate) tagList.push('caffeine muộn');
+                if (s.auto_tags?.lateMeal) tagList.push('ăn trễ');
+                if (s.auto_tags?.exercise) tagList.push('có tập');
+                text += `${dateLabel}: ${s.duration}h`;
+                text += s.sol != null ? `, SOL ${s.sol}p` : '';
+                text += s.awakenings_min != null ? `, thức giấc ${s.awakenings_min}p` : '';
+                text += se !== null ? `, SE ${se.toFixed(0)}%` : '';
+                text += s.quality ? `, chất lượng ${s.quality}/5` : '';
+                text += tagList.length ? `, tags: ${tagList.join('/')}` : '';
+                text += s.notes ? `, ghi chú: "${s.notes}"` : '';
+                text += `\n`;
+            });
+
+            const finish = () => {
+                const msg = document.getElementById('sleepBriefCopyMsg');
+                if (msg) { msg.style.display = 'block'; setTimeout(() => { msg.style.display = 'none'; }, 2500); }
+            };
+            const fallbackCopySleep = (t) => {
+                const ta = document.createElement('textarea');
+                ta.value = t;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(ta);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(finish).catch(() => { fallbackCopySleep(text); finish(); });
+            } else {
+                fallbackCopySleep(text);
+                finish();
+            }
+        }
+
+        // ===== One-tap "Giống đêm qua" (#48) — copy SOL/awakenings/quality/tags từ session
+        // gần nhất, chỉ để user chỉnh lại giờ ngủ/giờ dậy thực tế thay vì gõ lại từ đầu =====
+        function logSameAsLastNight() {
+            const sorted = getSortedSleepSessions();
+            if (sorted.length === 0) { openManualSleepModal(); return; }
+            const last = sorted[sorted.length - 1];
+
+            openManualSleepModal();
+
+            // Chờ modal render xong (đúng 1 tick) rồi prefill — modal được tạo bằng
+            // innerHTML nên các input chỉ tồn tại sau khi hàm openManualSleepModal() return.
+            setTimeout(() => {
+                const solInput = document.getElementById('manualSleepSOL');
+                const awakeInput = document.getElementById('manualSleepAwakenings');
+                const screenCb = document.getElementById('manualSleepTagScreen');
+                const alcoholCb = document.getElementById('manualSleepTagAlcohol');
+                if (solInput && last.sol != null) solInput.value = last.sol;
+                if (awakeInput && last.awakenings_min != null) awakeInput.value = last.awakenings_min;
+                if (screenCb) screenCb.checked = !!last.tags?.screen;
+                if (alcoholCb) alcoholCb.checked = !!last.tags?.alcohol;
+                if (last.quality) selectSleepQuality('manualSleepQuality', last.quality);
+            }, 0);
+        }
+
+        // ===== Smart Bedtime Reminder (#32) =====
+        // remind_at = wake anchor (median giờ dậy 14 đêm) − Goal − avg SOL.
+        // Toàn bộ tính toán bằng giờ LOCAL (getHours/getMinutes/setHours) — không quy đổi UTC.
+        const SLEEP_REMINDER_KEY = 'sleepReminderEnabled';
+        let sleepReminderTimeoutId = null;
+
+        function isSleepReminderEnabled() {
+            return localStorage.getItem(SLEEP_REMINDER_KEY) === '1';
+        }
+
+        // Trung vị giờ dậy (dạng phút, đã "neo trục 12h" để không lệch giả quanh nửa đêm)
+        function computeWakeAnchorMinutes(days = 14) {
+            const sorted = getSortedSleepSessions().slice(-days);
+            if (sorted.length < 3) return null;
+            const wakeMins = sorted.map(s => clockMinutesAnchored(s.end)).sort((a, b) => a - b);
+            const mid = Math.floor(wakeMins.length / 2);
+            const median = wakeMins.length % 2 === 1 ? wakeMins[mid] : (wakeMins[mid - 1] + wakeMins[mid]) / 2;
+            return ((median % 1440) + 1440) % 1440; // trả về đúng phút-trong-ngày 0..1439
+        }
+
+        // Trả về { hh, mm, wakeAnchorMin, solMin } hoặc null nếu chưa đủ dữ liệu
+        function computeSmartBedtimeTarget() {
+            const wakeAnchorMin = computeWakeAnchorMinutes(14);
+            if (wakeAnchorMin === null) return null;
+            const goalMin = getSleepGoal() * 60;
+            const solStats = getRecentRealSOLStats(14);
+            const solMin = solStats ? solStats.avg : 15; // fallback 15' nếu chưa có dữ liệu SOL thực
+
+            let targetMin = wakeAnchorMin - goalMin - solMin;
+            targetMin = ((targetMin % 1440) + 1440) % 1440;
+            const hh = Math.floor(targetMin / 60);
+            const mm = Math.round(targetMin % 60);
+            return { hh, mm, wakeAnchorMin, solMin };
+        }
+
+        function updateSleepReminderStatus() {
+            const el = document.getElementById('sleepReminderStatus');
+            const toggle = document.getElementById('sleepReminderToggle');
+            if (!el) return;
+            if (toggle) toggle.checked = isSleepReminderEnabled();
+
+            const target = computeSmartBedtimeTarget();
+            if (!target) {
+                el.textContent = 'Cần tối thiểu 3 đêm dữ liệu (giờ dậy) để tính giờ nhắc.';
+                return;
+            }
+            const timeLabel = `${String(target.hh).padStart(2, '0')}:${String(target.mm).padStart(2, '0')}`;
+            if (!isSleepReminderEnabled()) {
+                el.textContent = `Giờ lên giường gợi ý (dựa trên giờ dậy trung vị 14 đêm): ${timeLabel}. Bật để nhận nhắc nhở.`;
+            } else if (!('Notification' in window) || Notification.permission === 'denied') {
+                el.textContent = `⚠️ Trình duyệt chưa cho phép thông báo. Bật quyền Notification để nhận nhắc lúc ${timeLabel}.`;
+            } else {
+                el.textContent = `✅ Sẽ nhắc lúc ${timeLabel} (giờ VN) — tính từ giờ dậy trung vị 14 đêm trừ mục tiêu ngủ và SOL trung bình.`;
+            }
+        }
+
+        function setSleepReminderEnabled(enabled) {
+            localStorage.setItem(SLEEP_REMINDER_KEY, enabled ? '1' : '0');
+            if (enabled && 'Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission().then(() => scheduleSleepReminder());
+            }
+            scheduleSleepReminder();
+            updateSleepReminderStatus();
+        }
+
+        function scheduleSleepReminder() {
+            if (sleepReminderTimeoutId) { clearTimeout(sleepReminderTimeoutId); sleepReminderTimeoutId = null; }
+            if (!isSleepReminderEnabled()) return;
+
+            const target = computeSmartBedtimeTarget();
+            if (!target) return;
+
+            // Tìm lần xuất hiện TIẾP THEO của giờ HH:MM này (hôm nay hoặc mai) — cách chuẩn
+            // để xử lý cả trường hợp giờ ngủ mục tiêu rơi vào sau nửa đêm (vd 00:30).
+            const candidate = new Date();
+            candidate.setHours(target.hh, target.mm, 0, 0);
+            if (candidate.getTime() <= Date.now()) candidate.setDate(candidate.getDate() + 1);
+
+            const msUntil = candidate.getTime() - Date.now();
+            if (msUntil > 24 * 60 * 60 * 1000) return; // an toàn, tránh timeout quá dài
+
+            sleepReminderTimeoutId = setTimeout(() => {
+                const timeLabel = `${String(target.hh).padStart(2, '0')}:${String(target.mm).padStart(2, '0')}`;
+                if (typeof showNotification === 'function') {
+                    showNotification(`😴 Đến giờ chuẩn bị ngủ (mục tiêu ${timeLabel}) để giữ đúng nhịp thức dậy`, 'info');
+                }
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    try {
+                        new Notification('😴 Giờ đi ngủ', {
+                            body: `Mục tiêu ${timeLabel} — dựa trên giờ dậy trung vị 14 đêm gần nhất.`,
+                            tag: 'sleep-bedtime-reminder'
+                        });
+                    } catch (e) {}
+                }
+                scheduleSleepReminder(); // tự dời sang lần nhắc tiếp theo (ngày mai)
+            }, msUntil);
+        }
+
+        // Khởi tạo reminder khi trang load — sleepSessions đã được nạp từ localStorage
+        // ở phần script phía trên (chạy trước DOMContentLoaded vì là script đồng bộ).
+        document.addEventListener('DOMContentLoaded', () => {
+            scheduleSleepReminder();
+        });
+
         // ===== Trung bình SOL thực tế từ các session đã ghi nhận =====
         function getRecentRealSOLStats(maxSamples = 14) {
             const withSOL = getSortedSleepSessions()
@@ -30274,6 +30664,30 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                             </div>
                             <div class="form-group">
+                                <label for="manualSleepAwakenings" style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">
+                                    Tổng thời gian thức giấc giữa đêm <span style="font-weight:400;color:var(--text-muted);">(phút, tuỳ chọn)</span>
+                                </label>
+                                <input type="number" id="manualSleepAwakenings" min="0" max="300" step="1" placeholder="VD: 10"
+                                    style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-light);color:var(--text-dark);font-size:0.9rem;">
+                                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">
+                                    Cộng dồn các lần tỉnh giấc. Kèm với SOL ở trên, dữ liệu này dùng để tính Sleep Efficiency (SE) — chỉ số chất lượng giấc ngủ chuẩn y học giấc ngủ.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">
+                                    Tags đêm nay <span style="font-weight:400;color:var(--text-muted);">(tự động + tuỳ chọn)</span>
+                                </label>
+                                <div id="manualSleepAutoTags" style="margin-bottom:8px;"></div>
+                                <div style="display:flex; gap:14px;">
+                                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-dark); cursor:pointer;">
+                                        <input type="checkbox" id="manualSleepTagScreen" style="width:16px;height:16px;"> 📱 Screen trước ngủ
+                                    </label>
+                                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-dark); cursor:pointer;">
+                                        <input type="checkbox" id="manualSleepTagAlcohol" style="width:16px;height:16px;"> 🍺 Alcohol
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Chất lượng giấc ngủ</label>
                                 <div id="manualSleepQuality" style="display:flex; gap:8px; justify-content:center; margin-bottom:4px;">
                                     ${[1,2,3,4,5].map(n => `<button type="button" data-q="${n}" onclick="selectSleepQuality('manualSleepQuality',${n})"
@@ -30480,6 +30894,11 @@ document.addEventListener('DOMContentLoaded', function() {
             eventListeners.updateDuration = () => {
                 const start = new Date(startInput.value);
                 const end = new Date(endInput.value);
+
+                const autoTagsEl = document.getElementById('manualSleepAutoTags');
+                if (autoTagsEl && !isNaN(start.getTime())) {
+                    autoTagsEl.innerHTML = renderAutoTagChips(computeAutoTags(start.getTime()));
+                }
                 
                 if (start && end && !isNaN(start.getTime()) && !isNaN(end.getTime())) {
                     if (end <= start) {
@@ -30590,7 +31009,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         const raw = document.getElementById('manualSleepSOL')?.value;
                         const v = parseFloat(raw);
                         return (raw !== '' && !isNaN(v) && v >= 0 && v <= 180) ? v : null;
-                    })()
+                    })(),
+                    awakenings_min: (() => {
+                        const raw = document.getElementById('manualSleepAwakenings')?.value;
+                        const v = parseFloat(raw);
+                        return (raw !== '' && !isNaN(v) && v >= 0 && v <= 300) ? v : null;
+                    })(),
+                    tags: {
+                        screen: !!document.getElementById('manualSleepTagScreen')?.checked,
+                        alcohol: !!document.getElementById('manualSleepTagAlcohol')?.checked
+                    },
+                    auto_tags: computeAutoTags(start.getTime())
                 };
                 
                 // Add to sleep sessions
@@ -30730,6 +31159,30 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                             <div id="editSleepDuration" style="text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">Duration: ${session.duration}h</div>
                             <div style="margin-bottom:15px;">
+                                <label for="editSleepSOL" style="display:block;margin-bottom:6px;font-weight:500;color:var(--text-dark);">SOL — phút để vào giấc <span style="font-weight:400;color:var(--text-muted);">(tuỳ chọn)</span></label>
+                                <input type="number" id="editSleepSOL" min="0" max="180" step="1" value="${session.sol ?? ''}" placeholder="VD: 15"
+                                    style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-light);color:var(--text-dark);font-size:0.9rem;">
+                            </div>
+                            <div style="margin-bottom:15px;">
+                                <label for="editSleepAwakenings" style="display:block;margin-bottom:6px;font-weight:500;color:var(--text-dark);">Thức giấc giữa đêm — phút <span style="font-weight:400;color:var(--text-muted);">(tuỳ chọn)</span></label>
+                                <input type="number" id="editSleepAwakenings" min="0" max="300" step="1" value="${session.awakenings_min ?? ''}" placeholder="VD: 10"
+                                    style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-light);color:var(--text-dark);font-size:0.9rem;">
+                            </div>
+                            <div style="margin-bottom:15px;">
+                                <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">
+                                    Tags đêm nay <span style="font-weight:400;color:var(--text-muted);">(tự động + tuỳ chọn)</span>
+                                </label>
+                                <div id="editSleepAutoTags" style="margin-bottom:8px;">${renderAutoTagChips(computeAutoTags(session.start))}</div>
+                                <div style="display:flex; gap:14px;">
+                                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-dark); cursor:pointer;">
+                                        <input type="checkbox" id="editSleepTagScreen" ${session.tags?.screen ? 'checked' : ''} style="width:16px;height:16px;"> 📱 Screen trước ngủ
+                                    </label>
+                                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-dark); cursor:pointer;">
+                                        <input type="checkbox" id="editSleepTagAlcohol" ${session.tags?.alcohol ? 'checked' : ''} style="width:16px;height:16px;"> 🍺 Alcohol
+                                    </label>
+                                </div>
+                            </div>
+                            <div style="margin-bottom:15px;">
                                 <label style="display:block;margin-bottom:6px;font-weight:500;color:var(--text-dark);">Chất lượng giấc ngủ</label>
                                 <div id="editSleepQuality" style="display:flex;gap:8px;justify-content:center;margin-bottom:4px;">
                                     ${[1,2,3,4,5].map(n => `<button type="button" data-q="${n}" onclick="selectSleepQuality('editSleepQuality',${n})"
@@ -30765,6 +31218,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const updateDuration = () => {
                 const start = new Date(startInput.value);
                 const end = new Date(endInput.value);
+                const autoTagsEl = document.getElementById('editSleepAutoTags');
+                if (autoTagsEl && !isNaN(start.getTime())) {
+                    autoTagsEl.innerHTML = renderAutoTagChips(computeAutoTags(start.getTime()));
+                }
                 if (start && end && end > start) {
                     const hours = ((end - start) / (1000 * 60 * 60)).toFixed(1);
                     durationDisplay.textContent = `Duration: ${hours} hours`;
@@ -30804,7 +31261,22 @@ document.addEventListener('DOMContentLoaded', function() {
                         startFormatted: new Date(start).toLocaleString('vi-VN'),
                         endFormatted: new Date(end).toLocaleString('vi-VN'),
                         quality: parseInt(document.getElementById('editSleepQualityVal')?.value || '0'),
-                        notes: document.getElementById('editSleepNotes')?.value.trim() || ''
+                        notes: document.getElementById('editSleepNotes')?.value.trim() || '',
+                        sol: (() => {
+                            const raw = document.getElementById('editSleepSOL')?.value;
+                            const v = parseFloat(raw);
+                            return (raw !== '' && !isNaN(v) && v >= 0 && v <= 180) ? v : null;
+                        })(),
+                        awakenings_min: (() => {
+                            const raw = document.getElementById('editSleepAwakenings')?.value;
+                            const v = parseFloat(raw);
+                            return (raw !== '' && !isNaN(v) && v >= 0 && v <= 300) ? v : null;
+                        })(),
+                        tags: {
+                            screen: !!document.getElementById('editSleepTagScreen')?.checked,
+                            alcohol: !!document.getElementById('editSleepTagAlcohol')?.checked
+                        },
+                        auto_tags: computeAutoTags(start)
                     };
                     
                     saveSleepData();
@@ -30878,6 +31350,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
 
                 const safeNotes = session.notes ? escapeHtml(session.notes) : '';
+                const seVal = computeSleepEfficiency(session);
+                const seBadge = seVal !== null
+                    ? `<span style="font-size:0.72rem;color:${seColor(seVal)};background:rgba(0,0,0,0.04);padding:1px 7px;border-radius:10px;white-space:nowrap;" title="Sleep Efficiency — ${seLabel(seVal)}">SE ${seVal.toFixed(0)}%</span>`
+                    : '';
+                const tagIcons = [];
+                if (session.tags?.screen) tagIcons.push('📱');
+                if (session.tags?.alcohol) tagIcons.push('🍺');
+                if (session.auto_tags?.caffeineLate) tagIcons.push('☕');
+                if (session.auto_tags?.lateMeal) tagIcons.push('🍽️');
+                if (session.auto_tags?.exercise) tagIcons.push('🏋️');
+                const tagsBadge = tagIcons.length
+                    ? `<span style="font-size:0.85rem;" title="Tags đêm: ${tagIcons.join(' ')}">${tagIcons.join('')}</span>`
+                    : '';
 
                 return `
                 <div style="background: var(--bg-light); padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid ${borderColor};">
@@ -30889,6 +31374,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                 ${session.manual ? '<span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">(Manual)</span>' : ''}
                                 ${q > 0 ? `<span style="font-size:0.85rem;color:${qualityColors[q]};" title="${qualityLabels[q]}">${qualityEmojis[q]}</span>` : ''}
                                 ${goalBadge}
+                                ${seBadge}
+                                ${tagsBadge}
                             </div>
                             <div style="font-size: 0.82rem; color: var(--text-muted);">
                                 ${session.startFormatted} → ${session.endFormatted}
@@ -31064,6 +31551,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Trung bình</div></div>
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Chuỗi đủ giấc</div></div>
                     <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
+                    <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">SE (7đ)</div></div>
+                    <div class="sleep-stat-box"><div class="sleep-stat-value">—</div><div class="sleep-stat-label">Đều đặn (7đ)</div></div>
                 `;
                 const wrap = document.getElementById('solTrendWrap');
                 if (wrap) wrap.style.display = 'none';
@@ -31071,6 +31560,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (alertBanner) alertBanner.style.display = 'none';
                 const noteCorrWrap = document.getElementById('solNoteCorrelationWrap');
                 if (noteCorrWrap) noteCorrWrap.style.display = 'none';
+                const briefWrap = document.getElementById('sleepBriefWrap');
+                if (briefWrap) briefWrap.style.display = 'none';
+                updateSleepReminderStatus();
                 return;
             }
 
@@ -31103,15 +31595,34 @@ document.addEventListener('DOMContentLoaded', function() {
             const streakColor = streak >= 3 ? '#10b981' : streak > 0 ? '#3b82f6' : 'var(--text-muted)';
             const debtColor = debt <= 1 ? '#10b981' : debt <= 5 ? '#f59e0b' : '#ef4444';
 
+            // Sleep Efficiency: trung bình các đêm gần nhất có đủ dữ liệu SOL (tối đa 7 đêm gần nhất có SOL)
+            const sessionsWithSOL = getSortedSleepSessions().filter(s => typeof s.sol === 'number' && !isNaN(s.sol)).slice(-7);
+            const seValues = sessionsWithSOL.map(computeSleepEfficiency).filter(v => v !== null);
+            const avgSE = seValues.length ? seValues.reduce((a, b) => a + b, 0) / seValues.length : null;
+            const seBox = avgSE !== null
+                ? `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${seColor(avgSE)};">${avgSE.toFixed(0)}%</div><div class="sleep-stat-label">SE (${seValues.length}đ)</div></div>`
+                : `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:var(--text-muted);">—</div><div class="sleep-stat-label" title="Cần nhập SOL khi thêm/sửa session">SE (chưa đủ dữ liệu)</div></div>`;
+
+            // Regularity Index: max(SD giờ lên giường, SD giờ dậy) trong 7 đêm gần nhất
+            const reg = computeSleepRegularity(7);
+            const regBox = reg
+                ? `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${regularityColor(reg.score)};">±${Math.round(reg.score)}p</div><div class="sleep-stat-label">Đều đặn (${reg.nights}đ)</div></div>`
+                : `<div class="sleep-stat-box"><div class="sleep-stat-value" style="color:var(--text-muted);">—</div><div class="sleep-stat-label">Đều đặn (cần ≥3đ)</div></div>`;
+
             row.innerHTML = `
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${avgColor};">${avg7.toFixed(1)}h</div><div class="sleep-stat-label">TB ${last7.length} đêm</div></div>
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${streakColor};">${streak} 🔥</div><div class="sleep-stat-label">Chuỗi đủ giấc</div></div>
                 <div class="sleep-stat-box"><div class="sleep-stat-value" style="color:${debtColor};">${debt.toFixed(1)}h</div><div class="sleep-stat-label">Nợ ngủ (7đ)</div></div>
+                ${seBox}
+                ${regBox}
             `;
 
             renderSolTrendChart();
             renderSolAlert();
             renderSolNoteCorrelation();
+            renderSleepBrief();
+            updateSleepReminderStatus();
+            scheduleSleepReminder();
         }
 
         function loadSleepData() {
