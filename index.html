@@ -19384,8 +19384,42 @@ window.DBP={
                 closeSleepModal();
                 renderSleepTab();
             }
+            /* Tự động đồng bộ từ Sleep Tracker (localStorage 'sleepSessions') sang
+               Wellness khi chưa có log thủ công cho hôm nay. Sleep Tracker cho phép
+               log nhiều session rời rạc (ngủ ngắt quãng), nên ở đây gom mọi session
+               có giờ dậy nằm trong khung "đêm qua -> trưa hôm nay" (18:00 hôm qua
+               đến 14:00 hôm nay) thành MỘT bản ghi tổng hợp cho Wellness: giờ đi ngủ
+               = start sớm nhất, giờ dậy = end muộn nhất, tổng giờ ngủ = tổng duration
+               các session, chất lượng = trung bình các session có quality > 0. */
+            function syncFromSleepTracker(key) {
+                if (data.sleepLogs[key] && !data.sleepLogs[key]._syncedFromTracker) return; // đã có log thủ công -> không ghi đè
+                let sessions;
+                try {
+                    sessions = JSON.parse(localStorage.getItem('sleepSessions')) || [];
+                } catch (e) { sessions = []; }
+                if (!sessions.length) return;
+
+                const [y, m, d] = key.split('-').map(Number);
+                const windowEnd = new Date(y, m - 1, d, 14, 0, 0).getTime();      // 14:00 ngày `key`
+                const windowStart = windowEnd - 20 * 3600000;                     // 20 tiếng trước đó (~18:00 hôm trước)
+
+                const candidates = sessions.filter(s => s.end >= windowStart && s.end <= windowEnd);
+                if (!candidates.length) return;
+
+                const bed = Math.min(...candidates.map(s => s.start));
+                const wake = Math.max(...candidates.map(s => s.end));
+                const hours = candidates.reduce((sum, s) => sum + (s.duration || 0), 0);
+                const rated = candidates.filter(s => s.quality > 0);
+                const quality = rated.length
+                    ? Math.round(rated.reduce((sum, s) => sum + s.quality, 0) / rated.length)
+                    : 0;
+
+                data.sleepLogs[key] = { bed, wake, hours, quality, _syncedFromTracker: true, _sessionCount: candidates.length };
+                save();
+            }
             function renderSleepTab() {
                 const key = todayKey();
+                syncFromSleepTracker(key);
                 const today = data.sleepLogs[key];
                 const box = document.getElementById('wlnSleepTodayBox');
                 const fmtTime = t => new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
@@ -19393,10 +19427,11 @@ window.DBP={
                 if (box) {
                     box.innerHTML = today
                         ? `
+                            ${today._syncedFromTracker ? `<div style="font-size:0.72rem; color:var(--text-muted); text-align:center; padding-bottom:4px;">🔄 Tự động đồng bộ từ Sleep Tracker (${today._sessionCount} session)</div>` : ''}
                             <div class="wln-log-item"><span>🌙 Đi ngủ</span><span><b>${fmtTime(today.bed)}</b></span></div>
                             <div class="wln-log-item"><span>☀️ Thức dậy</span><span><b>${fmtTime(today.wake)}</b></span></div>
                             <div class="wln-log-item"><span>⏱️ Tổng thời gian ngủ</span><span><b>${today.hours.toFixed(1)}h</b></span></div>
-                            <div class="wln-log-item"><span>${emojis[today.quality] || ''} Chất lượng</span><span><b>${today.quality}/5</b></span></div>
+                            <div class="wln-log-item"><span>${emojis[today.quality] || ''} Chất lượng</span><span><b>${today.quality ? today.quality + '/5' : 'chưa đánh giá'}</b></span></div>
                         `
                         : `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:4px 0;">Chưa log giấc ngủ đêm qua.</div>`;
                 }
@@ -20351,6 +20386,7 @@ window.DBP={
 
             function init() {
                 load();
+                syncFromSleepTracker(todayKey());
                 renderFoodPresets();
                 renderCaffeinePresets();
                 setTab('log');
