@@ -18611,7 +18611,7 @@ window.DBP={
             <div id="sleepBriefWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                     <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);">📋 Morning Sleep Brief</span>
-                    <button onclick="copySleepContextForAI()" style="font-size:0.72rem; padding:3px 10px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">📋 Copy for AI</button>
+                    <button onclick="copySleepContextForAI()" aria-label="Sao chép dữ liệu giấc ngủ để phân tích với AI" style="font-size:0.72rem; padding:3px 10px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">📋 Copy for AI</button>
                 </div>
                 <div id="sleepBriefBody" style="font-size:0.82rem; line-height:1.7; color:var(--text-dark);"></div>
                 <div id="sleepBriefCopyMsg" style="display:none; font-size:0.72rem; color:#10b981; margin-top:6px;">✅ Đã copy vào clipboard!</div>
@@ -18677,12 +18677,12 @@ window.DBP={
             </div>
 
             <!-- Sleep Chart -->
-            <div style="display:flex; justify-content:flex-end; gap:6px; margin: 20px 0 6px;">
-                <button class="sleep-chart-range-btn" data-range="7" onclick="setSleepChartRange(7)"
+            <div role="group" aria-label="Chọn số đêm hiển thị trên biểu đồ" style="display:flex; justify-content:flex-end; gap:6px; margin: 20px 0 6px;">
+                <button class="sleep-chart-range-btn" data-range="7" onclick="setSleepChartRange(7)" aria-label="Hiện 7 đêm gần nhất" aria-pressed="true"
                     style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--primary); color:#fff; cursor:pointer;">7đ</button>
-                <button class="sleep-chart-range-btn" data-range="14" onclick="setSleepChartRange(14)"
+                <button class="sleep-chart-range-btn" data-range="14" onclick="setSleepChartRange(14)" aria-label="Hiện 14 đêm gần nhất" aria-pressed="false"
                     style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">14đ</button>
-                <button class="sleep-chart-range-btn" data-range="30" onclick="setSleepChartRange(30)"
+                <button class="sleep-chart-range-btn" data-range="30" onclick="setSleepChartRange(30)" aria-label="Hiện 30 đêm gần nhất" aria-pressed="false"
                     style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">30đ</button>
             </div>
             <div class="chart-container" style="margin: 0 0 20px;">
@@ -18693,7 +18693,7 @@ window.DBP={
             <div style="margin-top: 20px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
                     <h4 style="font-size: 1rem; font-weight: 600; color: var(--text-dark); margin:0;">📜 Recent Sessions</h4>
-                    <input type="text" id="sleepHistorySearch" oninput="renderSleepHistory()" placeholder="🔍 Tìm ghi chú..."
+                    <input type="text" id="sleepHistorySearch" oninput="renderSleepHistory()" placeholder="🔍 Tìm ghi chú..." aria-label="Tìm kiếm ghi chú trong lịch sử giấc ngủ"
                         style="font-size:0.75rem; padding:5px 9px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); width:130px;">
                 </div>
                 <div id="sleepHistoryContainer" style="max-height: 300px; overflow-y: auto;">
@@ -32039,15 +32039,72 @@ document.addEventListener('DOMContentLoaded', function() {
             if (modal) modal.remove();
         }
 
+        // ✅ Undo delete — giữ session vừa xoá trong bộ nhớ tạm 6 giây, cho phép khôi phục
+        // nếu bấm nhầm 🗑️. Trước đây xoá là mất vĩnh viễn ngay sau khi confirm().
+        let lastDeletedSleepSession = null;
+        let lastDeletedSleepUndoTimer = null;
+
+        function showSleepUndoToast(message) {
+            const existing = document.getElementById('sleepUndoToast');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.id = 'sleepUndoToast';
+            toast.style.cssText = [
+                'position:fixed;bottom:24px;right:24px;z-index:99999',
+                'display:flex;align-items:center;gap:12px',
+                'padding:12px 16px;border-radius:12px',
+                'background:var(--bg-white,#fff);color:var(--text-dark,#111)',
+                'border-left:4px solid #6b7280',
+                'box-shadow:0 4px 20px rgba(0,0,0,0.18)',
+                'font-size:0.88rem;font-weight:500;max-width:340px'
+            ].join(';');
+            toast.innerHTML = `
+                <span style="flex:1;">🗑️ ${message}</span>
+                <button id="sleepUndoBtn" style="flex-shrink:0;font-size:0.82rem;font-weight:700;padding:5px 12px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;white-space:nowrap;">Hoàn tác</button>
+            `;
+            document.body.appendChild(toast);
+            document.getElementById('sleepUndoBtn').onclick = undoDeleteSleepSession;
+        }
+
+        function undoDeleteSleepSession() {
+            if (!lastDeletedSleepSession) return;
+            sleepSessions.push(lastDeletedSleepSession);
+            lastDeletedSleepSession = null;
+            if (lastDeletedSleepUndoTimer) { clearTimeout(lastDeletedSleepUndoTimer); lastDeletedSleepUndoTimer = null; }
+            const toast = document.getElementById('sleepUndoToast');
+            if (toast) toast.remove();
+            saveSleepData();
+            renderSleepHistory();
+            renderSleepChart();
+            renderSleepStats();
+            updateCorrelationAnalytics();
+            showNotification('✅ Đã khôi phục đêm ngủ', 'success');
+        }
+
         function deleteSleepSession(id) {
             if (confirm('🗑️ Delete this sleep session?')) {
+                const removed = sleepSessions.find(s => s.id === id);
                 sleepSessions = sleepSessions.filter(s => s.id !== id);
                 saveSleepData();
                 renderSleepHistory();
                 renderSleepChart();
                 renderSleepStats();
                 updateCorrelationAnalytics();
-                showNotification('Session deleted', 'info');
+
+                if (removed) {
+                    lastDeletedSleepSession = removed;
+                    if (lastDeletedSleepUndoTimer) clearTimeout(lastDeletedSleepUndoTimer);
+                    lastDeletedSleepUndoTimer = setTimeout(() => {
+                        lastDeletedSleepSession = null;
+                        lastDeletedSleepUndoTimer = null;
+                        const toast = document.getElementById('sleepUndoToast');
+                        if (toast) toast.remove();
+                    }, 6000);
+                    showSleepUndoToast('Đã xoá 1 đêm ngủ.');
+                } else {
+                    showNotification('Session deleted', 'info');
+                }
             }
         }
 
@@ -32163,8 +32220,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${safeNotes ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:5px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${safeNotes}">📝 ${safeNotes}</div>` : ''}
                         </div>
                         <div style="display: flex; gap: 4px; margin-left:8px; flex-shrink:0;">
-                            <button onclick="editSleepSession(${session.id})" style="background: none; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--text-dark); font-size: 0.85rem;">✏️</button>
-                            <button onclick="deleteSleepSession(${session.id})" style="background: none; border: 1px solid #ef4444; padding: 4px 8px; border-radius: 6px; cursor: pointer; color: #ef4444; font-size: 0.85rem;">🗑️</button>
+                            <button onclick="editSleepSession(${session.id})" aria-label="Sửa đêm ngủ ${session.duration}h, ${relativeDay(session.start)}" style="background: none; border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--text-dark); font-size: 0.85rem;">✏️</button>
+                            <button onclick="deleteSleepSession(${session.id})" aria-label="Xoá đêm ngủ ${session.duration}h, ${relativeDay(session.start)}" style="background: none; border: 1px solid #ef4444; padding: 4px 8px; border-radius: 6px; cursor: pointer; color: #ef4444; font-size: 0.85rem;">🗑️</button>
                         </div>
                     </div>
                 </div>
@@ -32230,6 +32287,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const active = Number(btn.dataset.range) === days;
                 btn.style.background = active ? 'var(--primary)' : 'var(--bg-white)';
                 btn.style.color = active ? '#fff' : 'var(--text-dark)';
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
             });
             renderSleepChart();
         }
