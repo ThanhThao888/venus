@@ -18693,8 +18693,12 @@ window.DBP={
             <div style="margin-top: 20px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
                     <h4 style="font-size: 1rem; font-weight: 600; color: var(--text-dark); margin:0;">📜 Recent Sessions</h4>
-                    <input type="text" id="sleepHistorySearch" oninput="renderSleepHistory()" placeholder="🔍 Tìm ghi chú..." aria-label="Tìm kiếm ghi chú trong lịch sử giấc ngủ"
-                        style="font-size:0.75rem; padding:5px 9px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); width:130px;">
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                        <button onclick="exportSleepSessionsCSV()" aria-label="Xuất toàn bộ dữ liệu giấc ngủ ra file CSV"
+                            style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;">⬇️ CSV</button>
+                        <input type="text" id="sleepHistorySearch" oninput="renderSleepHistory()" placeholder="🔍 Tìm ghi chú..." aria-label="Tìm kiếm ghi chú trong lịch sử giấc ngủ"
+                            style="font-size:0.75rem; padding:5px 9px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); width:130px;">
+                    </div>
                 </div>
                 <div id="sleepHistoryContainer" style="max-height: 300px; overflow-y: auto;">
                     <!-- History will render here -->
@@ -30482,6 +30486,58 @@ document.addEventListener('DOMContentLoaded', function() {
             guidanceEl.style.display = 'block';
         }
 
+        // ===== Export toàn bộ Sleep Sessions ra CSV — khác với Copy for AI (chỉ 14 đêm,
+        // dạng text tóm tắt cho AI đọc); cái này xuất TOÀN BỘ lịch sử, dạng bảng chuẩn
+        // để mở bằng Excel/Google Sheets tự phân tích thêm ngoài app. =====
+        function csvEscapeSleepField(v) {
+            const s = (v === null || v === undefined) ? '' : String(v);
+            return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        }
+
+        function exportSleepSessionsCSV() {
+            if (!sleepSessions || sleepSessions.length === 0) {
+                alert('Chưa có dữ liệu giấc ngủ nào để xuất.');
+                return;
+            }
+            const sorted = getSortedSleepSessions();
+            const headers = ['date', 'start', 'end', 'duration_h', 'sol_min', 'awakenings_min', 'se_percent', 'quality_1to5', 'tag_screen', 'tag_alcohol', 'tag_caffeine_late', 'tag_late_meal', 'tag_exercise', 'notes'];
+            const rows = sorted.map(s => {
+                const se = computeSleepEfficiency(s);
+                const d = new Date(s.start);
+                return [
+                    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+                    s.startFormatted || new Date(s.start).toLocaleString('vi-VN'),
+                    s.endFormatted || new Date(s.end).toLocaleString('vi-VN'),
+                    s.duration ?? '',
+                    s.sol ?? '',
+                    s.awakenings_min ?? '',
+                    se !== null ? se.toFixed(1) : '',
+                    s.quality || '',
+                    s.tags?.screen ? '1' : '0',
+                    s.tags?.alcohol ? '1' : '0',
+                    s.auto_tags?.caffeineLate ? '1' : '0',
+                    s.auto_tags?.lateMeal ? '1' : '0',
+                    s.auto_tags?.exercise ? '1' : '0',
+                    s.notes || ''
+                ].map(csvEscapeSleepField).join(',');
+            });
+            // \uFEFF BOM để Excel nhận đúng UTF-8 (không lỗi font tiếng Việt khi mở file)
+            const csvContent = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const todayStr = new Date().toISOString().slice(0, 10);
+            link.href = url;
+            link.download = `sleep_sessions_${todayStr}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            if (typeof showNotification === 'function') showNotification(`✅ Đã xuất ${sorted.length} đêm ra CSV`, 'success');
+        }
+
         // ===== Copy Sleep Context for AI — mirror pattern "📋 Copy Context for AI" đã có =====
         function copySleepContextForAI() {
             const sorted = getSortedSleepSessions().slice(-14); // 14 đêm gần nhất
@@ -31265,6 +31321,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSleepChart();
             renderSleepStats();
             updateCorrelationAnalytics();
+            if (typeof renderInsomniaAnalysis === 'function') renderInsomniaAnalysis();
 
             showNotification(`☀️ Woke up! You slept for ${session.duration} hours.`, 'success');
         }
@@ -31765,6 +31822,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 renderSleepChart();
                 renderSleepStats();
                 updateCorrelationAnalytics();
+                if (typeof renderInsomniaAnalysis === 'function') renderInsomniaAnalysis();
                 
                 // Clean up and close modal
                 cleanupModal();
@@ -32027,6 +32085,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderSleepChart();
                     renderSleepStats();
                     updateCorrelationAnalytics();
+                    if (typeof renderInsomniaAnalysis === 'function') renderInsomniaAnalysis();
                     closeEditSleepModal();
                     
                     showNotification('✅ Sleep session updated!', 'success');
@@ -32079,6 +32138,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSleepChart();
             renderSleepStats();
             updateCorrelationAnalytics();
+            if (typeof renderInsomniaAnalysis === 'function') renderInsomniaAnalysis();
             showNotification('✅ Đã khôi phục đêm ngủ', 'success');
         }
 
@@ -32091,6 +32151,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 renderSleepChart();
                 renderSleepStats();
                 updateCorrelationAnalytics();
+                if (typeof renderInsomniaAnalysis === 'function') renderInsomniaAnalysis();
 
                 if (removed) {
                     lastDeletedSleepSession = removed;
@@ -38648,7 +38709,10 @@ function classifyInsomniaType() {
         const duration = session.duration;
         
         // Sleep onset insomnia: bắt đầu ngủ sau 0h (23h+) - late sleep start
-        if (startHour >= 0 && startHour <= 4) sleepOnset++; // went to sleep midnight-4am
+        // BUG FIX: điều kiện cũ (startHour >= 0 && startHour <= 4) không bao giờ bắt được
+        // giờ 23h vì getHours() luôn >= 0 — nghĩa là những đêm đi ngủ lúc 23h-23h59 (rất phổ
+        // biến với sleep-onset insomnia) chưa từng được tính, dù comment đã ghi rõ "23h+".
+        if (startHour >= 23 || startHour <= 4) sleepOnset++; // went to sleep 23:00–4:59am
         // Sleep maintenance: duration ngắn dưới 5h
         if (duration < 5) maintenance++;
         // Early awakening: thức dậy 3h-6h sáng và ngủ < 6h tổng
@@ -39119,6 +39183,30 @@ function generateInsomniaRecommendations(analysis) {
             priority: 'medium',
             action: '🚰 REDUCE FLUIDS 2H BEFORE BED',
             rationale: `Frequent awakenings ${insomniaType.percentages.maintenance}% of nights. Avoid caffeine/alcohol 6h before bed.`,
+            urgency: 'this_week'
+        });
+    }
+
+    // Early awakening: dậy quá sớm (3h-6h sáng) và ngủ chưa đủ tổng thời lượng —
+    // trước đây classifyInsomniaType() đã phân loại được nhóm này nhưng chưa có
+    // khuyến nghị riêng, người dùng chỉ nhận được lời khuyên chung chung không đúng trọng tâm.
+    if (insomniaType?.primaryType === 'early_awakening') {
+        recommendations.push({
+            priority: 'medium',
+            action: '🌤️ HẠN CHẾ ÁNH SÁNG MẠNH SÁNG SỚM, TĂNG ÁNH SÁNG BUỔI TỐI',
+            rationale: `Thức dậy quá sớm (3h-6h sáng) ${insomniaType.percentages.earlyAwakening}% số đêm ghi nhận. Dậy sớm lặp lại thường liên quan đến nhịp sinh học bị đẩy lệch sớm — thử tăng ánh sáng vào buổi tối và tránh ánh sáng mạnh ngay khi thức giấc sớm để không củng cố thói quen dậy sớm này.`,
+            urgency: 'this_week'
+        });
+    }
+
+    // Non-restorative: ngủ đủ giờ (7-10h) nhưng tự đánh giá chất lượng thấp — vấn đề
+    // nằm ở CHẤT LƯỢNG giấc ngủ, không phải thời lượng, nên khuyến nghị cần khác hẳn
+    // nhóm sleep_onset/maintenance (vốn tập trung vào thời lượng/số lần thức giấc).
+    if (insomniaType?.primaryType === 'non_restorative') {
+        recommendations.push({
+            priority: 'medium',
+            action: '🩺 KIỂM TRA CHẤT LƯỢNG GIẤC NGỦ, KHÔNG CHỈ THỜI LƯỢNG',
+            rationale: `Ngủ đủ 7-10h nhưng vẫn tự đánh giá chất lượng kém ${insomniaType.percentages.nonRestorative}% số đêm. Đây thường là dấu hiệu của gián đoạn giấc ngủ sâu (vd ngưng thở khi ngủ, đau mãn tính, stress) chứ không phải thiếu giờ ngủ — nếu tình trạng kéo dài, nên ghi thêm SOL/số lần thức giấc mỗi đêm và cân nhắc tham khảo bác sĩ chuyên khoa giấc ngủ.`,
             urgency: 'this_week'
         });
     }
