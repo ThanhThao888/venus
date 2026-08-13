@@ -43297,7 +43297,7 @@ function findOptimalSleepWindow(sleepSessions = [], studyData = {}) {
         console.log('✓ Insights generated:', insights.length);
         
         // ========== STEP 8: Personalized Schedule ==========
-        const recommendations = generatePersonalizedSchedule(optimalWindow, currentPattern);
+        const recommendations = generatePersonalizedSchedule(optimalWindow, currentPattern, clusters);
         console.log('✓ Personalized schedule generated');
         
         // ========== STEP 9: Circadian Alignment ==========
@@ -43390,16 +43390,20 @@ function calculateCircadianAlignmentScore(bedtimeHour) {
         return 100; // Perfect alignment
     }
     
-    // Calculate distance to optimal range
-    let distance;
-    if (bedtimeHour < optimalStart) {
-        distance = optimalStart - bedtimeHour;
-    } else {
-        distance = bedtimeHour - optimalEnd;
-    }
+    // Distance to the optimal range, accounting for wraparound at midnight.
+    // BUG FIX: the old version used plain subtraction, so a 3AM bedtime (only
+    // ~3.6h past 11:30PM if you count through midnight) was scored as if it
+    // were 18.4h away — treating "just after midnight" as almost a full day
+    // from "just before midnight". circularHourDistance() correctly measures
+    // the short way around the clock in both directions.
+    const distToStart = circularHourDistance(bedtimeHour, optimalStart);
+    const distToEnd = circularHourDistance(bedtimeHour, optimalEnd);
+    const distance = Math.min(distToStart, distToEnd);
     
-    // Exponential decay: score = 100 * e^(-distance/2)
-    return Math.max(30, Math.round(100 * Math.exp(-distance / 2)));
+    // Exponential decay: score = 100 * e^(-distance/2), floor 0 (no artificial
+    // floor — a bedtime genuinely far from the optimal window, e.g. midday,
+    // should be able to score near 0, not be propped up to 30).
+    return Math.max(0, Math.round(100 * Math.exp(-distance / 2)));
 }
 
 function categorizeSleepWindow(bedtimeHour) {
@@ -43412,37 +43416,48 @@ function categorizeSleepWindow(bedtimeHour) {
 }
 
 // ========== PERFORMANCE SCORING ==========
+// Rewritten so every component is a clean 0-100 sub-score multiplied by a
+// fixed weight that sums to 100%. The old version started from a base of 50
+// and added small deviations for 3 of the 5 components (which mathematically
+// capped the max reachable score around 87.5 before the uncapped "sleep debt"
+// subtraction and flat "weekday bonus" patches were layered on to compensate)
+// — that made the weights in the comments not match what the code actually
+// did, and it double-penalized short sleep (once via durationScore, again via
+// the separate sleepDebt subtraction) while double-rewarding 7-9h sleep on
+// weekdays (once via durationScore, again via the flat +10 bonus).
 function scorePerformance(features, studyData) {
     return features.map(feature => {
-        let performanceScore = 50; // Neutral base score
-        
-        // 1. Duration score (30% weight) - Optimal: 7-9 hours
-        const durationScore = Math.max(0, 100 - Math.abs(feature.duration - 8) * 15);
-        performanceScore += (durationScore - 50) * 0.3;
-        
-        // 2. Circadian alignment (25% weight)
-        performanceScore += (feature.circadianScore - 50) * 0.25;
-        
+        // 1. Duration/sleep-adequacy score (45% weight) — one asymmetric
+        // curve instead of two overlapping penalties. Short sleep is
+        // penalized more steeply than long sleep, since sleep debt has
+        // clearer, better-evidenced negative effects than modest oversleep.
+        let durationScore;
+        if (feature.duration >= 7 && feature.duration <= 9) {
+            durationScore = 100;
+        } else if (feature.duration < 7) {
+            durationScore = 100 - (7 - feature.duration) * 18;
+        } else {
+            durationScore = 100 - (feature.duration - 9) * 12;
+        }
+        durationScore = Math.max(0, Math.min(100, durationScore));
+
+        // 2. Circadian alignment (35% weight) — how close bedtime is to the
+        // melatonin-release window, using the wraparound-safe score above.
+        const circadianScore = feature.circadianScore;
+
         // 3. Next-day study performance (20% weight)
-        // Always apply (including 0h) to avoid selection bias — skipping 0h inflates scores
+        // Always apply (including 0h) to avoid selection bias — skipping 0h inflates scores.
         // CAVEAT: this treats next-day study hours as a proxy for sleep quality, but the
         // relationship can run the other way (e.g. exam/deadline pressure can cause both
-        // less sleep AND more forced study hours the next day). Kept at a modest 20% weight
+        // less sleep AND more forced study hours the next day). Kept at a modest weight
         // for this reason — do not increase without also decoupling it from deadline-driven days.
         const studyScore = Math.min(100, feature.nextDayStudy * 15);
-        performanceScore += (studyScore - 50) * 0.2;
-        
-        // 4. Sleep debt penalty (15% weight)
-        performanceScore -= feature.sleepDebt * 8;
-        
-        // 5. Weekday adequate-sleep bonus (10% weight)
-        // Note: this rewards hitting 7-9h specifically on weekdays (school/work nights),
-        // not "weekend consistency" — weekend consistency is measured separately via
-        // calculateConsistency() on the cluster's performance scores.
-        if (!feature.isWeekend && feature.duration >= 7 && feature.duration <= 9) {
-            performanceScore += 10;
-        }
-        
+
+        // Weights sum to 100%, so a perfect night (100/100/100 on all three)
+        // scores exactly 100, and a worst-case night scores exactly 0 — no
+        // patch terms needed to reach either end.
+        let performanceScore = durationScore * 0.45 + circadianScore * 0.35 + studyScore * 0.20;
+
         // Clamp and round
         performanceScore = Math.max(0, Math.min(100, performanceScore));
         
@@ -43469,6 +43484,10 @@ function clusterSleepWindows(scoredSessions) {
     scoredSessions.forEach(session => {
         clusters[session.sleepWindow].sessions.push(session);
     });
+
+    const globalAvgPerformance = scoredSessions.length > 0
+        ? scoredSessions.reduce((sum, s) => sum + s.performanceScore, 0) / scoredSessions.length
+        : 50;
     
     // Calculate statistics for each cluster
     Object.keys(clusters).forEach(window => {
@@ -43481,10 +43500,19 @@ function clusterSleepWindows(scoredSessions) {
         const scores = sessions.map(s => s.performanceScore);
         const durations = sessions.map(s => s.duration);
         const studyHours = sessions.map(s => s.nextDayStudy); // include 0h days — filtering inflates the average
+        const avgPerformance = parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1));
         
         clusters[window].stats = {
             count: sessions.length,
-            avgPerformance: parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)),
+            avgPerformance: avgPerformance,
+            // Shrunk toward the overall average in proportion to sample size, so a
+            // cluster with 2 lucky nights can't outrank one with 10 steady nights
+            // just because its small, noisier average happens to be higher. See
+            // shrinkTowardGlobalMean() below for the reasoning.
+            shrunkPerformance: parseFloat(
+                shrinkTowardGlobalMean(avgPerformance, sessions.length, globalAvgPerformance).toFixed(1)
+            ),
+            dataConfidence: calculateDataConfidence(sessions.length),
             avgDuration: parseFloat((durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1)),
             avgNextDayStudy: parseFloat((studyHours.reduce((a, b) => a + b, 0) / studyHours.length).toFixed(1)),
             minScore: Math.min(...scores),
@@ -43499,6 +43527,28 @@ function clusterSleepWindows(scoredSessions) {
     return clusters;
 }
 
+// dataConfidence: diminishing-returns curve (1 - 1/sqrt(n)) instead of a hard
+// linear cap. The old `min(100, count*15)` treated 7 nights as 100% ("as
+// confident as we'll ever be"), which overstates how much a handful of
+// self-reported nights can tell you. This curve keeps climbing but never
+// actually reaches 100%, which is a more honest shape for small-sample data:
+// n=2 -> 29%, n=5 -> 55%, n=10 -> 68%, n=20 -> 78%, n=50 -> 86%.
+function calculateDataConfidence(count) {
+    if (count <= 0) return 0;
+    return Math.round(100 * (1 - 1 / Math.sqrt(count)));
+}
+
+// Bayesian shrinkage: pulls a small cluster's average performance toward the
+// overall average, weighted by how little data backs it. A 2-night cluster
+// that happens to average 90% is mostly noise; shrinkage keeps it from
+// beating a 10-night cluster that steadily averages 75% just because 2
+// lucky/unlucky nights swung the raw mean. priorWeight=5 means a cluster
+// needs roughly 5+ nights of its own before its raw average dominates the
+// estimate; below that, the global average still has real influence.
+function shrinkTowardGlobalMean(clusterAvg, clusterCount, globalAvg, priorWeight = 5) {
+    return (clusterAvg * clusterCount + globalAvg * priorWeight) / (clusterCount + priorWeight);
+}
+
 function calculateConsistency(scores) {
     if (scores.length < 2) return 100;
     const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
@@ -43508,6 +43558,28 @@ function calculateConsistency(scores) {
 }
 
 // ========== FIND BEST PERFORMING WINDOW ==========
+// dataConfidence: diminishing-returns curve (1 - 1/sqrt(n)) instead of a hard
+// linear cap. The old `min(100, count*15)` treated 7 nights as 100% ("as
+// confident as we'll ever be"), which overstates how much a handful of
+// self-reported nights can tell you. This curve keeps climbing but never
+// actually reaches 100%, which is a more honest shape for small-sample data:
+// n=2 -> 29%, n=5 -> 55%, n=10 -> 68%, n=20 -> 78%, n=50 -> 86%.
+function calculateDataConfidence(count) {
+    if (count <= 0) return 0;
+    return Math.round(100 * (1 - 1 / Math.sqrt(count)));
+}
+
+// Bayesian shrinkage: pulls a small cluster's average performance toward the
+// overall average, weighted by how little data backs it. A 2-night cluster
+// that happens to average 90% is mostly noise; shrinkage keeps it from
+// beating a 10-night cluster that steadily averages 75% just because 2
+// lucky/unlucky nights swung the raw mean. priorWeight=5 means a cluster
+// needs roughly 5+ nights of its own before its raw average dominates the
+// estimate; below that, the global average still has real influence.
+function shrinkTowardGlobalMean(clusterAvg, clusterCount, globalAvg, priorWeight = 5) {
+    return (clusterAvg * clusterCount + globalAvg * priorWeight) / (clusterCount + priorWeight);
+}
+
 function findBestPerformingWindow(clusters) {
     let bestWindow = null;
     let bestScore = -1;
@@ -43516,11 +43588,15 @@ function findBestPerformingWindow(clusters) {
         const stats = data.stats;
         if (!stats || stats.count < 2) return; // Need at least 2 samples
         
-        // Composite score: performance (60%) + consistency (30%) + data confidence (10%)
-        const dataConfidence = Math.min(100, stats.count * 15); // More data = more confidence
-        const compositeScore = stats.avgPerformance * 0.6 + 
-                              stats.consistency * 0.3 + 
-                              dataConfidence * 0.1;
+        // Composite score, ranked on the shrinkage-adjusted performance (not
+        // the raw cluster average) so small samples can't win purely on
+        // noise. Confidence's weight is raised from 10% to 20% since sample
+        // size was previously the input contributing least to the decision
+        // despite being the biggest real source of risk in a "best window"
+        // pick — performance and consistency correspondingly drop slightly.
+        const compositeScore = stats.shrunkPerformance * 0.55 +
+                              stats.consistency * 0.25 +
+                              stats.dataConfidence * 0.20;
         
         if (compositeScore > bestScore) {
             bestScore = compositeScore;
@@ -43528,7 +43604,7 @@ function findBestPerformingWindow(clusters) {
                 window: window,
                 stats: stats,
                 compositeScore: parseFloat(compositeScore.toFixed(1)),
-                dataConfidence: dataConfidence
+                dataConfidence: stats.dataConfidence
             };
         }
     });
@@ -43545,7 +43621,7 @@ function findBestPerformingWindow(clusters) {
                 window: window,
                 stats: data.stats,
                 compositeScore: 70,
-                dataConfidence: 70
+                dataConfidence: data.stats.dataConfidence
             };
         }
     }
@@ -43737,7 +43813,7 @@ function generateOptimalityInsights(optimalWindow, clusters, scoredSessions) {
     
     // Current average performance
     const avgCurrentPerformance = scoredSessions.reduce((sum, s) => sum + s.performanceScore, 0) / scoredSessions.length;
-    const improvementPotential = optimalWindow.stats.avgPerformance - avgCurrentPerformance;
+    const improvementPotential = optimalWindow.stats.shrunkPerformance - avgCurrentPerformance;
     
     // Insight 1: Improvement potential
     if (improvementPotential > 15) {
@@ -43746,7 +43822,7 @@ function generateOptimalityInsights(optimalWindow, clusters, scoredSessions) {
             priority: 'high',
             icon: '🚀',
             title: `${Math.round(improvementPotential)}% Performance Boost Available`,
-            message: `Switching to your optimal window (${optimalWindow.timeRange}) could improve sleep performance from ${avgCurrentPerformance.toFixed(1)}% to ${optimalWindow.stats.avgPerformance}%.`,
+            message: `Switching to your optimal window (${optimalWindow.timeRange}) could improve sleep performance from ${avgCurrentPerformance.toFixed(1)}% to an estimated ${optimalWindow.stats.shrunkPerformance}% (adjusted for sample size; the raw average of logged nights in that window is ${optimalWindow.stats.avgPerformance}%).`,
             impact: 'high'
         });
     } else if (improvementPotential > 5) {
@@ -43853,7 +43929,7 @@ function getConfidenceQualifier(dataConfidence) {
 }
 
 // ========== PERSONALIZED SCHEDULE ==========
-function generatePersonalizedSchedule(optimalWindow, currentPattern) {
+function generatePersonalizedSchedule(optimalWindow, currentPattern, clusters) {
     const recommendations = [];
     
     // Get target times
@@ -43867,7 +43943,7 @@ function generatePersonalizedSchedule(optimalWindow, currentPattern) {
         priority: confidence.level === 'low' ? 'P1' : 'P0',
         timeframe: 'Starting tonight',
         action: `${confidence.actionVerb} BEDTIME: ${formatHour(targetBedtime)}`,
-        rationale: `Heuristic scoring ${confidence.verb} ${optimalWindow.stats.avgPerformance}% performance in this window (vs your current ${currentPattern.performance}%).${confidence.caveat}`,
+        rationale: `Heuristic scoring ${confidence.verb} ${optimalWindow.stats.shrunkPerformance}% performance in this window (vs your current ${currentPattern.performance}%).${confidence.caveat}`,
         steps: [
             `Set alarm for ${formatHour(targetBedtime - 0.5)} (30min wind-down)`,
             `Complete dinner by ${formatHour(targetBedtime - 3)}`,
@@ -43875,7 +43951,7 @@ function generatePersonalizedSchedule(optimalWindow, currentPattern) {
             `In bed by ${formatHour(targetBedtime)} sharp`,
             `Target ${targetDuration.toFixed(1)}h sleep → Wake at ${formatHour(targetWaketime)}`
         ],
-        expectedImpact: `Improve sleep performance by ${Math.round(optimalWindow.stats.avgPerformance - currentPattern.performance)}%`,
+        expectedImpact: `Improve sleep performance by ${Math.round(optimalWindow.stats.shrunkPerformance - currentPattern.performance)}%`,
         scientificBasis: `Based on ${optimalWindow.stats.count} sessions with ${optimalWindow.dataConfidence}% data confidence (${confidence.level})`
     });
     
@@ -43913,35 +43989,37 @@ function generatePersonalizedSchedule(optimalWindow, currentPattern) {
     });
     
     // Alternative windows
-    const alternativeWindows = Object.entries(optimalWindow.stats.sessions.reduce((acc, session) => {
-        const window = session.sleepWindow;
-        if (!acc[window]) acc[window] = { sum: 0, count: 0 };
-        acc[window].sum += session.performanceScore;
-        acc[window].count += 1;
-        return acc;
-    }, {}))
-        .filter(([window]) => window !== optimalWindow.window)
+    // BUG FIX: this used to reduce over optimalWindow.stats.sessions — but that
+    // array only contains sessions from the WINNING cluster, so every session
+    // in it already shares the same sleepWindow (that's the definition of how
+    // it ended up in this cluster). Grouping by sleepWindow and then filtering
+    // out the winning window's own key always emptied the result, so this
+    // recommendation could never actually be generated. Now it looks across
+    // all clusters (which we already have full, shrinkage-adjusted stats for)
+    // instead of re-deriving a broken subset from the winner alone.
+    const alternativeWindows = Object.entries(clusters || {})
+        .filter(([window, data]) => window !== optimalWindow.window && data.stats && data.stats.count >= 2)
         .map(([window, data]) => ({
             window,
-            avgPerformance: data.sum / data.count,
-            count: data.count
+            avgPerformance: data.stats.shrunkPerformance,
+            count: data.stats.count
         }))
         .sort((a, b) => b.avgPerformance - a.avgPerformance);
     
-    if (alternativeWindows.length > 0 && alternativeWindows[0].count >= 2) {
+    if (alternativeWindows.length > 0) {
         const altWindow = alternativeWindows[0];
         recommendations.push({
             priority: 'P2',
             timeframe: 'Backup schedule',
             action: `ALTERNATIVE: ${getWindowName(altWindow.window)} WINDOW`,
-            rationale: `When primary window is impossible, this alternative achieves ${altWindow.avgPerformance.toFixed(1)}% performance.`,
+            rationale: `When primary window is impossible, this alternative achieves an estimated ${altWindow.avgPerformance.toFixed(1)}% performance (based on ${altWindow.count} logged nights).`,
             steps: [
                 `Use only when schedule conflicts prevent optimal timing`,
                 `Limit to 2-3 times per week max`,
                 `Return to optimal window as soon as possible`,
                 `Compensate with nap if sleep duration reduced`
             ],
-            expectedImpact: `${Math.round(altWindow.avgPerformance - 70)}% performance (vs ${Math.round(optimalWindow.stats.avgPerformance - 70)}% optimal)`,
+            expectedImpact: `${altWindow.avgPerformance.toFixed(1)}% performance (vs ${optimalWindow.stats.shrunkPerformance.toFixed(1)}% optimal)`,
             scientificBasis: 'Having backup options maintains performance during schedule disruptions'
         });
     }
@@ -44036,21 +44114,37 @@ function calculateCircadianAlignment(optimalWindow) {
 }
 
 // ========== DATA QUALITY CALCULATION ==========
+// Measures the RELIABILITY of the underlying data — how much there is, and
+// how much variety it covers — not how good the person's sleep habits are.
+// (The old version scored duration-proximity-to-7.5h and average performance,
+// which is a sleep-health metric; it just happened to sit in this "Total
+// Sessions / Analyzed / Clusters Found" stats block under a misleading label,
+// so someone with a small but perfectly clean 5-night log could see "Data
+// Quality: poor" purely because their sleep schedule scored badly — nothing
+// to do with the data itself.)
 function calculateDataQuality(scoredSessions) {
-    if (scoredSessions.length < 5) return 'low';
-    
-    const durations = scoredSessions.map(s => s.duration);
-    const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
-    const durationConsistency = 100 - Math.abs(avgDuration - 7.5) * 10;
-    
-    const performanceScores = scoredSessions.map(s => s.performanceScore);
-    const avgPerformance = performanceScores.reduce((a, b) => a + b, 0) / performanceScores.length;
-    
-    const qualityScore = (durationConsistency * 0.4) + (avgPerformance * 0.6);
-    
+    const n = scoredSessions.length;
+    if (n < 5) return 'poor';
+
+    // Sample-size component: more nights = more reliable, diminishing returns
+    // (same curve used for dataConfidence elsewhere, so the language stays
+    // consistent across the page).
+    const sampleScore = calculateDataConfidence(n); // 0-100
+
+    // Coverage component: if every session has nearly the same bedtime, the
+    // model has no way to compare windows against each other — some spread
+    // in bedtimes (up to a point) means more of the analysis is grounded in
+    // actual comparisons rather than a single repeated data point.
+    const bedtimes = scoredSessions.map(s => s.bedtimeHour);
+    const shifted = bedtimes.map(h => (h < 12 ? h + 24 : h)); // handle midnight wraparound
+    const spread = Math.max(...shifted) - Math.min(...shifted);
+    const coverageScore = Math.min(100, spread * 20); // 5h+ of spread = full credit
+
+    const qualityScore = sampleScore * 0.7 + coverageScore * 0.3;
+
     if (qualityScore >= 80) return 'excellent';
-    if (qualityScore >= 65) return 'good';
-    if (qualityScore >= 50) return 'fair';
+    if (qualityScore >= 60) return 'good';
+    if (qualityScore >= 35) return 'fair';
     return 'poor';
 }
 
@@ -44088,17 +44182,17 @@ function renderOptimalSleepWindow() {
     const sleepSessions = window.sleepSessions || [];
     const studyData = window.dailyStudyData || {};
     
-    if (!sleepSessions || sleepSessions.length < 3) {
+    if (!sleepSessions || sleepSessions.length < 5) {
         return `
             <div class="optimal-sleep-hybrid">
                 <div class="hybrid-header">
                     <h3>🤖 Optimal Sleep Window Detection</h3>
                 </div>
                 <div class="error-state">
-                    <p>Need at least 3 sleep sessions for analysis</p>
+                    <p>Need at least 5 sleep sessions for heuristic scoring analysis</p>
                     <div style="margin-top: 20px; font-size: 0.9rem; color: rgba(var(--os-line-rgb),0.6);">
                         <p>📊 You have: ${sleepSessions.length} sleep sessions</p>
-                        <p>🎯 Required: 5+ for full heuristic scoring, 3+ for basic analysis</p>
+                        <p>🎯 Required: 5+ sessions before the scoring model has enough nights to work with</p>
                     </div>
                     <button onclick="location.reload()" style="
                         margin-top: 24px;
@@ -44162,7 +44256,7 @@ function renderOptimalSleepWindow() {
                     </div>
                     <div class="optimal-score">
                         <span class="score-badge">Performance</span>
-                        <span>${optimalWindow.stats.avgPerformance}%</span>
+                        <span>${optimalWindow.stats.shrunkPerformance}%${Math.abs(optimalWindow.stats.shrunkPerformance - optimalWindow.stats.avgPerformance) >= 1 ? ` <span style="opacity:0.6; font-size:0.85em;" title="Raw average of your ${optimalWindow.stats.count} logged night(s) in this window, before adjusting for small-sample noise">(${optimalWindow.stats.avgPerformance}% raw)</span>` : ''}</span>
                         <span style="margin: 0 8px;">•</span>
                         <span class="score-badge">Consistency</span>
                         <span>${optimalWindow.stats.consistency.toFixed(0)}%</span>
@@ -44197,12 +44291,12 @@ function renderOptimalSleepWindow() {
                         <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-bottom: 12px;">🎯 OPTIMAL</div>
                         <div style="font-size: 1.8rem; font-weight: bold; color: #10b981; margin-bottom: 8px;">${formatHour(optimalWindow.stats.avgBedtime)} → ${formatHour(optimalWindow.stats.avgWakeTime)}</div>
                         <div style="color: rgba(255,255,255,0.85); margin-bottom: 8px;">${optimalWindow.stats.avgDuration.toFixed(1)}h sleep</div>
-                        <div style="color: #10b981; font-weight: bold;">${optimalWindow.stats.avgPerformance}% performance</div>
+                        <div style="color: #10b981; font-weight: bold;">${optimalWindow.stats.shrunkPerformance}% performance</div>
                     </div>
                 </div>
                 
                 <!-- Improvement Potential -->
-                ${optimalWindow.stats.avgPerformance > currentPattern.performance ? `
+                ${optimalWindow.stats.shrunkPerformance > currentPattern.performance ? `
                     <div style="
                         background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
                         border: 2px solid rgba(16, 185, 129, 0.3);
@@ -44212,7 +44306,7 @@ function renderOptimalSleepWindow() {
                         margin-bottom: 32px;
                     ">
                         <div style="font-size: 1.2rem; font-weight: bold; color: #10b981; margin-bottom: 8px;">
-                            📈 ${Math.round(optimalWindow.stats.avgPerformance - currentPattern.performance)}% Performance Improvement Available
+                            📈 ${Math.round(optimalWindow.stats.shrunkPerformance - currentPattern.performance)}% Performance Improvement Available
                         </div>
                         <div style="color: rgba(var(--os-line-rgb),0.85);">
                             Switching to optimal window could boost your sleep performance significantly
@@ -44226,12 +44320,12 @@ function renderOptimalSleepWindow() {
             <div class="clusters-grid">
                 ${Object.entries(clusters)
                     .filter(([_, data]) => data.stats !== null && data.stats.count >= 2)
-                    .sort((a, b) => b[1].stats.avgPerformance - a[1].stats.avgPerformance)
+                    .sort((a, b) => b[1].stats.shrunkPerformance - a[1].stats.shrunkPerformance)
                     .map(([window, data], index) => {
                         const isBest = window === optimalWindow.window;
                         const stats = data.stats;
                         const cardClass = isBest ? 'best' : 
-                                        stats.avgPerformance >= 70 ? 'good' : 'poor';
+                                        stats.shrunkPerformance >= 70 ? 'good' : 'poor';
                         
                         const timeRanges = {
                             'early_bird': '8pm-10pm',
@@ -44251,8 +44345,8 @@ function renderOptimalSleepWindow() {
                                 <div class="cluster-stats">
                                     <div class="cluster-stat">
                                         <span class="stat-label">Performance:</span>
-                                        <span class="stat-value" style="color: ${stats.avgPerformance >= 70 ? '#10b981' : stats.avgPerformance >= 60 ? '#f59e0b' : '#ef4444'}">
-                                            ${stats.avgPerformance}%
+                                        <span class="stat-value" style="color: ${stats.shrunkPerformance >= 70 ? '#10b981' : stats.shrunkPerformance >= 60 ? '#f59e0b' : '#ef4444'}" title="Raw sample average: ${stats.avgPerformance}%">
+                                            ${stats.shrunkPerformance}%
                                         </span>
                                     </div>
                                     <div class="cluster-stat">
