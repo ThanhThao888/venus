@@ -42696,6 +42696,24 @@ const optimalSleepHybridCSS = `
         50% { box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3), 0 0 30px rgba(16, 185, 129, 0.6); }
     }
     
+    /* Cells backed by only one session are much less reliable than cells averaged
+       over several nights — dim them slightly and mark with a corner dot so that
+       isn't lost in the color alone. */
+    .heatmap-cell.low-confidence {
+        opacity: 0.6;
+    }
+    .heatmap-cell.low-confidence::after {
+        content: '';
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.7;
+    }
+    
     .heatmap-legend {
         display: flex;
         justify-content: center;
@@ -43586,6 +43604,20 @@ function buildDynamicHourRange(scoredSessions, key, isBedtime) {
     }
 }
 
+// Circular hour distance: bedtimes/wake times wrap at midnight, so 23h and 0h
+// are 1 hour apart, not 23. Plain Math.abs() gets this wrong at the boundary.
+function circularHourDistance(a, b) {
+    const diff = Math.abs(a - b) % 24;
+    return Math.min(diff, 24 - diff);
+}
+
+// Duration between a bedtime hour and wake hour, always wrapping forward
+// (a bedtime is always "before" the following wake-up), regardless of what
+// clock hour the bedtime happens to fall on.
+function hoursBetween(bedHour, wakeHour) {
+    return wakeHour > bedHour ? wakeHour - bedHour : (24 - bedHour) + wakeHour;
+}
+
 function generateEfficiencyHeatmap(scoredSessions) {
     const heatmap = [];
     const bedtimeHours = buildDynamicHourRange(scoredSessions, 'bedtimeHour', true);
@@ -43604,7 +43636,7 @@ function generateEfficiencyHeatmap(scoredSessions) {
                 scoreSum: 0,
                 matchCount: 0,
                 level: 'empty',
-                duration: bedHour >= 20 ? (24 - bedHour) + wakeHour : wakeHour - bedHour
+                duration: hoursBetween(bedHour, wakeHour)
             });
         });
         heatmap.push(row);
@@ -43615,34 +43647,48 @@ function generateEfficiencyHeatmap(scoredSessions) {
         const bedtime = Math.floor(session.bedtimeHour);
         const wakeup = Math.floor(session.wakeHour);
         
-        // Find matching cell
-        for (let i = 0; i < wakeHours.length; i++) {
-            if (Math.abs(wakeup - wakeHours[i]) <= 1) {
-                for (let j = 0; j < bedtimeHours.length; j++) {
-                    if (Math.abs(bedtime - bedtimeHours[j]) <= 1) {
-                        const cell = heatmap[i].cells[j];
-                        // Add score weighted by duration match; accumulate into scoreSum
-                        // and track matchCount so we can average correctly below.
-                        const durationMatch = 100 - Math.abs(cell.duration - session.duration) * 10;
-                        const performanceWeight = session.performanceScore / 100;
-                        cell.scoreSum += durationMatch * performanceWeight * 0.8;
-                        cell.matchCount += 1;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
+        // Assign this session to its NEAREST bedtime bucket and nearest wake bucket
+        // (not just the first bucket within 1 hour — with hourly buckets, "first within
+        // range" can pick a cell that's a full hour further away than the true closest
+        // one). Distances are circular so a 23h bedtime correctly sits next to 0h.
+        let bestWakeIdx = -1, bestWakeDist = Infinity;
+        wakeHours.forEach((wh, i) => {
+            const d = circularHourDistance(wakeup, wh);
+            if (d <= 1 && d < bestWakeDist) { bestWakeDist = d; bestWakeIdx = i; }
+        });
+        if (bestWakeIdx === -1) return;
+        
+        let bestBedIdx = -1, bestBedDist = Infinity;
+        bedtimeHours.forEach((bh, j) => {
+            const d = circularHourDistance(bedtime, bh);
+            if (d <= 1 && d < bestBedDist) { bestBedDist = d; bestBedIdx = j; }
+        });
+        if (bestBedIdx === -1) return;
+        
+        const cell = heatmap[bestWakeIdx].cells[bestBedIdx];
+        // Score = how closely this session's actual duration matches the cell's
+        // nominal duration, weighted by the session's overall performance score.
+        // Both factors are clamped to [0, 100] before combining so a big duration
+        // mismatch can't push the contribution negative and silently suppress data.
+        const durationMatch = Math.max(0, Math.min(100, 100 - Math.abs(cell.duration - session.duration) * 10));
+        const performanceWeight = Math.max(0, Math.min(100, session.performanceScore)) / 100;
+        cell.scoreSum += durationMatch * performanceWeight;
+        cell.matchCount += 1;
     });
     
-    // Normalize (true average per cell, not a fixed divisor) and classify cells
+    // Normalize (true average per cell, not a fixed divisor) and classify cells.
+    // Thresholds line up with the legend/popup (Excellent starts at 90) — nothing
+    // artificially caps the achievable score below that anymore.
     heatmap.forEach(row => {
         row.cells.forEach(cell => {
             if (cell.matchCount > 0) {
-                cell.score = Math.min(100, Math.round(cell.scoreSum / cell.matchCount));
+                cell.score = Math.max(0, Math.min(100, Math.round(cell.scoreSum / cell.matchCount)));
                 cell.level = cell.score < 60 ? 'low' :
                             cell.score < 75 ? 'medium' :
                             cell.score < 90 ? 'good' : 'excellent';
+                // Single-session cells are far less reliable than ones backed by
+                // several nights — flag them so the UI can show that distinction.
+                cell.lowConfidence = cell.matchCount === 1;
             }
         });
     });
@@ -44229,15 +44275,16 @@ function renderOptimalSleepWindow() {
                                 const wakeup = `${row.wakeHour}:00`;
                                 const duration = `${cell.duration}h`;
                                 const score = `${cell.score}%`;
+                                const sessions = cell.matchCount;
                                 
                                 return `
-                                    <div class="heatmap-cell ${cell.level} ${isCurrent ? 'current' : ''} ${isOptimal ? 'recommended' : ''}" 
-                                        title="Bedtime: ${bedtime} | Wake-up: ${wakeup} | Duration: ${duration} | Score: ${score}"
-                                        onclick="(function(e){e.stopPropagation();console.log('🎯 CLICK!');window.showHeatmapPopup('${bedtime}', '${wakeup}', '${duration}', '${score}');})(event)"
+                                    <div class="heatmap-cell ${cell.level} ${isCurrent ? 'current' : ''} ${isOptimal ? 'recommended' : ''} ${cell.lowConfidence ? 'low-confidence' : ''}" 
+                                        title="Bedtime: ${bedtime} | Wake-up: ${wakeup} | Duration: ${duration} | Score: ${score} | Sessions: ${sessions}"
+                                        onclick="(function(e){e.stopPropagation();console.log('🎯 CLICK!');window.showHeatmapPopup('${bedtime}', '${wakeup}', '${duration}', '${score}', '${sessions}');})(event)"
                                         style="cursor: pointer !important; pointer-events: auto !important;"
                                         onmouseover="this.style.transform='scale(1.15)';this.style.zIndex='10';"
                                         onmouseout="this.style.transform='scale(1)';this.style.zIndex='1';">
-                                        ${cell.score > 0 ? cell.score : '·'}
+                                        ${cell.matchCount > 0 ? cell.score : '·'}
                                     </div>
                                 `;
                             }).join('')}
@@ -44268,6 +44315,10 @@ function renderOptimalSleepWindow() {
                         <div class="legend-item">
                             <div class="legend-color" style="border: 2px solid #10b981; box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);"></div>
                             <span>🎯 Optimal</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="position:relative; background: rgba(100,100,100,0.25); opacity:0.6;"><div style="position:absolute; top:2px; right:2px; width:5px; height:5px; border-radius:50%; background:currentColor;"></div></div>
+                            <span>Dimmed = only 1 night of data</span>
                         </div>
                     </div>
 
@@ -44421,7 +44472,7 @@ return html;
 
 
 // ========== SHOW HEATMAP POPUP ==========
-function showHeatmapPopup(bedtime, wakeup, duration, score) {
+function showHeatmapPopup(bedtime, wakeup, duration, score, sessions) {
     // ✅ Remove existing popup if any
     const existingPopup = document.getElementById('heatmapPopup');
     if (existingPopup) existingPopup.remove();
@@ -44519,6 +44570,14 @@ function showHeatmapPopup(bedtime, wakeup, duration, score) {
                 </span>
                 <span style="font-weight: 700; font-size: 1.1rem; color: ${scoreColor};">${score}</span>
             </div>
+            
+            ${sessions !== undefined ? `
+            <div style="display: flex; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px;">
+                <span style="color: rgba(255,255,255,0.7); display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2rem;">🗂️</span> Based on
+                </span>
+                <span style="font-weight: 600; color: #fff;">${sessions} night${sessions === '1' ? '' : 's'}${sessions === '1' ? ' (low confidence)' : ''}</span>
+            </div>` : ''}
         </div>
         
         <!-- Recommendation Box -->
@@ -44781,8 +44840,9 @@ document.addEventListener('click', function(e) {
             const wakeup = parts[1].replace('Wake-up: ', '');
             const duration = parts[2].replace('Duration: ', '');
             const score = parts[3].replace('Score: ', '');
+            const sessions = parts[4] ? parts[4].replace('Sessions: ', '') : undefined;
             
-            showHeatmapPopup(bedtime, wakeup, duration, score);
+            showHeatmapPopup(bedtime, wakeup, duration, score, sessions);
         }
     }
 });
