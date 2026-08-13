@@ -42980,6 +42980,17 @@ const optimalSleepHybridCSS = `
         transform: translateY(-50%);
     }
     
+    /* Wraps the timeline bars with the exact same inset as .timeline-axis, so a
+       bar's left/width (in %) lines up with the correct point on the axis/markers
+       below instead of being positioned in unrelated, disconnected coordinates. */
+    .timeline-track {
+        position: absolute;
+        top: 0;
+        left: 40px;
+        right: 40px;
+        bottom: 0;
+    }
+    
     /* Time Markers */
     .timeline-markers {
         display: flex;
@@ -43014,43 +43025,44 @@ const optimalSleepHybridCSS = `
         box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     }
     
-    /* Enhanced Melatonin Bar */
+    /* Enhanced Melatonin Bar — 9:30-11:30 PM = 4.17%-20.83% of the 9PM-9AM axis */
     .timeline-bar.melatonin { 
         background: linear-gradient(90deg, rgba(139, 92, 246, 0.7), rgba(139, 92, 246, 0.4)); 
         color: #e2e8f0; 
         top: 20px; 
-        width: 140px; 
-        left: 40px; 
+        left: 4.17%; 
+        width: 16.67%; 
         border: 2px solid rgba(139, 92, 246, 0.5);
     }
     
-    /* Enhanced Deep Sleep Bar */
+    /* Enhanced Deep Sleep Bar — 11PM-3AM = 16.67%-50% of the axis */
     .timeline-bar.deep-sleep { 
         background: linear-gradient(90deg, rgba(59, 130, 246, 0.7), rgba(59, 130, 246, 0.4)); 
         color: #e2e8f0; 
         top: 80px; 
-        width: 180px; 
-        left: 100px; 
+        left: 16.67%; 
+        width: 33.33%; 
         border: 2px solid rgba(59, 130, 246, 0.5);
     }
     
-    /* Enhanced REM Sleep Bar */
+    /* Enhanced REM Sleep Bar — 5AM-7AM = 66.67%-83.33% of the axis */
     .timeline-bar.rem-sleep { 
         background: linear-gradient(90deg, rgba(16, 185, 129, 0.7), rgba(16, 185, 129, 0.4)); 
         color: #e2e8f0; 
         top: 140px; 
-        width: 160px; 
-        left: 160px; 
+        left: 66.67%; 
+        width: 16.67%; 
         border: 2px solid rgba(16, 185, 129, 0.5);
     }
     
-    /* Enhanced Your Optimal Bar */
+    /* Enhanced Your Optimal Bar — left/width are set inline per-user from their
+       actual computed optimal bedtime/duration, not a fixed constant, so this bar
+       genuinely lines up with the reference bands above instead of floating at an
+       arbitrary, unrelated spot. */
     .timeline-bar.your-optimal { 
         background: linear-gradient(90deg, rgba(245, 158, 11, 0.8), rgba(245, 158, 11, 0.5)); 
         color: #fef3c7; 
         top: 200px; 
-        width: 130px; 
-        left: 80px; 
         border: 3px solid #f59e0b;
         box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
         animation: optimal-pulse 3s infinite;
@@ -43183,11 +43195,6 @@ const optimalSleepHybridCSS = `
             padding: 0 15px;
             min-width: 100px;
         }
-        
-        .timeline-bar.melatonin { left: 20px; width: 120px; }
-        .timeline-bar.deep-sleep { left: 80px; width: 150px; }
-        .timeline-bar.rem-sleep { left: 120px; width: 130px; }
-        .timeline-bar.your-optimal { left: 60px; width: 110px; }
         
         .alignment-score-box {
             position: relative;
@@ -43955,6 +43962,32 @@ function getWindowName(window) {
 }
 
 // ========== CIRCADIAN ALIGNMENT CALCULATION ==========
+// ========== CIRCADIAN TIMELINE BAR POSITIONING ==========
+// The timeline visualizes a fixed 9PM -> 9AM (21:00 -> 33:00 on a linear 12h
+// scale) window. Reference bands (melatonin/deep sleep/REM) are constants and
+// live in CSS, but "Your Optimal Window" must reflect this user's actual
+// computed bedtime/duration, or the bar is just decoration with a number on it.
+function circadianAxisLinearHour(h) {
+    // Hours before 9PM belong to "the same night, after midnight" on this axis
+    // (e.g. 3AM -> 27), so they land to the right of 9PM instead of the left.
+    return h < 21 ? h + 24 : h;
+}
+
+function circadianOptimalBarStyle(avgBedtime, avgDuration) {
+    const AXIS_START = 21; // 9PM
+    const AXIS_SPAN = 12;  // through 9AM
+    const startLinear = circadianAxisLinearHour(avgBedtime);
+    const endLinear = startLinear + avgDuration;
+    let leftPct = ((startLinear - AXIS_START) / AXIS_SPAN) * 100;
+    let rightPct = ((endLinear - AXIS_START) / AXIS_SPAN) * 100;
+    // Clamp to the visible axis — an unusually early/late bedtime can fall
+    // outside the 9PM-9AM reference window this timeline shows.
+    leftPct = Math.max(0, Math.min(100, leftPct));
+    rightPct = Math.max(0, Math.min(100, rightPct));
+    const widthPct = Math.max(4, rightPct - leftPct); // keep a minimum visible width
+    return { left: leftPct, width: widthPct };
+}
+
 function calculateCircadianAlignment(optimalWindow) {
     const targetBedtime = optimalWindow.stats.avgBedtime;
     
@@ -44349,6 +44382,7 @@ function renderOptimalSleepWindow() {
                     <div class="timeline-axis"></div>
                     
                     <!-- Timeline Bars -->
+                    <div class="timeline-track">
                     <div class="timeline-bar melatonin">
                         <span class="timeline-icon">🌜</span>
                         Melatonin Window (9:30-11:30 PM)
@@ -44367,10 +44401,15 @@ function renderOptimalSleepWindow() {
                         <div class="timeline-badge">Essential</div>
                     </div>
                     
-                    <div class="timeline-bar your-optimal">
+                    ${(() => {
+                        const pos = circadianOptimalBarStyle(optimalWindow.stats.avgBedtime, optimalWindow.stats.avgDuration);
+                        return `
+                    <div class="timeline-bar your-optimal" style="left:${pos.left}%; width:${pos.width}%;" title="${formatHour(optimalWindow.stats.avgBedtime)} - ${formatHour(optimalWindow.stats.avgBedtime + optimalWindow.stats.avgDuration)}">
                         <span class="timeline-icon">🎯</span>
                         Your Optimal Window
                         <div class="timeline-badge">${optimalWindow.circadianAlignment}%</div>
+                    </div>`;
+                    })()}
                     </div>
                     
                     <!-- Time Markers -->
