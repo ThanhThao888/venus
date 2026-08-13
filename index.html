@@ -18677,7 +18677,15 @@ window.DBP={
             </div>
 
             <!-- Sleep Chart -->
-            <div class="chart-container" style="margin: 20px 0;">
+            <div style="display:flex; justify-content:flex-end; gap:6px; margin: 20px 0 6px;">
+                <button class="sleep-chart-range-btn" data-range="7" onclick="setSleepChartRange(7)"
+                    style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--primary); color:#fff; cursor:pointer;">7đ</button>
+                <button class="sleep-chart-range-btn" data-range="14" onclick="setSleepChartRange(14)"
+                    style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">14đ</button>
+                <button class="sleep-chart-range-btn" data-range="30" onclick="setSleepChartRange(30)"
+                    style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">30đ</button>
+            </div>
+            <div class="chart-container" style="margin: 0 0 20px;">
                 <canvas id="sleepChart"></canvas>
             </div>
 
@@ -32182,12 +32190,26 @@ document.addEventListener('DOMContentLoaded', function() {
             if (typeof refreshOptimalSleepWindow === 'function') refreshOptimalSleepWindow();
         }
 
+        // Số đêm hiển thị trên Sleep Chart — mặc định 7, người dùng có thể chọn 14/30 để
+        // nhìn xu hướng dài hơn (đặc biệt hữu ích khi so sánh với nợ ngủ/regularity theo tuần).
+        let sleepChartRangeDays = 7;
+
+        function setSleepChartRange(days) {
+            sleepChartRangeDays = days;
+            document.querySelectorAll('.sleep-chart-range-btn').forEach(btn => {
+                const active = Number(btn.dataset.range) === days;
+                btn.style.background = active ? 'var(--primary)' : 'var(--bg-white)';
+                btn.style.color = active ? '#fff' : 'var(--text-dark)';
+            });
+            renderSleepChart();
+        }
+
         function renderSleepChart() {
             const ctx = document.getElementById('sleepChart');
             if (!ctx) return;
             
             const goal = getSleepGoal();
-            const recentSessions = getSortedSleepSessions().slice(-7); // 7 phiên gần nhất, đúng thứ tự thời gian
+            const recentSessions = getSortedSleepSessions().slice(-sleepChartRangeDays); // N phiên gần nhất theo range đã chọn, đúng thứ tự thời gian
             const labels = recentSessions.map(session => {
                 const d = new Date(session.start);
                 const days = ['CN','T2','T3','T4','T5','T6','T7'];
@@ -32257,7 +32279,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     },
                     scales: {
                         x: {
-                            ticks: { color: '#666' }
+                            ticks: { color: '#666', autoSkip: true, maxRotation: 45, minRotation: sleepChartRangeDays > 14 ? 45 : 0 }
                         },
                         y: {
                             beginAtZero: true,
