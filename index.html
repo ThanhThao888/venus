@@ -9522,6 +9522,25 @@
 }
 #insomniaCollapseIcon:hover { background: rgba(var(--ia-line-rgb),0.18); }
 
+.insomnia-details-toggle-btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px;
+    border-radius: 9px;
+    border: 1px solid rgba(var(--ia-line-rgb),0.18);
+    background: rgba(var(--ia-line-rgb),0.06);
+    color: var(--ia-text);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+}
+.insomnia-details-toggle-btn:hover {
+    background: rgba(var(--ia-line-rgb),0.13);
+    border-color: rgba(var(--ia-line-rgb),0.3);
+}
+.insomnia-details-toggle-btn:active { transform: scale(0.98); }
+
 .severity-badge {
     padding: 3px 11px;
     border-radius: 20px;
@@ -9597,16 +9616,24 @@
     border-radius: 12px;
     text-align: center;
     border: 1px solid rgba(var(--ia-line-rgb),0.1);
-    transition: transform 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+    border-left: 3px solid rgba(var(--ia-line-rgb),0.1);
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
     backdrop-filter: blur(6px);
     min-width: 0;
 }
+
+.insomnia-card.status-good  { border-left-color: #1dd1a1; }
+.insomnia-card.status-warn  { border-left-color: #f39c12; }
+.insomnia-card.status-bad   { border-left-color: #ff6b6b; }
 
 .insomnia-card:hover {
     transform: translateY(-2px);
     background: rgba(var(--ia-line-rgb),0.1);
     border-color: rgba(var(--ia-line-rgb),0.22);
 }
+.insomnia-card.status-good:hover  { border-left-color: #1dd1a1; }
+.insomnia-card.status-warn:hover  { border-left-color: #f39c12; }
+.insomnia-card.status-bad:hover   { border-left-color: #ff6b6b; }
 
 .insomnia-card h4 {
     margin: 0 0 4px 0;
@@ -9615,6 +9642,10 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
 }
 
 .insomnia-value {
@@ -38649,7 +38680,20 @@ function toggleInsomniaExtraDetails() {
     insomniaDetailsExpanded = !insomniaDetailsExpanded;
     const box = document.getElementById('insomniaExtraDetails');
     const btn = document.getElementById('insomniaDetailsToggleBtn');
-    if (box) box.style.display = insomniaDetailsExpanded ? 'block' : 'none';
+    if (box) {
+        if (insomniaDetailsExpanded) {
+            box.style.display = 'block';
+            box.style.opacity = '0';
+            requestAnimationFrame(() => {
+                box.style.transition = 'opacity 0.25s ease';
+                box.style.opacity = '1';
+            });
+        } else {
+            box.style.transition = 'opacity 0.15s ease';
+            box.style.opacity = '0';
+            setTimeout(() => { if (!insomniaDetailsExpanded) box.style.display = 'none'; }, 150);
+        }
+    }
     if (btn) btn.innerHTML = insomniaDetailsExpanded ? '▲ Thu gọn' : '▼ Xem phân tích chi tiết';
 }
 
@@ -39383,6 +39427,7 @@ function renderInsomniaAnalysis() {
     
     // Helper: format severity key to readable label
     const formatSeverity = (s) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const cardStatus = (level) => level === 'bad' ? 'status-bad' : level === 'warn' ? 'status-warn' : 'status-good';
     
     const trend = analyzeSleepTrend();
     const avgQuality = calculateAverageQuality();
@@ -39394,29 +39439,29 @@ function renderInsomniaAnalysis() {
             <div class="insomnia-header" style="cursor:pointer;user-select:none;" onclick="toggleInsomniaCard()">
                 <div>
                     <h3>😴 Insomnia Pattern Analysis</h3>
-                    <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
-                        <span style="font-size:0.78rem;color:rgba(240,240,245,0.5);">${sleepSessions.length} sessions tracked</span>
+                    <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+                        <span style="font-size:0.74rem;background:rgba(var(--ia-line-rgb),0.08);padding:3px 9px;border-radius:10px;color:rgba(var(--ia-fg-rgb),0.6);">📊 ${sleepSessions.length} sessions</span>
                         <span class="insomnia-trend trend-${trend.trend}">${trendEmoji} ${trendLabel}${Math.abs(trend.change) >= 0.3 ? ` (${trend.change > 0 ? '+' : ''}${trend.change}h)` : ''}</span>
-                        ${avgQuality ? `<span style="font-size:0.78rem;background:rgba(255,255,255,0.08);padding:3px 9px;border-radius:10px;color:rgba(240,240,245,0.7);">⭐ Avg quality ${avgQuality}/5</span>` : ''}
+                        ${avgQuality ? `<span style="font-size:0.74rem;background:rgba(var(--ia-line-rgb),0.08);padding:3px 9px;border-radius:10px;color:rgba(var(--ia-fg-rgb),0.6);">⭐ ${avgQuality}/5</span>` : ''}
                     </div>
                 </div>
                 <div class="insomnia-header-badges">
                     <span class="severity-badge ${severity.severityLevel}">
-                        ${formatSeverity(severity.severityLevel)}
+                        ${severity.severityLevel === 'severe' ? '🔴' : severity.severityLevel === 'moderate_severe' || severity.severityLevel === 'moderate' ? '🟠' : severity.severityLevel === 'mild' ? '🔵' : '🟢'} ${formatSeverity(severity.severityLevel)}
                     </span>
                     ${penalty.totalPenalty > 30 ? `
                         <span class="risk-badge extreme-risk">
                             ⚠️ ${penalty.penaltyScore}% Penalty
                         </span>
                     ` : ''}
-                    <span id="insomniaCollapseIcon" style="font-size:0.85rem;color:rgba(240,240,245,0.6);transition:transform 0.25s;margin-left:2px;transform:${insomniaCollapsed ? 'rotate(180deg)' : 'rotate(0deg)'};">▲</span>
+                    <span id="insomniaCollapseIcon" style="font-size:0.85rem;color:rgba(var(--ia-fg-rgb),0.6);transition:transform 0.25s;margin-left:2px;transform:${insomniaCollapsed ? 'rotate(180deg)' : 'rotate(0deg)'};">▲</span>
                 </div>
             </div>
 
             <div id="insomniaBody" style="${insomniaCollapsed ? 'display:none;' : 'display:block;'}">
             <div class="insomnia-grid">
-                <div class="insomnia-card">
-                    <h4>Avg. Sleep Duration</h4>
+                <div class="insomnia-card ${cardStatus(analysis.sleepFragmentation.averageDailyDuration < 6 ? 'bad' : analysis.sleepFragmentation.averageDailyDuration < 7 ? 'warn' : 'good')}">
+                    <h4>🕐 Avg. Sleep Duration</h4>
                     <div class="insomnia-value">${analysis.sleepFragmentation.averageDailyDuration}h</div>
                     <div class="insomnia-description">
                         ${analysis.sleepFragmentation.averageDailyDuration < 6 ? 
@@ -39426,8 +39471,8 @@ function renderInsomniaAnalysis() {
                     </div>
                 </div>
                 
-                <div class="insomnia-card">
-                    <h4>Sleep Fragmentation</h4>
+                <div class="insomnia-card ${cardStatus(analysis.sleepFragmentation.isFragmented ? 'bad' : 'good')}">
+                    <h4>🧩 Sleep Fragmentation</h4>
                     <div class="insomnia-value">${analysis.sleepFragmentation.fragmentationScore}%</div>
                     <div class="insomnia-description">
                         ${analysis.sleepFragmentation.isFragmented ? 
@@ -39436,8 +39481,8 @@ function renderInsomniaAnalysis() {
                     </div>
                 </div>
                 
-                <div class="insomnia-card">
-                    <h4>Circadian Consistency</h4>
+                <div class="insomnia-card ${cardStatus(analysis.circadianDisruption.circadianDisruption === 'severe' ? 'bad' : analysis.circadianDisruption.circadianDisruption === 'moderate' ? 'warn' : 'good')}">
+                    <h4>🌗 Circadian Consistency</h4>
                     <div class="insomnia-value">${analysis.circadianDisruption.bedtimeConsistency}%</div>
                     <div class="insomnia-description">
                         ${analysis.circadianDisruption.circadianDisruption === 'severe' ? 
@@ -39447,8 +39492,8 @@ function renderInsomniaAnalysis() {
                     </div>
                 </div>
                 
-                <div class="insomnia-card penalty-card">
-                    <h4>Sleep Penalty Score</h4>
+                <div class="insomnia-card penalty-card ${cardStatus(penalty.penaltyLevel === 'severe' ? 'bad' : penalty.penaltyLevel === 'moderate' ? 'warn' : 'good')}">
+                    <h4>⚠️ Sleep Penalty Score</h4>
                     <div class="insomnia-value">${penalty.penaltyScore}%</div>
                     <div class="insomnia-description">
                         ${penalty.penaltyLevel === 'severe' ? 
@@ -39476,7 +39521,7 @@ function renderInsomniaAnalysis() {
             ` : ''}
 
             <button type="button" id="insomniaDetailsToggleBtn" onclick="toggleInsomniaExtraDetails()"
-                style="width:100%; margin-top:10px; padding:8px; border-radius:9px; border:1px solid rgba(var(--ia-line-rgb),0.18); background:rgba(var(--ia-line-rgb),0.06); color:var(--ia-text); font-size:0.78rem; font-weight:600; cursor:pointer;">
+                class="insomnia-details-toggle-btn">
                 ${insomniaDetailsExpanded ? '▲ Thu gọn' : '▼ Xem phân tích chi tiết'}
             </button>
 
@@ -39555,7 +39600,7 @@ function renderInsomniaAnalysis() {
         html += `
             <div class="insomnia-type-breakdown">
                 <div class="breakdown-label">Insomnia Pattern Types Detected</div>
-                <div style="font-size:0.9rem;color:rgba(240,240,245,0.85);margin-bottom:12px;">${insomniaType.description || 'No specific dominant pattern'}</div>
+                <div style="font-size:0.78rem;color:rgba(var(--ia-fg-rgb),0.85);margin-bottom:8px;">${insomniaType.description || 'No specific dominant pattern'}</div>
                 <div class="type-breakdown-grid">
                     ${Object.entries(insomniaType.percentages).map(([type, percent]) => `
                         <div class="type-stat">
@@ -52490,4 +52535,3 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 <!-- END SECURE VAULT MODULE -->
 
 </body>
-  
