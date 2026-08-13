@@ -43318,7 +43318,7 @@ function findOptimalSleepWindow(sleepSessions = [], studyData = {}) {
             metadata: {
                 totalSessions: sleepSessions.length,
                 analyzedSessions: scoredSessions.length,
-                clustersFound: Object.keys(clusters).filter(k => clusters[k] && clusters[k].count >= 2).length,
+                clustersFound: Object.keys(clusters).filter(k => clusters[k] && clusters[k].stats && clusters[k].stats.count >= 2).length,
                 dataQuality: calculateDataQuality(scoredSessions)
             }
         };
@@ -43811,8 +43811,8 @@ function generateOptimalityInsights(optimalWindow, clusters, scoredSessions) {
             type: 'circadian_aligned',
             priority: 'low',
             icon: '🌙',
-            title: `${Math.round(circadianAlignmentRate)}% Circadian Alignment`,
-            message: `Most of your sleep aligns well with natural circadian rhythms, optimizing sleep quality.`,
+            title: `${Math.round(circadianAlignmentRate)}% of Nights in Circadian Window`,
+            message: `Most of your logged nights (${Math.round(circadianAlignmentRate)}%) had bedtimes in the natural circadian window, optimizing sleep quality.`,
             impact: 'low'
         });
     } else {
@@ -43820,8 +43820,8 @@ function generateOptimalityInsights(optimalWindow, clusters, scoredSessions) {
             type: 'circadian_misaligned',
             priority: 'medium',
             icon: '🌅',
-            title: `${Math.round(circadianAlignmentRate)}% Circadian Alignment`,
-            message: `Consider adjusting bedtime to better align with natural circadian rhythms for improved sleep quality.`,
+            title: `${Math.round(circadianAlignmentRate)}% of Nights in Circadian Window`,
+            message: `Only ${Math.round(circadianAlignmentRate)}% of your logged nights had a bedtime in the natural circadian window. Consider adjusting bedtime to better align with natural circadian rhythms for improved sleep quality.`,
             impact: 'medium'
         });
     }
@@ -44056,17 +44056,29 @@ function calculateDataQuality(scoredSessions) {
 
 // ========== UTILITY FUNCTIONS ==========
 function formatHour(hour) {
-    const h = Math.floor(hour) % 24;
-    const m = Math.round((hour % 1) * 60);
-    const period = h >= 12 ? 'PM' : 'AM';
-    const displayHour = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+    // Normalize to [0, 24) first. Plain JS `%` keeps the sign of the dividend,
+    // so e.g. -4.92 % 24 === -4.92, not 19.08 — that's what produced garbage
+    // like "-5:-52AM" for "8 hours before a 3:08AM bedtime". The double-mod
+    // trick (((x % 24) + 24) % 24) always lands in [0, 24) regardless of sign.
+    const normalized = ((hour % 24) + 24) % 24;
+    const h = Math.floor(normalized);
+    let m = Math.round((normalized - h) * 60);
+    // Rounding minutes can occasionally roll up to 60 (e.g. 59.6 -> 60); carry
+    // that into the hour so we never display "x:60".
+    let hh = h;
+    if (m === 60) { m = 0; hh = (hh + 1) % 24; }
+    const period = hh >= 12 ? 'PM' : 'AM';
+    const displayHour = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
     return `${displayHour}:${m.toString().padStart(2, '0')}${period}`;
 }
 
 function formatHour24(hour) {
-    const h = Math.floor(hour) % 24;
-    const m = Math.round((hour % 1) * 60);
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    const normalized = ((hour % 24) + 24) % 24;
+    const h = Math.floor(normalized);
+    let m = Math.round((normalized - h) * 60);
+    let hh = h;
+    if (m === 60) { m = 0; hh = (hh + 1) % 24; }
+    return `${hh.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
 
@@ -44230,9 +44242,10 @@ function renderOptimalSleepWindow() {
                             'irregular': 'Variable'
                         };
                         
+                        const bestBadgeText = stats.count < 5 ? 'BEST (low sample)' : 'BEST';
                         return `
                             <div class="cluster-card ${cardClass}">
-                                ${isBest ? '<div class="cluster-badge">BEST</div>' : ''}
+                                ${isBest ? `<div class="cluster-badge" title="Based on only ${stats.count} logged nights — treat as a tentative signal, not a settled result.">${bestBadgeText}</div>` : ''}
                                 <div class="cluster-name">${window.replace('_', ' ').toUpperCase()}</div>
                                 <div class="cluster-time">${timeRanges[window]}</div>
                                 <div class="cluster-stats">
@@ -44422,14 +44435,15 @@ function renderOptimalSleepWindow() {
                     </div>
                     
                     <!-- Alignment Score -->
-                    <div class="alignment-score-box">
+                    <div class="alignment-score-box" title="How well your recommended bedtime/wake window overlaps the melatonin, deep-sleep, and REM reference bands above — not the same metric as the 'Circadian Alignment' figure in the Insights section, which measures your actual logged nights instead of the recommendation.">
                         <div class="alignment-score-value">${optimalWindow.circadianAlignment}%</div>
                         <div class="alignment-score-label">
-                            ${optimalWindow.circadianAlignment >= 80 ? '✨ Excellent Alignment' :
-                            optimalWindow.circadianAlignment >= 60 ? '✓ Good Alignment' :
-                            optimalWindow.circadianAlignment >= 40 ? '⚡ Moderate Alignment' :
-                            '⚠️ Poor Alignment'}
+                            ${optimalWindow.circadianAlignment >= 80 ? '✨ Excellent Window Fit' :
+                            optimalWindow.circadianAlignment >= 60 ? '✓ Good Window Fit' :
+                            optimalWindow.circadianAlignment >= 40 ? '⚡ Moderate Window Fit' :
+                            '⚠️ Poor Window Fit'}
                         </div>
+                        <div style="font-size:0.65rem; opacity:0.75; margin-top:4px; max-width:140px;">vs. melatonin/deep-sleep/REM bands</div>
                     </div>
                 </div>
             </div>
