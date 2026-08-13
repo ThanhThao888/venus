@@ -30064,8 +30064,33 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // ===== Cognitive Readiness Advisor (#40 Energy-aware task routing) — không phải
-        // công cụ y tế, chỉ là gợi ý dựa trên dữ liệu bạn đã log (nợ ngủ 7đ, SE gần đây,
-        // đều đặn, số lần ngủ rời rạc hôm nay, và circadian trough đơn giản theo giờ hiện tại).
+        // công cụ y tế, chỉ là gợi ý dựa trên dữ liệu bạn đã log. v2 (nâng cấp độ chính xác):
+        //  1) Nợ ngủ tính theo trọng số gần (đêm qua ảnh hưởng nhiều hơn đêm 7 ngày trước —
+        //     đúng tinh thần "sleep pressure cấp tính" của Two-Process Model), thay vì cộng
+        //     dồn phẳng như cũ khiến 1 đêm ngủ bù không "gỡ" được điểm dù đêm qua đã tốt.
+        //  2) Đáy circadian & dip chiều được cá nhân hoá theo giờ dậy trung bình thực tế của
+        //     bạn (nếu có ≥3 đêm dữ liệu), thay vì khung giờ cố định 2–5h/13–15h vốn chỉ đúng
+        //     với người ngủ giờ "chuẩn" — sai hẳn nếu bạn hay thức khuya hoặc lệch múi giờ sinh học.
+        //  3) Sleep inertia: 30–45 phút đầu sau khi thức dậy não chưa "vào guồng" dù điểm tổng
+        //     cao — tách thành cảnh báo riêng để không bị điểm cao che mất.
+        //  4) Tái dùng Wellness auto-tags (caffeine trễ/ăn trễ đêm qua) đã có sẵn cho hệ thống
+        //     tag đêm ngủ, để giải thích vì sao SOL/SE hôm nay có thể không như mong đợi.
+        //  5) Giới hạn tổng điểm trừ từ phân mảnh + SE thấp — hai chỉ số này thường phản ánh
+        //     CÙNG một đêm ngủ rời rạc, cộng dồn không giới hạn sẽ phóng đại mức nghiêm trọng.
+        //  6) Gắn nhãn độ tin cậy khi ít dữ liệu, để không tự tin quá mức với sample nhỏ.
+        function anchoredMeanToClockHour(anchoredValues) {
+            if (!anchoredValues.length) return null;
+            const mean = anchoredValues.reduce((a, b) => a + b, 0) / anchoredValues.length;
+            const clockMin = ((mean % 1440) + 1440) % 1440; // đưa từ không gian anchored (gốc noon) về giờ đồng hồ thật
+            return clockMin / 60;
+        }
+
+        function hourInWindow(h, start, end) {
+            const norm = x => ((x % 24) + 24) % 24;
+            h = norm(h); start = norm(start); end = norm(end);
+            return start <= end ? (h >= start && h < end) : (h >= start || h < end); // xử lý khung vắt qua nửa đêm
+        }
+
         function computeCognitiveReadiness() {
             const sorted = getSortedSleepSessions();
             if (sorted.length === 0) return null;
@@ -30082,6 +30107,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const last7 = dailyTotals.slice(-7);
             const debt7 = last7.reduce((sum, d) => sum + Math.max(0, goal - d), 0);
 
+            // Nợ ngủ trọng số gần: đêm qua trọng số cao nhất, giảm dần ~35%/ngày lùi về quá
+            // khứ. Ngày không có log bị bỏ qua (thiếu dữ liệu ≠ không ngủ), không tính là 0h.
+            let wNum = 0, wDen = 0, missingRecent = 0;
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(now); d.setDate(d.getDate() - i);
+                const key = toLocalDateStr(d);
+                if (!(key in byDate)) { if (i <= 2) missingRecent++; continue; }
+                const w = Math.pow(0.65, i);
+                wNum += Math.max(0, goal - byDate[key]) * w;
+                wDen += w;
+            }
+            const debtWeighted = wDen > 0 ? wNum / wDen : debt7 / 7;
+
             // Phân mảnh hôm nay: đếm số session bắt đầu trong ngày hôm nay theo lịch
             const todayStr = toLocalDateStr(now);
             const fragmentCount = sorted.filter(s => toLocalDateStr(new Date(s.start)) === todayStr).length;
@@ -30095,48 +30133,105 @@ document.addEventListener('DOMContentLoaded', function() {
             let score = 100;
             const factors = [];
 
-            if (debt7 > 0) {
-                score -= Math.min(35, debt7 * 5);
-                if (debt7 > 3) factors.push(`Nợ ngủ 7 ngày đang ở mức ${debt7.toFixed(1)}h`);
+            if (debtWeighted > 0) {
+                score -= Math.min(35, debtWeighted * 9);
+                if (debt7 > 3) factors.push(`Nợ ngủ 7 ngày đang ở mức ${debt7.toFixed(1)}h (đêm gần nhất ảnh hưởng tới điểm hôm nay nhiều hơn các đêm trước đó)`);
             }
+            // Phân mảnh & SE thấp thường phản ánh CÙNG một đêm ngủ rời rạc — giới hạn tổng
+            // điểm trừ ở 32 (thay vì cộng dồn tới 45 như bản cũ) để tránh phóng đại mức độ.
+            let sameNightPenalty = 0;
             if (fragmentCount >= 3) {
-                score -= 25;
+                sameNightPenalty += 25;
                 factors.push(`Ngủ hôm nay chia làm ${fragmentCount} đợt rời rạc — dù tổng giờ có vẻ đủ, ngủ ngắt quãng phục hồi kém hơn ngủ liền mạch`);
             } else if (fragmentCount === 2) {
-                score -= 12;
+                sameNightPenalty += 12;
                 factors.push('Ngủ hôm nay chia làm 2 đợt — phục hồi kém hơn ngủ liền mạch cùng số giờ');
             }
             if (avgSE !== null && avgSE < 75) {
-                score -= 20;
+                sameNightPenalty += 20;
                 factors.push(`SE gần đây chỉ ${avgSE.toFixed(0)}% — giấc ngủ có dấu hiệu phân mảnh`);
             } else if (avgSE !== null && avgSE < 85) {
-                score -= 10;
+                sameNightPenalty += 10;
             }
+            score -= Math.min(32, sameNightPenalty);
+
             if (reg && reg.score > 60) {
                 score -= 10;
                 factors.push(`Giờ ngủ/dậy đang lệch ±${Math.round(reg.score)} phút — nhịp sinh học chưa ổn định`);
             }
 
-            // Circadian trough đơn giản: 2h–5h sáng (đáy sâu nhất) và 13h–15h (dip sau ăn trưa)
+            // Circadian: cá nhân hoá theo giờ dậy trung bình thực tế (Two-Process Model —
+            // đáy nhiệt độ lõi cơ thể thường rơi 2-3h trước giờ dậy quen thuộc, dip chiều
+            // ~6-8h sau khi dậy) nếu có ≥3 đêm dữ liệu gần đây; nếu chưa đủ, dùng khung mặc
+            // định 2-5h/13-15h như bản cũ và nói rõ đây chỉ là ước tính chung.
             let circadianNote = null;
+            let avgWakeHour = null;
+            if (reg && reg.nights >= 3) {
+                const recentNights = sorted.slice(-Math.max(reg.nights, 3));
+                const wakeAnchored = recentNights.map(s => clockMinutesAnchored(s.end));
+                avgWakeHour = anchoredMeanToClockHour(wakeAnchored);
+            }
+            const personalized = avgWakeHour !== null;
+            const troughStart = personalized ? avgWakeHour - 3 : 2;
+            const troughEnd = personalized ? avgWakeHour - 0.5 : 5;
+            const dipStart = personalized ? avgWakeHour + 6 : 13;
+            const dipEnd = personalized ? avgWakeHour + 8 : 15;
+
             if (!isSleeping) {
-                if (nowH >= 2 && nowH < 5) {
+                if (hourInWindow(nowH, troughStart, troughEnd)) {
                     score -= 25;
-                    circadianNote = 'Đang trong khung 2h–5h sáng — đáy circadian sâu nhất, hiệu suất tư duy phức tạp thấp nhất trong ngày dù đã ngủ đủ.';
-                } else if (nowH >= 13 && nowH < 15) {
+                    circadianNote = personalized
+                        ? `Đang ở gần đáy circadian cá nhân hoá theo giờ dậy trung bình của bạn (~${Math.round(avgWakeHour)}h) — hiệu suất tư duy phức tạp thấp nhất dù đã ngủ đủ.`
+                        : 'Đang trong khung 2h–5h sáng (mặc định, chưa đủ dữ liệu để cá nhân hoá) — đáy circadian sâu nhất, hiệu suất tư duy phức tạp thấp nhất trong ngày dù đã ngủ đủ.';
+                } else if (hourInWindow(nowH, dipStart, dipEnd)) {
                     score -= 10;
-                    circadianNote = 'Đang trong khung sau bữa trưa (13h–15h) — dip tự nhiên, không phải dấu hiệu thiếu ngủ.';
+                    circadianNote = personalized
+                        ? `Đang trong dip cá nhân hoá theo giờ dậy trung bình (~${Math.round(dipStart)}h–${Math.round(dipEnd)}h) — dip tự nhiên, không phải dấu hiệu thiếu ngủ.`
+                        : 'Đang trong khung sau bữa trưa (13h–15h, mặc định) — dip tự nhiên, không phải dấu hiệu thiếu ngủ.';
                 }
             }
+
+            // Sleep inertia: 45 phút đầu sau khi thức dậy, cảm giác lơ mơ KHÔNG phản ánh mức
+            // tỉnh táo thật cả ngày — tách riêng khỏi điểm tổng để tránh đánh giá sai lúc vừa dậy.
+            let inertia = false;
+            const lastSession = sorted[sorted.length - 1];
+            if (!isSleeping && lastSession?.end) {
+                const minsSinceWake = (now.getTime() - lastSession.end) / 60000;
+                if (minsSinceWake >= 0 && minsSinceWake < 45) {
+                    inertia = true;
+                    score -= 15;
+                    factors.unshift(`Mới thức dậy ${Math.round(minsSinceWake)} phút trước — sleep inertia còn kéo dài, cảm giác lơ mơ này KHÔNG phản ánh mức tỉnh táo thật của cả ngày, thường hết sau 30-60 phút.`);
+                }
+            }
+
+            // Ngữ cảnh đêm qua: tái dùng Wellness auto-tags (caffeine/ăn trễ) đã có sẵn cho
+            // hệ thống tag đêm ngủ, để lời khuyên bám sát thói quen thực tế của bạn.
+            if (lastSession?.start) {
+                const auto = computeAutoTags(lastSession.start);
+                if (auto.available && (auto.caffeineLate || auto.lateMeal)) {
+                    const effect = getCaffeineLateSOLEffect();
+                    const parts = [];
+                    if (auto.caffeineLate) {
+                        parts.push(effect && effect.n >= 2
+                            ? `caffeine sau cutoff đêm qua (theo dữ liệu của bạn, thường kéo dài thời gian vào giấc ~${Math.round(effect.diffMin)} phút)`
+                            : 'caffeine sau cutoff đêm qua');
+                    }
+                    if (auto.lateMeal) parts.push('ăn trễ gần giờ ngủ');
+                    factors.push(`Đêm qua có ${parts.join(' và ')} — có thể là một phần lý do nếu SOL/SE hôm nay không như mong đợi.`);
+                }
+            }
+
             score = Math.max(0, Math.min(100, Math.round(score)));
 
             const label = score >= 75 ? '🟢 Cao' : score >= 50 ? '🟡 Trung bình' : score >= 25 ? '🟠 Thấp' : '🔴 Rất thấp';
             const color = score >= 75 ? '#10b981' : score >= 50 ? '#f59e0b' : score >= 25 ? '#f97316' : '#ef4444';
 
             let advice;
-            if (fragmentCount >= 2) {
+            if (inertia) {
+                advice = 'Đừng vội đánh giá độ tỉnh táo hôm nay qua cảm giác lúc này — làm việc nhẹ (vệ sinh cá nhân, ăn sáng, đọc lướt) trong 30-45 phút đầu, rồi đánh giá lại trước khi quyết định lịch làm việc nặng.';
+            } else if (fragmentCount >= 2) {
                 advice = 'Ngủ rời rạc hôm nay khiến trí nhớ làm việc (working memory) yếu hơn bình thường dù không buồn ngủ rõ rệt. Né việc cần giữ nhiều thông tin cùng lúc (viết luận văn, phân tích phức tạp) — ưu tiên task đã quen tay, checklist, đọc lướt tài liệu. Nếu bắt buộc làm việc khó, chia đoạn 25 phút, nghỉ 5 phút giữa các đoạn.';
-            } else if (circadianNote && nowH < 5) {
+            } else if (circadianNote && hourInWindow(nowH, troughStart, troughEnd)) {
                 advice = 'Nếu không bắt buộc, tránh học nội dung mới hoặc ra quyết định quan trọng lúc này — để dành cho task đơn giản, lặp lại.';
             } else if (score >= 75) {
                 advice = 'Khung tốt cho việc cần tư duy sâu — làm phần khó nhất của luận văn/task trước, để việc lặt vặt lại sau.';
@@ -30148,7 +30243,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 advice = 'Mức ổn định — làm việc theo kế hoạch bình thường, nhưng vẫn nên xen kẽ task nặng/nhẹ để tránh mệt dồn.';
             }
 
-            return { score, label, color, factors, advice, circadianNote, debt7, fragmentCount, avgSE, reg };
+            const confidence = sorted.length < 5
+                ? 'Sơ bộ — dưới 5 phiên ngủ đã log, độ chính xác còn hạn chế'
+                : missingRecent > 0
+                    ? `Thiếu log ${missingRecent}/3 ngày gần nhất — điểm có thể chưa phản ánh đúng nợ ngủ hiện tại`
+                    : null;
+
+            return { score, label, color, factors, advice, circadianNote, debt7, debtWeighted, fragmentCount, avgSE, reg, inertia, confidence, avgWakeHour };
         }
 
         function renderCognitiveReadiness() {
@@ -30171,6 +30272,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${info.circadianNote ? `<div>🕐 ${info.circadianNote}</div>` : ''}
                 ${factorsHtml}
                 <div style="margin-top:6px; color:var(--primary); font-weight:600;">👉 ${info.advice}</div>
+                ${info.confidence ? `<div style="margin-top:6px; font-size:0.72rem; color:var(--text-muted); font-style:italic;">ℹ️ ${info.confidence}</div>` : ''}
             `;
             wrap.style.display = 'block';
 
@@ -52102,3 +52204,5 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 <!-- END SECURE VAULT MODULE -->
 
 </body>
+
+  
