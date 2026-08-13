@@ -9616,24 +9616,18 @@
     border-radius: 12px;
     text-align: center;
     border: 1px solid rgba(var(--ia-line-rgb),0.1);
-    border-left: 3px solid rgba(var(--ia-line-rgb),0.1);
+    border-left: 3px solid rgba(59,130,246,0.35);
     transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
     backdrop-filter: blur(6px);
     min-width: 0;
 }
 
-.insomnia-card.status-good  { border-left-color: #1dd1a1; }
-.insomnia-card.status-warn  { border-left-color: #f39c12; }
-.insomnia-card.status-bad   { border-left-color: #ff6b6b; }
-
 .insomnia-card:hover {
     transform: translateY(-2px);
     background: rgba(var(--ia-line-rgb),0.1);
     border-color: rgba(var(--ia-line-rgb),0.22);
+    border-left-color: rgba(59,130,246,0.6);
 }
-.insomnia-card.status-good:hover  { border-left-color: #1dd1a1; }
-.insomnia-card.status-warn:hover  { border-left-color: #f39c12; }
-.insomnia-card.status-bad:hover   { border-left-color: #ff6b6b; }
 
 .insomnia-card h4 {
     margin: 0 0 4px 0;
@@ -39002,7 +38996,7 @@ function calculateInsomniaPenalty(analysis) {
         reasons.push({
             type: 'daytime_sleep',
             hours: parseFloat(daySleepHours.toFixed(1)),
-            penalty: penalty,
+            penalty: Math.round(penalty * 10) / 10,
             message: `${daySleepHours.toFixed(1)}h of daytime sleep disrupts circadian rhythm`
         });
     }
@@ -39017,7 +39011,7 @@ function calculateInsomniaPenalty(analysis) {
             reasons.push({
                 type: 'all_nighter',
                 awakeHours: parseFloat(awakeHours.toFixed(1)),
-                penalty: penalty,
+                penalty: Math.round(penalty * 10) / 10,
                 message: `Awake for ${awakeHours.toFixed(1)}h - brain needs 48h to recover`
             });
         }
@@ -39031,7 +39025,7 @@ function calculateInsomniaPenalty(analysis) {
         reasons.push({
             type: 'irregular_schedule',
             stdDev: parseFloat(stdDev.toFixed(1)),
-            penalty: penalty,
+            penalty: Math.round(penalty * 10) / 10,
             message: `Bedtime varies by ${stdDev.toFixed(1)}h daily - brain cannot adapt`
         });
     }
@@ -39044,7 +39038,7 @@ function calculateInsomniaPenalty(analysis) {
         reasons.push({
             type: 'sleep_debt',
             debtHours: parseFloat(sleepDebt.toFixed(1)),
-            penalty: penalty,
+            penalty: Math.round(penalty * 10) / 10,
             message: `${sleepDebt.toFixed(1)}h sleep debt - reduces learning ability by 40%`
         });
     }
@@ -39427,7 +39421,6 @@ function renderInsomniaAnalysis() {
     
     // Helper: format severity key to readable label
     const formatSeverity = (s) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    const cardStatus = (level) => level === 'bad' ? 'status-bad' : level === 'warn' ? 'status-warn' : 'status-good';
     
     const trend = analyzeSleepTrend();
     const avgQuality = calculateAverageQuality();
@@ -39460,7 +39453,7 @@ function renderInsomniaAnalysis() {
 
             <div id="insomniaBody" style="${insomniaCollapsed ? 'display:none;' : 'display:block;'}">
             <div class="insomnia-grid">
-                <div class="insomnia-card ${cardStatus(analysis.sleepFragmentation.averageDailyDuration < 6 ? 'bad' : analysis.sleepFragmentation.averageDailyDuration < 7 ? 'warn' : 'good')}">
+                <div class="insomnia-card">
                     <h4>🕐 Avg. Sleep Duration</h4>
                     <div class="insomnia-value">${analysis.sleepFragmentation.averageDailyDuration}h</div>
                     <div class="insomnia-description">
@@ -39471,7 +39464,7 @@ function renderInsomniaAnalysis() {
                     </div>
                 </div>
                 
-                <div class="insomnia-card ${cardStatus(analysis.sleepFragmentation.isFragmented ? 'bad' : 'good')}">
+                <div class="insomnia-card">
                     <h4>🧩 Sleep Fragmentation</h4>
                     <div class="insomnia-value">${analysis.sleepFragmentation.fragmentationScore}%</div>
                     <div class="insomnia-description">
@@ -39481,7 +39474,7 @@ function renderInsomniaAnalysis() {
                     </div>
                 </div>
                 
-                <div class="insomnia-card ${cardStatus(analysis.circadianDisruption.circadianDisruption === 'severe' ? 'bad' : analysis.circadianDisruption.circadianDisruption === 'moderate' ? 'warn' : 'good')}">
+                <div class="insomnia-card">
                     <h4>🌗 Circadian Consistency</h4>
                     <div class="insomnia-value">${analysis.circadianDisruption.bedtimeConsistency}%</div>
                     <div class="insomnia-description">
@@ -39492,7 +39485,7 @@ function renderInsomniaAnalysis() {
                     </div>
                 </div>
                 
-                <div class="insomnia-card penalty-card ${cardStatus(penalty.penaltyLevel === 'severe' ? 'bad' : penalty.penaltyLevel === 'moderate' ? 'warn' : 'good')}">
+                <div class="insomnia-card penalty-card">
                     <h4>⚠️ Sleep Penalty Score</h4>
                     <div class="insomnia-value">${penalty.penaltyScore}%</div>
                     <div class="insomnia-description">
