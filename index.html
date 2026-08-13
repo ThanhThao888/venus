@@ -29886,6 +29886,18 @@ document.addEventListener('DOMContentLoaded', function() {
             return [...sleepSessions].sort((a, b) => a.start - b.start);
         }
 
+        // Kiểm tra 1 khoảng [start,end] mới có chồng lấn với session ngủ nào đã có không
+        // (trừ chính session đang sửa, qua excludeId). Dùng để cảnh báo trước khi lưu —
+        // tránh double-click Save hoặc nhớ nhầm ngày tạo ra 2 đêm đè lên nhau, làm sai
+        // lệch mọi thống kê (tổng giờ ngủ, SE trung bình, regularity...).
+        function findOverlappingSleepSessions(start, end, excludeId = null) {
+            return sleepSessions.filter(s => {
+                if (excludeId !== null && s.id === excludeId) return false;
+                if (typeof s.start !== 'number' || typeof s.end !== 'number') return false;
+                return s.start < end && start < s.end; // 2 khoảng thời gian giao nhau
+            });
+        }
+
         // ===== Sleep Efficiency (SE) — TST / TIB × 100, chuẩn y học giấc ngủ =====
         // Chỉ tính được khi có SOL (thời gian vào giấc); awakenings mặc định 0 nếu
         // chưa ghi (không suy diễn thêm — thiếu dữ liệu thì không phóng đại SE).
@@ -31695,6 +31707,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         return;
                     }
                 }
+
+                // Cảnh báo nếu khoảng thời gian này đè lên 1 đêm đã ghi trước đó
+                const overlapping = findOverlappingSleepSessions(start.getTime(), end.getTime());
+                if (overlapping.length > 0) {
+                    const names = overlapping.map(s => `${s.startFormatted || new Date(s.start).toLocaleString('vi-VN')} → ${s.endFormatted || new Date(s.end).toLocaleString('vi-VN')}`).join('\n');
+                    if (!confirm(`⚠️ Khoảng thời gian này trùng với ${overlapping.length} đêm đã ghi:\n${names}\n\nVẫn lưu tiếp?`)) {
+                        return;
+                    }
+                }
                 
                 const session = {
                     id: Date.now(),
@@ -31960,6 +31981,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 if (durationHours > 16) {
                     if (!confirm(`Duration is ${durationHours.toFixed(1)} hours (>16h). Continue?`)) {
+                        return;
+                    }
+                }
+
+                // Cảnh báo nếu khoảng thời gian mới (sau khi sửa) đè lên 1 đêm khác
+                const overlapping = findOverlappingSleepSessions(start, end, id);
+                if (overlapping.length > 0) {
+                    const names = overlapping.map(s => `${s.startFormatted || new Date(s.start).toLocaleString('vi-VN')} → ${s.endFormatted || new Date(s.end).toLocaleString('vi-VN')}`).join('\n');
+                    if (!confirm(`⚠️ Khoảng thời gian này trùng với ${overlapping.length} đêm khác:\n${names}\n\nVẫn lưu tiếp?`)) {
                         return;
                     }
                 }
