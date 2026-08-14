@@ -18794,9 +18794,13 @@ window.DBP={
 
         <!-- ===== 🌿 WELLNESS & HABIT TRACKER (Log Nhanh cho ADHD) ===== -->
         <div class="sidebar-card" id="wellnessCard">
+            <div id="wlnUndoToast" class="wln-undo-toast" style="display:none;"></div>
             <h3 class="sidebar-title" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="Wellness.toggleCard()">
                 <span><span class="sidebar-title-icon">🌿</span><span class="sidebar-title-text"> Wellness Tracker</span></span>
-                <span id="wlnCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
+                <span style="display:flex; align-items:center; gap:8px;">
+                    <span id="wlnHeaderSummary" style="font-size:0.72rem; color:var(--text-muted); font-weight:600; white-space:nowrap;"></span>
+                    <span id="wlnCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:0;">▲</span>
+                </span>
             </h3>
 
             <div id="wlnBody">
@@ -18814,6 +18818,14 @@ window.DBP={
 
                 <!-- ===== TAB: LOG HÔM NAY (dashboard chỉ hiển thị phân tích — input nằm hết trong modal riêng từng loại) ===== -->
                 <div id="wlnTabLog" class="wln-tab-panel">
+
+                    <!-- Trạng thái hôm nay: nhìn 1 giây biết mục nào xong/chưa, bấm để nhảy
+                         thẳng tới đó — đỡ phải cuộn dò từng khối mới biết đã log gì. -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                        <span class="wln-section-header-label" style="font-size:0.78rem;">Trạng thái hôm nay</span>
+                        <span id="wlnStreakBadge" style="font-size:0.72rem; font-weight:700; color:var(--text-muted);"></span>
+                    </div>
+                    <div id="wlnQuickStatusRow" class="wln-quick-status-row"></div>
 
                     <!-- Mood/Energy quick check-in -->
                     <div class="wln-section-header-row" style="margin-bottom:6px;">
@@ -18863,6 +18875,7 @@ window.DBP={
                             <span class="wln-section-header-label">🍽️ Đã ăn hôm nay</span>
                             <span style="display:flex; align-items:center; gap:6px;">
                                 <span id="wlnFoodSummary" style="font-size:0.72rem; color:var(--text-muted); cursor:pointer;" onclick="Wellness.toggleFoodListCollapse()"></span>
+                                <button type="button" class="wln-quick-add-btn" id="wlnFoodQuickBtn" title="Log lại món gần nhất" aria-label="Log lại món gần nhất" onclick="Wellness.quickAddFood();" style="display:none;">+</button>
                                 <button type="button" class="wln-add-trigger" onclick="Wellness.openFoodModal()" title="Log món ăn" aria-label="Log món ăn">+</button>
                             </span>
                         </div>
@@ -18884,6 +18897,7 @@ window.DBP={
                             <span class="wln-section-header-label">🏋️ Tập luyện hôm nay</span>
                             <span style="display:flex; align-items:center; gap:8px;">
                                 <span id="wlnWorkoutStatus" style="font-size:0.82rem; color:var(--text-muted);">Chưa log</span>
+                                <button type="button" class="wln-quick-add-btn" id="wlnWorkoutRestBtn" title="Đánh dấu nghỉ hôm nay (1 chạm)" aria-label="Đánh dấu nghỉ hôm nay" onclick="Wellness.quickMarkRestDay();" style="font-size:0.85rem;">😴</button>
                                 <button type="button" class="wln-add-trigger" onclick="Wellness.openWorkoutModal()" title="Log vận động" aria-label="Log vận động">+</button>
                             </span>
                         </div>
@@ -19128,6 +19142,61 @@ window.DBP={
         </div>
 
         <style>
+            .wln-quick-status-row {
+                display: grid;
+                grid-template-columns: repeat(6, 1fr);
+                gap: 5px;
+                margin-bottom: 14px;
+            }
+            .wln-status-badge {
+                display: flex; flex-direction: column; align-items: center; justify-content: center;
+                gap: 2px; padding: 6px 2px; border-radius: 9px; cursor: pointer;
+                border: 1.5px solid var(--border-color); background: var(--bg-light);
+                transition: var(--transition); position: relative;
+            }
+            .wln-status-badge .wln-status-icon { font-size: 0.95rem; line-height: 1; opacity: 0.55; }
+            .wln-status-badge .wln-status-label {
+                font-size: 0.56rem; font-weight: 600; color: var(--text-muted); line-height: 1;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+            }
+            .wln-status-badge.wln-status-ok {
+                border-color: rgba(46, 204, 113, 0.5); background: rgba(46, 204, 113, 0.1);
+            }
+            .wln-status-badge.wln-status-ok .wln-status-icon { opacity: 1; }
+            .wln-status-badge.wln-status-ok .wln-status-label { color: #16a085; }
+            .wln-status-badge.wln-status-urgent {
+                border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.1);
+            }
+            .wln-status-badge.wln-status-urgent .wln-status-icon { opacity: 1; }
+            .wln-status-badge .wln-status-check {
+                position: absolute; top: -4px; right: -2px; font-size: 0.6rem;
+                background: #2ecc71; color: #fff; border-radius: 50%; width: 12px; height: 12px;
+                display: flex; align-items: center; justify-content: center; line-height: 1;
+            }
+
+            .wln-undo-toast {
+                position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+                z-index: 100050; display: flex; align-items: center; gap: 12px;
+                background: #1f2937; color: #fff; padding: 10px 14px; border-radius: 10px;
+                font-size: 0.8rem; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                max-width: 90vw; animation: wlnToastIn 0.2s ease-out;
+            }
+            .wln-undo-toast button {
+                background: none; border: none; color: #60a5fa; font-weight: 700;
+                font-size: 0.8rem; cursor: pointer; white-space: nowrap; padding: 2px 4px;
+            }
+            @keyframes wlnToastIn {
+                0% { opacity: 0; transform: translate(-50%, 10px); }
+                100% { opacity: 1; transform: translate(-50%, 0); }
+            }
+
+            .wln-review-group { margin-bottom: 12px; display: flex; flex-direction: column; gap: 5px; }
+            .wln-review-group:last-child { margin-bottom: 0; }
+            .wln-review-group-title {
+                font-size: 0.72rem; font-weight: 700; color: var(--primary);
+                text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1px;
+            }
+
             .wln-tab-nav {
                 display: grid;
                 grid-template-columns: repeat(5, 1fr);
@@ -19305,7 +19374,9 @@ window.DBP={
                 border-radius: 10px;
                 border: 1px solid transparent;
                 transition: var(--transition);
+                position: relative;
             }
+            .wln-priority-section.wln-chip-flash { animation: wlnChipFlash 0.6s ease-out; }
             .wln-priority-section.wln-section-pending {
                 background: rgba(245, 158, 11, 0.08);
                 border-color: rgba(245, 158, 11, 0.35);
@@ -19565,13 +19636,24 @@ window.DBP={
                 wrap.innerHTML = builtins.concat(customs).join('');
             }
 
+            // Helper dùng chung cho các cách log món ăn "thật" (có dữ liệu dinh dưỡng) —
+            // KHÔNG dùng cho "đánh dấu đang ăn / nhập thủ công" của Fasting (chỉ là mốc giờ,
+            // không phải món ăn cụ thể) để nút quick-add món ăn không bị gợi ý sai.
+            function pushFoodEntry(f) {
+                const day = getDay(todayKey());
+                const entry = { name: f.name, cal: f.cal || 0, sugar: f.sugar || 0, natri: f.natri || 0, kali: f.kali || 0, t: Date.now() };
+                day.foods.push(entry);
+                if (!data.settings) data.settings = {};
+                data.settings.lastFoodQuick = { name: entry.name, cal: entry.cal, sugar: entry.sugar, natri: entry.natri, kali: entry.kali };
+                save();
+                renderLogTab();
+                return day.foods.length - 1;
+            }
+
             function addCustomPresetFood(i) {
                 const f = (data.foodPresets || [])[i];
                 if (!f) return;
-                const day = getDay(todayKey());
-                day.foods.push({ name: f.name, cal: f.cal, sugar: f.sugar, natri: f.natri || 0, kali: f.kali || 0, t: Date.now() });
-                save();
-                renderLogTab();
+                pushFoodEntry(f);
             }
 
             function removeFoodPreset(i) {
@@ -19584,10 +19666,7 @@ window.DBP={
 
             function addPresetFood(i) {
                 const f = FOOD_PRESETS[i];
-                const day = getDay(todayKey());
-                day.foods.push({ name: f.name, cal: f.cal, sugar: f.sugar, natri: f.natri || 0, kali: f.kali || 0, t: Date.now() });
-                save();
-                renderLogTab();
+                pushFoodEntry(f);
             }
 
             function openCustomFood() {
@@ -19602,8 +19681,7 @@ window.DBP={
                 const natri = parseFloat(document.getElementById('wlnCustomNatri').value) || 0;
                 const kali = parseFloat(document.getElementById('wlnCustomKali').value) || 0;
                 if (!name) { alert('Nhập tên món trước đã nhé.'); return; }
-                const day = getDay(todayKey());
-                day.foods.push({ name, cal, sugar, natri, kali, t: Date.now() });
+                pushFoodEntry({ name, cal, sugar, natri, kali });
                 const saveAsPreset = document.getElementById('wlnCustomFoodSaveAsPreset');
                 if (saveAsPreset && saveAsPreset.checked) {
                     if (!data.foodPresets) data.foodPresets = [];
@@ -19645,15 +19723,67 @@ window.DBP={
                 setTimeout(() => { chip.classList.remove('wln-chip-flash'); tick.remove(); }, 700);
             }
 
+            // Toast "Hoàn tác" — mọi thao tác quick-log (1 chạm, không có bước xác nhận)
+            // đều đi kèm 1 cửa sổ ~5s để undo nếu lỡ bấm nhầm, thay vì phải tự mở modal
+            // sửa lại thủ công. Chỉ nhớ MỘT hành động gần nhất — đơn giản, đủ dùng.
+            let _wlnUndoFn = null;
+            let _wlnUndoTimer = null;
+            function showUndoToast(message, undoFn) {
+                const toast = document.getElementById('wlnUndoToast');
+                if (!toast) return;
+                _wlnUndoFn = undoFn;
+                toast.innerHTML = `<span>${message}</span><button onclick="Wellness._undoLast()">Hoàn tác</button>`;
+                toast.style.display = 'flex';
+                clearTimeout(_wlnUndoTimer);
+                _wlnUndoTimer = setTimeout(hideUndoToast, 5000);
+            }
+            function hideUndoToast() {
+                const toast = document.getElementById('wlnUndoToast');
+                if (toast) toast.style.display = 'none';
+                _wlnUndoFn = null;
+            }
+            function _undoLast() {
+                if (_wlnUndoFn) _wlnUndoFn();
+                hideUndoToast();
+            }
+
             function quickAddWater() {
                 addWater(1);
                 flashChipFeedback('wlnWaterChip');
+                showUndoToast('💧 +1 ly nước', () => addWater(-1));
             }
 
             function quickAddCaffeine() {
                 const quick = (data.settings && data.settings.lastCaffeineQuick) || CAFFEINE_PRESETS[0];
                 addCaffeine(quick.mg, quick.name, null);
                 flashChipFeedback('wlnCaffeineChip');
+                const day = getDay(todayKey());
+                const idx = day.caffeine.length - 1;
+                showUndoToast(`☕ +${quick.name} (${quick.mg}mg)`, () => removeCaffeine(idx));
+            }
+
+            // Log lại đúng món ăn vừa log gần nhất — hữu ích khi ăn/uống lặp lại nhiều lần
+            // trong ngày (VD 2 ly cà phê sữa, 2 hộp cơm giống nhau) mà không cần mở modal
+            // chọn lại từ đầu. Chỉ hiện nút này khi đã có ít nhất 1 món được log trước đó.
+            function quickAddFood() {
+                const lastFood = data.settings && data.settings.lastFoodQuick;
+                if (!lastFood) { openFoodModal(); return; }
+                const idx = pushFoodEntry(lastFood);
+                flashChipFeedback('wlnSectionFood');
+                showUndoToast(`🍽️ +${lastFood.name}`, () => removeFood(idx));
+            }
+
+            function quickMarkRestDay() {
+                const day = getDay(todayKey());
+                const prevWorkout = day.workout;
+                logWorkout('Nghỉ', 0);
+                flashChipFeedback('wlnSectionWorkout');
+                showUndoToast('😴 Đã đánh dấu nghỉ hôm nay', () => {
+                    const d = getDay(todayKey());
+                    d.workout = prevWorkout;
+                    save();
+                    renderLogTab();
+                });
             }
 
             function addWater(delta) {
@@ -19670,6 +19800,9 @@ window.DBP={
                 save();
                 renderLogTab();
             }
+
+            // 1-chạm cho ngày nghỉ tập — trước đây phải mở modal chỉ để ghi "0 phút",
+            // giờ bấm 1 nút là xong, vẫn tính là "đã log" (khác với việc quên log).
 
             /* ===== MOOD / ENERGY CHECK-IN ===== */
             function logMood(score) {
@@ -20260,6 +20393,16 @@ window.DBP={
                 const day = getDay(todayKey());
                 const list = document.getElementById('wlnFoodLogList');
                 const summaryEl = document.getElementById('wlnFoodSummary');
+                const quickBtn = document.getElementById('wlnFoodQuickBtn');
+                const lastFood = data.settings && data.settings.lastFoodQuick;
+                if (quickBtn) {
+                    if (lastFood) {
+                        quickBtn.style.display = 'inline-flex';
+                        quickBtn.title = `Log lại: ${lastFood.name} (${lastFood.cal}kcal)`;
+                    } else {
+                        quickBtn.style.display = 'none';
+                    }
+                }
                 if (!day.foods.length) {
                     summaryEl.textContent = '';
                     list.style.display = 'flex';
@@ -20330,26 +20473,136 @@ window.DBP={
                 fastingEl.classList.toggle('wln-section-pending', fastingOverTarget);
             }
 
+            // Banner nhắc nhở giờ "hành động được" thay vì chỉ đọc rồi tự nhớ phải làm gì:
+            // có sẵn nút bấm thẳng vào đúng việc cần làm, và nút ✕ để tắt riêng lời nhắc
+            // ĐÓ cho hôm nay nếu không muốn bị nhắc lại (không tắt vĩnh viễn, không phiền).
+            function dismissReminder(key) {
+                const day = getDay(todayKey());
+                if (!day.dismissedReminders) day.dismissedReminders = [];
+                if (!day.dismissedReminders.includes(key)) day.dismissedReminders.push(key);
+                save();
+                renderReminderBanner();
+            }
             function renderReminderBanner() {
                 const day = getDay(todayKey());
                 const banner = document.getElementById('wlnReminderBanner');
                 const hour = new Date().getHours();
-                let msg = null;
+                const dismissed = day.dismissedReminders || [];
+                let msg = null, key = null, actionLabel = null, actionFn = null;
                 const hoursSinceWater = day.lastWaterAt ? (Date.now() - day.lastWaterAt) / 3600000 : 99;
                 const suppLogToday = (data.suppLogs && data.suppLogs[todayKey()]) || [];
-                if (hoursSinceWater >= 3 && hour >= 8 && hour <= 22) {
-                    msg = '💧 Đã hơn 3 tiếng chưa log uống nước — làm 1 ly nhé.';
-                } else if (data.suppPresets && data.suppPresets.length && !suppLogToday.length && hour >= 12) {
-                    msg = '💊 Chưa log chất bổ sung nào hôm nay — tạt qua tab Supplement 1 phút nhé.';
-                } else if (!day.workout && hour >= 18) {
-                    msg = '🏋️ Chiều nay chưa log tập luyện — dù chỉ 10 phút đi bộ cũng tính.';
+                if (hoursSinceWater >= 3 && hour >= 8 && hour <= 22 && !dismissed.includes('water')) {
+                    msg = '💧 Đã hơn 3 tiếng chưa log uống nước.'; key = 'water';
+                    actionLabel = '+1 ly ngay'; actionFn = "Wellness.quickAddWater()";
+                } else if (data.suppPresets && data.suppPresets.length && !suppLogToday.length && hour >= 12 && !dismissed.includes('supp')) {
+                    msg = '💊 Chưa log chất bổ sung nào hôm nay.'; key = 'supp';
+                    actionLabel = 'Mở tab Supp'; actionFn = "Wellness.setTab('supp')";
+                } else if (!day.workout && hour >= 18 && !dismissed.includes('workout')) {
+                    msg = '🏋️ Chiều nay chưa log tập luyện — dù chỉ 10 phút đi bộ cũng tính.'; key = 'workout';
+                    actionLabel = 'Log ngay'; actionFn = "Wellness.openWorkoutModal()";
                 }
                 if (msg) {
-                    banner.style.display = 'block';
-                    banner.textContent = msg;
+                    banner.style.display = 'flex';
+                    banner.style.alignItems = 'center';
+                    banner.style.justifyContent = 'space-between';
+                    banner.style.gap = '8px';
+                    banner.innerHTML = `
+                        <span style="flex:1;">${msg}</span>
+                        <span style="display:flex; gap:4px; flex-shrink:0;">
+                            <button type="button" onclick="${actionFn}" style="background:var(--primary); color:#fff; border:none; border-radius:7px; padding:5px 10px; font-size:0.76rem; font-weight:700; cursor:pointer; white-space:nowrap;">${actionLabel}</button>
+                            <button type="button" onclick="Wellness.dismissReminder('${key}')" title="Bỏ qua nhắc này hôm nay" aria-label="Bỏ qua" style="background:none; border:none; color:var(--text-muted); font-size:0.95rem; cursor:pointer; padding:0 4px;">✕</button>
+                        </span>
+                    `;
                 } else {
                     banner.style.display = 'none';
                 }
+            }
+
+            // "Trạng thái hôm nay" — 1 hàng 6 badge cho biết ngay mục nào đã log (✓ xanh),
+            // mục nào đang cần chú ý (cam, theo cùng logic giờ với reorderLogSections),
+            // và mục nào bình thường (xám). Bấm badge để mở thẳng modal tương ứng.
+            function renderQuickStatusRow() {
+                const row = document.getElementById('wlnQuickStatusRow');
+                if (!row) return;
+                const day = getDay(todayKey());
+                const hour = new Date().getHours();
+                const target = data.settings.fastingWindowHours;
+                const fastingStats = computeFastingStats(day, { lookback: true, dayKey: todayKey() });
+                const fastingOverTarget = !!(fastingStats && fastingStats.hasMealToday && fastingStats.eatingHours > target);
+
+                const items = [
+                    { icon: '🙂', label: 'Mood', done: (day.moods || []).length > 0, urgent: false, onclick: "document.querySelector('.wln-mood-btn').scrollIntoView({behavior:'smooth', block:'center'})" },
+                    { icon: '💧', label: 'Nước', done: (day.water || 0) > 0, urgent: false, onclick: "Wellness.openWaterModal()" },
+                    { icon: '☕', label: 'Caffeine', done: (day.caffeine || []).length > 0, urgent: false, onclick: "Wellness.openCaffeineModal()" },
+                    { icon: '🍽️', label: 'Ăn', done: day.foods.length > 0, urgent: day.foods.length === 0 && hour >= 10, onclick: "Wellness.openFoodModal()" },
+                    { icon: '⏱️', label: 'Fasting', done: !fastingOverTarget && !!fastingStats, urgent: fastingOverTarget, onclick: "Wellness.openFastingModal()" },
+                    { icon: '🏋️', label: 'Vận động', done: !!day.workout, urgent: !day.workout && hour >= 16, onclick: "Wellness.openWorkoutModal()" }
+                ];
+
+                row.innerHTML = items.map(it => {
+                    const cls = it.urgent ? 'wln-status-urgent' : (it.done ? 'wln-status-ok' : '');
+                    return `
+                        <div class="wln-status-badge ${cls}" onclick="${it.onclick}" role="button" tabindex="0" title="${it.label}${it.done ? ' — đã log' : (it.urgent ? ' — cần chú ý' : ' — chưa log')}">
+                            ${it.done ? '<span class="wln-status-check">✓</span>' : ''}
+                            <span class="wln-status-icon">${it.icon}</span>
+                            <span class="wln-status-label">${it.label}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Streak (chuỗi ngày liên tiếp có log ít nhất 1 thứ) — tạo động lực nhẹ nhàng,
+            // KHÔNG mang tính trách móc: nếu hôm nay chưa log gì thì chỉ hiện chuỗi cũ kèm
+            // "sắp đứt" thay vì báo 0, để không tạo cảm giác thất bại ngay khi mới mở app.
+            function isDayLogged(day) {
+                if (!day) return false;
+                return (day.water > 0) || (day.foods && day.foods.length > 0) ||
+                    (day.caffeine && day.caffeine.length > 0) || !!day.workout ||
+                    (day.moods && day.moods.length > 0);
+            }
+            function computeStreak() {
+                const todayLogged = isDayLogged(data.days[todayKey()]);
+                let streak = todayLogged ? 1 : 0;
+                const cursor = new Date();
+                cursor.setDate(cursor.getDate() - 1);
+                for (let i = 0; i < 400; i++) {
+                    const key = wlnLocalDateStr(cursor);
+                    if (isDayLogged(data.days[key])) {
+                        streak++;
+                        cursor.setDate(cursor.getDate() - 1);
+                    } else break;
+                }
+                return { streak, todayLogged };
+            }
+            function renderStreak() {
+                const el = document.getElementById('wlnStreakBadge');
+                if (!el) return;
+                const { streak, todayLogged } = computeStreak();
+                if (streak <= 0) { el.textContent = ''; return; }
+                el.textContent = todayLogged ? `🔥 ${streak} ngày liên tiếp` : `🔥 ${streak} ngày — log gì đó hôm nay để giữ chuỗi`;
+                el.style.color = todayLogged ? '#e67e22' : 'var(--text-muted)';
+            }
+
+            // Dòng tóm tắt siêu ngắn ở header — hiện được cả khi card đang thu gọn, để không
+            // cần mở ra mới biết hôm nay đã log được bao nhiêu / có đang giữ streak không.
+            function renderHeaderSummary() {
+                const el = document.getElementById('wlnHeaderSummary');
+                if (!el) return;
+                const day = getDay(todayKey());
+                const target = data.settings.fastingWindowHours;
+                const fastingStats = computeFastingStats(day, { lookback: true, dayKey: todayKey() });
+                const fastingOverTarget = !!(fastingStats && fastingStats.hasMealToday && fastingStats.eatingHours > target);
+                const doneCount = [
+                    (day.moods || []).length > 0,
+                    (day.water || 0) > 0,
+                    (day.caffeine || []).length > 0,
+                    day.foods.length > 0,
+                    !fastingOverTarget,
+                    !!day.workout
+                ].filter(Boolean).length;
+                const { streak, todayLogged } = computeStreak();
+                const streakPart = streak > 0 ? ` · 🔥${streak}` : '';
+                el.textContent = `${doneCount}/6${streakPart}`;
             }
 
             function renderLogTab() {
@@ -20361,6 +20614,9 @@ window.DBP={
                 renderMoodStatus();
                 renderReminderBanner();
                 reorderLogSections();
+                renderQuickStatusRow();
+                renderStreak();
+                renderHeaderSummary();
             }
 
             function saveWeeklyWeight() {
@@ -20489,18 +20745,30 @@ window.DBP={
                 const avgMood = moodCount ? (moodSum / moodCount).toFixed(1) : '—';
                 const avgSleep = sleepDays ? (sleepHoursSum / sleepDays).toFixed(1) : '—';
                 document.getElementById('wlnReviewSummary').innerHTML = `
-                    <div class="wln-log-item"><span>🙂 Điểm cảm giác trung bình</span><span><b>${avgMood}</b>/5</span></div>
-                    <div class="wln-log-item"><span>😴 Trung bình giờ ngủ/đêm</span><span><b>${avgSleep}</b>h${sleepDays ? ` (${sleepDays}/7 đêm)` : ''}</span></div>
-                    <div class="wln-log-item"><span>☕🥤 Cà phê sữa / nước ngọt / trà sữa</span><span><b>${cupsCoffeeSoda}</b> lần</span></div>
-                    <div class="wln-log-item"><span>🏋️ Số ngày có tập luyện</span><span><b>${workoutDays}</b>/7</span></div>
-                    <div class="wln-log-item"><span>🍬 Số ngày vượt ngân sách đường</span><span><b>${sugarOverDays}</b>/7</span></div>
-                    <div class="wln-log-item"><span>🧂 Số ngày vượt ngân sách natri</span><span><b>${natriOverDays}</b>/7</span></div>
-                    <div class="wln-log-item"><span>🍌 Trung bình kali/ngày</span><span><b>${avgKali}</b>mg</span></div>
-                    <div class="wln-log-item"><span>💧 Trung bình ly nước/ngày</span><span><b>${avgWater}</b></span></div>
-                    <div class="wln-log-item"><span>☕ Trung bình caffeine/ngày</span><span><b>${avgCaffeine}</b>mg</span></div>
-                    <div class="wln-log-item"><span>⚠️ Ngày vượt ${CAFFEINE_DAILY_LIMIT}mg caffeine</span><span><b>${caffeineOverDays}</b>/7</span></div>
-                    <div class="wln-log-item"><span>🌙 Ngày caffeine sau ${String(data.settings.caffeineCutoffHour).padStart(2,'0')}:00</span><span><b>${lateCaffeineDays}</b>/7</span></div>
-                    <div class="wln-log-item"><span>⏱️ Trung bình cửa sổ ăn/ngày</span><span><b>${avgEatingWindow}</b>h</span></div>
+                    <div class="wln-review-group">
+                        <div class="wln-review-group-title">😴 Giấc ngủ &amp; Cảm giác</div>
+                        <div class="wln-log-item"><span>🙂 Điểm cảm giác trung bình</span><span><b>${avgMood}</b>/5</span></div>
+                        <div class="wln-log-item"><span>😴 Trung bình giờ ngủ/đêm</span><span><b>${avgSleep}</b>h${sleepDays ? ` (${sleepDays}/7 đêm)` : ''}</span></div>
+                    </div>
+                    <div class="wln-review-group">
+                        <div class="wln-review-group-title">🍽️ Ăn uống</div>
+                        <div class="wln-log-item"><span>💧 Trung bình ly nước/ngày</span><span><b>${avgWater}</b></span></div>
+                        <div class="wln-log-item"><span>🍌 Trung bình kali/ngày</span><span><b>${avgKali}</b>mg</span></div>
+                        <div class="wln-log-item"><span>🍬 Số ngày vượt ngân sách đường</span><span><b>${sugarOverDays}</b>/7</span></div>
+                        <div class="wln-log-item"><span>🧂 Số ngày vượt ngân sách natri</span><span><b>${natriOverDays}</b>/7</span></div>
+                        <div class="wln-log-item"><span>⏱️ Trung bình cửa sổ ăn/ngày</span><span><b>${avgEatingWindow}</b>h</span></div>
+                    </div>
+                    <div class="wln-review-group">
+                        <div class="wln-review-group-title">☕ Caffeine</div>
+                        <div class="wln-log-item"><span>☕ Trung bình caffeine/ngày</span><span><b>${avgCaffeine}</b>mg</span></div>
+                        <div class="wln-log-item"><span>☕🥤 Cà phê sữa / nước ngọt / trà sữa</span><span><b>${cupsCoffeeSoda}</b> lần</span></div>
+                        <div class="wln-log-item"><span>⚠️ Ngày vượt ${CAFFEINE_DAILY_LIMIT}mg caffeine</span><span><b>${caffeineOverDays}</b>/7</span></div>
+                        <div class="wln-log-item"><span>🌙 Ngày caffeine sau ${String(data.settings.caffeineCutoffHour).padStart(2,'0')}:00</span><span><b>${lateCaffeineDays}</b>/7</span></div>
+                    </div>
+                    <div class="wln-review-group">
+                        <div class="wln-review-group-title">🏋️ Vận động</div>
+                        <div class="wln-log-item"><span>🏋️ Số ngày có tập luyện</span><span><b>${workoutDays}</b>/7</span></div>
+                    </div>
                 `;
 
                 const ctx = document.getElementById('wlnWeekChart');
@@ -20816,7 +21084,7 @@ window.DBP={
             return {
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
                 removeFood, addWater, logWorkout, saveWeeklyWeight, toggleFoodListCollapse,
-                quickAddWater, quickAddCaffeine,
+                quickAddWater, quickAddCaffeine, quickAddFood, quickMarkRestDay, _undoLast, dismissReminder,
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
                 addPresetCaffeine, removeCaffeine, toggleCustomCaffeineForm, addCustomCaffeine,
                 openEditCaffeineTime,
