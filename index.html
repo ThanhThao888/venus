@@ -18831,15 +18831,22 @@ window.DBP={
                     <!-- Quick totals: số liệu + % ngân sách, KHÔNG có nút bấm -->
                     <div id="wlnTotalsRow" style="display:grid; grid-template-columns: repeat(2,1fr); gap:8px; margin-bottom:10px;"></div>
 
-                    <!-- Water / Caffeine — bấm vào chip để mở modal nhập riêng -->
+                    <!-- Water / Caffeine — bấm vào chip để mở modal nhập riêng; nút tròn "+"
+                         bên phải để log NGAY 1 lần dùng phổ biến nhất, không cần mở modal. -->
                     <div class="wln-summary-chip-row">
-                        <div class="wln-summary-chip wln-clickable" onclick="Wellness.openWaterModal()" role="button" tabindex="0">
+                        <div class="wln-summary-chip wln-clickable" id="wlnWaterChip" onclick="Wellness.openWaterModal()" role="button" tabindex="0">
                             <span class="wln-chip-label">💧 Nước lọc<span class="wln-chip-chevron">›</span></span>
-                            <span class="wln-chip-value" id="wlnWaterCount">0 ly</span>
+                            <span style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                                <span class="wln-chip-value" id="wlnWaterCount">0 ly</span>
+                                <button type="button" class="wln-quick-add-btn" title="+1 ly ngay" aria-label="Thêm 1 ly nước ngay" onclick="event.stopPropagation(); Wellness.quickAddWater();">+1</button>
+                            </span>
                         </div>
-                        <div class="wln-summary-chip wln-clickable" onclick="Wellness.openCaffeineModal()" role="button" tabindex="0">
+                        <div class="wln-summary-chip wln-clickable" id="wlnCaffeineChip" onclick="Wellness.openCaffeineModal()" role="button" tabindex="0">
                             <span class="wln-chip-label">☕ Caffeine<span class="wln-chip-chevron">›</span></span>
-                            <span class="wln-chip-value" id="wlnCaffeineTotal">0mg</span>
+                            <span style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                                <span class="wln-chip-value" id="wlnCaffeineTotal">0mg</span>
+                                <button type="button" class="wln-quick-add-btn" id="wlnCaffeineQuickBtn" title="Log ngay ly gần nhất" aria-label="Log caffeine ngay" onclick="event.stopPropagation(); Wellness.quickAddCaffeine();">+</button>
+                            </span>
                             <div class="wln-bar-track"><div class="wln-bar-fill" id="wlnCaffeineBar" style="width:0%;"></div></div>
                         </div>
                     </div>
@@ -19247,6 +19254,32 @@ window.DBP={
                 display: flex; align-items: center; justify-content: space-between;
             }
             .wln-summary-chip-row { display: flex; gap: 8px; margin-bottom: 10px; }
+            .wln-quick-add-btn {
+                width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%;
+                background: rgba(255,255,255,0.85); color: var(--primary); font-size: 0.8rem; font-weight: 800;
+                cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+                flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: var(--transition);
+            }
+            .wln-quick-add-btn:hover { transform: scale(1.1); }
+            .wln-quick-add-btn:active { transform: scale(0.92); }
+            /* Feedback tức thì khi quick-log — chip nháy xanh + tick bay lên rồi mờ dần,
+               để người dùng biết ngay hành động đã được ghi nhận mà không cần mở modal kiểm tra. */
+            @keyframes wlnChipFlash {
+                0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.55); }
+                100% { box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); }
+            }
+            @keyframes wlnTickPop {
+                0% { opacity: 0; transform: translate(-50%, 4px) scale(0.6); }
+                25% { opacity: 1; transform: translate(-50%, -6px) scale(1.15); }
+                70% { opacity: 1; transform: translate(-50%, -14px) scale(1); }
+                100% { opacity: 0; transform: translate(-50%, -22px) scale(1); }
+            }
+            .wln-summary-chip { position: relative; }
+            .wln-summary-chip.wln-chip-flash { animation: wlnChipFlash 0.6s ease-out; }
+            .wln-chip-tick {
+                position: absolute; left: 50%; top: 2px; font-size: 1rem; pointer-events: none;
+                animation: wlnTickPop 0.7s ease-out forwards;
+            }
             .wln-summary-chip {
                 flex: 1; padding: 9px 10px; background: var(--bg-light); border: 1px solid var(--border-color);
                 border-radius: 10px; display: flex; flex-direction: column; gap: 2px;
@@ -19597,6 +19630,32 @@ window.DBP={
                 renderLogTab();
             }
 
+            // Feedback tức thì (không cần mở modal): nháy viền xanh + tick bay lên trên chip
+            // vừa log, tạo phản hồi ngay lập tức — quan trọng khi thao tác là quick-add 1-chạm.
+            function flashChipFeedback(chipId) {
+                const chip = document.getElementById(chipId);
+                if (!chip) return;
+                chip.classList.remove('wln-chip-flash');
+                void chip.offsetWidth; // reset animation nếu bấm liên tiếp
+                chip.classList.add('wln-chip-flash');
+                const tick = document.createElement('span');
+                tick.className = 'wln-chip-tick';
+                tick.textContent = '✓';
+                chip.appendChild(tick);
+                setTimeout(() => { chip.classList.remove('wln-chip-flash'); tick.remove(); }, 700);
+            }
+
+            function quickAddWater() {
+                addWater(1);
+                flashChipFeedback('wlnWaterChip');
+            }
+
+            function quickAddCaffeine() {
+                const quick = (data.settings && data.settings.lastCaffeineQuick) || CAFFEINE_PRESETS[0];
+                addCaffeine(quick.mg, quick.name, null);
+                flashChipFeedback('wlnCaffeineChip');
+            }
+
             function addWater(delta) {
                 const day = getDay(todayKey());
                 day.water = Math.max(0, (day.water || 0) + delta);
@@ -19761,6 +19820,10 @@ window.DBP={
             function addCaffeine(mg, name, ts) {
                 const day = getDay(todayKey());
                 day.caffeine.push({ name, mg, t: ts || Date.now() });
+                // Nhớ lại loại vừa log để nút quick-add (+) trên chip lần sau log đúng loại
+                // này ngay — quick-add "thông minh" theo thói quen thực tế thay vì cố định.
+                if (!data.settings) data.settings = {};
+                data.settings.lastCaffeineQuick = { name, mg };
                 save();
                 renderLogTab();
                 // ☕ Cảnh báo real-time nếu log sau giờ cutoff đã cài đặt — insight cá nhân
@@ -19910,6 +19973,11 @@ window.DBP={
                 if (totalEl) {
                     totalEl.textContent = `${total}mg / ${CAFFEINE_DAILY_LIMIT}mg`;
                     totalEl.style.color = overLimit ? '#e74c3c' : 'var(--text-dark)';
+                }
+                const quickBtn = document.getElementById('wlnCaffeineQuickBtn');
+                if (quickBtn) {
+                    const quick = (data.settings && data.settings.lastCaffeineQuick) || CAFFEINE_PRESETS[0];
+                    quickBtn.title = `Log ngay: ${quick.name} (${quick.mg}mg)`;
                 }
                 const barEl = document.getElementById('wlnCaffeineBar');
                 if (barEl) {
@@ -20239,10 +20307,17 @@ window.DBP={
                 const workoutEl = document.getElementById('wlnSectionWorkout');
                 if (!foodEl || !fastingEl || !workoutEl) return;
 
+                // Fasting chỉ được đẩy lên ưu tiên khi cửa sổ ăn đã VƯỢT mục tiêu hôm nay
+                // (cảnh báo sức khoẻ thật sự, cần chú ý) — còn lại (đang nhịn tốt, chưa
+                // ăn gì, hoặc trong cửa sổ ăn bình thường) vẫn là thông tin nền, không giục.
+                const target = data.settings.fastingWindowHours;
+                const fastingStats = computeFastingStats(day, { lookback: true, dayKey: todayKey() });
+                const fastingOverTarget = !!(fastingStats && fastingStats.hasMealToday && fastingStats.eatingHours > target);
+
                 // priority: số càng nhỏ càng lên đầu
                 const foodPriority = !foodDone && hour >= 10 ? 1 : (foodDone ? 4 : 2);
                 const workoutPriority = !workoutDone && hour >= 16 ? 1 : (workoutDone ? 5 : 3);
-                const fastingPriority = 3; // luôn ở mức trung bình — mang tính thông tin, không "xong/chưa xong"
+                const fastingPriority = fastingOverTarget ? 1 : 3;
 
                 foodEl.style.order = foodPriority;
                 fastingEl.style.order = fastingPriority;
@@ -20252,6 +20327,7 @@ window.DBP={
                 foodEl.classList.toggle('wln-section-done', foodDone);
                 workoutEl.classList.toggle('wln-section-pending', !workoutDone && hour >= 16);
                 workoutEl.classList.toggle('wln-section-done', workoutDone);
+                fastingEl.classList.toggle('wln-section-pending', fastingOverTarget);
             }
 
             function renderReminderBanner() {
@@ -20740,6 +20816,7 @@ window.DBP={
             return {
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
                 removeFood, addWater, logWorkout, saveWeeklyWeight, toggleFoodListCollapse,
+                quickAddWater, quickAddCaffeine,
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
                 addPresetCaffeine, removeCaffeine, toggleCustomCaffeineForm, addCustomCaffeine,
                 openEditCaffeineTime,
