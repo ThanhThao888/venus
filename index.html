@@ -25657,15 +25657,24 @@ window.DBP={
             const career = typeof currentCareer !== 'undefined' ? currentCareer : null;
             const mood = typeof currentMood !== 'undefined' ? currentMood : null;
 
+            // Untagged quotes (this is where ALL custom quotes live, since they're
+            // saved without careers/moods) should always be in the running, not
+            // buried behind a last-resort tier that's almost never reached.
+            const universal = pool.filter(q => !q.careers && !q.moods);
+
             const tiers = [
                 pool.filter(q => q.careers && career && q.careers.includes(career) && q.moods && mood && q.moods.includes(mood)),
                 pool.filter(q => q.careers && career && q.careers.includes(career)),
                 pool.filter(q => q.moods && mood && q.moods.includes(mood)),
-                pool.filter(q => !q.careers && !q.moods),
             ];
-            let candidates = tiers.find(t => t.length > 1) || tiers.find(t => t.length > 0) || pool;
+            const tierMatch = tiers.find(t => t.length > 0) || [];
 
-            // If the best-matching tier only has one quote in it, widen to the whole
+            // Merge the matched career/mood tier with the universal pool so tagged
+            // and untagged (custom) quotes both get a real chance to show up.
+            let candidates = [...tierMatch, ...universal];
+            if (candidates.length === 0) candidates = pool;
+
+            // If we still ended up with only one candidate, widen to the whole
             // pool so shuffling doesn't get stuck showing that same single quote forever.
             if (candidates.length <= 1 && pool.length > 1) candidates = pool;
 
