@@ -11005,6 +11005,17 @@
 
     /* ── Overview — all tracks at a glance, with pin-to-top ── */
     .rdm-overview-header { font-size: 0.82rem; font-weight: 800; color: var(--text-dark); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .rdm-neglected-banner {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 4px; cursor: pointer;
+        font-size: 0.76rem; font-weight: 600; color: #92400e; background: #fffbeb;
+        border: 1px solid #fde68a; border-radius: 10px; padding: 8px 12px; margin-bottom: 12px;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .rdm-neglected-banner:hover { border-color: #f59e0b; box-shadow: 0 2px 10px rgba(245,158,11,0.2); }
+    .rdm-neglected-banner:focus-visible { outline: 2px solid #f59e0b; outline-offset: 2px; }
+    .rdm-neglected-banner strong { font-weight: 800; }
+    .rdm-neglected-more { opacity: 0.75; font-weight: 500; }
+    .dark-mode .rdm-neglected-banner { background: #1c1200; border-color: #78350f; color: #fbbf24; }
     .rdm-swap-pins-btn {
         flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark);
         font-size: 0.72rem; font-weight: 700; padding: 5px 10px; border-radius: 8px; cursor: pointer;
@@ -11047,6 +11058,9 @@
     .rdm-compare-focus strong { display: block; font-size: 0.75rem; margin-bottom: 2px; }
     .rdm-compare-spark { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 8px; }
     .rdm-compare-spark-label { font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+    .rdm-compare-eta { text-align: center; margin-bottom: 8px; line-height: 1.5; }
+    .rdm-compare-eta-target { font-size: 0.66rem; color: var(--text-muted); }
+    .rdm-compare-eta-actual { font-size: 0.68rem; font-weight: 700; }
 
     /* ── Milestone celebration overlay ── */
     .rdm-celebrate-overlay {
@@ -50862,6 +50876,21 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const finishDate = new Date();
                 finishDate.setDate(finishDate.getDate() + totalWks * 7);
 
+                // Actual-pace ETA — see getActualWeeklyPace() for why this differs
+                // from the target-based estimate above (it's based on hours you've
+                // really logged recently, not the hpw slider).
+                const actualPaceListView = getActualWeeklyPace(track, 4);
+                const actualEtaHtml = (actualPaceListView && actualPaceListView > 0.05)
+                    ? (() => {
+                        const wksActual = Math.ceil(totalHrs / actualPaceListView);
+                        const dateActual = new Date();
+                        dateActual.setDate(dateActual.getDate() + wksActual * 7);
+                        const ratio = actualPaceListView / hpw;
+                        const color = ratio >= 0.9 ? '#059669' : (ratio >= 0.5 ? '#d97706' : '#dc2626');
+                        return `<div class="rdm-stat-row rdm-finish-date" style="color:${color};">📍 At your pace (${actualPaceListView.toFixed(1)}h/wk): <strong>~${wksActual}wk · ${fmtDate(dateActual)}</strong></div>`;
+                    })()
+                    : '';
+
                 const unlockedNow = sortedSkills.filter(s => !isLocked(s, satisfiedSet));
                 const focusSkill = unlockedNow[0] || sortedSkills[0];
                 const upNext = unlockedNow.slice(1, 3);
@@ -50879,7 +50908,8 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <div class="rdm-summary-text">
                             <div class="rdm-stat-row"><strong>${doneCount}</strong> / ${totalCount} skills mastered</div>
                             <div class="rdm-stat-row">${totalHrs}h left · ~${totalWks}wk @ ${hpw}h/wk</div>
-                            <div class="rdm-stat-row rdm-finish-date">🏁 Est. finish: <strong>${fmtDate(finishDate)}</strong></div>
+                            <div class="rdm-stat-row rdm-finish-date">🏁 Est. finish (target pace): <strong>${fmtDate(finishDate)}</strong></div>
+                            ${actualEtaHtml}
                         </div>
                         ${streakHtml}
                     </div>`;
@@ -51283,6 +51313,21 @@ window.fcRenderTagChips = fcRenderTagChips;
             // Compact dashboard (ring %, phase bars, current focus skill) for
             // each track, so parallel tracks (e.g. PE + CFA1) can be watched
             // together without switching the selector back and forth.
+            // Actual recent pace (hours/week), based on what was really logged —
+            // as opposed to `hpw`, which is just the target slider. Averaged
+            // over a rolling N-week window and DOES include zero weeks, so a
+            // track you've gone quiet on honestly shows a low/zero pace instead
+            // of the ETA silently assuming you're still hitting your target.
+            // Returns null when there's no logged data in the window at all
+            // (nothing to estimate from yet — callers should fall back to the
+            // target-based ETA in that case).
+            function getActualWeeklyPace(track, weeks = 4) {
+                const buckets = getWeeklyHoursBuckets(track, weeks);
+                if (!buckets.some(v => v > 0)) return null;
+                const total = buckets.reduce((s, v) => s + v, 0);
+                return total / weeks;
+            }
+
             function buildCompareCol(track, hpw, colOpts) {
                 colOpts = colOpts || {};
                 const curriculum = getCurriculum(track);
@@ -51304,6 +51349,30 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const remainingWks = Math.ceil(remainingHrs / hpw);
                 const finishDate = new Date();
                 finishDate.setDate(finishDate.getDate() + remainingWks * 7);
+
+                // Actual-pace ETA — same remainingHrs, but divided by what you've
+                // really been averaging (getActualWeeklyPace) instead of the
+                // target slider. Only shown once there's at least one week of
+                // real data to base it on; otherwise the target-only estimate
+                // below is all that's shown (nothing to compare it against yet).
+                const actualPace = getActualWeeklyPace(track, 4);
+                let etaHtml = '';
+                if (remainingHrs > 0) {
+                    if (actualPace && actualPace > 0.05) {
+                        const remainingWksActual = Math.ceil(remainingHrs / actualPace);
+                        const finishDateActual = new Date();
+                        finishDateActual.setDate(finishDateActual.getDate() + remainingWksActual * 7);
+                        const paceRatio = actualPace / hpw;
+                        const paceColor = paceRatio >= 0.9 ? '#059669' : (paceRatio >= 0.5 ? '#d97706' : '#dc2626');
+                        etaHtml = `
+                            <div class="rdm-compare-eta">
+                                <div class="rdm-compare-eta-target">🎯 Target: ~${remainingWks}wk · ${fmtDate(finishDate)}</div>
+                                <div class="rdm-compare-eta-actual" style="color:${paceColor};">📍 At your pace (${actualPace.toFixed(1)}h/wk): ~${remainingWksActual}wk · ${fmtDate(finishDateActual)}</div>
+                            </div>`;
+                    } else {
+                        etaHtml = `<div style="text-align:center;font-size:0.68rem;color:var(--text-muted);margin-bottom:8px;">🏁 ~${remainingWks}wk · ${fmtDate(finishDate)} <span style="opacity:0.7;">(target pace)</span></div>`;
+                    }
+                }
 
                 let phasesHtml = '';
                 phaseList.forEach(phInfo => {
@@ -51416,7 +51485,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>
                         <div class="rdm-compare-ring" style="background:conic-gradient(var(--primary) ${pctComplete}%, var(--border-color) 0)"><span>${pctComplete}%</span></div>
                         <div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">${doneCount}/${totalCount} skills</div>
-                        ${remainingHrs > 0 ? `<div style="text-align:center;font-size:0.68rem;color:var(--text-muted);margin-bottom:8px;">🏁 ~${remainingWks}wk · ${fmtDate(finishDate)}</div>` : ''}
+                        ${etaHtml}
                         ${weekHtml}
                         ${sparkHtml}
                         ${idleHtml}
@@ -51469,11 +51538,29 @@ window.fcRenderTagChips = fcRenderTagChips;
                     ? `<button type="button" class="rdm-swap-pins-btn" title="Swap which pinned track is #1"
                           onclick="StrategicRoadmap.swapPinnedOrder()">⇅ Swap order</button>`
                     : '';
+
+                // "Most neglected" banner — collectIdleTracks() already powers the
+                // once-a-day toast nudge; reusing it here surfaces the same signal
+                // permanently at the top of Overview instead of only as a toast you
+                // might miss, and without needing to scan every card's own ⚠️ badge
+                // to find the worst offender.
+                const idleList = collectIdleTracks().sort((a, b) => b.idleDays - a.idleDays);
+                const neglectedHtml = idleList.length > 0
+                    ? `<div class="rdm-neglected-banner" role="button" tabindex="0"
+                          title="Open ${escapeHtml(idleList[0].meta.label)} in List view"
+                          onclick="StrategicRoadmap.jumpToTrack('${idleList[0].track}')"
+                          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();StrategicRoadmap.jumpToTrack('${idleList[0].track}');}">
+                          ⚠️ <strong>Most neglected:</strong> ${idleList[0].meta.icon} ${escapeHtml(idleList[0].meta.label)} — ${idleList[0].idleDays}d without activity
+                          ${idleList.length > 1 ? `<span class="rdm-neglected-more"> (+${idleList.length - 1} more idle 10d+)</span>` : ''}
+                       </div>`
+                    : '';
+
                 return `
                     <div class="rdm-overview-header">
                         <span>🗂️ All tracks — ${cols.length} curricula${pinHint}</span>
                         ${swapHtml}
                     </div>
+                    ${neglectedHtml}
                     <div class="rdm-overview-grid">${cols.join('')}</div>`;
             }
 
