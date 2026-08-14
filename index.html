@@ -10912,6 +10912,8 @@
     .rdm-compare-phase-mini .fill { height: 100%; border-radius: 3px; }
     .rdm-compare-focus { font-size: 0.72rem; margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--bg-light); }
     .rdm-compare-focus strong { display: block; font-size: 0.75rem; margin-bottom: 2px; }
+    .rdm-compare-spark { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 8px; }
+    .rdm-compare-spark-label { font-size: 0.6rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
 
     /* ── Milestone celebration overlay ── */
     .rdm-celebrate-overlay {
@@ -50439,6 +50441,43 @@ window.fcRenderTagChips = fcRenderTagChips;
                     .filter(e => e.ts >= cutoff)
                     .reduce((sum, e) => sum + e.hrs, 0);
             }
+            // Buckets the hours log into `weeks` rolling 7-day windows for
+            // the Overview sparkline — index 0 is the OLDEST week, the last
+            // index is always "this week" (same window as getHoursThisWeek
+            // above, so the sparkline's rightmost bar always agrees with the
+            // numeric "this week" figure shown next to it).
+            function getWeeklyHoursBuckets(track, weeks) {
+                const log = loadHoursLog(track);
+                const now = Date.now();
+                const buckets = new Array(weeks).fill(0);
+                log.forEach(e => {
+                    const weeksAgo = Math.floor((now - e.ts) / (7 * 24 * 60 * 60 * 1000));
+                    if (weeksAgo >= 0 && weeksAgo < weeks) buckets[weeks - 1 - weeksAgo] += e.hrs;
+                });
+                return buckets;
+            }
+            // Tiny inline SVG bar sparkline — 4 bars showing the last 4
+            // rolling weeks at a glance, so a fading track shows up as a
+            // visibly shrinking trend rather than just a single "this week"
+            // number with no context for whether that's typical or a slump.
+            // Bar color reuses the same green/amber/red thresholds as the
+            // "this week" figure (relative to the hrs/week target) so both
+            // numbers tell one consistent story instead of two color scales.
+            function buildWeeklySparklineSvg(buckets, hpw) {
+                const barW = 8, gap = 4, maxH = 16, baseY = 18;
+                const svgW = buckets.length * barW + (buckets.length - 1) * gap;
+                const maxVal = Math.max(...buckets, 0.1);
+                let bars = '';
+                buckets.forEach((v, i) => {
+                    const h = v > 0 ? Math.max(2, Math.round((v / maxVal) * maxH)) : 1;
+                    const x = i * (barW + gap);
+                    const y = baseY - h;
+                    const pct = hpw > 0 ? (v / hpw) * 100 : 0;
+                    const color = v <= 0 ? '#cbd5e1' : (pct >= 70 ? '#059669' : (pct >= 30 ? '#d97706' : '#dc2626'));
+                    bars += `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="2" fill="${color}"><title>${v.toFixed(1)}h</title></rect>`;
+                });
+                return `<svg viewBox="0 0 ${svgW} ${baseY}" width="${svgW}" height="${baseY}" style="display:block;">${bars}</svg>`;
+            }
 
             // Returns merged set of manually + auto-completed skill IDs
             function getCompleted(track) {
@@ -51111,6 +51150,19 @@ window.fcRenderTagChips = fcRenderTagChips;
                        </div>`
                     : '';
 
+                // 4-week sparkline — shows the shape of the last month, not
+                // just this week's single number, so momentum building or
+                // fading is visible at a glance. Rightmost bar always
+                // matches weekHrs above (same rolling-7-day window). Hidden
+                // entirely if there's no data in the whole 4-week span yet.
+                const weeklyBuckets = getWeeklyHoursBuckets(track, 4);
+                const sparkHtml = weeklyBuckets.some(v => v > 0)
+                    ? `<div class="rdm-compare-spark" title="Last 4 weeks (oldest → newest)">
+                          <span class="rdm-compare-spark-label">4-wk</span>
+                          ${buildWeeklySparklineSvg(weeklyBuckets, hpw)}
+                       </div>`
+                    : '';
+
                 // Pin toggle — only rendered in Overview (colOpts.pinnable),
                 // since Compare's fixed 2-column layout has nothing to pin
                 // relative to. filled ⭐ when this track is currently pinned,
@@ -51169,6 +51221,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">${doneCount}/${totalCount} skills</div>
                         ${remainingHrs > 0 ? `<div style="text-align:center;font-size:0.68rem;color:var(--text-muted);margin-bottom:8px;">🏁 ~${remainingWks}wk · ${fmtDate(finishDate)}</div>` : ''}
                         ${weekHtml}
+                        ${sparkHtml}
                         ${idleHtml}
                         ${phasesHtml}
                         ${focusHtml}
