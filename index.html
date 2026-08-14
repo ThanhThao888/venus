@@ -10906,6 +10906,33 @@
         transition: background 0.15s ease;
     }
     .rdm-focus-goal-btn:hover { background: rgba(255,255,255,0.24); }
+
+    /* ── Manually-completed list (per-skill undo) ── */
+    .rdm-done-section {
+        margin-top: 14px; border-radius: var(--radius-md);
+        border: 1px dashed var(--border-color); padding: 4px 12px 8px;
+    }
+    .rdm-done-header {
+        font-size: 0.7rem; font-weight: 700; color: var(--text-muted);
+        letter-spacing: 0.3px; padding: 8px 0 6px;
+    }
+    .rdm-done-item {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; padding: 6px 0; border-top: 1px solid var(--border-color);
+    }
+    .rdm-done-item:first-of-type { border-top: none; }
+    .rdm-done-name {
+        font-size: 0.8rem; color: var(--text-dark); text-decoration: line-through;
+        text-decoration-color: var(--text-muted); opacity: 0.75; min-width: 0;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .rdm-undo-btn {
+        flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+        border: 1px solid var(--border-color); background: transparent;
+        color: var(--text-muted); font-size: 0.78rem; cursor: pointer;
+        transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+    }
+    .rdm-undo-btn:hover { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.08); }
     /* ── End Roadmap Module ─────────────────────────────────── */
 
     
@@ -21151,11 +21178,15 @@ window.DBP={
                         <button class="rdm-reset-btn"
                             onclick="StrategicRoadmap.resetTrack(document.getElementById('rdmTrackSelect').value)"
                             title="Reset manual completions for this track">↺ Reset</button>
+                        <button class="rdm-reset-btn"
+                            onclick="StrategicRoadmap.copyProgress()"
+                            title="Copy a text summary of your progress across all tracks">📋 Share</button>
                     </div>
                     <div class="rdm-view-row">
                         <div class="rdm-view-toggle">
                             <button type="button" class="rdm-view-btn" id="rdmViewBtnList" onclick="StrategicRoadmap.setView('list')">📋 List</button>
                             <button type="button" class="rdm-view-btn" id="rdmViewBtnGraph" onclick="StrategicRoadmap.setView('graph')">🌳 Graph</button>
+                            <button type="button" class="rdm-view-btn" id="rdmViewBtnOverview" onclick="StrategicRoadmap.setView('overview')">🗂️ Overview</button>
                         </div>
                         <button type="button" class="rdm-compare-btn" id="rdmCompareBtn" onclick="StrategicRoadmap.toggleCompare()">🆚 So sánh</button>
                     </div>
@@ -21180,7 +21211,7 @@ window.DBP={
                 <!-- ── Output ── -->
                 <div id="rdmOutput">
                     <div style="text-align:center;color:var(--text-muted);font-size:0.85rem;padding:18px 0;">
-                        Select a track &amp; click ⚡ Generate
+                        Select a track to view your roadmap
                     </div>
                 </div>
             </div>
@@ -50105,6 +50136,45 @@ window.fcRenderTagChips = fcRenderTagChips;
                 saveManual(track, list);
             }
 
+            // ── "Skip / Not Applicable" ─────────────────────────────────────
+            // Every track's curriculum is one fixed, opinionated list — but not
+            // every skill on it is relevant to every person (e.g. someone might
+            // not need "VBA" at all). Skipping a skill treats it as *satisfied*
+            // for DAG-unlocking purposes (its dependents still unlock normally)
+            // while excluding it from the % complete / hours-remaining math, so
+            // the roadmap adapts to what you're actually planning to study.
+            const skipStorageKey = (track) => `roadmapSkipped_${track}`;
+            function loadSkipped(track) {
+                try { return JSON.parse(localStorage.getItem(skipStorageKey(track)) || '[]'); }
+                catch (e) { return []; }
+            }
+            function saveSkipped(track, ids) {
+                try { localStorage.setItem(skipStorageKey(track), JSON.stringify(ids)); }
+                catch (e) {}
+            }
+            function toggleSkip(track, skillId) {
+                const list = loadSkipped(track);
+                const idx = list.indexOf(skillId);
+                if (idx === -1) list.push(skillId); else list.splice(idx, 1);
+                saveSkipped(track, list);
+            }
+            // Clears the skip flag without toggling it back on if it's already
+            // clear. Used by markDone() below so a skill can't stay marked
+            // "skipped" once it's actually been completed (the two states are
+            // mutually exclusive — completing supersedes skipping).
+            function clearSkipFlag(track, skillId) {
+                const list = loadSkipped(track);
+                const idx = list.indexOf(skillId);
+                if (idx !== -1) { list.splice(idx, 1); saveSkipped(track, list); }
+            }
+            // Skipped-set scoped to skills that actually exist in this track's
+            // curriculum right now (defensive against stale ids from an older
+            // curriculum edit lingering in localStorage).
+            function getSkippedSet(track, curriculum) {
+                const validIds = new Set(curriculum.map(s => s.id));
+                return new Set(loadSkipped(track).filter(id => validIds.has(id)));
+            }
+
             // Auto-detect from existing studyHours data (bridge layer).
             // A skill counts as auto-completed if ANY of its studyHoursKeys
             // has logged hours >= 75% of the curriculum skill's target hours.
@@ -50256,10 +50326,11 @@ window.fcRenderTagChips = fcRenderTagChips;
                 return s;
             }
 
-            // Whether every skill in `phase` is completed, given a completedSet.
-            function phaseFullyDone(curriculum, phase, completedSet) {
+            // Whether every skill in `phase` is done-or-skipped, given a
+            // satisfiedSet (completed ∪ skipped skill ids).
+            function phaseFullyDone(curriculum, phase, satisfiedSet) {
                 const phSkills = curriculum.filter(s => s.phase === phase);
-                return phSkills.length > 0 && phSkills.every(s => completedSet.has(s.id));
+                return phSkills.length > 0 && phSkills.every(s => satisfiedSet.has(s.id));
             }
 
             // Confetti + modal celebration shown when a whole Phase is completed.
@@ -50297,12 +50368,20 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const hpw = opts.hpw || 10;
                 const completed = getCompleted(track);
                 const completedSet = new Set(completed);
+                const skippedSet = getSkippedSet(track, curriculum);
+                // "Satisfied" = done OR skipped — either way, dependents unlock.
+                // Skipped skills stay OUT of completedSet/pctComplete, since they
+                // were never actually studied.
+                const satisfiedSet = new Set([...completedSet, ...skippedSet]);
                 const autoIds = new Set(getAutoCompleted(track));
                 const idToSkill = new Map(curriculum.map(s => [s.id, s]));
-                const activeSkills = curriculum.filter(s => !completedSet.has(s.id));
+                const activeSkills = curriculum.filter(s => !completedSet.has(s.id) && !skippedSet.has(s.id));
                 const sortedSkills = topologicalSort(activeSkills, curriculum);
 
-                const totalCount = curriculum.length;
+                // Skipped skills are excluded from the denominator too, so %
+                // complete reflects the personalized path you're actually on
+                // instead of penalizing you for skills you deliberately opted out of.
+                const totalCount = curriculum.length - skippedSet.size;
                 const doneCount = completed.length;
                 const pctComplete = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
@@ -50319,7 +50398,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const finishDate = new Date();
                 finishDate.setDate(finishDate.getDate() + totalWks * 7);
 
-                const unlockedNow = sortedSkills.filter(s => !isLocked(s, completedSet));
+                const unlockedNow = sortedSkills.filter(s => !isLocked(s, satisfiedSet));
                 const focusSkill = unlockedNow[0] || sortedSkills[0];
                 const upNext = unlockedNow.slice(1, 3);
 
@@ -50383,7 +50462,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const phSkillsActive = sortedSkills.filter(s => s.phase === ph);
                     if (phSkillsActive.length === 0) return;
 
-                    const phSkillsAll = curriculum.filter(s => s.phase === ph);
+                    const phSkillsAll = curriculum.filter(s => s.phase === ph && !skippedSet.has(s.id));
                     const phDone = phSkillsAll.filter(s => completedSet.has(s.id)).length;
                     const phPct = phSkillsAll.length > 0 ? Math.round((phDone / phSkillsAll.length) * 100) : 0;
                     const phHrsLeft = phSkillsActive.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
@@ -50401,14 +50480,14 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                     phSkillsActive.forEach(skill => {
                         const wks = Math.ceil(hoursRemaining(track, skill) / hpw);
-                        const locked = isLocked(skill, completedSet);
+                        const locked = isLocked(skill, satisfiedSet);
                         const isFocus = focusSkill && skill.id === focusSkill.id;
                         const stateClass = locked ? 'rdm-locked' : 'rdm-unlocked';
                         const focusClass = isFocus ? ' rdm-is-focus' : '';
 
                         let lineageHtml = '';
                         if (locked) {
-                            lineageHtml = `<div class="rdm-prereq rdm-blocked-text">🔒 Blocked by: ${escapeHtml(blockedByText(skill, completedSet, idToSkill))}</div>`;
+                            lineageHtml = `<div class="rdm-prereq rdm-blocked-text">🔒 Blocked by: ${escapeHtml(blockedByText(skill, satisfiedSet, idToSkill))}</div>`;
                         } else if (skill.prereqs.length > 0) {
                             const names = skill.prereqs.map(pid => {
                                 const p = idToSkill.get(pid);
@@ -50453,6 +50532,9 @@ window.fcRenderTagChips = fcRenderTagChips;
                                     <button class="${checkBtnClass}"
                                         onclick="StrategicRoadmap.markDone('${track}','${skill.id}')"
                                         title="${checkBtnTitle}">${checkBtnLabel}</button>
+                                    <button class="rdm-skip-btn"
+                                        onclick="StrategicRoadmap.skipSkill('${track}','${skill.id}')"
+                                        title="Skip — not applicable to me">⏭</button>
                                     <div class="rdm-skill-info">
                                         <div class="rdm-skill-name">${lockIcon}${globalOrder}. ${escapeHtml(skill.name)}</div>
                                         ${lineageHtml}
@@ -50469,6 +50551,50 @@ window.fcRenderTagChips = fcRenderTagChips;
                     });
                     html += `</div>`;
                 });
+
+                // ── Manually-completed skills — undoable one at a time ──
+                // Previously the ONLY way to undo a completion was "↺ Reset",
+                // which wipes every manual completion for the whole track at
+                // once. That's a heavy hammer for "I misclicked one skill."
+                // This section lists just the manually-ticked skills (auto-
+                // detected ones aren't listed here — those come from real
+                // logged hours, so "undoing" them would mean editing your
+                // study-hours history instead) with a per-skill ↩ button.
+                const manualIds = loadManual(track).filter(id => idToSkill.has(id) && !skippedSet.has(id));
+                if (manualIds.length > 0) {
+                    html += `
+                        <div class="rdm-done-section">
+                            <div class="rdm-done-header">✅ Manually completed (${manualIds.length}) — tap ↩ to undo</div>`;
+                    manualIds.forEach(id => {
+                        const s = idToSkill.get(id);
+                        html += `
+                            <div class="rdm-done-item">
+                                <span class="rdm-done-name">${escapeHtml(s.name.split(' (')[0])}</span>
+                                <button class="rdm-undo-btn" onclick="StrategicRoadmap.unmarkDone('${track}','${id}')" title="Undo this completion">↩</button>
+                            </div>`;
+                    });
+                    html += `</div>`;
+                }
+
+                // ── Skipped skills — "not applicable to me" ──
+                // Skipped skills unlock their dependents (see satisfiedSet above)
+                // but don't count toward % complete. Listed separately so it's
+                // never ambiguous why a skill has disappeared from the active list.
+                if (skippedSet.size > 0) {
+                    html += `
+                        <div class="rdm-skip-section">
+                            <div class="rdm-done-header">⏭️ Skipped (${skippedSet.size}) — tap ↩ to bring back</div>`;
+                    [...skippedSet].forEach(id => {
+                        const s = idToSkill.get(id);
+                        if (!s) return;
+                        html += `
+                            <div class="rdm-done-item">
+                                <span class="rdm-done-name">${escapeHtml(s.name.split(' (')[0])}</span>
+                                <button class="rdm-undo-btn" onclick="StrategicRoadmap.unskip('${track}','${id}')" title="Bring this skill back">↩</button>
+                            </div>`;
+                    });
+                    html += `</div>`;
+                }
 
                 return html;
             }
@@ -50524,13 +50650,16 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const hpw = (opts && opts.hpw) || 10;
                 const completed = getCompleted(track);
                 const completedSet = new Set(completed);
-                const totalCount = curriculum.length;
+                const skippedSet = getSkippedSet(track, curriculum);
+                const satisfiedSet = new Set([...completedSet, ...skippedSet]);
+                const manualSet = new Set(loadManual(track));
+                const totalCount = curriculum.length - skippedSet.size;
                 const doneCount = completed.length;
                 const pctComplete = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
                 const streak = getStreak();
                 const streakHtml = streak.count > 0 ? `<span class="rdm-streak-badge">🔥 ${streak.count} ngày</span>` : '';
 
-                const remainingHrs = curriculum.filter(s => !completedSet.has(s.id)).reduce((s, sk) => s + hoursRemaining(track, sk), 0);
+                const remainingHrs = curriculum.filter(s => !completedSet.has(s.id) && !skippedSet.has(s.id)).reduce((s, sk) => s + hoursRemaining(track, sk), 0);
                 const remainingWks = Math.ceil(remainingHrs / hpw);
                 const finishDate = new Date();
                 finishDate.setDate(finishDate.getDate() + remainingWks * 7);
@@ -50592,7 +50721,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         const from = idToPos.get(pid);
                         if (!from) return;
                         const done = completedSet.has(sk.id);
-                        const preDone = completedSet.has(pid);
+                        const preDone = satisfiedSet.has(pid);
                         const stroke = done ? '#10b981' : (preDone ? '#3b82f6' : '#cbd5e1');
                         const laneKey = pid + '|' + sk.id;
                         if (laneOf.has(laneKey)) {
@@ -50617,22 +50746,40 @@ window.fcRenderTagChips = fcRenderTagChips;
                     col.skills.forEach(sk => {
                         const pos = idToPos.get(sk.id);
                         const done = completedSet.has(sk.id);
-                        const locked = !done && isLocked(sk, completedSet);
+                        const skipped = !done && skippedSet.has(sk.id);
+                        const locked = !done && !skipped && isLocked(sk, satisfiedSet);
                         let fill, stroke, textColor;
                         if (done)        { fill = 'rgba(16,185,129,0.16)';  stroke = '#10b981'; textColor = '#065f46'; }
+                        else if (skipped){ fill = 'rgba(148,163,184,0.10)'; stroke = '#94a3b8'; textColor = '#94a3b8'; }
                         else if (locked) { fill = 'rgba(148,163,184,0.14)'; stroke = '#94a3b8'; textColor = '#64748b'; }
                         else             { fill = 'rgba(59,130,246,0.14)';  stroke = '#3b82f6'; textColor = '#1e40af'; }
-                        const icon = done ? '✓ ' : (locked ? '🔒 ' : '');
+                        const icon = done ? '✓ ' : (skipped ? '⏭ ' : (locked ? '🔒 ' : ''));
+                        const dashAttr = skipped ? ' stroke-dasharray="4 3"' : '';
                         const shortName = sk.name.split(' (')[0];
                         const label = shortName.length > 22 ? shortName.slice(0, 21) + '…' : shortName;
-                        const handler = locked
-                            ? `StrategicRoadmap.notifyLocked('${track}','${sk.id}')`
-                            : `StrategicRoadmap.markDone('${track}','${sk.id}')`;
+                        let handler;
+                        if (skipped) {
+                            handler = `StrategicRoadmap.unskip('${track}','${sk.id}')`;
+                        } else if (locked) {
+                            handler = `StrategicRoadmap.notifyLocked('${track}','${sk.id}')`;
+                        } else if (done) {
+                            // Bug fix: this used to fall through to markDone(), which
+                            // for non-trackable skills silently UN-completed them
+                            // (toggleManual) behind a dialog worded as if confirming
+                            // completion. Route manually-completed nodes to the real
+                            // undo flow, and auto-detected ones to an explanatory note
+                            // instead — clicking a done node should never surprise you.
+                            handler = manualSet.has(sk.id)
+                                ? `StrategicRoadmap.unmarkDone('${track}','${sk.id}')`
+                                : `StrategicRoadmap.notifyAutoCompleted('${track}','${sk.id}')`;
+                        } else {
+                            handler = `StrategicRoadmap.markDone('${track}','${sk.id}')`;
+                        }
                         nodesSvg += `
                             <g data-skill="${sk.id}" onclick="${handler}" onmouseenter="StrategicRoadmap.hoverGraphNode(this,'${sk.id}',true)" onmouseleave="StrategicRoadmap.hoverGraphNode(this,'${sk.id}',false)">
-                                <rect class="rdm-gnode-rect" x="${pos.x}" y="${pos.y}" width="${nodeW}" height="${nodeH}" rx="9" fill="${fill}" stroke="${stroke}"></rect>
+                                <rect class="rdm-gnode-rect" x="${pos.x}" y="${pos.y}" width="${nodeW}" height="${nodeH}" rx="9" fill="${fill}" stroke="${stroke}"${dashAttr}></rect>
                                 <text class="rdm-gnode-text" x="${pos.x + 9}" y="${pos.y + 20}" fill="${textColor}">${icon}${escapeHtml(label)}</text>
-                                <text class="rdm-gnode-sub" x="${pos.x + 9}" y="${pos.y + 36}" fill="${textColor}">${sk.hours}h · ~${Math.ceil(hoursRemaining(track, sk) / hpw)}wk · ${starRating(sk.imp)}</text>
+                                <text class="rdm-gnode-sub" x="${pos.x + 9}" y="${pos.y + 36}" fill="${textColor}">${skipped ? 'Skipped — tap to undo' : `${sk.hours}h · ~${Math.ceil(hoursRemaining(track, sk) / hpw)}wk · ${starRating(sk.imp)}`}</text>
                             </g>`;
                     });
                 });
@@ -50662,6 +50809,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <span><i style="background:#10b981"></i> Đã hoàn thành</span>
                         <span><i style="background:#3b82f6"></i> Có thể học ngay</span>
                         <span><i style="background:#94a3b8"></i> Đang khoá</span>
+                        <span><i style="background:#94a3b8;border:1px dashed #64748b"></i> Đã bỏ qua</span>
                     </div>`;
             }
 
@@ -50674,12 +50822,14 @@ window.fcRenderTagChips = fcRenderTagChips;
                 if (!curriculum) return null;
                 const completed = getCompleted(track);
                 const completedSet = new Set(completed);
-                const totalCount = curriculum.length;
+                const skippedSet = getSkippedSet(track, curriculum);
+                const satisfiedSet = new Set([...completedSet, ...skippedSet]);
+                const totalCount = curriculum.length - skippedSet.size;
                 const doneCount = completed.length;
                 const pctComplete = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-                const activeSkills = curriculum.filter(s => !completedSet.has(s.id));
+                const activeSkills = curriculum.filter(s => !completedSet.has(s.id) && !skippedSet.has(s.id));
                 const sorted = topologicalSort(activeSkills, curriculum);
-                const unlockedNow = sorted.filter(s => !isLocked(s, completedSet));
+                const unlockedNow = sorted.filter(s => !isLocked(s, satisfiedSet));
                 const focusSkill = unlockedNow[0] || sorted[0] || null;
                 const phaseList = getPhaseList(track, curriculum);
                 const meta = (typeof TRACK_META !== 'undefined' && TRACK_META[track]) || { icon: '📘', label: track };
@@ -50690,7 +50840,7 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                 let phasesHtml = '';
                 phaseList.forEach(phInfo => {
-                    const phSkillsAll = curriculum.filter(s => s.phase === phInfo.num);
+                    const phSkillsAll = curriculum.filter(s => s.phase === phInfo.num && !skippedSet.has(s.id));
                     if (phSkillsAll.length === 0) return;
                     const phDone = phSkillsAll.filter(s => completedSet.has(s.id)).length;
                     const phPct = Math.round((phDone / phSkillsAll.length) * 100);
@@ -50704,7 +50854,7 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                 const focusHtml = focusSkill
                     ? `<div class="rdm-compare-focus"><strong>🎯 ${escapeHtml(focusSkill.name.split(' (')[0])}</strong>${focusSkill.hours}h · ${starRating(focusSkill.imp)}</div>`
-                    : `<div class="rdm-compare-focus">🏆 Track hoàn thành!</div>`;
+                    : `<div class="rdm-compare-focus">🏆 Track complete!</div>`;
 
                 return `
                     <div class="rdm-compare-col">
@@ -50724,11 +50874,82 @@ window.fcRenderTagChips = fcRenderTagChips;
                 return `<div class="rdm-compare-grid">${colA}${colB}</div>`;
             }
 
+            // ── OVERVIEW — every track at a glance ────────────────────────────
+            // Reuses buildCompareCol (already battle-tested by the 2-track
+            // Compare view) across ALL tracks, so juggling several curricula at
+            // once (e.g. a main career track + CFA1 + a language) doesn't mean
+            // clicking through the track selector one at a time just to see
+            // where you stand on each.
+            function renderOverviewHtml(opts) {
+                const hpw = (opts && opts.hpw) || 10;
+                const tracks = (typeof TRACK_META !== 'undefined') ? Object.keys(TRACK_META) : [];
+                const cols = tracks.map(t => buildCompareCol(t, hpw)).filter(Boolean);
+                if (cols.length === 0) return null;
+                return `
+                    <div class="rdm-overview-header">🗂️ All tracks — ${cols.length} curricula</div>
+                    <div class="rdm-overview-grid">${cols.join('')}</div>`;
+            }
+
+            // ── SHARE PROGRESS — plain-text summary across ALL tracks ─────────
+            // Powers the "📋 Share" button. Deliberately plain text (not HTML/
+            // markdown) so it pastes cleanly into a chat with an advisor/mentor,
+            // a journal entry, or a note-taking app. Reuses the same stat math
+            // as buildCompareCol/renderOverviewHtml so the numbers always agree
+            // with what's on screen.
+            function buildProgressSummaryText(hpw) {
+                const tracks = (typeof TRACK_META !== 'undefined') ? Object.keys(TRACK_META) : [];
+                const dateStr = new Date().toLocaleDateString('en-US');
+                let text = `🗂️ STRATEGIC ROADMAP — Progress Summary (${dateStr})\n`;
+                text += `────────────────────────────────`;
+                let any = false;
+                tracks.forEach(track => {
+                    const curriculum = getCurriculum(track);
+                    if (!curriculum) return;
+                    const completed = getCompleted(track);
+                    const completedSet = new Set(completed);
+                    const skippedSet = getSkippedSet(track, curriculum);
+                    const satisfiedSet = new Set([...completedSet, ...skippedSet]);
+                    const totalCount = curriculum.length - skippedSet.size;
+                    if (totalCount === 0) return;
+                    any = true;
+
+                    const doneCount = completed.length;
+                    const pct = Math.round((doneCount / totalCount) * 100);
+                    const activeSkills = curriculum.filter(s => !completedSet.has(s.id) && !skippedSet.has(s.id));
+                    const sorted = topologicalSort(activeSkills, curriculum);
+                    const unlockedNow = sorted.filter(s => !isLocked(s, satisfiedSet));
+                    const focusSkill = unlockedNow[0] || sorted[0] || null;
+                    const remainingHrs = activeSkills.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
+                    const remainingWks = Math.ceil(remainingHrs / hpw);
+                    const meta = (typeof TRACK_META !== 'undefined' && TRACK_META[track]) || { icon: '📘', label: track };
+
+                    text += `\n\n${meta.icon} ${meta.label}: ${pct}% (${doneCount}/${totalCount} skills)`;
+                    if (remainingHrs > 0) text += ` · ~${remainingWks}wk left (@ ${hpw}h/wk)`;
+                    text += focusSkill
+                        ? `\n   🎯 Next: ${focusSkill.name.split(' (')[0]}`
+                        : `\n   🏆 Track complete!`;
+                    if (skippedSet.size > 0) text += `\n   ⏭️ Skipped: ${skippedSet.size} skill(s)`;
+                });
+                if (!any) text += `\n\n(No roadmap data available.)`;
+                text += `\n\n— Generated from Strategic Roadmap tracker.`;
+                return text;
+            }
+
             // ── 6. RENDER (delegates to renderHtml string-builder) ──────────
             function render(track) {
                 const output = document.getElementById('rdmOutput');
                 if (!output) return;
                 const hpw = parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
+
+                const mode = getViewMode();
+
+                if (mode === 'overview') {
+                    const ovHtml = renderOverviewHtml({ hpw });
+                    output.innerHTML = ovHtml !== null
+                        ? ovHtml
+                        : `<div style="text-align:center;color:var(--text-muted);font-size:0.85rem;padding:18px 0;">⚠️ No roadmap data available.</div>`;
+                    return;
+                }
 
                 const compareTrack = getCompareTrack();
                 if (compareTrack && compareTrack !== track) {
@@ -50736,9 +50957,14 @@ window.fcRenderTagChips = fcRenderTagChips;
                     if (cmpHtml !== null) { output.innerHTML = cmpHtml; return; }
                 }
 
-                const mode = getViewMode();
                 const html = mode === 'graph' ? renderGraphHtml(track, { hpw }) : renderHtml(track, { hpw });
-                if (html === null) return;
+                if (html === null) {
+                    // Bug fix: this used to silently `return`, leaving whatever was
+                    // already in #rdmOutput on screen (stale data, or nothing at all
+                    // on first load) with zero feedback to the user.
+                    output.innerHTML = `<div style="text-align:center;color:var(--text-muted);font-size:0.85rem;padding:18px 0;">⚠️ No roadmap data available for this track.</div>`;
+                    return;
+                }
                 output.innerHTML = html;
             }
 
@@ -50852,13 +51078,15 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const track = document.getElementById('rdmTrackSelect')?.value;
                     if (track) render(track);
                 },
-                // ── View mode toggle (List / Graph) ──
+                // ── View mode toggle (List / Graph / Overview) ──
                 setView(mode) {
                     setViewModeStorage(mode);
                     const btnList = document.getElementById('rdmViewBtnList');
                     const btnGraph = document.getElementById('rdmViewBtnGraph');
+                    const btnOverview = document.getElementById('rdmViewBtnOverview');
                     if (btnList) btnList.classList.toggle('active', mode === 'list');
                     if (btnGraph) btnGraph.classList.toggle('active', mode === 'graph');
+                    if (btnOverview) btnOverview.classList.toggle('active', mode === 'overview');
                     this.generate();
                 },
                 // ── Compare mode toggle (2 tracks side-by-side) ──
@@ -51008,6 +51236,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         rdmConfirmModal(
                             `Xác nhận bạn đã thực sự hoàn thành:\n"${skill.name}"?\n\nSkill này không có dữ liệu giờ học để tự xác minh, chỉ tick khi bạn chắc chắn.`,
                             () => {
+                                clearSkipFlag(track, skillId);
                                 toggleManual(track, skillId);
                                 render(track);
                                 flashBadge();
@@ -51033,6 +51262,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         }
                         if (hrs > skill.hours * 2) hrs = skill.hours * 2; // sanity clamp against fat-finger entries
 
+                        if (hrs >= threshold) clearSkipFlag(track, skillId); // completing supersedes a prior skip
                         setRoadmapSkillHours(track, skill, hrs);
                         render(track);
 
@@ -51049,6 +51279,35 @@ window.fcRenderTagChips = fcRenderTagChips;
                         }
                     });
                 },
+                // Clicking a done-but-auto-detected node in Graph view: explain
+                // where the completion came from instead of silently doing nothing
+                // (or, before this fix, silently undoing it via markDone()).
+                notifyAutoCompleted(track, skillId) {
+                    const curriculum = getCurriculum(track);
+                    const skill = curriculum && curriculum.find(s => s.id === skillId);
+                    if (!skill) return;
+                    if (typeof showNotification === 'function')
+                        showNotification(`✓ "${skill.name.split(' (')[0]}" auto-completed từ giờ học đã ghi nhận — sửa trong Study Hours nếu cần.`, 'info');
+                },
+                // Undo ONE manually-completed skill (see the "Manually completed"
+                // list in renderHtml). Only ever touches manual completions —
+                // auto-detected ones aren't affected since they're derived from
+                // real logged hours, not a flag this function can toggle.
+                unmarkDone(track, skillId) {
+                    const curriculum = getCurriculum(track);
+                    const skill = curriculum && curriculum.find(s => s.id === skillId);
+                    if (!skill) return;
+                    rdmConfirmModal(
+                        `Bỏ đánh dấu hoàn thành cho:\n"${skill.name}"?`,
+                        () => {
+                            toggleManual(track, skillId);
+                            render(track);
+                            if (typeof showNotification === 'function')
+                                showNotification('↩️ Đã bỏ đánh dấu hoàn thành.', 'info');
+                        },
+                        { icon: '↩️', title: 'Bỏ đánh dấu hoàn thành', confirmLabel: 'Bỏ đánh dấu', danger: true }
+                    );
+                },
                 resetTrack(track) {
                     rdmConfirmModal(
                         'Xóa các completion đã tick tay cho track này?\n(Completion tự động phát hiện từ giờ học vẫn được giữ nguyên.)',
@@ -51058,6 +51317,48 @@ window.fcRenderTagChips = fcRenderTagChips;
                         },
                         { icon: '🔄', title: 'Reset track', confirmLabel: 'Reset', danger: true }
                     );
+                },
+                // ⏭️ Mark a skill "not applicable" — it still satisfies its
+                // dependents' prerequisites (they unlock normally) but is
+                // excluded from this track's % complete / hours-remaining math.
+                // One-click, no confirm modal: trivially reversible via unskip().
+                skipSkill(track, skillId) {
+                    const curriculum = getCurriculum(track);
+                    const skill = curriculum && curriculum.find(s => s.id === skillId);
+                    if (!skill) return;
+                    toggleSkip(track, skillId);
+                    render(track);
+                    if (typeof showNotification === 'function')
+                        showNotification(`⏭️ "${skill.name.split(' (')[0]}" skipped — excluded from % complete.`, 'info');
+                },
+                // ↩️ Bring a skipped skill back into the active roadmap.
+                unskip(track, skillId) {
+                    const curriculum = getCurriculum(track);
+                    const skill = curriculum && curriculum.find(s => s.id === skillId);
+                    if (!skill) return;
+                    toggleSkip(track, skillId);
+                    render(track);
+                    if (typeof showNotification === 'function')
+                        showNotification(`↩️ "${skill.name.split(' (')[0]}" is back on the active roadmap.`, 'info');
+                },
+                // 📋 Copy a plain-text progress summary across ALL tracks to the
+                // clipboard — for pasting to an advisor/mentor or saving to a log.
+                copyProgress() {
+                    const hpw = parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
+                    const text = buildProgressSummaryText(hpw);
+                    const finish = () => {
+                        if (typeof showNotification === 'function')
+                            showNotification('📋 Progress summary copied to clipboard!', 'success');
+                    };
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(finish).catch(() => {
+                            if (typeof fallbackCopy === 'function') fallbackCopy(text);
+                            finish();
+                        });
+                    } else {
+                        if (typeof fallbackCopy === 'function') fallbackCopy(text);
+                        finish();
+                    }
                 },
                 // Sync track selector with the main app's currentCareer value
                 syncCareer() {
@@ -51071,8 +51372,12 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const mode = getViewMode();
                     const btnList = document.getElementById('rdmViewBtnList');
                     const btnGraph = document.getElementById('rdmViewBtnGraph');
-                    if (btnList) btnList.classList.toggle('active', mode !== 'graph');
+                    const btnOverview = document.getElementById('rdmViewBtnOverview');
+                    // Bug fix: was `mode !== 'graph'` for List, which incorrectly
+                    // highlighted List as active whenever mode was 'overview' too.
+                    if (btnList) btnList.classList.toggle('active', mode === 'list');
                     if (btnGraph) btnGraph.classList.toggle('active', mode === 'graph');
+                    if (btnOverview) btnOverview.classList.toggle('active', mode === 'overview');
                     const cmp = getCompareTrack();
                     if (cmp) {
                         const row = document.getElementById('rdmCompareRow');
