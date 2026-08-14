@@ -18803,13 +18803,13 @@ window.DBP={
                 <!-- Reminder banner (dynamic) -->
                 <div id="wlnReminderBanner" style="display:none; margin:8px 0 12px; padding:10px 12px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius:var(--radius-md); font-size:0.82rem; line-height:1.5; color:var(--text-dark);"></div>
 
-                <!-- Tabs -->
-                <div style="display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap;">
-                    <button type="button" class="wln-tab-btn" data-tab="log" onclick="Wellness.setTab('log')">📝 Log hôm nay</button>
-                    <button type="button" class="wln-tab-btn" data-tab="weight" onclick="Wellness.setTab('weight')">⚖️ Cân nặng</button>
-                    <button type="button" class="wln-tab-btn" data-tab="sleep" onclick="Wellness.setTab('sleep')">😴 Giấc ngủ</button>
-                    <button type="button" class="wln-tab-btn" data-tab="supp" onclick="Wellness.setTab('supp')">💊 Supplement</button>
-                    <button type="button" class="wln-tab-btn" data-tab="review" onclick="Wellness.setTab('review')">📊 Tuần này</button>
+                <!-- Tabs (gọn thành 1 hàng cố định, không wrap — icon + nhãn ngắn) -->
+                <div class="wln-tab-nav">
+                    <button type="button" class="wln-tab-btn" data-tab="log" onclick="Wellness.setTab('log')" title="Log hôm nay"><span class="wln-tab-icon">📝</span><span class="wln-tab-label">Log</span></button>
+                    <button type="button" class="wln-tab-btn" data-tab="weight" onclick="Wellness.setTab('weight')" title="Cân nặng"><span class="wln-tab-icon">⚖️</span><span class="wln-tab-label">Cân</span></button>
+                    <button type="button" class="wln-tab-btn" data-tab="sleep" onclick="Wellness.setTab('sleep')" title="Giấc ngủ"><span class="wln-tab-icon">😴</span><span class="wln-tab-label">Ngủ</span></button>
+                    <button type="button" class="wln-tab-btn" data-tab="supp" onclick="Wellness.setTab('supp')" title="Supplement"><span class="wln-tab-icon">💊</span><span class="wln-tab-label">Supp</span></button>
+                    <button type="button" class="wln-tab-btn" data-tab="review" onclick="Wellness.setTab('review')" title="Tuần này"><span class="wln-tab-icon">📊</span><span class="wln-tab-label">Tuần</span></button>
                 </div>
 
                 <!-- ===== TAB: LOG HÔM NAY (dashboard chỉ hiển thị phân tích — input nằm hết trong modal riêng từng loại) ===== -->
@@ -18846,27 +18846,42 @@ window.DBP={
                     <div id="wlnCaffeineWarning" style="display:none; font-size:0.75rem; color:#e74c3c; margin-bottom:10px; line-height:1.4;"></div>
                     <div id="wlnCaffeineLogList" style="display:flex; flex-direction:column; gap:5px; max-height:100px; overflow-y:auto; margin-bottom:12px;"></div>
 
+                    <!-- Các mục dưới đây được JS sắp lại thứ tự theo độ ưu tiên (chưa log lên trước,
+                         đã xong thì thu gọn) — xem Wellness.reorderLogSections() -->
+                    <div id="wlnLogSections" style="display:flex; flex-direction:column;">
+
                     <!-- Today's food log -->
-                    <div class="wln-section-header-row">
-                        <span class="wln-section-header-label">🍽️ Đã ăn hôm nay</span>
-                        <button type="button" class="wln-add-trigger" onclick="Wellness.openFoodModal()" title="Log món ăn" aria-label="Log món ăn">+</button>
+                    <div id="wlnSectionFood" class="wln-priority-section">
+                        <div class="wln-section-header-row">
+                            <span class="wln-section-header-label">🍽️ Đã ăn hôm nay</span>
+                            <span style="display:flex; align-items:center; gap:6px;">
+                                <span id="wlnFoodSummary" style="font-size:0.72rem; color:var(--text-muted); cursor:pointer;" onclick="Wellness.toggleFoodListCollapse()"></span>
+                                <button type="button" class="wln-add-trigger" onclick="Wellness.openFoodModal()" title="Log món ăn" aria-label="Log món ăn">+</button>
+                            </span>
+                        </div>
+                        <div id="wlnFoodLogList" style="margin-bottom:14px; display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;"></div>
                     </div>
-                    <div id="wlnFoodLogList" style="margin-bottom:14px; display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;"></div>
 
                     <!-- Fasting status -->
-                    <div class="wln-section-header-row">
-                        <span class="wln-section-header-label">⏱️ Fasting Window</span>
-                        <button type="button" class="wln-add-trigger" onclick="Wellness.openFastingModal()" title="Giờ ăn / cài đặt" aria-label="Giờ ăn / cài đặt">+</button>
+                    <div id="wlnSectionFasting" class="wln-priority-section">
+                        <div class="wln-section-header-row">
+                            <span class="wln-section-header-label">⏱️ Fasting Window</span>
+                            <button type="button" class="wln-add-trigger" onclick="Wellness.openFastingModal()" title="Giờ ăn / cài đặt" aria-label="Giờ ăn / cài đặt">+</button>
+                        </div>
+                        <div id="wlnFastingBox" style="display:flex; flex-direction:column; gap:5px; margin-bottom:14px;"></div>
                     </div>
-                    <div id="wlnFastingBox" style="display:flex; flex-direction:column; gap:5px; margin-bottom:14px;"></div>
 
                     <!-- Workout status -->
-                    <div class="wln-section-header-row" style="margin-bottom:6px;">
-                        <span class="wln-section-header-label">🏋️ Tập luyện hôm nay</span>
-                        <span style="display:flex; align-items:center; gap:8px;">
-                            <span id="wlnWorkoutStatus" style="font-size:0.82rem; color:var(--text-muted);">Chưa log</span>
-                            <button type="button" class="wln-add-trigger" onclick="Wellness.openWorkoutModal()" title="Log vận động" aria-label="Log vận động">+</button>
-                        </span>
+                    <div id="wlnSectionWorkout" class="wln-priority-section">
+                        <div class="wln-section-header-row" style="margin-bottom:6px;">
+                            <span class="wln-section-header-label">🏋️ Tập luyện hôm nay</span>
+                            <span style="display:flex; align-items:center; gap:8px;">
+                                <span id="wlnWorkoutStatus" style="font-size:0.82rem; color:var(--text-muted);">Chưa log</span>
+                                <button type="button" class="wln-add-trigger" onclick="Wellness.openWorkoutModal()" title="Log vận động" aria-label="Log vận động">+</button>
+                            </span>
+                        </div>
+                    </div>
+
                     </div>
                 </div>
 
@@ -19106,16 +19121,30 @@ window.DBP={
         </div>
 
         <style>
+            .wln-tab-nav {
+                display: grid;
+                grid-template-columns: repeat(5, 1fr);
+                gap: 4px;
+            }
             .wln-tab-btn {
-                flex: 1;
-                padding: 7px 4px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 1px;
+                padding: 6px 2px;
                 border-radius: 8px;
                 border: 1.5px solid var(--border-color);
                 background: var(--bg-white);
                 color: var(--text-dark);
-                font-size: 0.76rem;
                 cursor: pointer;
                 transition: var(--transition);
+                min-width: 0;
+            }
+            .wln-tab-icon { font-size: 0.95rem; line-height: 1; }
+            .wln-tab-label {
+                font-size: 0.62rem; font-weight: 600; line-height: 1;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
             }
             .wln-tab-btn.active {
                 border-color: var(--primary);
@@ -19234,6 +19263,21 @@ window.DBP={
                 overflow: hidden; margin-top: 6px;
             }
             .wln-bar-fill { height: 100%; border-radius: 3px; background: #2ecc71; transition: width 0.3s ease; }
+            /* Sắp xếp ưu tiên trong tab "Log hôm nay": mục chưa log được đẩy lên đầu
+               (order gán bằng JS trong reorderLogSections) và có thể được highlight nhẹ
+               nếu đã trễ giờ; mục đã xong thu gọn để đỡ rối mắt. */
+            .wln-priority-section {
+                margin-bottom: 14px;
+                padding: 8px 9px;
+                border-radius: 10px;
+                border: 1px solid transparent;
+                transition: var(--transition);
+            }
+            .wln-priority-section.wln-section-pending {
+                background: rgba(245, 158, 11, 0.08);
+                border-color: rgba(245, 158, 11, 0.35);
+            }
+            .wln-priority-section.wln-section-done .wln-section-header-row { margin-bottom: 0; }
             .wln-section-header-row {
                 display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
             }
@@ -20137,13 +20181,27 @@ window.DBP={
                 if (foodModalTotalEl) foodModalTotalEl.textContent = `Hôm nay: ${Math.round(totalCal)} kcal, ${totalSugar}g đường`;
             }
 
+            // Mặc định thu gọn danh sách món ăn khi đã có ≥1 món (đỡ rối mắt) — bấm vào
+            // dòng tóm tắt để mở lại xem chi tiết. Nếu chưa log gì thì luôn hiện đầy đủ.
+            let _wlnFoodListCollapsed = true;
+            function toggleFoodListCollapse() {
+                _wlnFoodListCollapsed = !_wlnFoodListCollapsed;
+                renderFoodLogList();
+            }
             function renderFoodLogList() {
                 const day = getDay(todayKey());
                 const list = document.getElementById('wlnFoodLogList');
+                const summaryEl = document.getElementById('wlnFoodSummary');
                 if (!day.foods.length) {
+                    summaryEl.textContent = '';
+                    list.style.display = 'flex';
                     list.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted); text-align:center; padding:8px 0;">Chưa log món nào hôm nay.</div>`;
                     return;
                 }
+                const totalCal = Math.round(day.foods.reduce((s, f) => s + (f.cal || 0), 0));
+                const collapsed = _wlnFoodListCollapsed;
+                summaryEl.textContent = `${day.foods.length} món • ${totalCal}kcal ${collapsed ? '▾' : '▴'}`;
+                list.style.display = collapsed ? 'none' : 'flex';
                 list.innerHTML = day.foods.map((f, i) => `
                     <div class="wln-log-item">
                         <span>${f.name} — ${f.cal}kcal${f.sugar ? `, ${f.sugar}g đường` : ''}${f.natri ? `, ${f.natri}mg natri` : ''}${f.kali ? `, ${f.kali}mg kali` : ''} <span style="color:var(--text-muted); font-size:0.7rem;">(${new Date(f.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
@@ -20165,6 +20223,35 @@ window.DBP={
                 } else {
                     el.textContent = `✅ ${day.workout.type} — ${day.workout.minutes} phút`;
                 }
+            }
+
+            // Sắp xếp lại 3 khối Ăn/Fasting/Vận động trong "Log hôm nay" theo độ ưu tiên:
+            // mục nào CHƯA log và đang cần chú ý (theo giờ trong ngày) được đẩy lên đầu +
+            // viền cam nhẹ; mục đã xong lùi xuống cuối, viền/nền trở về bình thường.
+            // Giúp mắt luôn rơi vào việc cần làm tiếp theo thay vì phải rà cả danh sách.
+            function reorderLogSections() {
+                const day = getDay(todayKey());
+                const hour = new Date().getHours();
+                const foodDone = day.foods.length > 0;
+                const workoutDone = !!day.workout;
+                const foodEl = document.getElementById('wlnSectionFood');
+                const fastingEl = document.getElementById('wlnSectionFasting');
+                const workoutEl = document.getElementById('wlnSectionWorkout');
+                if (!foodEl || !fastingEl || !workoutEl) return;
+
+                // priority: số càng nhỏ càng lên đầu
+                const foodPriority = !foodDone && hour >= 10 ? 1 : (foodDone ? 4 : 2);
+                const workoutPriority = !workoutDone && hour >= 16 ? 1 : (workoutDone ? 5 : 3);
+                const fastingPriority = 3; // luôn ở mức trung bình — mang tính thông tin, không "xong/chưa xong"
+
+                foodEl.style.order = foodPriority;
+                fastingEl.style.order = fastingPriority;
+                workoutEl.style.order = workoutPriority;
+
+                foodEl.classList.toggle('wln-section-pending', !foodDone && hour >= 10);
+                foodEl.classList.toggle('wln-section-done', foodDone);
+                workoutEl.classList.toggle('wln-section-pending', !workoutDone && hour >= 16);
+                workoutEl.classList.toggle('wln-section-done', workoutDone);
             }
 
             function renderReminderBanner() {
@@ -20197,6 +20284,7 @@ window.DBP={
                 renderWorkoutStatus();
                 renderMoodStatus();
                 renderReminderBanner();
+                reorderLogSections();
             }
 
             function saveWeeklyWeight() {
@@ -20651,7 +20739,7 @@ window.DBP={
 
             return {
                 toggleCard, setTab, addPresetFood, openCustomFood, addCustomFood,
-                removeFood, addWater, logWorkout, saveWeeklyWeight,
+                removeFood, addWater, logWorkout, saveWeeklyWeight, toggleFoodListCollapse,
                 addPresetSupp, openNewSupp, closeNewSupp, saveNewSupp, removeSuppLog, copySuppData,
                 addPresetCaffeine, removeCaffeine, toggleCustomCaffeineForm, addCustomCaffeine,
                 openEditCaffeineTime,
