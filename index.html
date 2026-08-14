@@ -10740,6 +10740,12 @@
     }
     .rdm-phase-progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
     .rdm-phase-progress-label { font-size: 0.67rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+    .rdm-phase-skip-btn {
+        flex-shrink: 0; font-size: 0.64rem; font-weight: 600; padding: 3px 8px;
+        border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-white);
+        color: var(--text-muted); cursor: pointer; white-space: nowrap;
+    }
+    .rdm-phase-skip-btn:hover { border-color: #f59e0b; color: #f59e0b; }
     /* ── Skill nodes: locked vs unlocked ── */
     .rdm-skill-node {
         display: flex; justify-content: space-between; align-items: flex-start;
@@ -10860,8 +10866,41 @@
 
     /* ── Compare view ── */
     .rdm-compare-grid { display: flex; gap: 10px; align-items: stretch; }
-    .rdm-compare-col { flex: 1; min-width: 0; border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; }
-    .rdm-compare-head { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 800; margin-bottom: 8px; }
+    .rdm-compare-col { flex: 1; min-width: 0; border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+    .rdm-compare-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 0.82rem; font-weight: 800; margin-bottom: 8px; }
+    .rdm-compare-head-label { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Overview — all tracks at a glance, with pin-to-top ── */
+    .rdm-overview-header { font-size: 0.82rem; font-weight: 800; color: var(--text-dark); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .rdm-swap-pins-btn {
+        flex-shrink: 0; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark);
+        font-size: 0.72rem; font-weight: 700; padding: 5px 10px; border-radius: 8px; cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .rdm-swap-pins-btn:hover { border-color: var(--primary); background: var(--bg-white); }
+    .rdm-swap-pins-btn:active { transform: scale(0.97); }
+    .rdm-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: stretch; }
+    .rdm-pin-btn {
+        flex-shrink: 0; border: none; background: transparent; cursor: pointer; font-size: 0.95rem;
+        line-height: 1; padding: 3px 5px; border-radius: 6px; color: var(--text-muted);
+        transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+    }
+    .rdm-pin-btn:hover { background: var(--bg-light); color: #f59e0b; transform: scale(1.1); }
+    .rdm-pin-btn.pinned { color: #f59e0b; }
+    .rdm-pinned-col { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245,158,11,0.25); }
+    .rdm-compare-head-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .rdm-pin-drag-handle {
+        cursor: grab; font-size: 0.85rem; color: var(--text-muted); padding: 3px 2px;
+        border-radius: 6px; line-height: 1; user-select: none; touch-action: none;
+    }
+    .rdm-pin-drag-handle:hover { background: var(--bg-light); color: var(--text-dark); }
+    .rdm-pin-drag-handle:active { cursor: grabbing; }
+    .rdm-dragging { opacity: 0.45; }
+    .rdm-drag-over { border-color: var(--primary) !important; box-shadow: 0 0 0 2px rgba(99,102,241,0.3) !important; }
+    .rdm-compare-col-clickable { cursor: pointer; }
+    .rdm-compare-col-clickable:hover { border-color: var(--primary); box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); }
+    .rdm-compare-col-clickable.rdm-pinned-col:hover { border-color: #f59e0b; box-shadow: 0 4px 14px rgba(245,158,11,0.2); }
+    .rdm-compare-col-clickable:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     .rdm-compare-ring { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 6px; position: relative; }
     .rdm-compare-ring::before {
         content: ''; position: absolute; inset: 4px; background: var(--bg-white); border-radius: 50%;
@@ -21174,13 +21213,21 @@ window.DBP={
                         <span id="rdmHpwVal"
                             style="font-size:0.82rem;font-weight:700;color:var(--primary);min-width:24px;text-align:right;">10</span>
                     </div>
-                    <div style="display:flex;gap:6px;">
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
                         <button class="rdm-reset-btn"
                             onclick="StrategicRoadmap.resetTrack(document.getElementById('rdmTrackSelect').value)"
                             title="Reset manual completions for this track">↺ Reset</button>
                         <button class="rdm-reset-btn"
                             onclick="StrategicRoadmap.copyProgress()"
                             title="Copy a text summary of your progress across all tracks">📋 Share</button>
+                        <button class="rdm-reset-btn"
+                            onclick="StrategicRoadmap.exportRoadmapData()"
+                            title="Download a backup of all roadmap progress (completions, skips, activity)">⬇️ Export</button>
+                        <button class="rdm-reset-btn"
+                            onclick="document.getElementById('rdmImportInput').click()"
+                            title="Restore roadmap progress from a previously exported backup file">⬆️ Import</button>
+                        <input type="file" id="rdmImportInput" accept="application/json" style="display:none;"
+                            onchange="StrategicRoadmap.importRoadmapData(this)">
                     </div>
                     <div class="rdm-view-row">
                         <div class="rdm-view-toggle">
@@ -21188,11 +21235,11 @@ window.DBP={
                             <button type="button" class="rdm-view-btn" id="rdmViewBtnGraph" onclick="StrategicRoadmap.setView('graph')">🌳 Graph</button>
                             <button type="button" class="rdm-view-btn" id="rdmViewBtnOverview" onclick="StrategicRoadmap.setView('overview')">🗂️ Overview</button>
                         </div>
-                        <button type="button" class="rdm-compare-btn" id="rdmCompareBtn" onclick="StrategicRoadmap.toggleCompare()">🆚 So sánh</button>
+                        <button type="button" class="rdm-compare-btn" id="rdmCompareBtn" onclick="StrategicRoadmap.toggleCompare()">🆚 Compare</button>
                     </div>
                     <div class="rdm-compare-select-row" id="rdmCompareRow">
                         <select id="rdmCompareTrackSelect" class="rdm-track-select" onchange="StrategicRoadmap.setCompareTrack(this.value)">
-                            <option value="">— Chọn track thứ 2 —</option>
+                            <option value="">— Choose 2nd track —</option>
                             <option value="pe">🏦 Private Equity</option>
                             <option value="ib">💼 Investment Banking</option>
                             <option value="hf">📈 Hedge Fund</option>
@@ -25407,6 +25454,8 @@ window.DBP={
             gamification.points += Math.floor(add * 10);
             gamification.level = Math.floor(gamification.points / 100) + 1;
             saveData();
+            if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours)
+                StrategicRoadmap.recordExternalHours(MASTERY_CAREER_KEY, add);
             showNotification(`✅ +${add.toFixed(1)}h → ${skillName.slice(0,35)}`, 'success');
             input.value = '';
             refreshMasteryRow(skillName);
@@ -25771,6 +25820,10 @@ window.DBP={
                 studyHours[career][skillName] = targetHours;
                 
                 showNotification(`✅ Added ${remainingHours.toFixed(1)}h to reach target! Skill complete at ${targetHours}h. Earned ${Math.floor(remainingHours * 10)} XP`, 'achievement');
+                // Roadmap's "this week" log tracks actual hours added, which
+                // is the clamped remainder here, not the raw input value.
+                if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours)
+                    StrategicRoadmap.recordExternalHours(career, remainingHours);
             } else {
                 studyHours[career][skillName] += hours;
                 
@@ -25778,6 +25831,8 @@ window.DBP={
                 gamification.points += pointsEarned;
                 
                 showNotification(`✅ Added ${hours}h to ${skillName}! Earned ${pointsEarned} XP`, 'success');
+                if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours)
+                    StrategicRoadmap.recordExternalHours(career, hours);
             }
             
             gamification.level = Math.floor(gamification.points / 100) + 1;
@@ -49034,6 +49089,8 @@ window.fcRenderTagChips = fcRenderTagChips;
             if (!studyHours[career][skillName]) studyHours[career][skillName] = 0;
             studyHours[career][skillName] += hours;
             localStorage.setItem('studyHours', JSON.stringify(studyHours));
+            if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours)
+                StrategicRoadmap.recordExternalHours(career, hours);
 
             resource.loggedHours = (resource.loggedHours || 0) + hours;
             saveResources();
@@ -50167,12 +50224,125 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const idx = list.indexOf(skillId);
                 if (idx !== -1) { list.splice(idx, 1); saveSkipped(track, list); }
             }
+
+            // ── "Last activity" per track ─────────────────────────────────────
+            // Running several tracks in parallel (PE, CFA1, English, Chinese...)
+            // means it's easy for one of them to quietly go untouched for weeks
+            // while you're heads-down on another. This stamps a timestamp on
+            // every real action against a track (complete a skill, log hours,
+            // skip/unskip) so Overview can flag tracks that have gone stale.
+            const activityStorageKey = (track) => `roadmapLastActivity_${track}`;
+            function touchActivity(track) {
+                try { localStorage.setItem(activityStorageKey(track), String(Date.now())); }
+                catch (e) {}
+            }
+            function getLastActivity(track) {
+                try {
+                    const raw = localStorage.getItem(activityStorageKey(track));
+                    return raw ? parseInt(raw, 10) : null;
+                } catch (e) { return null; }
+            }
+            // Days since last activity, or null if the track has never been
+            // touched through the roadmap (e.g. freshly started / no data yet).
+            function daysSinceActivity(track) {
+                const ts = getLastActivity(track);
+                if (!ts) return null;
+                return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
+            }
+            const IDLE_WARNING_DAYS = 10; // flag a track in Overview past this many idle days
+
+            // ── Overview pinning — surface 1-2 priority tracks at the top ────
+            // A single localStorage list of pinned track keys, shared across
+            // all tracks (not per-track like completed/skipped). Capped at
+            // MAX_PINNED_TRACKS so "pin everything" can't defeat the point of
+            // pinning — it's for the couple of curricula that matter *right
+            // now*, not a second sort mode.
+            const PIN_STORAGE_KEY = 'roadmapPinnedTracks';
+            const MAX_PINNED_TRACKS = 2;
+            function loadPinned() {
+                try { return JSON.parse(localStorage.getItem(PIN_STORAGE_KEY) || '[]'); }
+                catch (e) { return []; }
+            }
+            function savePinned(list) {
+                try { localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(list)); }
+                catch (e) {}
+            }
+            function isPinned(track) {
+                return loadPinned().includes(track);
+            }
+            // Returns the outcome so the caller can surface a notification when
+            // the cap blocks a new pin, instead of the click silently doing
+            // nothing.
+            function togglePinned(track) {
+                const list = loadPinned();
+                const idx = list.indexOf(track);
+                if (idx !== -1) {
+                    list.splice(idx, 1);
+                    savePinned(list);
+                    return 'unpinned';
+                }
+                if (list.length >= MAX_PINNED_TRACKS) return 'limit';
+                list.push(track);
+                savePinned(list);
+                return 'pinned';
+            }
             // Skipped-set scoped to skills that actually exist in this track's
             // curriculum right now (defensive against stale ids from an older
             // curriculum edit lingering in localStorage).
             function getSkippedSet(track, curriculum) {
                 const validIds = new Set(curriculum.map(s => s.id));
                 return new Set(loadSkipped(track).filter(id => validIds.has(id)));
+            }
+
+            // ── Idle nudge on app open ────────────────────────────────────────
+            // The ⚠️ idle badge in Overview/Compare only surfaces once you
+            // happen to open that view — easy to miss for days. This checks
+            // every unfinished track at load time and, if any have gone
+            // idle, fires ONE toast summarizing all of them. Capped to once
+            // per IDLE_NUDGE_COOLDOWN_HOURS so it nudges rather than nags on
+            // every single page refresh.
+            function collectIdleTracks() {
+                const tracks = (typeof TRACK_META !== 'undefined') ? Object.keys(TRACK_META) : [];
+                const idle = [];
+                tracks.forEach(track => {
+                    const curriculum = getCurriculum(track);
+                    if (!curriculum) return;
+                    const completedSet = new Set(getCompleted(track));
+                    const skippedSet = getSkippedSet(track, curriculum);
+                    const activeCount = curriculum.filter(s => !completedSet.has(s.id) && !skippedSet.has(s.id)).length;
+                    if (activeCount === 0) return; // track already complete — nothing to be idle about
+                    const idleDays = daysSinceActivity(track);
+                    if (idleDays !== null && idleDays >= IDLE_WARNING_DAYS) {
+                        const meta = (typeof TRACK_META !== 'undefined' && TRACK_META[track]) || { icon: '📘', label: track };
+                        idle.push({ track, meta, idleDays });
+                    }
+                });
+                return idle;
+            }
+            const IDLE_NUDGE_STORAGE_KEY = 'roadmapIdleNudgeLastShown';
+            const IDLE_NUDGE_COOLDOWN_HOURS = 24;
+            function shouldShowIdleNudge() {
+                try {
+                    const raw = localStorage.getItem(IDLE_NUDGE_STORAGE_KEY);
+                    if (!raw) return true;
+                    return (Date.now() - parseInt(raw, 10)) >= IDLE_NUDGE_COOLDOWN_HOURS * 60 * 60 * 1000;
+                } catch (e) { return true; }
+            }
+            function markIdleNudgeShown() {
+                try { localStorage.setItem(IDLE_NUDGE_STORAGE_KEY, String(Date.now())); }
+                catch (e) {}
+            }
+            function maybeShowIdleNudge() {
+                if (!shouldShowIdleNudge()) return;
+                const idleTracks = collectIdleTracks();
+                if (idleTracks.length === 0) return;
+                markIdleNudgeShown();
+                idleTracks.sort((a, b) => b.idleDays - a.idleDays);
+                const msg = idleTracks.length === 1
+                    ? `⚠️ ${idleTracks[0].meta.icon} ${idleTracks[0].meta.label} — no activity in ${idleTracks[0].idleDays}d`
+                    : `⚠️ ${idleTracks.length} tracks idle 10+ days: ` +
+                      idleTracks.map(t => `${t.meta.icon} ${t.meta.label} (${t.idleDays}d)`).join(', ');
+                if (typeof showNotification === 'function') showNotification(msg, 'info');
             }
 
             // Auto-detect from existing studyHours data (bridge layer).
@@ -50213,6 +50383,11 @@ window.fcRenderTagChips = fcRenderTagChips;
             // silently overwritten the next time hours are logged through that screen.
             function setRoadmapSkillHours(track, skill, hours) {
                 const key = skill.studyHoursKeys[0];
+                // Capture the delta BEFORE overwriting, so "hours logged this
+                // week" can be reconstructed later — studyHours itself only
+                // ever stores a running total per skill, not a history of
+                // when hours were added.
+                const previousHours = getRoadmapSkillHours(track, skill);
                 try {
                     if (typeof studyHours !== 'undefined' && studyHours) {
                         if (!studyHours[track]) studyHours[track] = {};
@@ -50225,12 +50400,44 @@ window.fcRenderTagChips = fcRenderTagChips;
                         localStorage.setItem('studyHours', JSON.stringify(sh));
                     }
                 } catch (e) { console.warn('[Roadmap] Failed to save skill hours', e); return; }
+                logHoursDelta(track, hours - previousHours);
                 // Best-effort refresh of the main Study Hours UI, if present on this page/track
                 ['loadSkills','updateStats','updateChart'].forEach(fn => {
                     if (typeof window[fn] === 'function') {
                         try { window[fn](track); } catch (e) { try { window[fn](); } catch(e2) {} }
                     }
                 });
+            }
+
+            // ── Weekly hours log — powers "this week" per track in Overview ──
+            // studyHours only ever holds a running total per skill, with no
+            // timestamp, so there's no way to answer "how much this week?"
+            // from it directly. Every time setRoadmapSkillHours logs a
+            // positive delta, we also append a lightweight {ts, hrs} entry
+            // here. A decrease (correcting a fat-finger entry) is never
+            // logged as negative progress — it just isn't recorded.
+            const hoursLogStorageKey = (track) => `roadmapHoursLog_${track}`;
+            const HOURS_LOG_RETENTION_DAYS = 35; // trim older entries so this can't grow forever
+            function loadHoursLog(track) {
+                try { return JSON.parse(localStorage.getItem(hoursLogStorageKey(track)) || '[]'); }
+                catch (e) { return []; }
+            }
+            function logHoursDelta(track, deltaHrs) {
+                if (!(deltaHrs > 0)) return; // ignore zero/negative (corrections aren't "progress")
+                const cutoff = Date.now() - HOURS_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+                const log = loadHoursLog(track).filter(e => e.ts >= cutoff);
+                log.push({ ts: Date.now(), hrs: deltaHrs });
+                try { localStorage.setItem(hoursLogStorageKey(track), JSON.stringify(log)); }
+                catch (e) {}
+            }
+            // Rolling 7-day window (not calendar week) so "this week" always
+            // means "the last 7 days," matching the rolling-days logic
+            // already used for the idle-track warning above.
+            function getHoursThisWeek(track) {
+                const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                return loadHoursLog(track)
+                    .filter(e => e.ts >= cutoff)
+                    .reduce((sum, e) => sum + e.hrs, 0);
             }
 
             // Returns merged set of manually + auto-completed skill IDs
@@ -50302,6 +50509,27 @@ window.fcRenderTagChips = fcRenderTagChips;
             // ── View mode (list/graph) + Compare-track persistence ───────────
             function getViewMode() { return localStorage.getItem('rdmViewMode') || 'list'; }
             function setViewModeStorage(mode) { try { localStorage.setItem('rdmViewMode', mode); } catch(e) {} }
+
+            // ── Pinned badge on the track dropdowns ─────────────────────────
+            // Overview shows pin state on its cards, but once you switch back
+            // to List/Graph the dropdown gives no hint which 1-2 tracks are
+            // your current priorities. Prefixing pinned options with ⭐ keeps
+            // that visible everywhere, not just in Overview. The original
+            // label is cached in data-base-label the first time this runs so
+            // repeated calls (pin, unpin, import, page load) never double up
+            // the star or lose the real name underneath it.
+            function refreshTrackSelectPinBadges() {
+                const pinnedSet = new Set(loadPinned());
+                ['rdmTrackSelect', 'rdmCompareTrackSelect'].forEach(selId => {
+                    const sel = document.getElementById(selId);
+                    if (!sel) return;
+                    Array.from(sel.options).forEach(opt => {
+                        if (!opt.value) return; // skip the "— Choose 2nd track —" placeholder
+                        if (opt.dataset.baseLabel === undefined) opt.dataset.baseLabel = opt.textContent;
+                        opt.textContent = pinnedSet.has(opt.value) ? `⭐ ${opt.dataset.baseLabel}` : opt.dataset.baseLabel;
+                    });
+                });
+            }
             function getCompareTrack() { return localStorage.getItem('rdmCompareTrack') || ''; }
             function setCompareTrackStorage(t) { try { localStorage.setItem('rdmCompareTrack', t || ''); } catch(e) {} }
 
@@ -50354,7 +50582,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <div class="rdm-celebrate-icon">🎉</div>
                         <div class="rdm-celebrate-title">${escapeHtml(title)}</div>
                         <div class="rdm-celebrate-sub">${escapeHtml(sub)}</div>
-                        <button class="rdm-celebrate-close" onclick="this.closest('.rdm-celebrate-overlay').remove()">Tuyệt vời! 🚀</button>
+                        <button class="rdm-celebrate-close" onclick="this.closest('.rdm-celebrate-overlay').remove()">Awesome! 🚀</button>
                     </div>`;
                 document.body.appendChild(overlay);
                 setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 7000);
@@ -50405,7 +50633,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 // ── Summary / stats row ──
                 const streak = getStreak();
                 const streakHtml = streak.count > 0
-                    ? `<span class="rdm-streak-badge">🔥 ${streak.count} ngày</span>`
+                    ? `<span class="rdm-streak-badge">🔥 ${streak.count}d</span>`
                     : '';
                 let html = `
                     <div class="rdm-summary-v2">
@@ -50446,7 +50674,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                             </div>` : ''}
                             <div class="rdm-focus-actions">
                                 <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">${fTrackable ? '🕐 Update hours studied' : '✓ Confirm complete'}</button>
-                                ${fTrackable ? `<button class="rdm-focus-goal-btn" onclick="StrategicRoadmap.createGoalFromFocus('${track}')" title="Tự tạo Goal theo dõi kỹ năng này">🎯 Tạo Goal</button>` : ''}
+                                ${fTrackable ? `<button class="rdm-focus-goal-btn" onclick="StrategicRoadmap.createGoalFromFocus('${track}')" title="Auto-create a Goal tracking this skill">🎯 Create Goal</button>` : ''}
                             </div>
                         </div>`;
                     if (upNext.length > 0) {
@@ -50476,6 +50704,8 @@ window.fcRenderTagChips = fcRenderTagChips;
                                 <div class="rdm-phase-progress-fill" style="width:${phPct}%;background:${phInfo.color}"></div>
                             </div>
                             <span class="rdm-phase-progress-label">${phDone}/${phSkillsAll.length} done · ~${phWksLeft}wk left</span>
+                            <button class="rdm-phase-skip-btn" onclick="StrategicRoadmap.skipPhase('${track}',${ph})"
+                                title="Go through each active skill in this phase one by one and choose whether to skip it">⏭️ Skip Phase</button>
                         </div>`;
 
                     phSkillsActive.forEach(skill => {
@@ -50657,7 +50887,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const doneCount = completed.length;
                 const pctComplete = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
                 const streak = getStreak();
-                const streakHtml = streak.count > 0 ? `<span class="rdm-streak-badge">🔥 ${streak.count} ngày</span>` : '';
+                const streakHtml = streak.count > 0 ? `<span class="rdm-streak-badge">🔥 ${streak.count}d</span>` : '';
 
                 const remainingHrs = curriculum.filter(s => !completedSet.has(s.id) && !skippedSet.has(s.id)).reduce((s, sk) => s + hoursRemaining(track, sk), 0);
                 const remainingWks = Math.ceil(remainingHrs / hpw);
@@ -50806,10 +51036,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                     </div>
                     <div class="rdm-graph-wrap">${svg}</div>
                     <div class="rdm-graph-legend">
-                        <span><i style="background:#10b981"></i> Đã hoàn thành</span>
-                        <span><i style="background:#3b82f6"></i> Có thể học ngay</span>
-                        <span><i style="background:#94a3b8"></i> Đang khoá</span>
-                        <span><i style="background:#94a3b8;border:1px dashed #64748b"></i> Đã bỏ qua</span>
+                        <span><i style="background:#10b981"></i> Completed</span>
+                        <span><i style="background:#3b82f6"></i> Ready to learn</span>
+                        <span><i style="background:#94a3b8"></i> Locked</span>
+                        <span><i style="background:#94a3b8;border:1px dashed #64748b"></i> Skipped</span>
                     </div>`;
             }
 
@@ -50817,7 +51047,8 @@ window.fcRenderTagChips = fcRenderTagChips;
             // Compact dashboard (ring %, phase bars, current focus skill) for
             // each track, so parallel tracks (e.g. PE + CFA1) can be watched
             // together without switching the selector back and forth.
-            function buildCompareCol(track, hpw) {
+            function buildCompareCol(track, hpw, colOpts) {
+                colOpts = colOpts || {};
                 const curriculum = getCurriculum(track);
                 if (!curriculum) return null;
                 const completed = getCompleted(track);
@@ -50856,12 +51087,89 @@ window.fcRenderTagChips = fcRenderTagChips;
                     ? `<div class="rdm-compare-focus"><strong>🎯 ${escapeHtml(focusSkill.name.split(' (')[0])}</strong>${focusSkill.hours}h · ${starRating(focusSkill.imp)}</div>`
                     : `<div class="rdm-compare-focus">🏆 Track complete!</div>`;
 
+                // Idle-track warning: only shown once a track HAS activity history
+                // (so a freshly-started track with 0 hours logged isn't wrongly
+                // flagged as "idle" on day one) and only while it's not yet done.
+                const idleDays = daysSinceActivity(track);
+                const idleHtml = (idleDays !== null && idleDays >= IDLE_WARNING_DAYS && focusSkill)
+                    ? `<div class="rdm-compare-idle" style="text-align:center;font-size:0.66rem;font-weight:700;color:#d97706;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:3px 6px;margin-bottom:8px;">⚠️ No activity in ${idleDays}d</div>`
+                    : '';
+
+                // "This week" — hours actually logged in the last 7 rolling
+                // days, vs. the hrs/week target from the slider. Distinct from
+                // remainingHrs/remainingWks above (which is a *forecast* based
+                // on the target rate) — this is what's actually happened,
+                // so a stalled track shows up here even before the ⚠️ idle
+                // warning kicks in at 10 days.
+                const weekHrs = getHoursThisWeek(track);
+                const weekPct = hpw > 0 ? Math.min(100, Math.round((weekHrs / hpw) * 100)) : 0;
+                const weekColor = weekPct >= 70 ? '#059669' : (weekPct >= 30 ? '#d97706' : '#dc2626');
+                const weekHtml = weekHrs > 0
+                    ? `<div class="rdm-compare-week" style="text-align:center;font-size:0.68rem;margin-bottom:8px;">
+                          <span style="font-weight:700;color:${weekColor};">⏱️ ${weekHrs % 1 === 0 ? weekHrs : weekHrs.toFixed(1)}h</span>
+                          <span style="color:var(--text-muted);"> this wk / ${hpw}h target</span>
+                       </div>`
+                    : '';
+
+                // Pin toggle — only rendered in Overview (colOpts.pinnable),
+                // since Compare's fixed 2-column layout has nothing to pin
+                // relative to. filled ⭐ when this track is currently pinned,
+                // outline ☆ otherwise; the click target is padded generously
+                // since it's a small icon on what's often a touch screen.
+                const pinned = colOpts.pinnable && isPinned(track);
+                // stopPropagation so tapping the star doesn't also trigger the
+                // card's own click-to-jump-to-List handler below.
+                const pinHtml = colOpts.pinnable
+                    ? `<button type="button" class="rdm-pin-btn${pinned ? ' pinned' : ''}"
+                          title="${pinned ? 'Unpin from top' : 'Pin to top'}"
+                          onclick="event.stopPropagation(); StrategicRoadmap.togglePinTrack('${track}')">${pinned ? '⭐' : '☆'}</button>`
+                    : '';
+
+                // Drag-to-reorder handle — only on already-pinned cards, so
+                // dragging only ever means "swap priority order among my
+                // pinned tracks," never "pin this by dragging it somewhere."
+                // Lives on its own small grip icon (not the whole card) so
+                // it doesn't fight with the card's click-to-jump-to-List
+                // behavior — a plain click still navigates; only a drag on
+                // the grip itself reorders.
+                const pinDragHtml = pinned
+                    ? `<span class="rdm-pin-drag-handle" draggable="true" title="Drag to reorder pinned tracks"
+                          onclick="event.stopPropagation();"
+                          ondragstart="event.stopPropagation(); event.dataTransfer.setData('text/plain','${track}'); event.currentTarget.closest('.rdm-compare-col').classList.add('rdm-dragging');"
+                          ondragend="event.stopPropagation(); event.currentTarget.closest('.rdm-compare-col').classList.remove('rdm-dragging');"
+                       >⠿</span>`
+                    : '';
+
+                // Drop zone — also only on pinned cards, so dropping a
+                // dragged pin onto an unpinned card is a no-op rather than a
+                // confusing accidental pin.
+                const dropHtml = pinned
+                    ? ` ondragover="event.preventDefault(); event.currentTarget.classList.add('rdm-drag-over');"
+                        ondragleave="event.currentTarget.classList.remove('rdm-drag-over');"
+                        ondrop="event.preventDefault(); event.stopPropagation(); event.currentTarget.classList.remove('rdm-drag-over'); StrategicRoadmap.reorderPinned(event.dataTransfer.getData('text/plain'), '${track}');"`
+                    : '';
+
+                // Overview cards (colOpts.pinnable) double as a shortcut into
+                // that track's List view — clicking anywhere on the card
+                // except the pin star jumps straight there, so spotting a
+                // stalled track doesn't require a separate manual switch.
+                const clickHtml = colOpts.pinnable
+                    ? ` role="button" tabindex="0" title="Open ${escapeHtml(meta.label)} in List view"
+                        onclick="StrategicRoadmap.jumpToTrack('${track}')"
+                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();StrategicRoadmap.jumpToTrack('${track}');}"`
+                    : '';
+
                 return `
-                    <div class="rdm-compare-col">
-                        <div class="rdm-compare-head">${meta.icon} ${escapeHtml(meta.label)}</div>
+                    <div class="rdm-compare-col${pinned ? ' rdm-pinned-col' : ''}${colOpts.pinnable ? ' rdm-compare-col-clickable' : ''}"${clickHtml}${dropHtml}>
+                        <div class="rdm-compare-head">
+                            <span class="rdm-compare-head-label">${meta.icon} ${escapeHtml(meta.label)}</span>
+                            <span class="rdm-compare-head-actions">${pinDragHtml}${pinHtml}</span>
+                        </div>
                         <div class="rdm-compare-ring" style="background:conic-gradient(var(--primary) ${pctComplete}%, var(--border-color) 0)"><span>${pctComplete}%</span></div>
                         <div style="text-align:center;font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">${doneCount}/${totalCount} skills</div>
                         ${remainingHrs > 0 ? `<div style="text-align:center;font-size:0.68rem;color:var(--text-muted);margin-bottom:8px;">🏁 ~${remainingWks}wk · ${fmtDate(finishDate)}</div>` : ''}
+                        ${weekHtml}
+                        ${idleHtml}
                         ${phasesHtml}
                         ${focusHtml}
                     </div>`;
@@ -50882,11 +51190,40 @@ window.fcRenderTagChips = fcRenderTagChips;
             // where you stand on each.
             function renderOverviewHtml(opts) {
                 const hpw = (opts && opts.hpw) || 10;
-                const tracks = (typeof TRACK_META !== 'undefined') ? Object.keys(TRACK_META) : [];
-                const cols = tracks.map(t => buildCompareCol(t, hpw)).filter(Boolean);
+                const allTracks = (typeof TRACK_META !== 'undefined') ? Object.keys(TRACK_META) : [];
+                if (allTracks.length === 0) return null;
+
+                // Pinned tracks (in the order they were pinned) float to the
+                // top, everything else follows in its normal TRACK_META order
+                // below. Pinned ids are filtered against allTracks so a stale
+                // pin left over from a removed track can't produce a gap.
+                const pinnedList = loadPinned().filter(t => allTracks.includes(t));
+                const pinnedSet = new Set(pinnedList);
+                const restList = allTracks.filter(t => !pinnedSet.has(t));
+                const orderedTracks = [...pinnedList, ...restList];
+
+                const cols = orderedTracks.map(t => buildCompareCol(t, hpw, { pinnable: true })).filter(Boolean);
                 if (cols.length === 0) return null;
+
+                const pinHint = pinnedList.length > 0
+                    ? ` · 📌 ${pinnedList.length} pinned`
+                    : ` · <span style="font-weight:400;">tap ☆ to pin up to ${MAX_PINNED_TRACKS}</span>`;
+                // Tap-to-swap — a touch-reliable alternative to the drag
+                // handle on each card. Native HTML5 drag-and-drop is flaky
+                // on mobile (iOS Safari in particular barely supports it on
+                // arbitrary elements), so with exactly 2 pins a single
+                // button that flips their order works identically on
+                // laptop, iPhone, and Android without needing a drag
+                // gesture at all. Only shown once there are 2 pins to swap.
+                const swapHtml = pinnedList.length === 2
+                    ? `<button type="button" class="rdm-swap-pins-btn" title="Swap which pinned track is #1"
+                          onclick="StrategicRoadmap.swapPinnedOrder()">⇅ Swap order</button>`
+                    : '';
                 return `
-                    <div class="rdm-overview-header">🗂️ All tracks — ${cols.length} curricula</div>
+                    <div class="rdm-overview-header">
+                        <span>🗂️ All tracks — ${cols.length} curricula${pinHint}</span>
+                        ${swapHtml}
+                    </div>
                     <div class="rdm-overview-grid">${cols.join('')}</div>`;
             }
 
@@ -50925,14 +51262,64 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                     text += `\n\n${meta.icon} ${meta.label}: ${pct}% (${doneCount}/${totalCount} skills)`;
                     if (remainingHrs > 0) text += ` · ~${remainingWks}wk left (@ ${hpw}h/wk)`;
+                    const weekHrs = getHoursThisWeek(track);
+                    if (weekHrs > 0) text += `\n   ⏱️ This week: ${weekHrs % 1 === 0 ? weekHrs : weekHrs.toFixed(1)}h / ${hpw}h target`;
                     text += focusSkill
                         ? `\n   🎯 Next: ${focusSkill.name.split(' (')[0]}`
                         : `\n   🏆 Track complete!`;
                     if (skippedSet.size > 0) text += `\n   ⏭️ Skipped: ${skippedSet.size} skill(s)`;
+                    const idleDays = daysSinceActivity(track);
+                    if (idleDays !== null && idleDays >= IDLE_WARNING_DAYS && focusSkill)
+                        text += `\n   ⚠️ No activity in ${idleDays} days`;
                 });
                 if (!any) text += `\n\n(No roadmap data available.)`;
                 text += `\n\n— Generated from Strategic Roadmap tracker.`;
                 return text;
+            }
+
+            // ── EXPORT / IMPORT — roadmap progress backup ──────────────────────
+            // The roadmap keeps its own localStorage keys (roadmapCompleted_*,
+            // roadmapSkipped_*, roadmapLastActivity_*) separate from the main
+            // app's `data` object, so the general Wellness export/import doesn't
+            // cover it. This gives the roadmap its own dedicated backup/restore
+            // so progress across all tracks survives a device switch or a
+            // localStorage wipe.
+            function buildRoadmapExportPayload() {
+                const tracks = (typeof TRACK_META !== 'undefined') ? Object.keys(TRACK_META) : [];
+                // version 2: adds top-level `pinned` (Overview pin list) and
+                // per-track `hoursLog` (powers "this week" in Overview) —
+                // both were previously roadmap-local state that a restore on
+                // a new device would silently drop.
+                const payload = { kind: 'strategic-roadmap-backup', version: 2, exportedAt: new Date().toISOString(), pinned: loadPinned(), tracks: {} };
+                tracks.forEach(track => {
+                    payload.tracks[track] = {
+                        completed: loadManual(track),
+                        skipped: loadSkipped(track),
+                        lastActivity: getLastActivity(track),
+                        hoursLog: loadHoursLog(track)
+                    };
+                });
+                return payload;
+            }
+            function applyRoadmapImportPayload(payload) {
+                // `pinned` and `hoursLog` are new in v2 — a v1 backup simply
+                // won't have them, so both are left untouched (existing
+                // pins/log on this device survive importing an older file).
+                if (Array.isArray(payload.pinned)) savePinned(payload.pinned);
+                Object.keys(payload.tracks).forEach(track => {
+                    const t = payload.tracks[track];
+                    if (!t) return;
+                    if (Array.isArray(t.completed)) saveManual(track, t.completed);
+                    if (Array.isArray(t.skipped)) saveSkipped(track, t.skipped);
+                    if (t.lastActivity) {
+                        try { localStorage.setItem(activityStorageKey(track), String(t.lastActivity)); }
+                        catch (e) {}
+                    }
+                    if (Array.isArray(t.hoursLog)) {
+                        try { localStorage.setItem(hoursLogStorageKey(track), JSON.stringify(t.hoursLog)); }
+                        catch (e) {}
+                    }
+                });
             }
 
             // ── 6. RENDER (delegates to renderHtml string-builder) ──────────
@@ -50986,8 +51373,8 @@ window.fcRenderTagChips = fcRenderTagChips;
                 if (!wasPhaseDone && isPhaseDoneNow) {
                     const phInfo = getPhaseList(track, curriculum).find(p => p.num === skill.phase);
                     celebrate(
-                        `Hoàn thành ${phInfo ? phInfo.label : 'Phase ' + skill.phase}!`,
-                        'Toàn bộ kỹ năng trong phase này đã xong — phase tiếp theo đã mở khoá.'
+                        `Completed ${phInfo ? phInfo.label : 'Phase ' + skill.phase}!`,
+                        'Every skill in this phase is done — the next phase is now unlocked.'
                     );
                 }
             }
@@ -51009,8 +51396,9 @@ window.fcRenderTagChips = fcRenderTagChips;
                     padding: 20px;
                 `;
                 const icon = opts.icon || '❓';
-                const title = opts.title || 'Xác nhận';
-                const confirmLabel = opts.confirmLabel || 'Xác nhận';
+                const title = opts.title || 'Confirm';
+                const confirmLabel = opts.confirmLabel || 'Confirm';
+                const cancelLabel = opts.cancelLabel || 'Cancel';
                 const confirmColor = opts.danger
                     ? 'linear-gradient(135deg, #ef4444, #dc2626)'
                     : 'linear-gradient(135deg, #6366f1, #4f46e5)';
@@ -51022,14 +51410,22 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <h3 style="margin: 0 0 10px 0; font-size: 1.1rem; color: var(--text-dark); text-align: center;">${title}</h3>
                         <p style="margin: 0 0 22px 0; color: var(--text-muted); font-size: 0.9rem; text-align: center; line-height: 1.5; white-space: pre-line;">${message}</p>
                         <div style="display: flex; gap: 10px;">
-                            <button id="rdmConfirmCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
+                            <button id="rdmConfirmCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">${cancelLabel}</button>
                             <button id="rdmConfirmOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background:${confirmColor}; color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">${confirmLabel}</button>
                         </div>
                     </div>
                 `;
-                modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+                // Clicking outside the card is treated the same as Cancel (still
+                // fires opts.onCancel, if given) rather than silently dropping the
+                // rest of a multi-step flow like Skip Phase's per-skill walk.
+                modal.addEventListener('click', function (e) {
+                    if (e.target === modal) { modal.remove(); if (typeof opts.onCancel === 'function') opts.onCancel(); }
+                });
                 document.body.appendChild(modal);
-                document.getElementById('rdmConfirmCancelBtn').onclick = () => modal.remove();
+                document.getElementById('rdmConfirmCancelBtn').onclick = () => {
+                    modal.remove();
+                    if (typeof opts.onCancel === 'function') opts.onCancel();
+                };
                 document.getElementById('rdmConfirmOkBtn').onclick = () => { modal.remove(); onConfirm(); };
             }
 
@@ -51051,15 +51447,15 @@ window.fcRenderTagChips = fcRenderTagChips;
                         <div style="font-size: 2.5rem; text-align: center; margin-bottom: 12px;">⏱️</div>
                         <h3 style="margin: 0 0 8px 0; font-size: 1.05rem; color: var(--text-dark); text-align:center;">${skillName}</h3>
                         <p style="margin: 0 0 18px 0; color: var(--text-muted); font-size: 0.85rem; text-align:center; line-height:1.5;">
-                            Cần tối thiểu <strong style="color: var(--text-dark);">${threshold}h</strong> (75% của mục tiêu ${targetHours}h) để tính hoàn thành.
+                            Need at least <strong style="color: var(--text-dark);">${threshold}h</strong> (75% of the ${targetHours}h target) to count as complete.
                         </p>
                         <input id="rdmHoursInput" type="number" step="0.1" min="0" value="${currentHours > 0 ? currentHours : ''}"
-                            placeholder="Số giờ đã học"
+                            placeholder="Hours studied"
                             style="width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--border-color);
                             border-radius:9px; font-size:1rem; margin-bottom:20px; background: var(--bg-light); color: var(--text-dark);" />
                         <div style="display:flex; gap:10px;">
-                            <button id="rdmHoursCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Hủy</button>
-                            <button id="rdmHoursOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Lưu giờ học</button>
+                            <button id="rdmHoursCancelBtn" style="flex:1; padding:11px; border:1px solid var(--border-color); border-radius:9px; background: var(--bg-light); color: var(--text-dark); cursor:pointer; font-size:0.95rem; font-weight:500;">Cancel</button>
+                            <button id="rdmHoursOkBtn" style="flex:1; padding:11px; border:none; border-radius:9px; background: linear-gradient(135deg, #6366f1, #4f46e5); color:white; cursor:pointer; font-size:0.95rem; font-weight:600;">Save hours</button>
                         </div>
                     </div>
                 `;
@@ -51071,6 +51467,38 @@ window.fcRenderTagChips = fcRenderTagChips;
                 document.getElementById('rdmHoursCancelBtn').onclick = () => modal.remove();
                 document.getElementById('rdmHoursOkBtn').onclick = submit;
                 input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+            }
+
+            // ── SKIP PHASE — walk through each active skill in a phase and
+            // confirm individually whether to skip it. Deliberately NOT a bulk
+            // "skip everything" — every skill still gets its own explicit
+            // Skip/Keep decision, one modal at a time, so nothing gets skipped
+            // by accident. "Keep" (or closing the modal) just moves to the next
+            // skill without touching its skip flag.
+            function walkSkipPhase(track, skills, index, skippedCount) {
+                if (index >= skills.length) {
+                    render(track);
+                    if (typeof showNotification === 'function')
+                        showNotification(`⏭️ Skip Phase done — reviewed ${skills.length} skill(s), skipped ${skippedCount}.`, 'info');
+                    return;
+                }
+                const skill = skills[index];
+                const next = (wasSkipped) => walkSkipPhase(track, skills, index + 1, skippedCount + (wasSkipped ? 1 : 0));
+                rdmConfirmModal(
+                    `Skip this skill?\n"${skill.name}"`,
+                    () => {
+                        toggleSkip(track, skill.id);
+                        touchActivity(track);
+                        next(true);
+                    },
+                    {
+                        icon: '⏭️',
+                        title: `Skip Phase — skill ${index + 1} of ${skills.length}`,
+                        confirmLabel: '⏭️ Skip',
+                        cancelLabel: 'Keep',
+                        onCancel: () => next(false)
+                    }
+                );
             }
 
             return {
@@ -51108,6 +51536,24 @@ window.fcRenderTagChips = fcRenderTagChips;
                         if (sel && saved) sel.value = saved;
                     }
                     this.generate();
+                },
+                // 🗂️→📋 Overview card click — jump straight into List view for
+                // that track, so spotting "PE is stalling" in Overview doesn't
+                // require a separate manual switch of the track dropdown +
+                // view toggle. Also drops out of Compare mode (if it was on)
+                // since a single-track List view and a 2-track Compare view
+                // are mutually exclusive.
+                jumpToTrack(track) {
+                    const sel = document.getElementById('rdmTrackSelect');
+                    if (sel) sel.value = track;
+                    const row = document.getElementById('rdmCompareRow');
+                    const cmpBtn = document.getElementById('rdmCompareBtn');
+                    if (row && row.classList.contains('show')) {
+                        row.classList.remove('show');
+                        if (cmpBtn) cmpBtn.classList.remove('active');
+                        setCompareTrackStorage('');
+                    }
+                    this.setView('list');
                 },
                 // Persist the chosen second track for compare mode
                 setCompareTrack(t) {
@@ -51155,7 +51601,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const idToSkill = new Map(curriculum.map(s => [s.id, s]));
                     const text = blockedByText(skill, completedSet, idToSkill);
                     if (typeof showNotification === 'function')
-                        showNotification(`🔒 "${skill.name.split(' (')[0]}" cần hoàn thành trước: ${text}`, 'info');
+                        showNotification(`🔒 "${skill.name.split(' (')[0]}" requires completing: ${text}`, 'info');
                 },
                 // Auto-create a Goal (type: skill_mastery) tracking the current
                 // Focus Now skill, target = its full hour requirement, deadline
@@ -51171,12 +51617,12 @@ window.fcRenderTagChips = fcRenderTagChips;
                     if (!focusSkill) return;
                     if (!focusSkill.studyHoursKeys || focusSkill.studyHoursKeys.length === 0) {
                         if (typeof showNotification === 'function')
-                            showNotification('⚠️ Kỹ năng này không có dữ liệu giờ học để theo dõi Goal.', 'error');
+                            showNotification('⚠️ This skill has no hours data to track a Goal against.', 'error');
                         return;
                     }
                     if (typeof goals === 'undefined' || typeof saveGoals !== 'function') {
                         if (typeof showNotification === 'function')
-                            showNotification('⚠️ Không tìm thấy hệ thống Goals trong app.', 'error');
+                            showNotification('⚠️ Goals system not found in this app.', 'error');
                         return;
                     }
                     // Goal progress is computed against the app's *current* career —
@@ -51184,7 +51630,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     // actually tracks correctly instead of silently reading the
                     // wrong career's study hours.
                     if (typeof currentCareer !== 'undefined' && currentCareer !== track) {
-                        const ok = confirm(`Goal sẽ theo dõi kỹ năng của track "${track}". Chuyển career hiện tại sang track này để Goal cập nhật đúng?`);
+                        const ok = confirm(`This Goal will track skills in the "${track}" track. Switch your current career to this track so the Goal updates correctly?`);
                         if (ok && typeof selectCareer === 'function') selectCareer(track);
                     }
                     const hpw = parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
@@ -51195,7 +51641,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const already = goals.find(g => g.type === 'skill_mastery' && g.skillName === focusSkill.studyHoursKeys[0] && g.career === track);
                     if (already) {
                         if (typeof showNotification === 'function')
-                            showNotification('ℹ️ Goal cho kỹ năng này đã tồn tại.', 'info');
+                            showNotification('ℹ️ A Goal for this skill already exists.', 'info');
                         return;
                     }
 
@@ -51204,7 +51650,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         title: `🎯 ${focusSkill.name.split(' (')[0]}`,
                         type: 'skill_mastery',
                         target: focusSkill.hours,
-                        deadline: toLocalDateStr(deadline), // local (VN) day, not UTC
+                        deadline: toLocalDateStr(deadline), // local day, not UTC
                         career: track,
                         skillName: focusSkill.studyHoursKeys[0],
                         currentProgress: getRoadmapSkillHours(track, focusSkill),
@@ -51214,7 +51660,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     if (typeof renderGoals === 'function') renderGoals();
                     if (typeof updateGoalProgressChart === 'function') { try { updateGoalProgressChart(); } catch (e) {} }
                     if (typeof showNotification === 'function')
-                        showNotification(`✅ Đã tạo Goal "${focusSkill.name.split(' (')[0]}" — hạn ${deadline.toLocaleDateString('vi-VN')}`, 'success');
+                        showNotification(`✅ Created Goal "${focusSkill.name.split(' (')[0]}" — due ${deadline.toLocaleDateString('en-US')}`, 'success');
                 },
                 // ✅ SMARTER COMPLETION GATE — replaces the old 1-click instant-complete.
                 //   • Skills with studyHoursKeys (trackable): clicking opens an hours-entry
@@ -51234,10 +51680,11 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                     if (!trackable) {
                         rdmConfirmModal(
-                            `Xác nhận bạn đã thực sự hoàn thành:\n"${skill.name}"?\n\nSkill này không có dữ liệu giờ học để tự xác minh, chỉ tick khi bạn chắc chắn.`,
+                            `Confirm you have actually completed:\n"${skill.name}"?\n\nThis skill has no hours data to auto-verify, so only tick it once you're sure.`,
                             () => {
                                 clearSkipFlag(track, skillId);
                                 toggleManual(track, skillId);
+                                touchActivity(track);
                                 render(track);
                                 flashBadge();
                                 bumpStreak();
@@ -51245,7 +51692,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                                     showNotification('✅ Skill marked complete — roadmap updated!', 'success');
                                 checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
                             },
-                            { icon: '✅', title: 'Xác nhận hoàn thành', confirmLabel: 'Đã hoàn thành' }
+                            { icon: '✅', title: 'Confirm completion', confirmLabel: 'Completed' }
                         );
                         return;
                     }
@@ -51264,6 +51711,7 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                         if (hrs >= threshold) clearSkipFlag(track, skillId); // completing supersedes a prior skip
                         setRoadmapSkillHours(track, skill, hrs);
+                        touchActivity(track);
                         render(track);
 
                         if (hrs >= threshold) {
@@ -51287,7 +51735,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const skill = curriculum && curriculum.find(s => s.id === skillId);
                     if (!skill) return;
                     if (typeof showNotification === 'function')
-                        showNotification(`✓ "${skill.name.split(' (')[0]}" auto-completed từ giờ học đã ghi nhận — sửa trong Study Hours nếu cần.`, 'info');
+                        showNotification(`✓ "${skill.name.split(' (')[0]}" auto-completed from logged study hours — edit it in Study Hours if needed.`, 'info');
                 },
                 // Undo ONE manually-completed skill (see the "Manually completed"
                 // list in renderHtml). Only ever touches manual completions —
@@ -51298,19 +51746,20 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const skill = curriculum && curriculum.find(s => s.id === skillId);
                     if (!skill) return;
                     rdmConfirmModal(
-                        `Bỏ đánh dấu hoàn thành cho:\n"${skill.name}"?`,
+                        `Unmark completion for:\n"${skill.name}"?`,
                         () => {
                             toggleManual(track, skillId);
+                            touchActivity(track);
                             render(track);
                             if (typeof showNotification === 'function')
-                                showNotification('↩️ Đã bỏ đánh dấu hoàn thành.', 'info');
+                                showNotification('↩️ Completion unmarked.', 'info');
                         },
-                        { icon: '↩️', title: 'Bỏ đánh dấu hoàn thành', confirmLabel: 'Bỏ đánh dấu', danger: true }
+                        { icon: '↩️', title: 'Unmark completion', confirmLabel: 'Unmark', danger: true }
                     );
                 },
                 resetTrack(track) {
                     rdmConfirmModal(
-                        'Xóa các completion đã tick tay cho track này?\n(Completion tự động phát hiện từ giờ học vẫn được giữ nguyên.)',
+                        "Clear all manually-ticked completions for this track?\n(Completions auto-detected from logged hours are kept.)",
                         () => {
                             localStorage.removeItem(storageKey(track));
                             render(track);
@@ -51327,6 +51776,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const skill = curriculum && curriculum.find(s => s.id === skillId);
                     if (!skill) return;
                     toggleSkip(track, skillId);
+                    touchActivity(track);
                     render(track);
                     if (typeof showNotification === 'function')
                         showNotification(`⏭️ "${skill.name.split(' (')[0]}" skipped — excluded from % complete.`, 'info');
@@ -51337,9 +51787,87 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const skill = curriculum && curriculum.find(s => s.id === skillId);
                     if (!skill) return;
                     toggleSkip(track, skillId);
+                    touchActivity(track);
                     render(track);
                     if (typeof showNotification === 'function')
                         showNotification(`↩️ "${skill.name.split(' (')[0]}" is back on the active roadmap.`, 'info');
+                },
+                // ⏭️ Skip Phase — offers every still-active (not done, not
+                // already skipped) skill in the given phase for review, one at
+                // a time, via walkSkipPhase(). Each skill gets its own explicit
+                // Skip/Keep decision.
+                skipPhase(track, phaseNum) {
+                    const curriculum = getCurriculum(track);
+                    if (!curriculum) return;
+                    const completedSet = new Set(getCompleted(track));
+                    const skippedSet = getSkippedSet(track, curriculum);
+                    const skills = curriculum.filter(s => s.phase === phaseNum && !completedSet.has(s.id) && !skippedSet.has(s.id));
+                    if (skills.length === 0) {
+                        if (typeof showNotification === 'function')
+                            showNotification('ℹ️ No active skills left to review in this phase.', 'info');
+                        return;
+                    }
+                    walkSkipPhase(track, skills, 0, 0);
+                },
+                // ⭐ Overview pinning — pin/unpin a track so it floats to the
+                // top of the "All tracks" grid, capped at MAX_PINNED_TRACKS.
+                togglePinTrack(track) {
+                    const result = togglePinned(track);
+                    if (result === 'limit') {
+                        if (typeof showNotification === 'function')
+                            showNotification(`📌 You can pin up to ${MAX_PINNED_TRACKS} tracks — unpin one first.`, 'info');
+                        return;
+                    }
+                    refreshTrackSelectPinBadges();
+                    this.generate();
+                },
+                // ⠿ Drag-to-reorder — dropping a dragged pin (draggedTrack)
+                // onto another pinned card (targetTrack) moves it to sit
+                // right before that card, so which track shows as priority
+                // #1 vs #2 is something you set deliberately rather than
+                // "whichever I happened to pin first." No-ops safely if
+                // either side isn't actually in the pinned list (e.g. a pin
+                // was removed mid-drag).
+                reorderPinned(draggedTrack, targetTrack) {
+                    if (!draggedTrack || !targetTrack || draggedTrack === targetTrack) return;
+                    const list = loadPinned();
+                    if (!list.includes(draggedTrack) || !list.includes(targetTrack)) return;
+                    list.splice(list.indexOf(draggedTrack), 1);
+                    list.splice(list.indexOf(targetTrack), 0, draggedTrack);
+                    savePinned(list);
+                    this.generate();
+                },
+                // ⇅ Swap order — one-tap alternative to dragging, reliable on
+                // any device (laptop, iPhone, Android) since it needs no
+                // drag gesture at all. Only meaningful with exactly 2 pins;
+                // the button itself is only rendered in that case, but this
+                // guards defensively too in case it's ever called otherwise.
+                swapPinnedOrder() {
+                    const list = loadPinned();
+                    if (list.length !== 2) return;
+                    savePinned([list[1], list[0]]);
+                    this.generate();
+                },
+                // 🌉 External bridge — lets the main Study Hours screen (a
+                // separate part of the app, outside this module) feed the
+                // "this week" log when hours get logged there instead of
+                // through the roadmap's own "Log hours" modal. `track` is
+                // the same career/track key both sides already share via
+                // the studyHours[track][skillName] structure. Only positive
+                // deltas are recorded — same convention as the roadmap's own
+                // logHoursDelta, so a manual correction never dents the
+                // weekly count.
+                recordExternalHours(track, deltaHrs) {
+                    if (!track || !(deltaHrs > 0)) return;
+                    logHoursDelta(track, deltaHrs);
+                    touchActivity(track);
+                },
+                // ⚠️ Idle nudge — called once on page load (see DOMContentLoaded
+                // below). Exposed publicly too in case something else ever
+                // wants to force a re-check (e.g. after a long-idle session
+                // resumes) without waiting for a full reload.
+                checkIdleNudge() {
+                    maybeShowIdleNudge();
                 },
                 // 📋 Copy a plain-text progress summary across ALL tracks to the
                 // clipboard — for pasting to an advisor/mentor or saving to a log.
@@ -51360,6 +51888,54 @@ window.fcRenderTagChips = fcRenderTagChips;
                         finish();
                     }
                 },
+                // ⬇️ Download a JSON backup of progress across ALL tracks
+                // (completions, skips, last-activity timestamps).
+                exportRoadmapData() {
+                    const payload = buildRoadmapExportPayload();
+                    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const dateTag = new Date().toISOString().slice(0, 10);
+                    a.download = `roadmap-backup-${dateTag}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    if (typeof showNotification === 'function')
+                        showNotification('⬇️ Roadmap backup downloaded.', 'success');
+                },
+                // ⬆️ Restore progress from a previously exported backup file.
+                // Overwrites current completions/skips per track that's present
+                // in the file; tracks not mentioned in the file are left as-is.
+                importRoadmapData(input) {
+                    const file = input.files && input.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        let payload;
+                        try {
+                            payload = JSON.parse(reader.result);
+                            if (!payload || payload.kind !== 'strategic-roadmap-backup' || !payload.tracks) throw new Error('invalid');
+                        } catch (e) {
+                            if (typeof showNotification === 'function')
+                                showNotification('⚠️ Invalid or corrupted roadmap backup file.', 'error');
+                            input.value = '';
+                            return;
+                        }
+                        rdmConfirmModal(
+                            'Importing will OVERWRITE current progress for every track included in this backup file. Continue?',
+                            () => {
+                                applyRoadmapImportPayload(payload);
+                                refreshTrackSelectPinBadges();
+                                this.generate();
+                                if (typeof showNotification === 'function')
+                                    showNotification('⬆️ Roadmap progress restored from backup!', 'success');
+                                input.value = '';
+                            },
+                            { icon: '⬆️', title: 'Import roadmap backup', confirmLabel: 'Import', danger: true }
+                        );
+                    };
+                    reader.readAsText(file);
+                },
                 // Sync track selector with the main app's currentCareer value
                 syncCareer() {
                     const cc = typeof currentCareer !== 'undefined' ? currentCareer : null;
@@ -51368,6 +51944,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         sel.value = cc;
                         render(cc);
                     }
+                    refreshTrackSelectPinBadges();
                     // Restore view-mode / compare UI state on (re)load
                     const mode = getViewMode();
                     const btnList = document.getElementById('rdmViewBtnList');
@@ -51407,6 +51984,12 @@ window.fcRenderTagChips = fcRenderTagChips;
                 try { StrategicRoadmap.syncCareer(); }
                 catch(e) { StrategicRoadmap.generate(); }
             }, 800); // slight delay so currentCareer from the main app is already set
+            // Idle nudge fires after its own delay, staggered past the
+            // syncCareer/generate call above so its toast doesn't collide
+            // with any notification the initial render might trigger.
+            setTimeout(() => {
+                try { StrategicRoadmap.checkIdleNudge(); } catch (e) {}
+            }, 1800);
         });
 
 
