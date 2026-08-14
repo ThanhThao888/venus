@@ -22552,11 +22552,11 @@ window.DBP={
     #bdFab.bd-has-notes::after {
         content: ''; position: absolute; inset: -4px; border-radius: 50%;
         border: 2px solid rgba(59,130,246,0.5);
-        animation: bd-ring 2s ease-in-out infinite;
+        animation: bd-ring 3s ease-in-out infinite;
     }
     @keyframes bd-ring {
-        0%,100% { transform: scale(1); opacity: 0.6; }
-        50%      { transform: scale(1.18); opacity: 0; }
+        0%,100% { transform: scale(1); opacity: 0.5; }
+        50%      { transform: scale(1.12); opacity: 0; }
     }
     #bdFab .bd-count {
         position: absolute; top: -3px; right: -3px;
@@ -22791,21 +22791,48 @@ window.DBP={
     .bd-note-del {
         margin-left: auto;
         background: none; border: none; cursor: pointer;
-        font-size: 0.75rem; color: var(--text-muted); opacity: 0;
-        transition: opacity 0.15s; padding: 2px 5px; border-radius: 5px;
+        font-size: 0.75rem; color: var(--text-muted); opacity: 0.35;
+        transition: opacity 0.15s, background 0.15s, color 0.15s;
+        padding: 3px 6px; border-radius: 5px;
     }
-    .bd-note:hover .bd-note-del { opacity: 1; }
+    /* Full opacity on hover (desktop) AND always-tappable at reduced
+       opacity by default, so touch devices — which never fire :hover —
+       can still see and reach the delete button. */
+    .bd-note:hover .bd-note-del,
+    .bd-note-del:focus-visible { opacity: 1; }
     .bd-note-del:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
+
+    /* ── Focus-visible rings for keyboard users across all BD controls ── */
+    #bdFab:focus-visible,
+    .bd-cat-chip:focus-visible,
+    .bd-filter-tab:focus-visible,
+    .bd-done-btn:focus-visible,
+    .bd-promote-btn:focus-visible,
+    #bdSaveBtn:focus-visible,
+    .bd-clear-all:focus-visible,
+    .bd-undo-btn:focus-visible,
+    .bd-review-btn:focus-visible {
+        outline: 2px solid #6366f1;
+        outline-offset: 2px;
+    }
+
+    /* ── Styled keyboard-shortcut hint ── */
+    .bd-kbd-hint kbd {
+        font-family: inherit; font-size: 0.6rem; font-weight: 700;
+        background: var(--bg-light); border: 1px solid var(--border-color);
+        border-radius: 4px; padding: 1px 5px; color: var(--text-dark);
+    }
+    .dark-mode .bd-kbd-hint kbd { background: #0f172a; }
     </style>
 
     <!-- FAB button -->
-    <button id="bdFab" onclick="BrainDump.toggle()" title="Brain Dump — quick capture when you lose focus">
+    <button id="bdFab" onclick="BrainDump.toggle()" title="Brain Dump — quick capture when you lose focus" aria-haspopup="dialog" aria-expanded="false" aria-controls="bdPanel">
         <span id="bdFabIcon"><i class="fa-solid fa-lightbulb"></i></span>
         <span class="bd-count" id="bdCount"></span>
     </button>
 
     <!-- Panel -->
-    <div id="bdPanel">
+    <div id="bdPanel" role="dialog" aria-label="Brain Dump" aria-hidden="true">
 
         <!-- FIX1 — Review banner (hidden by default, shown when có notes chưa xử lý từ hôm qua trở về trước) -->
         <div class="bd-review-banner" id="bdReviewBanner" style="display:none;">
@@ -22826,10 +22853,11 @@ window.DBP={
             </div>
         </div>
 
-        <!-- FIX4 — Undo bar (hidden by default) -->
+        <!-- FIX4 — Undo bar (hidden by default; message set dynamically so it
+             covers both "Clear all" and single-note delete) -->
         <div class="bd-undo-bar" id="bdUndoBar" style="display:none;">
-            <span>🗑 All notes deleted</span>
-            <button class="bd-undo-btn" onclick="BrainDump.undoClear()">↩ Undo</button>
+            <span id="bdUndoMsg">🗑 All notes deleted</span>
+            <button class="bd-undo-btn" onclick="BrainDump.undo()">↩ Undo</button>
         </div>
 
         <div class="bd-input-area">
@@ -22838,27 +22866,27 @@ window.DBP={
             <textarea id="bdTextarea" placeholder="Just type here… things to do, a sudden idea, a worry, or anything on your mind..." rows="3"></textarea>
             <div class="bd-cats" id="bdCats">
                 <!-- FIX2 — default chip sẽ được select bằng JS với cat = 'distraction' -->
-                <span class="bd-cat-chip cat-distraction" data-cat="distraction" onclick="BrainDump.selectCat(this)">😵 Distraction</span>
-                <span class="bd-cat-chip cat-idea"        data-cat="idea"        onclick="BrainDump.selectCat(this)">💡 Idea</span>
-                <span class="bd-cat-chip cat-task"        data-cat="task"        onclick="BrainDump.selectCat(this)">✅ Task</span>
-                <span class="bd-cat-chip cat-worry"       data-cat="worry"       onclick="BrainDump.selectCat(this)">😟 Worry</span>
-                <span class="bd-cat-chip cat-random"      data-cat="random"      onclick="BrainDump.selectCat(this)">💬 Random</span>
+                <button type="button" class="bd-cat-chip cat-distraction" data-cat="distraction" aria-pressed="false" onclick="BrainDump.selectCat(this)">😵 Distraction</button>
+                <button type="button" class="bd-cat-chip cat-idea"        data-cat="idea"        aria-pressed="false" onclick="BrainDump.selectCat(this)">💡 Idea</button>
+                <button type="button" class="bd-cat-chip cat-task"        data-cat="task"        aria-pressed="false" onclick="BrainDump.selectCat(this)">✅ Task</button>
+                <button type="button" class="bd-cat-chip cat-worry"       data-cat="worry"       aria-pressed="false" onclick="BrainDump.selectCat(this)">😟 Worry</button>
+                <button type="button" class="bd-cat-chip cat-random"      data-cat="random"      aria-pressed="false" onclick="BrainDump.selectCat(this)">💬 Random</button>
             </div>
             <div class="bd-save-row">
                 <button id="bdSaveBtn" onclick="BrainDump.save()">💾 Dump it <span style="opacity:0.7;font-weight:400;font-size:0.72rem;">&amp; back to work</span></button>
-                <span class="bd-kbd-hint">Ctrl+Enter</span>
+                <span class="bd-kbd-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
             </div>
         </div>
 
         <div class="bd-filter-row" id="bdFilterRow">
-            <button class="bd-filter-tab active"          data-filter="all"         onclick="BrainDump.filter(this)">All</button>
+            <button class="bd-filter-tab active"          data-filter="all"         aria-pressed="true"  onclick="BrainDump.filter(this)">All</button>
             <!-- FIX5 — "Unprocessed" filter tab -->
-            <button class="bd-filter-tab tab-unprocessed" data-filter="unprocessed" onclick="BrainDump.filter(this)">⏳ Todo</button>
-            <button class="bd-filter-tab"                 data-filter="distraction" onclick="BrainDump.filter(this)">😵</button>
-            <button class="bd-filter-tab"                 data-filter="idea"        onclick="BrainDump.filter(this)">💡</button>
-            <button class="bd-filter-tab"                 data-filter="task"        onclick="BrainDump.filter(this)">✅</button>
-            <button class="bd-filter-tab"                 data-filter="worry"       onclick="BrainDump.filter(this)">😟</button>
-            <button class="bd-filter-tab"                 data-filter="random"      onclick="BrainDump.filter(this)">💬</button>
+            <button class="bd-filter-tab tab-unprocessed" data-filter="unprocessed" aria-pressed="false" onclick="BrainDump.filter(this)">⏳ Todo</button>
+            <button class="bd-filter-tab"                 data-filter="distraction" aria-pressed="false" onclick="BrainDump.filter(this)">😵</button>
+            <button class="bd-filter-tab"                 data-filter="idea"        aria-pressed="false" onclick="BrainDump.filter(this)">💡</button>
+            <button class="bd-filter-tab"                 data-filter="task"        aria-pressed="false" onclick="BrainDump.filter(this)">✅</button>
+            <button class="bd-filter-tab"                 data-filter="worry"       aria-pressed="false" onclick="BrainDump.filter(this)">😟</button>
+            <button class="bd-filter-tab"                 data-filter="random"      aria-pressed="false" onclick="BrainDump.filter(this)">💬</button>
         </div>
 
         <div class="bd-list" id="bdList"></div>
@@ -22892,6 +22920,23 @@ window.DBP={
             localStorage.setItem(STORE_KEY, JSON.stringify(notes));
         }
 
+        /* FIX4 — Shared undo mechanism: snapshot the full notes array
+           before a destructive action (single delete or Clear All), show
+           a toast with a custom message, and restore the snapshot if the
+           user clicks Undo within 6s. */
+        function pushUndo(prevNotes, message) {
+            _undoBuffer = prevNotes;
+            const bar = document.getElementById('bdUndoBar');
+            const msgEl = document.getElementById('bdUndoMsg');
+            if (msgEl) msgEl.textContent = message;
+            if (bar) bar.style.display = 'flex';
+            clearTimeout(_undoTimer);
+            _undoTimer = setTimeout(() => {
+                if (bar) bar.style.display = 'none';
+                _undoBuffer = null;
+            }, 6000);
+        }
+
         /* FIX3 — Draft persistence */
         function saveDraft() {
             const ta = document.getElementById('bdTextarea');
@@ -22921,7 +22966,9 @@ window.DBP={
             // Restore category
             selectedCat = d.cat;
             document.querySelectorAll('.bd-cat-chip').forEach(c => {
-                c.classList.toggle('selected', c.dataset.cat === selectedCat);
+                const on = c.dataset.cat === selectedCat;
+                c.classList.toggle('selected', on);
+                c.setAttribute('aria-pressed', String(on));
             });
         }
 
@@ -22938,6 +22985,19 @@ window.DBP={
 
         function escHtml(s) {
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        /* Keep relative timestamps ("3m ago") accurate while the panel
+           stays open, instead of freezing at whatever they said when it
+           was first rendered. */
+        let _timeRefreshInterval = null;
+        function startTimeRefresh() {
+            stopTimeRefresh();
+            _timeRefreshInterval = setInterval(() => { if (isOpen) renderList(); }, 60000);
+        }
+        function stopTimeRefresh() {
+            if (_timeRefreshInterval) clearInterval(_timeRefreshInterval);
+            _timeRefreshInterval = null;
         }
 
         /* FIX1 — Review banner: hiện nếu có notes chưa processed từ hôm qua trở về trước */
@@ -22997,7 +23057,7 @@ window.DBP={
                             ${n.processed ? '✅ Done' : '○ Mark done'}
                         </button>
                         ${n.cat === 'task' ? `<button class="bd-promote-btn" onclick="BrainDump.promoteToGoal('${n.id}')">➕ To Goal</button>` : ''}
-                        <button class="bd-note-del" onclick="BrainDump.deleteNote('${n.id}')" title="Delete">✕</button>
+                        <button class="bd-note-del" onclick="BrainDump.deleteNote('${n.id}')" title="Delete" aria-label="Delete this note">✕</button>
                     </div>
                 </div>
             `).join('');
@@ -23022,14 +23082,20 @@ window.DBP={
 
         /* ── Category selection ── */
         function selectCat(el) {
-            document.querySelectorAll('.bd-cat-chip').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('.bd-cat-chip').forEach(c => {
+                c.classList.remove('selected');
+                c.setAttribute('aria-pressed', 'false');
+            });
             el.classList.add('selected');
+            el.setAttribute('aria-pressed', 'true');
             selectedCat = el.dataset.cat;
             saveDraft(); // persist cat change in draft too
         }
         function initCatChips() {
             document.querySelectorAll('.bd-cat-chip').forEach(c => {
-                c.classList.toggle('selected', c.dataset.cat === selectedCat);
+                const on = c.dataset.cat === selectedCat;
+                c.classList.toggle('selected', on);
+                c.setAttribute('aria-pressed', String(on));
             });
         }
 
@@ -23051,11 +23117,17 @@ window.DBP={
                 if (!fab || !panel) return;
                 fab.classList.toggle('bd-open', isOpen);
                 panel.classList.toggle('bd-visible', isOpen);
+                fab.setAttribute('aria-expanded', String(isOpen));
+                panel.setAttribute('aria-hidden', String(!isOpen));
                 if (isOpen) {
                     updateReviewBanner(); // FIX1
                     applyDraft();         // FIX3
                     renderList();
+                    startTimeRefresh();   // keep "Xm ago" timestamps live while open
                     setTimeout(() => document.getElementById('bdTextarea')?.focus(), 180);
+                } else {
+                    stopTimeRefresh();
+                    fab.focus(); // return focus to the trigger for keyboard users
                 }
             },
 
@@ -23111,33 +23183,28 @@ window.DBP={
             },
 
             deleteNote(id) {
-                let notes = loadNotes().filter(n => n.id !== id);
-                saveNotes(notes);
+                const notes = loadNotes(); // full pre-delete snapshot, used for undo
+                const note = notes.find(n => n.id === id);
+                const remaining = notes.filter(n => n.id !== id);
+                saveNotes(remaining);
                 const el = document.querySelector(`.bd-note[data-id="${id}"]`);
                 if (el) { el.style.opacity = '0'; el.style.transform = 'translateX(16px)'; }
                 setTimeout(() => { renderList(); updateFab(); updateReviewBanner(); }, 200);
+                if (note) pushUndo(notes, '🗑 Note deleted');
             },
 
             /* FIX4 — Clear All với Undo */
             clearAll() {
                 const notes = loadNotes();
                 if (!notes.length) return;
-                _undoBuffer = notes; // lưu snapshot
                 saveNotes([]);
                 renderList(); updateFab(); updateReviewBanner();
-
-                // Hiện undo bar 6 giây
-                const bar = document.getElementById('bdUndoBar');
-                if (bar) bar.style.display = 'flex';
-                clearTimeout(_undoTimer);
-                _undoTimer = setTimeout(() => {
-                    if (bar) bar.style.display = 'none';
-                    _undoBuffer = null;
-                }, 6000);
+                pushUndo(notes, '🗑 All notes deleted');
             },
 
-            /* FIX4 — Undo clear */
-            undoClear() {
+            /* FIX4 — Undo (covers both Clear All and single-note delete —
+               both just snapshot the full notes array before mutating it) */
+            undo() {
                 if (!_undoBuffer) return;
                 saveNotes(_undoBuffer);
                 _undoBuffer = null;
@@ -23146,12 +23213,16 @@ window.DBP={
                 if (bar) bar.style.display = 'none';
                 renderList(); updateFab(); updateReviewBanner();
                 if (typeof showNotification === 'function')
-                    showNotification('↩ Notes restored!', 'success');
+                    showNotification('↩ Restored!', 'success');
             },
 
             filter(el) {
-                document.querySelectorAll('.bd-filter-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.bd-filter-tab').forEach(t => {
+                    t.classList.remove('active');
+                    t.setAttribute('aria-pressed', 'false');
+                });
                 el.classList.add('active');
+                el.setAttribute('aria-pressed', 'true');
                 currentFilter = el.dataset.filter;
                 renderList();
             },
@@ -23160,7 +23231,9 @@ window.DBP={
             startReview() {
                 currentFilter = 'unprocessed';
                 document.querySelectorAll('.bd-filter-tab').forEach(t => {
-                    t.classList.toggle('active', t.dataset.filter === 'unprocessed');
+                    const on = t.dataset.filter === 'unprocessed';
+                    t.classList.toggle('active', on);
+                    t.setAttribute('aria-pressed', String(on));
                 });
                 renderList();
                 document.getElementById('bdReviewBanner').style.display = 'none';
