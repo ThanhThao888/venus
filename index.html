@@ -1091,6 +1091,139 @@
             background: linear-gradient(135deg, #1E1B4B, #2E2C7B, #3B82F6, #4F46E5);
         }
 
+        /* ── XP progress bar to next level ── */
+        .xp-bar-track {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.25);
+            border-radius: 999px;
+            overflow: hidden;
+            margin: 6px 0 4px;
+        }
+        .xp-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #fbbf24, #f59e0b);
+            border-radius: 999px;
+            box-shadow: 0 0 8px rgba(251,191,36,0.6);
+            transition: width 0.5s ease;
+        }
+        .xp-bar-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.85);
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        /* ── Best streak subtext ── */
+        .streak-best {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.75);
+            text-align: center;
+            margin-top: -6px;
+        }
+
+        /* ── Weekly trend summary (this week vs last week) ── */
+        .weekly-trend-summary {
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin: -8px 0 12px;
+        }
+        .weekly-trend-summary .trend-up { color: #16a34a; }
+        .weekly-trend-summary .trend-down { color: #ef4444; }
+        .weekly-trend-summary .trend-flat { color: var(--text-muted); }
+        .dark-mode .weekly-trend-summary { color: #cbd5e1; }
+        .dark-mode .weekly-trend-summary .trend-up { color: #4ade80; }
+        .dark-mode .weekly-trend-summary .trend-down { color: #f87171; }
+
+        /* ── Small label above a chart-container ── */
+        .chart-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-align: center;
+            margin-bottom: 4px;
+        }
+        .dark-mode .chart-label { color: #94a3b8; }
+
+        /* ── Persistent badges / achievements list ── */
+        .achievement-toast {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border: 1px solid #f59e0b;
+            color: #92400e;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 8px 12px;
+            border-radius: var(--radius-md);
+            margin-top: 10px;
+            text-align: center;
+            animation: achievementPop 0.4s ease;
+        }
+        @keyframes achievementPop {
+            from { opacity: 0; transform: translateY(-6px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .dark-mode .achievement-toast {
+            background: linear-gradient(135deg, #451a03, #78350f);
+            border-color: #d97706;
+            color: #fbbf24;
+        }
+
+        .badges-section {
+            margin-top: 16px;
+            padding-top: 14px;
+            border-top: 1px dashed var(--border-color);
+        }
+        .badges-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-dark);
+            margin: 0 0 10px;
+        }
+        .dark-mode .badges-title { color: #e2e8f0; }
+        .badges-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-height: 160px;
+            overflow-y: auto;
+        }
+        .badges-empty {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+            width: 100%;
+            padding: 8px 0;
+        }
+        .badge-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-light);
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-dark);
+            max-width: 100%;
+        }
+        .dark-mode .badge-chip {
+            background: rgba(51,65,85,0.6);
+            border-color: rgba(148,163,184,0.3);
+            color: #e2e8f0;
+        }
+        .badge-chip-icon { font-size: 0.95rem; flex-shrink: 0; }
+        .badge-chip-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .dark-mode .level-text,
         .dark-mode .points-text,
         .dark-mode .streak-text {
@@ -17247,10 +17380,18 @@ window.DBP={
                                 <span class="points-icon"><i class="fas fa-star"></i></span>
                                 <span class="points-text" id="pointsDisplay">0 XP</span>
                             </div>
+
+                            <!-- XP progress bar to next level -->
+                            <div class="xp-bar-track" role="progressbar" aria-label="XP progress to next level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                <div class="xp-bar-fill" id="xpBarFill" style="width:0%;"></div>
+                            </div>
+                            <div class="xp-bar-label" id="xpBarLabel">0/100 XP to Level 2</div>
+
                             <div class="streak-container">
                                 <span class="streak-icon"><i class="fas fa-fire"></i></span>
                                 <span class="streak-text" id="streakDisplay">0 day streak</span>
                             </div>
+                            <div class="streak-best" id="streakBestDisplay">Best: 0 days</div>
                         </div>
                         <div class="total-hours" id="totalHours">0.0 hours</div>
 
@@ -17259,9 +17400,11 @@ window.DBP={
                             <span id="totalStudyInfo">Total: 0.0 hours</span>
                         </div>
 
+                        <!-- Weekly trend: this week's total vs last week's total -->
+                        <div class="weekly-trend-summary" id="weeklyTrendSummary">This week: 0.0 hours</div>
 
-                        
                         <div class="chart-container" style="height: 140px; margin: 15px 0; background: #f8fafc; border-radius: var(--radius-md);">
+                            <div class="chart-label">📈 Last 7 Days</div>
                             <canvas id="dailyStudyChart"></canvas>
                         </div>
                     
@@ -17279,7 +17422,16 @@ window.DBP={
                         </div>
                         <div id="achievements">
                         </div>
+
+                        <!-- Persistent achievements / badges list (doesn't disappear like the toast above) -->
+                        <div class="badges-section">
+                            <h4 class="badges-title">🏅 Badges Earned</h4>
+                            <div id="badgesList" class="badges-list">
+                                <div class="badges-empty">No badges yet — log study hours to earn your first! 🎯</div>
+                            </div>
+                        </div>
                     </div>
+
  
                     <!-- - Goal Setting Section - -->
                     <div class="sidebar-card" id="goalsSection">
@@ -18014,14 +18166,11 @@ window.DBP={
                 </div>
             </div>
 
-            <!-- Counter + Export/Import, tucked into one quiet row -->
+            <!-- Counter row. Export/Import for the resource library was removed here —
+                 it's now backed up/restored together with everything else via the single
+                 "Data Management" Export/Import (sidebar), which does a full backup. -->
             <div class="rl-count-row">
                 <span>Total: <strong id="resourceCount">0</strong></span>
-                <span style="display:flex; gap:10px;">
-                    <a href="#" onclick="exportResourceLibrary(); return false;" style="color:var(--text-muted); text-decoration:none;">⬇️ Export</a>
-                    <a href="#" onclick="document.getElementById('resourceImportInput').click(); return false;" style="color:var(--text-muted); text-decoration:none;">⬆️ Import</a>
-                </span>
-                <input type="file" id="resourceImportInput" accept="application/json" style="display:none;" onchange="importResourceLibrary(this.files[0])">
             </div>
 
             <!-- Resource Cards Container -->
@@ -21222,15 +21371,11 @@ window.DBP={
                         <button class="rdm-reset-btn"
                             onclick="StrategicRoadmap.copyProgress()"
                             title="Copy a text summary of your progress across all tracks">📋 Share</button>
-                        <button class="rdm-reset-btn"
-                            onclick="StrategicRoadmap.exportRoadmapData()"
-                            title="Download a backup of all roadmap progress (completions, skips, activity)">⬇️ Export</button>
-                        <button class="rdm-reset-btn"
-                            onclick="document.getElementById('rdmImportInput').click()"
-                            title="Restore roadmap progress from a previously exported backup file">⬆️ Import</button>
-                        <input type="file" id="rdmImportInput" accept="application/json" style="display:none;"
-                            onchange="StrategicRoadmap.importRoadmapData(this)">
                     </div>
+                    <!-- Roadmap progress now lives in localStorage and is backed up/restored
+                         from the single "Data Management" Export/Import (sidebar), which does
+                         a full backup — so this module no longer needs its own buttons. -->
+
                     <div class="rdm-view-row">
                         <div class="rdm-view-toggle">
                             <button type="button" class="rdm-view-btn" id="rdmViewBtnList" onclick="StrategicRoadmap.setView('list')">📋 List</button>
@@ -21949,11 +22094,14 @@ window.DBP={
         
                     <div class="sidebar-card">
                         <h3 class="sidebar-title">Data Management</h3>
+                        <p style="margin:0 0 10px;font-size:0.82rem;color:var(--text-muted);">
+                            One backup for everything — habits, Strategic Roadmap, Resource Library, and all other data.
+                        </p>
                         <button class="export-btn" onclick="exportProgress()">
-                            📥 Export Progress
+                            📥 Export All Data
                         </button>
                         <button class="import-btn" onclick="document.getElementById('importFile').click()">
-                            📤 Import Progress
+                            📤 Import All Data
                         </button>
                         <input type="file" id="importFile" style="display: none;" accept=".json" onchange="importProgress(event)">
                     </div>
@@ -24778,8 +24926,12 @@ window.DBP={
             points: 0,
             level: 1,
             streak: 0,
-            lastStreakDate: null
+            longestStreak: 0,
+            lastStreakDate: null,
+            badges: []
         };
+        if (gamification.longestStreak == null) gamification.longestStreak = gamification.streak || 0;
+        if (!Array.isArray(gamification.badges)) gamification.badges = [];
 
         let progressChart = null;
 
@@ -26129,17 +26281,49 @@ window.DBP={
         }
 
 
-        function addAchievement(text) {
+        function addAchievement(text, icon = '🏆') {
+            // Ephemeral toast — same pop-and-fade feedback as before.
             const achievementsDiv = document.getElementById('achievements');
-            const achievement = document.createElement('div');
-            achievement.className = 'achievement';
-            achievement.textContent = text;
-            achievementsDiv.appendChild(achievement);
-            setTimeout(() => {
-                if (achievement.parentNode) {
-                    achievement.parentNode.removeChild(achievement);
-                }
-            }, 10000);
+            if (achievementsDiv) {
+                const achievement = document.createElement('div');
+                achievement.className = 'achievement-toast';
+                achievement.textContent = text;
+                achievementsDiv.appendChild(achievement);
+                setTimeout(() => {
+                    if (achievement.parentNode) {
+                        achievement.parentNode.removeChild(achievement);
+                    }
+                }, 10000);
+            }
+
+            // Persistent badge — survives reloads, doesn't disappear after 10s.
+            // Deduped so re-triggering the same achievement on the same day
+            // doesn't spam the list.
+            if (!Array.isArray(gamification.badges)) gamification.badges = [];
+            const todayKey = new Date().toDateString();
+            const alreadyToday = gamification.badges.some(b => b.text === text && b.date === todayKey);
+            if (!alreadyToday) {
+                gamification.badges.unshift({ text, icon, date: todayKey, ts: Date.now() });
+                gamification.badges = gamification.badges.slice(0, 50); // keep history bounded
+                localStorage.setItem('gamification', JSON.stringify(gamification));
+            }
+            renderBadges();
+        }
+
+        function renderBadges() {
+            const container = document.getElementById('badgesList');
+            if (!container) return;
+            const badges = gamification.badges || [];
+            if (badges.length === 0) {
+                container.innerHTML = `<div class="badges-empty">No badges yet — log study hours to earn your first! 🎯</div>`;
+                return;
+            }
+            container.innerHTML = badges.slice(0, 20).map(b => `
+                <div class="badge-chip" title="${escapeHtml(b.date || '')}">
+                    <span class="badge-chip-icon">${escapeHtml(b.icon || '🏆')}</span>
+                    <span class="badge-chip-text">${escapeHtml(b.text)}</span>
+                </div>
+            `).join('');
         }
 
 
@@ -26154,10 +26338,13 @@ window.DBP={
                     gamification.streak = 1;
                 }
                 gamification.lastStreakDate = today;
+                if (gamification.streak > (gamification.longestStreak || 0)) {
+                    gamification.longestStreak = gamification.streak;
+                }
                 localStorage.setItem('gamification', JSON.stringify(gamification));
 
                 if (gamification.streak % 7 === 0) {
-                    addAchievement(`🔥 ${gamification.streak} day streak! Keep going!`);
+                    addAchievement(`🔥 ${gamification.streak} day streak! Keep going!`, '🔥');
                     showNotification(`Achievement Unlocked: ${gamification.streak} day streak!`, 'achievement');
                 }
             }
@@ -26165,9 +26352,38 @@ window.DBP={
         }
 
         function updateGamificationStats() {
+            // Re-sync from localStorage first — some flows (e.g. deadline XP
+            // rewards) write straight to localStorage without touching this
+            // in-memory object, so this keeps the UI from showing stale values.
+            try {
+                const stored = JSON.parse(localStorage.getItem('gamification') || 'null');
+                if (stored) gamification = Object.assign({}, gamification, stored);
+            } catch (e) {}
+
             document.getElementById('levelBadge').textContent = `Level ${gamification.level}`;
             document.getElementById('pointsDisplay').textContent = `${gamification.points} XP`;
             document.getElementById('streakDisplay').textContent = `${gamification.streak} day streak`;
+
+            // XP progress bar to next level (100 XP per level).
+            const xpIntoLevel = ((gamification.points % 100) + 100) % 100;
+            const xpBarFill = document.getElementById('xpBarFill');
+            const xpBarLabel = document.getElementById('xpBarLabel');
+            if (xpBarFill) {
+                xpBarFill.style.width = `${xpIntoLevel}%`;
+                xpBarFill.parentElement?.setAttribute('aria-valuenow', String(xpIntoLevel));
+            }
+            if (xpBarLabel) {
+                xpBarLabel.textContent = `${xpIntoLevel}/100 XP to Level ${(gamification.level || 1) + 1}`;
+            }
+
+            // Best streak.
+            const streakBestEl = document.getElementById('streakBestDisplay');
+            if (streakBestEl) {
+                const best = Math.max(gamification.longestStreak || 0, gamification.streak || 0);
+                streakBestEl.textContent = `Best: ${best} day${best === 1 ? '' : 's'}`;
+            }
+
+            renderBadges();
         }
 
         function initChart() {
@@ -27982,6 +28198,44 @@ window.DBP={
             localStorage.setItem('dailyStudyData', JSON.stringify(dailyStudyData));
         }
 
+        // Hàm so sánh tổng giờ học tuần này với tuần trước (7 ngày gần nhất
+        // vs 7 ngày trước đó), dùng để hiển thị xu hướng (↑/↓/→).
+        function getWeeklyComparison() {
+            let thisWeek = 0, lastWeek = 0;
+            for (let i = 0; i <= 6; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                thisWeek += dailyStudyData[d.toDateString()] || 0;
+            }
+            for (let i = 7; i <= 13; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                lastWeek += dailyStudyData[d.toDateString()] || 0;
+            }
+            return { thisWeek, lastWeek };
+        }
+
+        function updateWeeklyTrendSummary() {
+            const el = document.getElementById('weeklyTrendSummary');
+            if (!el) return;
+            const { thisWeek, lastWeek } = getWeeklyComparison();
+
+            if (lastWeek === 0) {
+                el.innerHTML = thisWeek > 0
+                    ? `This week: <strong>${thisWeek.toFixed(1)}h</strong> <span class="trend-up">🌱 first week logged</span>`
+                    : `This week: <strong>0.0h</strong>`;
+                return;
+            }
+
+            const pct = ((thisWeek - lastWeek) / lastWeek) * 100;
+            let arrow = '→', cls = 'trend-flat';
+            if (pct > 0.5) { arrow = '▲'; cls = 'trend-up'; }
+            else if (pct < -0.5) { arrow = '▼'; cls = 'trend-down'; }
+
+            el.innerHTML = `This week: <strong>${thisWeek.toFixed(1)}h</strong> ` +
+                `<span class="${cls}">${arrow} ${Math.abs(pct).toFixed(0)}% vs last week</span>`;
+        }
+
         // Hàm lấy dữ liệu 7 ngày gần nhất
         function getWeeklyStudyData() {
             const weeklyData = [];
@@ -28019,6 +28273,9 @@ window.DBP={
                 overallTotalHours += Object.values(studyHours[career]).reduce((sum, hours) => sum + hours, 0);
             });
             document.getElementById('totalStudyInfo').textContent = `Total: ${overallTotalHours.toFixed(1)} hours`;
+
+            // Cập nhật xu hướng tuần này vs tuần trước
+            updateWeeklyTrendSummary();
             
             // Vẽ hoặc cập nhật biểu đồ
             renderDailyStudyChart();
@@ -49193,70 +49450,10 @@ window.fcRenderTagChips = fcRenderTagChips;
         }
 
         // ===== GROUP 4: EXPORT / IMPORT (item 17) =====
-        function exportResourceLibrary() {
-            const payload = {
-                exportedAt: new Date().toISOString(),
-                resourceLibrary: resourceLibrary,
-                resourceCategories: resourceCategories
-            };
-            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `resource-library-${toLocalDateStr(new Date())}.json`; // local (VN) day, not UTC
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showNotification('⬇️ Resource library exported', 'success');
-        }
-
-        function importResourceLibrary(file) {
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                let data;
-                try {
-                    data = JSON.parse(e.target.result);
-                } catch (err) {
-                    showNotification('❌ Invalid JSON file', 'error');
-                    return;
-                }
-
-                const incoming = Array.isArray(data) ? data : (data.resourceLibrary || []);
-                if (!Array.isArray(incoming)) {
-                    showNotification('❌ File does not contain a resource library', 'error');
-                    return;
-                }
-
-                const existingUrls = new Set(resourceLibrary.map(r => normalizeResourceUrl(r.url)));
-                let added = 0, skipped = 0;
-                incoming.forEach(r => {
-                    if (!r || !r.url) return;
-                    const norm = normalizeResourceUrl(r.url);
-                    if (existingUrls.has(norm)) { skipped++; return; }
-                    existingUrls.add(norm);
-                    resourceLibrary.push({
-                        ...resourceSchema,
-                        ...r,
-                        id: r.id ? String(r.id) : (Date.now() + Math.random()).toString()
-                    });
-                    added++;
-                });
-
-                if (Array.isArray(data.resourceCategories)) {
-                    data.resourceCategories.forEach(c => ensureResourceCategory(c));
-                }
-
-                saveResources();
-                renderResourceCategoryDatalist();
-                renderTagCloud();
-                filterResources();
-                showNotification(`⬆️ Imported ${added} resource(s)${skipped ? `, skipped ${skipped} duplicate(s)` : ''}`, 'success');
-                document.getElementById('resourceImportInput').value = '';
-            };
-            reader.readAsText(file);
-        }
+        // exportResourceLibrary()/importResourceLibrary() were removed — the resource
+        // library is stored in localStorage and is now backed up/restored as part of
+        // the single full-data Export/Import in "Data Management" (see exportProgress()
+        // / importProgress() below).
 
         // markResourceViewed is now handled by autoMarkReading (called on Open Link click)
         function markResourceViewed(id) {
@@ -51330,50 +51527,11 @@ window.fcRenderTagChips = fcRenderTagChips;
                 return text;
             }
 
-            // ── EXPORT / IMPORT — roadmap progress backup ──────────────────────
-            // The roadmap keeps its own localStorage keys (roadmapCompleted_*,
-            // roadmapSkipped_*, roadmapLastActivity_*) separate from the main
-            // app's `data` object, so the general Wellness export/import doesn't
-            // cover it. This gives the roadmap its own dedicated backup/restore
-            // so progress across all tracks survives a device switch or a
-            // localStorage wipe.
-            function buildRoadmapExportPayload() {
-                const tracks = (typeof TRACK_META !== 'undefined') ? Object.keys(TRACK_META) : [];
-                // version 2: adds top-level `pinned` (Overview pin list) and
-                // per-track `hoursLog` (powers "this week" in Overview) —
-                // both were previously roadmap-local state that a restore on
-                // a new device would silently drop.
-                const payload = { kind: 'strategic-roadmap-backup', version: 2, exportedAt: new Date().toISOString(), pinned: loadPinned(), tracks: {} };
-                tracks.forEach(track => {
-                    payload.tracks[track] = {
-                        completed: loadManual(track),
-                        skipped: loadSkipped(track),
-                        lastActivity: getLastActivity(track),
-                        hoursLog: loadHoursLog(track)
-                    };
-                });
-                return payload;
-            }
-            function applyRoadmapImportPayload(payload) {
-                // `pinned` and `hoursLog` are new in v2 — a v1 backup simply
-                // won't have them, so both are left untouched (existing
-                // pins/log on this device survive importing an older file).
-                if (Array.isArray(payload.pinned)) savePinned(payload.pinned);
-                Object.keys(payload.tracks).forEach(track => {
-                    const t = payload.tracks[track];
-                    if (!t) return;
-                    if (Array.isArray(t.completed)) saveManual(track, t.completed);
-                    if (Array.isArray(t.skipped)) saveSkipped(track, t.skipped);
-                    if (t.lastActivity) {
-                        try { localStorage.setItem(activityStorageKey(track), String(t.lastActivity)); }
-                        catch (e) {}
-                    }
-                    if (Array.isArray(t.hoursLog)) {
-                        try { localStorage.setItem(hoursLogStorageKey(track), JSON.stringify(t.hoursLog)); }
-                        catch (e) {}
-                    }
-                });
-            }
+            // Roadmap progress (roadmapCompleted_*, roadmapSkipped_*, roadmapLastActivity_*,
+            // pinned tracks, hours log) all lives in localStorage, which means it's already
+            // picked up automatically by the single full-data Export/Import in
+            // "Data Management" (buildFullBackupObject() scans every localStorage key).
+            // The roadmap's own dedicated export/import backup was removed as redundant.
 
             // ── 6. RENDER (delegates to renderHtml string-builder) ──────────
             function render(track) {
@@ -51941,54 +52099,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                         finish();
                     }
                 },
-                // ⬇️ Download a JSON backup of progress across ALL tracks
-                // (completions, skips, last-activity timestamps).
-                exportRoadmapData() {
-                    const payload = buildRoadmapExportPayload();
-                    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    const dateTag = new Date().toISOString().slice(0, 10);
-                    a.download = `roadmap-backup-${dateTag}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    if (typeof showNotification === 'function')
-                        showNotification('⬇️ Roadmap backup downloaded.', 'success');
-                },
-                // ⬆️ Restore progress from a previously exported backup file.
-                // Overwrites current completions/skips per track that's present
-                // in the file; tracks not mentioned in the file are left as-is.
-                importRoadmapData(input) {
-                    const file = input.files && input.files[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        let payload;
-                        try {
-                            payload = JSON.parse(reader.result);
-                            if (!payload || payload.kind !== 'strategic-roadmap-backup' || !payload.tracks) throw new Error('invalid');
-                        } catch (e) {
-                            if (typeof showNotification === 'function')
-                                showNotification('⚠️ Invalid or corrupted roadmap backup file.', 'error');
-                            input.value = '';
-                            return;
-                        }
-                        rdmConfirmModal(
-                            'Importing will OVERWRITE current progress for every track included in this backup file. Continue?',
-                            () => {
-                                applyRoadmapImportPayload(payload);
-                                refreshTrackSelectPinBadges();
-                                this.generate();
-                                if (typeof showNotification === 'function')
-                                    showNotification('⬆️ Roadmap progress restored from backup!', 'success');
-                                input.value = '';
-                            },
-                            { icon: '⬆️', title: 'Import roadmap backup', confirmLabel: 'Import', danger: true }
-                        );
-                    };
-                    reader.readAsText(file);
-                },
+                // exportRoadmapData()/importRoadmapData() were removed — roadmap progress
+                // (completions, skips, pins, hours log) lives in localStorage and is now
+                // backed up/restored as part of the single full-data Export/Import in
+                // "Data Management" (see exportProgress()/importProgress()).
                 // Sync track selector with the main app's currentCareer value
                 syncCareer() {
                     const cc = typeof currentCareer !== 'undefined' ? currentCareer : null;
