@@ -7046,6 +7046,26 @@
             transition: opacity 0.22s ease, transform 0.22s ease;
         }
 
+        .quote-own-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 6px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.66rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: #4f46e5;
+            background: rgba(99, 102, 241, 0.12);
+            align-self: flex-end;
+        }
+
+        .dark-mode .quote-own-badge {
+            color: #a5b4fc;
+            background: rgba(129, 140, 248, 0.18);
+        }
+
         .quote-popup-footer {
             display: flex;
             align-items: center;
@@ -7086,6 +7106,17 @@
 
         .quote-popup-mini-btn.copy-flash {
             color: #16a34a;
+        }
+
+        /* --- "My quotes only" quick toggle: filled/highlighted when active --- */
+        .quote-popup-mini-btn#quoteOnlyCustomQuickBtn.is-active {
+            background: rgba(99, 102, 241, 0.14);
+            color: #4f46e5;
+        }
+
+        .dark-mode .quote-popup-mini-btn#quoteOnlyCustomQuickBtn.is-active {
+            background: rgba(129, 140, 248, 0.2);
+            color: #a5b4fc;
         }
 
         /* --- FAB badge: lights up when a quote refreshed in the background --- */
@@ -21801,8 +21832,13 @@ window.DBP={
                     id="customQuoteText" 
                     placeholder="Enter your motivational quote..." 
                     rows="3"
+                    maxlength="280"
+                    oninput="document.getElementById('customQuoteCharCount').textContent = this.value.length"
                     style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); resize: vertical; font-size: 0.95rem;">
                 </textarea>
+                <div style="text-align: right; font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
+                    <span id="customQuoteCharCount">0</span>/280
+                </div>
             </div>
             <div style="margin-bottom: 15px;">
                 <label style="display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-dark);">
@@ -21812,6 +21848,7 @@ window.DBP={
                     type="text" 
                     id="customQuoteAuthor" 
                     placeholder="e.g., Fyodor Dostoevsky" 
+                    maxlength="60"
                     style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); font-size: 0.95rem;">
             </div>
             <button 
@@ -22500,12 +22537,16 @@ window.DBP={
             <span class="quote-popup-mark" aria-hidden="true">&ldquo;</span>
             <div id="quoteText" tabindex="-1">Loading your first quote of inspiration...</div>
             <div id="quoteAuthor">- Your Future Self</div>
+            <span id="quoteOwnBadge" class="quote-own-badge" hidden><i class="fas fa-user-pen"></i> Yours</span>
             <div class="quote-popup-footer">
                 <button class="quote-popup-mini-btn" id="quoteFavBtn" onclick="toggleFavoriteQuote()" title="Save this quote">
                     <i class="far fa-star"></i> Save
                 </button>
                 <button class="quote-popup-mini-btn" id="quoteCopyBtn" onclick="copyCurrentQuote()" title="Copy quote">
                     <i class="far fa-copy"></i> Copy
+                </button>
+                <button class="quote-popup-mini-btn" id="quoteOnlyCustomQuickBtn" onclick="toggleOnlyCustomQuotesQuick()" title="Show only my quotes" aria-pressed="false">
+                    <i class="fas fa-filter"></i> My quotes only
                 </button>
             </div>
         </div>
@@ -25283,6 +25324,10 @@ window.DBP={
         // Merge default + custom quotes
         let motivationalQuotes = [...defaultQuotes, ...customQuotes];
 
+        // If true, Quote Boost ignores the built-in library + career/mood tagging
+        // entirely and only shuffles through the user's own custom quotes.
+        let quoteOnlyCustom = localStorage.getItem('quoteOnlyCustom') === 'true';
+
 
 
         let currentCareer = 'pe';
@@ -25654,6 +25699,18 @@ window.DBP={
         // actually doing instead of firing off something random.
         function pickQuote() {
             const pool = motivationalQuotes.length ? motivationalQuotes : defaultQuotes;
+
+            // "Only my quotes" mode: skip career/mood matching entirely and just
+            // shuffle through the user's own custom quotes.
+            if (quoteOnlyCustom && customQuotes.length > 0) {
+                let candidates = customQuotes;
+                if (candidates.length > 1 && currentQuote) {
+                    const withoutCurrent = candidates.filter(q => q.text !== currentQuote.text);
+                    if (withoutCurrent.length) candidates = withoutCurrent;
+                }
+                return candidates[Math.floor(Math.random() * candidates.length)];
+            }
+
             const career = typeof currentCareer !== 'undefined' ? currentCareer : null;
             const mood = typeof currentMood !== 'undefined' ? currentMood : null;
 
@@ -25690,13 +25747,18 @@ window.DBP={
             currentQuote = quote;
             const textEl = document.getElementById('quoteText');
             const authorEl = document.getElementById('quoteAuthor');
+            const badgeEl = document.getElementById('quoteOwnBadge');
             if (!textEl || !authorEl) return;
+
+            // Custom quotes carry an `id`/`addedAt`; built-in ones never do.
+            const isOwn = !!(quote && quote.id);
 
             const applyText = () => {
                 textEl.textContent = quote.text;
                 authorEl.textContent = quote.author ? `- ${quote.author}` : '';
                 textEl.classList.remove('quote-fading');
                 authorEl.classList.remove('quote-fading');
+                if (badgeEl) badgeEl.hidden = !isOwn;
                 updateFavoriteButtonState();
             };
 
@@ -25895,6 +25957,7 @@ window.DBP={
                 } else {
                     updateFavoriteButtonState();
                 }
+                syncOnlyCustomToggleUI();
                 // Move focus into the dialog for keyboard/screen-reader users.
                 const textEl = document.getElementById('quoteText');
                 if (textEl) setTimeout(() => textEl.focus(), 50);
@@ -25939,6 +26002,11 @@ window.DBP={
                 showNotification('❌ Please enter quote text!', 'error');
                 return;
             }
+
+            if (text.length > 280) {
+                showNotification('❌ Quotes are capped at 280 characters — trim it down a bit.', 'error');
+                return;
+            }
             
             // Check for duplicates
             const isDuplicate = customQuotes.some(q => q.text.toLowerCase() === text.toLowerCase());
@@ -25963,6 +26031,8 @@ window.DBP={
             // Clear inputs
             document.getElementById('customQuoteText').value = '';
             document.getElementById('customQuoteAuthor').value = '';
+            const counterEl = document.getElementById('customQuoteCharCount');
+            if (counterEl) counterEl.textContent = '0';
             
             // Update count
             updateCustomQuotesCount();
@@ -25982,11 +26052,6 @@ window.DBP={
 
         // Open Manage Quotes Modal
         function openManageQuotesModal() {
-            if (customQuotes.length === 0) {
-                showNotification('📝 No custom quotes yet. Add some first!', 'info');
-                return;
-            }
-            
             const modal = document.createElement('div');
             modal.id = 'manageQuotesModal';
             modal.style.cssText = `
@@ -26011,13 +26076,20 @@ window.DBP={
                                     📋 Manage Your Custom Quotes
                                 </h2>
                                 <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">
-                                    ${customQuotes.length} custom quotes
+                                    ${customQuotes.length} custom quote${customQuotes.length === 1 ? '' : 's'}
                                 </p>
                             </div>
                             <button onclick="closeManageQuotesModal()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: var(--text-muted);">
                                 ×
                             </button>
                         </div>
+                        <label style="display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 12px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); border-radius: 10px; cursor: ${customQuotes.length ? 'pointer' : 'not-allowed'}; font-size: 0.88rem; color: var(--text-dark); opacity: ${customQuotes.length ? '1' : '0.6'};">
+                            <input type="checkbox" id="quoteOnlyCustomToggle" onchange="toggleOnlyCustomQuotes(this.checked)" ${quoteOnlyCustom ? 'checked' : ''} ${customQuotes.length ? '' : 'disabled'} style="width: 16px; height: 16px; cursor: ${customQuotes.length ? 'pointer' : 'not-allowed'};">
+                            <span>
+                                <strong>Only show my quotes</strong>
+                                <span style="color: var(--text-muted); display: block; font-size: 0.78rem; margin-top: 2px;">${customQuotes.length ? `Skip the built-in library and career/mood matching — shuffle only through the ${customQuotes.length} quote${customQuotes.length === 1 ? '' : 's'} above.` : 'Add a custom quote below to unlock this.'}</span>
+                            </span>
+                        </label>
                     </div>
                     
                     <!-- Body -->
@@ -26041,39 +26113,178 @@ window.DBP={
         function closeManageQuotesModal() {
             const modal = document.getElementById('manageQuotesModal');
             if (modal) modal.remove();
+            editingQuoteId = null;
         }
+
+        // Toggle "Only show my quotes" — when on, Quote Boost ignores the built-in
+        // library and career/mood matching and shuffles only through custom quotes.
+        // This is the single source of truth; both the quick button in the popup
+        // and the checkbox in the Manage Quotes modal call into this.
+        function toggleOnlyCustomQuotes(checked) {
+            if (checked && customQuotes.length === 0) {
+                showNotification("📝 You don't have any custom quotes yet — add one first!", 'info');
+                checked = false; // don't flip the flag on to a mode that has nothing to show
+            }
+            quoteOnlyCustom = checked;
+            localStorage.setItem('quoteOnlyCustom', checked ? 'true' : 'false');
+            if (customQuotes.length > 0) {
+                showNotification(checked ? '📋 Now showing only your custom quotes' : '📋 Back to showing all quotes', 'info');
+            }
+            syncOnlyCustomToggleUI();
+            // Refresh what's currently on screen (if the popup is open) so the
+            // change is felt immediately instead of waiting for the next shuffle.
+            if (typeof getRandomQuote === 'function') getRandomQuote();
+        }
+
+        // Quick toggle button that lives right in the quote popup — the primary,
+        // always-visible way to flip this setting (no need to open a modal).
+        function toggleOnlyCustomQuotesQuick() {
+            toggleOnlyCustomQuotes(!quoteOnlyCustom);
+        }
+
+        // Keeps the popup's quick-toggle button AND the Manage Quotes modal
+        // checkbox (if open) visually in sync with the current quoteOnlyCustom state.
+        function syncOnlyCustomToggleUI() {
+            const quickBtn = document.getElementById('quoteOnlyCustomQuickBtn');
+            if (quickBtn) {
+                quickBtn.classList.toggle('is-active', quoteOnlyCustom);
+                quickBtn.setAttribute('aria-pressed', quoteOnlyCustom ? 'true' : 'false');
+                quickBtn.title = quoteOnlyCustom ? 'Showing only my quotes — click to show all' : 'Show only my quotes';
+            }
+            const modalCheckbox = document.getElementById('quoteOnlyCustomToggle');
+            if (modalCheckbox) modalCheckbox.checked = quoteOnlyCustom;
+        }
+
+        // Escapes text for safe placement inside an HTML attribute value.
+        function escapeHtmlAttr(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        // Escapes text for safe placement as HTML content (e.g. inside a textarea).
+        function escapeHtmlContent(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        // id of the custom quote currently being edited inline, or null.
+        let editingQuoteId = null;
 
         // Render Custom Quotes List
         function renderCustomQuotesList() {
             if (customQuotes.length === 0) {
                 return '<p style="text-align: center; color: var(--text-muted); padding: 40px;">No custom quotes yet.</p>';
             }
-            
-            return customQuotes.map((quote, index) => `
+
+            // Newest first, so quotes you just added show up at the top instead
+            // of getting lost at the bottom of a long list.
+            const sorted = [...customQuotes].sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
+
+            return sorted.map((quote) => {
+                if (quote.id === editingQuoteId) {
+                    return `
+                <div style="background: var(--bg-light); padding: 16px; border-radius: 12px; margin-bottom: 12px; border-left: 4px solid #6366f1;">
+                    <textarea id="editQuoteText_${quote.id}" maxlength="280" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); resize: vertical; font-size: 0.95rem; margin-bottom: 8px;">${escapeHtmlContent(quote.text)}</textarea>
+                    <input id="editQuoteAuthor_${quote.id}" type="text" maxlength="60" value="${escapeHtmlAttr(quote.author || '')}" placeholder="Author (optional)" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); font-size: 0.9rem; margin-bottom: 10px;">
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button onclick="cancelEditCustomQuote()" style="background: var(--bg-white); color: var(--text-dark); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">Cancel</button>
+                        <button onclick="saveEditCustomQuote(${quote.id})" style="background: #6366f1; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">💾 Save</button>
+                    </div>
+                </div>`;
+                }
+                return `
                 <div style="background: var(--bg-light); padding: 16px; border-radius: 12px; margin-bottom: 12px; border-left: 4px solid #f59e0b;">
                     <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">
                         <div style="flex: 1;">
                             <div style="font-size: 1rem; color: var(--text-dark); margin-bottom: 6px; line-height: 1.5;">
-                                "${quote.text}"
+                                "${escapeHtmlContent(quote.text)}"
                             </div>
                             ${quote.author ? `
                                 <div style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">
-                                    — ${quote.author}
+                                    — ${escapeHtmlContent(quote.author)}
                                 </div>
                             ` : ''}
                             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">
                                 Added: ${new Date(quote.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                             </div>
                         </div>
-                        
-                        <button 
-                            onclick="deleteCustomQuote(${quote.id})" 
-                            style="background: #ef4444; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
-                            🗑️ Delete
-                        </button>
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <button 
+                                onclick="editCustomQuoteStart(${quote.id})" 
+                                style="background: var(--bg-white); color: var(--text-dark); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
+                                ✏️ Edit
+                            </button>
+                            <button 
+                                onclick="deleteCustomQuote(${quote.id})" 
+                                style="background: #ef4444; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
+                                🗑️ Delete
+                            </button>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
+        }
+
+        // Switch a single row into edit mode and re-render the list.
+        function editCustomQuoteStart(quoteId) {
+            editingQuoteId = quoteId;
+            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
+            if (modalBody) modalBody.innerHTML = renderCustomQuotesList();
+        }
+
+        // Cancel inline editing without saving.
+        function cancelEditCustomQuote() {
+            editingQuoteId = null;
+            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
+            if (modalBody) modalBody.innerHTML = renderCustomQuotesList();
+        }
+
+        // Save edits made to an existing custom quote.
+        function saveEditCustomQuote(quoteId) {
+            const textEl = document.getElementById(`editQuoteText_${quoteId}`);
+            const authorEl = document.getElementById(`editQuoteAuthor_${quoteId}`);
+            if (!textEl) return;
+
+            const text = textEl.value.trim();
+            const author = authorEl ? authorEl.value.trim() : '';
+
+            if (!text) {
+                showNotification('❌ Quote text can\'t be empty!', 'error');
+                return;
+            }
+
+            // Check for duplicates against OTHER quotes (not itself).
+            const isDuplicate = customQuotes.some(q => q.id !== quoteId && q.text.toLowerCase() === text.toLowerCase());
+            if (isDuplicate) {
+                showNotification('⚠️ Another quote already has this text!', 'error');
+                return;
+            }
+
+            const quote = customQuotes.find(q => q.id === quoteId);
+            if (!quote) return;
+            quote.text = text;
+            quote.author = author;
+
+            // Keep motivationalQuotes' object references in sync too.
+            motivationalQuotes = [...defaultQuotes, ...customQuotes];
+
+            localStorage.setItem('customQuotes', JSON.stringify(customQuotes));
+
+            // If this quote is the one currently on screen, refresh it in place.
+            if (currentQuote && currentQuote.id === quoteId) {
+                renderQuote(quote);
+            }
+
+            editingQuoteId = null;
+            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
+            if (modalBody) modalBody.innerHTML = renderCustomQuotesList();
+
+            showNotification('✅ Quote updated!', 'success');
         }
 
         // Function: Delete Custom Quote
@@ -26091,6 +26302,12 @@ window.DBP={
             
             // Update UI
             updateCustomQuotesCount();
+
+            // If that was the last custom quote and "only mine" was on, there's
+            // nothing left to shuffle through — turn it back off automatically.
+            if (customQuotes.length === 0 && quoteOnlyCustom) {
+                toggleOnlyCustomQuotes(false);
+            }
             
             // Re-render modal content
             const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
@@ -26101,7 +26318,26 @@ window.DBP={
             // Update header count
             const headerCount = document.querySelector('#manageQuotesModal p');
             if (headerCount) {
-                headerCount.textContent = `${customQuotes.length} custom quotes`;
+                headerCount.textContent = `${customQuotes.length} custom quote${customQuotes.length === 1 ? '' : 's'}`;
+            }
+
+            // Keep the toggle row (checkbox enabled/disabled + hint text) in sync
+            // with the new count, in case this was the last (or first) quote.
+            const toggleRow = document.querySelector('#manageQuotesModal label');
+            if (toggleRow) {
+                toggleRow.style.cursor = customQuotes.length ? 'pointer' : 'not-allowed';
+                toggleRow.style.opacity = customQuotes.length ? '1' : '0.6';
+                const checkbox = document.getElementById('quoteOnlyCustomToggle');
+                if (checkbox) {
+                    checkbox.disabled = customQuotes.length === 0;
+                    checkbox.style.cursor = customQuotes.length ? 'pointer' : 'not-allowed';
+                }
+                const hint = toggleRow.querySelector('span span');
+                if (hint) {
+                    hint.textContent = customQuotes.length
+                        ? `Skip the built-in library and career/mood matching — shuffle only through the ${customQuotes.length} quote${customQuotes.length === 1 ? '' : 's'} above.`
+                        : 'Add a custom quote below to unlock this.';
+                }
             }
             
             showNotification('Quote deleted', 'info');
@@ -26110,6 +26346,7 @@ window.DBP={
         // Initialize count on page load
         document.addEventListener('DOMContentLoaded', function() {
             updateCustomQuotesCount();
+            syncOnlyCustomToggleUI();
         });
 
 
