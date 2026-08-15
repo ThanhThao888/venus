@@ -27887,6 +27887,16 @@ window.DBP={
 
         let readingList = JSON.parse(localStorage.getItem('readingList')) || [];
 
+        // FIX: addBook() used a bare Date.now() as id. A fast double-click on "Add
+        // Book" before the modal closes (or two rapid submits) can land in the same
+        // millisecond, producing two books with the same id — after that, editing or
+        // deleting "one" of them silently acts on whichever the array finds first.
+        function uniqueBookId() {
+            let id = Date.now();
+            while (readingList.some(b => b.id === id)) id++;
+            return id;
+        }
+
         function escapeHtml(str) {
             return String(str || '').replace(/[&<>"']/g, s => ({
                 '&': '&amp;',
@@ -28059,12 +28069,6 @@ window.DBP={
         }
 
 
-        function updateReadingCounts() {
-            document.getElementById('totalCount').textContent = readingList.length;
-            document.getElementById('readingCount').textContent = readingList.filter(b => b.status === 'reading').length;
-            document.getElementById('finishedCount').textContent = readingList.filter(b => b.status === 'finished').length;
-        }
-
         function openAddBookModal() {
             document.getElementById('addBookModal').style.display = 'flex';
             document.getElementById('addBookForm').reset();
@@ -28138,7 +28142,7 @@ window.DBP={
             }
 
             const book = {
-                id: Date.now(),
+                id: uniqueBookId(),
                 title,
                 author,
                 cover: cover || '',
@@ -28351,6 +28355,10 @@ window.DBP={
             if (!checkLocalStorageAvailability()) {
                 showNotification('❌ Local storage is blocked or unavailable. Your progress may not be saved.', 'error');
             }
+            // Migration safety: if you already have real books saved, make sure the
+            // demo-seed flag is set now — otherwise the first time you later clear
+            // your list to zero, it would look like a "fresh install" and reseed demos.
+            if (readingList.length > 0) localStorage.setItem('readingListDemoSeeded', 'true');
 
             renderReadingList();
             updateReadingCounts();
@@ -28392,7 +28400,11 @@ window.DBP={
                     }
                 });
             });
-            if (readingList.length === 0) {
+            if (readingList.length === 0 && !localStorage.getItem('readingListDemoSeeded')) {
+                // FIX: previously this fired on ANY empty list, so if you deleted every
+                // book on purpose (e.g. after clearing out these very demo entries, or
+                // just tidying up), the next page load silently repopulated 3 sample
+                // books into your real data. A one-time flag makes this run exactly once.
                 console.log('Adding demo books...');
                 const demoBooks = [
                     {
@@ -28431,6 +28443,7 @@ window.DBP={
                 ];                
                 readingList = demoBooks;
                 localStorage.setItem('readingList', JSON.stringify(readingList));
+                localStorage.setItem('readingListDemoSeeded', 'true');
                 renderReadingList();
                 updateReadingCounts();
             }
@@ -28482,12 +28495,6 @@ window.DBP={
                 });
             }
         });
-
-        function showNotification(message, type) {
-            alert(`${type.toUpperCase()}: ${message}`);
-            // Bạn có thể thay bằng toast notification đẹp hơn
-        }
-
 
         // Focus timer
         let timerDuration = parseInt(localStorage.getItem('focusTimerDuration')) || 25 * 60; 
@@ -30224,54 +30231,6 @@ window.DBP={
 
 
 
-        function showNotification(message, type = 'success') {
-            const existing = document.querySelector('.notification');
-            if (existing) {
-                existing.remove();
-            }
-            const notification = document.createElement('div');
-            notification.className = `notification ${type}`;
-            notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                padding: 15px 20px;
-                border-radius: 8px;
-                color: white;
-                font-weight: 500;
-                z-index: 10000;
-                transform: translateX(400px);
-                transition: transform 0.3s ease;
-            `;
-            switch(type) {
-                case 'success':
-                    notification.style.background = '#27ae60';
-                    break;
-                case 'error':
-                    notification.style.background = '#e74c3c';
-                    break;
-                case 'achievement':
-                    notification.style.background = '#f39c12';
-                    break;
-                case 'info':
-                default:
-                    notification.style.background = '#3498db';
-                    break;
-            }
-            notification.textContent = message;
-            document.body.appendChild(notification);
-            setTimeout(() => {
-                notification.style.transform = 'translateX(0)';
-            }, 10);
-            setTimeout(() => {
-                notification.style.transform = 'translateX(400px)';
-                setTimeout(() => {
-                    if (notification.parentNode) {
-                        notification.remove();
-                    }
-                }, 300);
-            }, 3000);
-        }
 
 
 
@@ -48148,8 +48107,11 @@ function showNotification(message, type = 'info') {
     const existing = document.querySelectorAll('.fc-toast');
     if (existing.length >= 3) existing[0].remove();
 
-    const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
-    const icons  = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    // FIX: 9 call sites across Goals/Skills/Streak features pass type:'achievement'
+    // expecting a celebratory look, but this map never had that key — so every
+    // achievement toast has been silently rendering as a plain blue "info" toast.
+    const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6', achievement: '#f59e0b' };
+    const icons  = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️', achievement: '🏆' };
 
     const toast = document.createElement('div');
     toast.className = 'fc-toast';
@@ -55159,4 +55121,3 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 
 
 </body>
-  
