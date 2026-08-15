@@ -16618,20 +16618,22 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     }
 }
 
-/* ─── DARK MODE SUPPORT (optional) ─── */
-@media (prefers-color-scheme: dark) {
-    /* Auto-adapt if your app has dark mode variables */
-    #dbpBox { background: var(--bg-dark, #1e293b); color: var(--text-light, #f1f5f9); }
-    .dbp-task-row, .dbp-manual-input, .dbp-task-dur, .dbp-reflection { 
-        background: var(--bg-darker, #334155); 
-        border-color: var(--border-dark, #475569);
-        color: var(--text-light, #f1f5f9);
-    }
-    .dbp-field input, .dbp-field select { 
-        background: var(--bg-darker, #334155); 
-        border-color: var(--border-dark, #475569);
-        color: var(--text-light, #f1f5f9);
-    }
+/* ─── DARK MODE SUPPORT ─── */
+/* FIX #7: this was `@media (prefers-color-scheme: dark)`, which reads the OS setting
+   directly and ignores the app's own in-app dark-mode toggle (a `.dark-mode` class
+   on <body>). If OS and in-app toggle disagreed, only this modal would mismatch the
+   rest of the page. Switched to the same selector the rest of the app already uses. */
+body.dark-mode #dbpBox { background: var(--bg-dark, #1e293b); color: var(--text-light, #f1f5f9); }
+body.dark-mode .dbp-task-row, body.dark-mode .dbp-manual-input,
+body.dark-mode .dbp-task-dur, body.dark-mode .dbp-reflection {
+    background: var(--bg-darker, #334155);
+    border-color: var(--border-dark, #475569);
+    color: var(--text-light, #f1f5f9);
+}
+body.dark-mode .dbp-field input, body.dark-mode .dbp-field select {
+    background: var(--bg-darker, #334155);
+    border-color: var(--border-dark, #475569);
+    color: var(--text-light, #f1f5f9);
 }
 </style>
 
@@ -16960,6 +16962,24 @@ function saveOrder() {
     store.set('dbpTaskOrder', order);
 }
 
+/* ─── MANUAL TASK PERSISTENCE (FIX #1: manual tasks vanishing on reload) ─── */
+function saveManualTasks() {
+    store.set('dbpManualTasks', _tasks.filter(t => t.isManual));
+}
+
+function loadManualTasks() {
+    const saved = store.get('dbpManualTasks', []);
+    if (!saved.length) return;
+    // Merge in any saved manual tasks not already present in memory (idempotent across re-opens)
+    const existingIds = new Set(_tasks.map(t => t.id));
+    saved.forEach(t => { if (!existingIds.has(t.id)) _tasks.push(t); });
+    // Recompute _manualCount so new tasks don't collide with restored IDs (m_1, m_2, ...)
+    saved.forEach(t => {
+        const n = parseInt(String(t.id).split('_')[1]);
+        if (!isNaN(n) && n > _manualCount) _manualCount = n;
+    });
+}
+
 function loadOrder(tasks) {
     const saved = store.get('dbpTaskOrder', []);
     if (!saved.length) return tasks;
@@ -17014,6 +17034,7 @@ function updateBudget(){
         :'linear-gradient(90deg,#10b981,#3b82f6)';
     gel('dbpBudgetText').textContent=`${used} / ${Math.round(avail)} min (${Math.round(pct)}%)`;
     gel('dbpBudgetWarn').style.display=pct>100?'block':'none';
+    saveManualTasks();
     saveSettings();
 }
 
@@ -17027,6 +17048,7 @@ function renderTasks(){
         def:     byId[t.id]?byId[t.id].def:t.def
     }));
     _tasks = loadOrder([...merged, ..._tasks.filter(t=>t.isManual)]);
+    saveManualTasks();
 
     const PRIO={high:0,mid:1,low:2};
     if(_sortByPriority) _tasks.sort((a,b)=>(PRIO[a.priority]||1)-(PRIO[b.priority]||1));
@@ -17055,9 +17077,29 @@ function renderTasks(){
             <input class="dbp-task-dur" type="number" min="5" max="480" step="5" value="${t.def}"
                 onchange="DBP.durChange(this,${i})" title="Minutes">
             <span style="font-size:0.67rem;color:var(--text-muted,#94a3b8);flex-shrink:0;">m</span>
+            <button class="dbp-dup-btn" onclick="DBP.duplicateTask(${i})" title="Duplicate task">⧉</button>
             ${t.isManual?`<button class="dbp-remove-btn" onclick="DBP.removeManual(${i})" title="Remove">✕</button>`:''}
         </div>`).join('');
     updateBudget();
+}
+
+/* ─── DUPLICATE TASK ─── */
+function duplicateTask(idx){
+    const src = _tasks[idx]; if(!src) return;
+    pushUndo();
+    _manualCount++;
+    // Duplicates always become manual tasks: library-sourced tasks (Resource/Goal) are
+    // regenerated from their source each render, so a "copy" of one can't live as a
+    // second library entry — a manual copy is the only way to get an independent, editable clone.
+    const baseLabel = (src.label||'Task').replace(/^✏️\s*/,'');
+    const copy = {
+        id: 'm_'+_manualCount,
+        label: '✏️ ' + baseLabel + ' (copy)',
+        sub: 'Manual task', def: src.def, details: src.details||'',
+        priority: src.priority||'mid', isManual: true, checked: false
+    };
+    _tasks.splice(idx+1, 0, copy);
+    saveOrder(); renderTasks(); toast('⧉ Task duplicated');
 }
 
 /* ─── CB / DUR CHANGE ─── */
@@ -17068,7 +17110,14 @@ function cbChange(cb){
     updateBudget();
 }
 function durChange(inp,idx){
-    if(!isNaN(idx)&&_tasks[idx]) _tasks[idx].def=parseInt(inp.value)||_tasks[idx].def;
+    if(isNaN(parseInt(inp.value)) || parseInt(inp.value) < 5){
+        // FIX (same class as #4): typing 0 used to silently revert to the old value
+        // with zero feedback. Now it reverts *and* tells you why.
+        inp.value = (_tasks[idx]?.def) || 25;
+        toast('⚠️ Duration must be at least 5 min — reverted', 2800, 'warn');
+        return;
+    }
+    if(!isNaN(idx)&&_tasks[idx]) _tasks[idx].def=parseInt(inp.value);
     updateBudget();
 }
 
@@ -17085,7 +17134,17 @@ function dd(e,i){
     const m=_tasks.splice(_dragSrc,1)[0]; 
     _tasks.splice(i,0,m); 
     _dragSrc=null; 
-    saveOrder();  
+    saveOrder();
+    // FIX #5: renderTasks() re-applies priority sort on every render, which silently
+    // overwrote the drag order you just set (drop looked successful, but the next
+    // render put it right back). A drag is an explicit "I want this order" action,
+    // so turn priority sort off so the drop actually sticks — and say so.
+    if(_sortByPriority){
+        _sortByPriority=false;
+        const btn=gel('dbpSortBtn');
+        if(btn){ btn.textContent='↕ Priority'; btn.classList.remove('active'); }
+        toast('↕ Priority sort turned off so your new order sticks');
+    }
     renderTasks(); 
 }
 
@@ -17122,17 +17181,39 @@ function generate(){
     const s = STYLES[style];
 
     const picked = [];
+    let invalidDurCount = 0;
     document.querySelectorAll('#dbpTaskList .dbp-task-row').forEach(row=>{
         const cb = row.querySelector('.dbp-task-cb');
         if(!cb||!cb.checked) return;
+        const durInput = row.querySelector('.dbp-task-dur');
+        // FIX #4: "0" (or blank-after-typo, negative, NaN) used to slip through
+        // `value||s.workDef` silently — "0" is a non-empty truthy string, so
+        // parseInt gave 0, and a checked task with dur=0 just never entered the
+        // schedule (the while(remaining>0) loop below never runs), no warning at all.
+        let dur = parseInt(durInput.value, 10);
+        if(isNaN(dur) || dur < 5){
+            dur = s.workDef;
+            durInput.value = dur; // reflect the correction back into the visible field
+            invalidDurCount++;
+        }
         picked.push({
             name: decodeURIComponent(cb.dataset.label||'Task'),
-            dur: parseInt(row.querySelector('.dbp-task-dur').value||s.workDef),
+            dur,
             details: decodeURIComponent(cb.dataset.details||'')
         });
     });
 
     if(!picked.length){ toast('⚠️ Select at least 1 task first!'); return; }
+
+    if(invalidDurCount>0){
+        toast(`⚠️ ${invalidDurCount} task${invalidDurCount>1?'s':''} had an invalid duration — reset to ${s.workDef}m`, 4200, 'warn');
+    }
+
+    // FIX: warn before silently nuking progress on an existing plan (done blocks / timers run)
+    const hasProgress = _blocks.some(b=>b.done || b.actualStart);
+    if(hasProgress && !confirm('You already have progress on today\'s plan (completed blocks or a timer run). Generating a new plan will overwrite it. Continue?')){
+        return;
+    }
 
     const start = new Date(); start.setHours(sh,sm,0,0);
     // Cảnh báo nếu Start Time đã qua rồi (so với giờ hiện tại)
@@ -17280,7 +17361,10 @@ function renderBlock(b,i){
                 <a class="dbp-gcal-btn" href="${gcalUrl(b.name,b.start,b.end,b.details)}" target="_blank" rel="noopener">📅</a>
             </div>
         </div>
-        <div class="dbp-timer-panel" id="dbpTP${i}">
+        <!-- FIX #6: panel used to always render collapsed, so a timer resumed after F5
+             was ticking silently until you clicked the timer button again. Now it
+             renders already-open for whichever block is the active timer. -->
+        <div class="dbp-timer-panel${_activeTimerIdx===i?' visible':''}" id="dbpTP${i}">
             <div class="dbp-timer-task-name">${b.name}</div>
             <div class="dbp-timer-display" id="dbpTD${i}">${pad(Math.floor(b.dur/60))}:${pad(b.dur%60)}</div>
             <div class="dbp-timer-prog-bar"><div class="dbp-timer-prog-fill" id="dbpPF${i}" style="width:0%"></div></div>
@@ -17474,8 +17558,42 @@ function saveMood(bi,mood){
 /* ─── GCAL ALL ─── */
 function addAll(){
     const work=_blocks.filter(b=>!b.isBreak); if(!work.length)return;
-    if(!confirm(`Open ${work.length} Google Calendar tabs?\n(Allow popups if prompted)`))return;
-    work.forEach((b,i)=>setTimeout(()=>window.open(gcalUrl(b.name,b.start,b.end,b.details),'_blank'),i*600));
+    // FIX: opening one popup per block (staggered) trips popup blockers on 5-6+ session
+    // days, and each blocked tab fails silently. Instead, open a single tab with a
+    // clickable link list — no popup-blocker risk, and it's reusable if a tab misfires.
+    const dateStr=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+    const rows = work.map(b=>{
+        const url = gcalUrl(b.name,b.start,b.end,b.details);
+        const time = `${fmt(b.start)}–${fmt(b.end)}`;
+        return `<a href="${url}" target="_blank" rel="noopener" class="row">
+            <span class="time">${time}</span><span class="name">${(b.name||'').replace(/</g,'&lt;')}</span>
+            <span class="add">Add ↗</span></a>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Add to Google Calendar — ${dateStr}</title>
+        <style>
+            body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:32px auto;padding:0 16px;color:#1e293b;}
+            h1{font-size:1.15rem;margin-bottom:4px;}
+            p{color:#64748b;font-size:0.85rem;margin-top:0;margin-bottom:20px;}
+            .row{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:10px;
+                margin-bottom:8px;text-decoration:none;color:#1e293b;transition:.15s;}
+            .row:hover{border-color:#2563eb;background:#f0f7ff;}
+            .time{font-size:0.78rem;color:#2563eb;font-weight:700;flex-shrink:0;width:118px;}
+            .name{flex:1;font-size:0.9rem;}
+            .add{font-size:0.78rem;color:#94a3b8;flex-shrink:0;}
+        </style></head><body>
+        <h1>📅 Add today's plan to Google Calendar</h1>
+        <p>${dateStr} · ${work.length} session${work.length>1?'s':''} — click each to open it in Calendar</p>
+        ${rows}
+        </body></html>`;
+    const blob = new Blob([html], {type:'text/html'});
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank');
+    if(!win){
+        toast('⚠️ Popup blocked — allow popups for this site, then try again');
+        URL.revokeObjectURL(blobUrl);
+        return;
+    }
+    toast(`📅 Opened a page with ${work.length} calendar links`);
 }
 
 /* ─── COPY TEXT ─── */
@@ -17498,9 +17616,10 @@ function savePlan(){
     if(!_blocks.length){ toast('⚠️ Nothing to save'); return; }
     const work=_blocks.filter(b=>!b.isBreak);
     const reflection=(gel('dbpReflection')?.value||'').trim();
+    const now=new Date().toISOString();
     const hist=store.get('dbpHistory',[]);
     hist.unshift({
-        date:new Date().toISOString(),
+        date:now,
         style:gel('dbpStyle').value,
         tasks:work.map(b=>b.name),
         dones:work.map(b=>!!b.done),
@@ -17509,6 +17628,13 @@ function savePlan(){
         blocks:_blocks.map(b=>({...b, start:b.start.toISOString(), end:b.end.toISOString()}))
     });
     store.set('dbpHistory',hist.slice(0,7));
+    // FIX #3: the full history above (with blocks etc.) stays capped at 7 for storage/
+    // load-list purposes, but that used to be the ONLY record of past days — so the
+    // streak badge could never show more than 7 even with a real 30-day streak.
+    // Keep a lightweight, uncapped-ish date log purely for streak math.
+    const streakLog=store.get('dbpStreakLog',[]);
+    streakLog.unshift(now);
+    store.set('dbpStreakLog',streakLog.slice(0,400)); // ~13 months of daily entries
     // Xóa temp storage vì đã vào history rồi
     try{ localStorage.removeItem('dbpCurrentBlocks'); localStorage.removeItem('dbpCurrentStyle'); }catch(_){}
     // FIX: nếu đang có timer chạy cho plan này thì phải dừng nó lại,
@@ -17521,10 +17647,10 @@ function savePlan(){
 }
 
 /* ─── STREAK (consecutive days with a saved plan) ─── */
-function computeStreak(hist){
-    if(!hist.length) return 0;
+function computeStreak(streakDates){
+    if(!streakDates.length) return 0;
     const dayKey = d => { const x=new Date(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`; };
-    const days = new Set(hist.map(h=>dayKey(h.date)));
+    const days = new Set(streakDates.map(dayKey));
     let streak=0, cursor=new Date();
     // Nếu hôm nay chưa có plan, vẫn cho phép streak tính từ hôm qua trở về trước
     if(!days.has(dayKey(cursor))) cursor.setDate(cursor.getDate()-1);
@@ -17544,7 +17670,7 @@ function renderHistory(){
     const wkFocus=wk.reduce((s,h)=>s+h.totalFocus,0);
     const moodLog=store.get('dbpMoodLog',[]);
     const lastMood=moodLog.length?moodLog[0].mood.split(' ')[0]:'–';
-    const streak=computeStreak(hist);
+    const streak=computeStreak(store.get('dbpStreakLog',[]));
 
     const analytic=wk.length?`
         <div class="dbp-analytics">
@@ -17588,6 +17714,11 @@ function renderHistory(){
 
 function loadHist(idx){
     const h=(store.get('dbpHistory',[])||[])[idx]; if(!h)return;
+    // FIX #2: stop any running timer before swapping _blocks — otherwise the old
+    // interval keeps ticking (it closures over the old block index/timer object)
+    // and eventually fires onTimerDone()/markDone() against the newly loaded plan.
+    if(_activeTimerIdx !== null){ floatStop(); }
+    Object.values(_timers).forEach(t=>{ if(t&&t.interval) clearInterval(t.interval); });
     _blocks=h.blocks.map(b=>({...b,start:new Date(b.start),end:new Date(b.end)}));
     _timers={};
     DBP.switchTab('plan',document.querySelector('.dbp-tab'));
@@ -17625,6 +17756,7 @@ function open(){
         _blocks=[]; _timers={}; _undoStack=[];
     }
     loadSettings();
+    loadManualTasks();
     renderTasks();
     switchTab('plan',document.querySelector('.dbp-tab'));
     gel('dbpModal').classList.add('open');
@@ -55027,3 +55159,4 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 
 
 </body>
+  
