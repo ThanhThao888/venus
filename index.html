@@ -21830,10 +21830,11 @@ window.DBP={
                 </label>
                 <textarea 
                     id="customQuoteText" 
-                    placeholder="Enter your motivational quote..." 
+                    placeholder="Enter your motivational quote... (Ctrl+Enter to add)" 
                     rows="3"
                     maxlength="280"
                     oninput="document.getElementById('customQuoteCharCount').textContent = this.value.length"
+                    onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();addCustomQuote();}"
                     style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); resize: vertical; font-size: 0.95rem;">
                 </textarea>
                 <div style="text-align: right; font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">
@@ -21849,6 +21850,7 @@ window.DBP={
                     id="customQuoteAuthor" 
                     placeholder="e.g., Fyodor Dostoevsky" 
                     maxlength="60"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomQuote();}"
                     style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); font-size: 0.95rem;">
             </div>
             <button 
@@ -22525,7 +22527,7 @@ window.DBP={
                 <button class="quote-popup-btn" id="quoteSavedToggleBtn" onclick="toggleSavedQuotesList()" title="View saved quotes">
                     <i class="fas fa-star"></i>
                 </button>
-                <button class="quote-popup-btn" onclick="getRandomQuote()" title="New quote">
+                <button class="quote-popup-btn" onclick="getRandomQuote()" title="New quote (N)">
                     <i class="fas fa-shuffle"></i>
                 </button>
                 <button class="quote-popup-btn quote-popup-close" onclick="closeQuoteCard()" title="Close">
@@ -22539,10 +22541,10 @@ window.DBP={
             <div id="quoteAuthor">- Your Future Self</div>
             <span id="quoteOwnBadge" class="quote-own-badge" hidden><i class="fas fa-user-pen"></i> Yours</span>
             <div class="quote-popup-footer">
-                <button class="quote-popup-mini-btn" id="quoteFavBtn" onclick="toggleFavoriteQuote()" title="Save this quote">
+                <button class="quote-popup-mini-btn" id="quoteFavBtn" onclick="toggleFavoriteQuote()" title="Save this quote (F)">
                     <i class="far fa-star"></i> Save
                 </button>
-                <button class="quote-popup-mini-btn" id="quoteCopyBtn" onclick="copyCurrentQuote()" title="Copy quote">
+                <button class="quote-popup-mini-btn" id="quoteCopyBtn" onclick="copyCurrentQuote()" title="Copy quote (C)">
                     <i class="far fa-copy"></i> Copy
                 </button>
                 <button class="quote-popup-mini-btn" id="quoteOnlyCustomQuickBtn" onclick="toggleOnlyCustomQuotesQuick()" title="Show only my quotes" aria-pressed="false">
@@ -25852,7 +25854,7 @@ window.DBP={
             btn.innerHTML = favorited
                 ? '<i class="fas fa-star"></i> Saved'
                 : '<i class="far fa-star"></i> Save';
-            btn.title = favorited ? 'Remove from saved quotes' : 'Save this quote';
+            btn.title = favorited ? 'Remove from saved quotes (F)' : 'Save this quote (F)';
         }
 
         function toggleFavoriteQuote() {
@@ -25992,6 +25994,28 @@ window.DBP={
             if (e.key === 'Escape') closeQuoteCard();
         });
 
+        // Quick keyboard shortcuts while the quote popup is open — only fire
+        // when focus isn't in a text field, so typing elsewhere is never hijacked.
+        document.addEventListener('keydown', function(e) {
+            const popup = document.getElementById('quotePopup');
+            if (!popup || !popup.classList.contains('quote-popup-open')) return;
+            if (document.getElementById('manageQuotesModal')) return; // modal on top has its own shortcuts
+            const tag = (e.target.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'n') {
+                e.preventDefault();
+                getRandomQuote();
+            } else if (e.key.toLowerCase() === 'f') {
+                e.preventDefault();
+                toggleFavoriteQuote();
+            } else if (e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                copyCurrentQuote();
+            }
+        });
+
 
         // ===== CUSTOM QUOTES MANAGEMENT =====
         function addCustomQuote() {
@@ -26114,6 +26138,8 @@ window.DBP={
             const modal = document.getElementById('manageQuotesModal');
             if (modal) modal.remove();
             editingQuoteId = null;
+            clearTimeout(pendingDeleteTimeout);
+            pendingDeleteId = null;
         }
 
         // Toggle "Only show my quotes" — when on, Quote Boost ignores the built-in
@@ -26175,6 +26201,12 @@ window.DBP={
         // id of the custom quote currently being edited inline, or null.
         let editingQuoteId = null;
 
+        // id of the custom quote awaiting delete confirmation, or null.
+        // Using an inline confirm instead of the browser's confirm() dialog
+        // keeps deletion keyboard/click-friendly and non-blocking.
+        let pendingDeleteId = null;
+        let pendingDeleteTimeout = null;
+
         // Render Custom Quotes List
         function renderCustomQuotesList() {
             if (customQuotes.length === 0) {
@@ -26189,9 +26221,10 @@ window.DBP={
                 if (quote.id === editingQuoteId) {
                     return `
                 <div style="background: var(--bg-light); padding: 16px; border-radius: 12px; margin-bottom: 12px; border-left: 4px solid #6366f1;">
-                    <textarea id="editQuoteText_${quote.id}" maxlength="280" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); resize: vertical; font-size: 0.95rem; margin-bottom: 8px;">${escapeHtmlContent(quote.text)}</textarea>
-                    <input id="editQuoteAuthor_${quote.id}" type="text" maxlength="60" value="${escapeHtmlAttr(quote.author || '')}" placeholder="Author (optional)" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); font-size: 0.9rem; margin-bottom: 10px;">
-                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <textarea id="editQuoteText_${quote.id}" maxlength="280" rows="3" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();saveEditCustomQuote(${quote.id});}else if(event.key==='Escape'){event.preventDefault();cancelEditCustomQuote();}" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); resize: vertical; font-size: 0.95rem; margin-bottom: 8px;">${escapeHtmlContent(quote.text)}</textarea>
+                    <input id="editQuoteAuthor_${quote.id}" type="text" maxlength="60" value="${escapeHtmlAttr(quote.author || '')}" placeholder="Author (optional)" onkeydown="if(event.key==='Enter'){event.preventDefault();saveEditCustomQuote(${quote.id});}else if(event.key==='Escape'){event.preventDefault();cancelEditCustomQuote();}" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); font-size: 0.9rem; margin-bottom: 10px;">
+                    <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+                        <span style="font-size: 0.7rem; color: var(--text-muted); margin-right: auto;">Ctrl+Enter to save · Esc to cancel</span>
                         <button onclick="cancelEditCustomQuote()" style="background: var(--bg-white); color: var(--text-dark); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">Cancel</button>
                         <button onclick="saveEditCustomQuote(${quote.id})" style="background: #6366f1; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">💾 Save</button>
                     </div>
@@ -26219,29 +26252,64 @@ window.DBP={
                                 style="background: var(--bg-white); color: var(--text-dark); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
                                 ✏️ Edit
                             </button>
+                            ${quote.id === pendingDeleteId ? `
+                            <button 
+                                onclick="deleteCustomQuote(${quote.id})" 
+                                autofocus
+                                style="background: #b91c1c; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
+                                ✓ Confirm
+                            </button>
+                            <button 
+                                onclick="cancelDeleteCustomQuote()" 
+                                style="background: var(--bg-white); color: var(--text-muted); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.78rem; white-space: nowrap;">
+                                Cancel
+                            </button>
+                            ` : `
                             <button 
                                 onclick="deleteCustomQuote(${quote.id})" 
                                 style="background: #ef4444; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;">
                                 🗑️ Delete
                             </button>
+                            `}
                         </div>
                     </div>
                 </div>`;
             }).join('');
         }
 
+        // Re-renders the modal's quote list while preserving scroll position,
+        // so editing/deleting a quote further down the list doesn't yank the
+        // view back to the top.
+        function refreshQuotesModalBody() {
+            const scrollContainer = document.querySelector('#manageQuotesModal > div');
+            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
+            if (!modalBody) return;
+            const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+            modalBody.innerHTML = renderCustomQuotesList();
+            if (scrollContainer) scrollContainer.scrollTop = scrollTop;
+        }
+
         // Switch a single row into edit mode and re-render the list.
         function editCustomQuoteStart(quoteId) {
             editingQuoteId = quoteId;
-            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
-            if (modalBody) modalBody.innerHTML = renderCustomQuotesList();
+            if (pendingDeleteId === quoteId) {
+                clearTimeout(pendingDeleteTimeout);
+                pendingDeleteId = null;
+            }
+            refreshQuotesModalBody();
+            // Focus straight into the textarea with the text pre-selected, so
+            // you can just start typing to replace it or arrow in to tweak it.
+            const textEl = document.getElementById(`editQuoteText_${quoteId}`);
+            if (textEl) {
+                textEl.focus();
+                textEl.select();
+            }
         }
 
         // Cancel inline editing without saving.
         function cancelEditCustomQuote() {
             editingQuoteId = null;
-            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
-            if (modalBody) modalBody.innerHTML = renderCustomQuotesList();
+            refreshQuotesModalBody();
         }
 
         // Save edits made to an existing custom quote.
@@ -26281,15 +26349,35 @@ window.DBP={
             }
 
             editingQuoteId = null;
-            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
-            if (modalBody) modalBody.innerHTML = renderCustomQuotesList();
+            refreshQuotesModalBody();
 
             showNotification('✅ Quote updated!', 'success');
         }
 
-        // Function: Delete Custom Quote
+        // Function: Delete Custom Quote (two-step inline confirm — first click
+        // arms it, second click within a few seconds actually deletes).
         function deleteCustomQuote(quoteId) {
-            if (!confirm('🗑️ Delete this quote?')) return;
+            if (pendingDeleteId !== quoteId) {
+                pendingDeleteId = quoteId;
+                editingQuoteId = null; // don't allow edit + delete-confirm at once
+                refreshQuotesModalBody();
+                // Focus the confirm button so pressing Enter/Space confirms immediately.
+                const confirmBtn = document.querySelector(`#manageQuotesModal button[onclick="deleteCustomQuote(${quoteId})"]`);
+                if (confirmBtn) confirmBtn.focus();
+                clearTimeout(pendingDeleteTimeout);
+                // Auto-revert the confirm state after a few seconds so a stray
+                // click elsewhere doesn't leave a "Confirm delete" button armed.
+                pendingDeleteTimeout = setTimeout(() => {
+                    if (pendingDeleteId === quoteId) {
+                        pendingDeleteId = null;
+                        refreshQuotesModalBody();
+                    }
+                }, 4000);
+                return;
+            }
+
+            clearTimeout(pendingDeleteTimeout);
+            pendingDeleteId = null;
             
             // Remove from customQuotes
             customQuotes = customQuotes.filter(q => q.id !== quoteId);
@@ -26310,10 +26398,7 @@ window.DBP={
             }
             
             // Re-render modal content
-            const modalBody = document.querySelector('#manageQuotesModal > div > div:last-child');
-            if (modalBody) {
-                modalBody.innerHTML = renderCustomQuotesList();
-            }
+            refreshQuotesModalBody();
             
             // Update header count
             const headerCount = document.querySelector('#manageQuotesModal p');
@@ -26341,6 +26426,13 @@ window.DBP={
             }
             
             showNotification('Quote deleted', 'info');
+        }
+
+        // Step back from an armed delete confirmation without deleting.
+        function cancelDeleteCustomQuote() {
+            clearTimeout(pendingDeleteTimeout);
+            pendingDeleteId = null;
+            refreshQuotesModalBody();
         }
 
         // Initialize count on page load
