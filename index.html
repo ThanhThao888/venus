@@ -14414,6 +14414,36 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   color: var(--text-dark); cursor: pointer; white-space: nowrap; touch-action: manipulation;
 }
 .dlt-snooze-menu button:hover { background: var(--bg-light); }
+.dlt-snooze-menu .dlt-snooze-custom {
+  border-top: 1px solid var(--border-color); padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 4px;
+}
+.dlt-snooze-menu .dlt-snooze-custom label { font-size: .68rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+.dlt-snooze-menu .dlt-snooze-custom input[type="date"] {
+  font-size: .78rem; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border-color);
+  background: var(--bg-white); color: var(--text-dark);
+}
+
+/* ── Bulk "Snooze All" (for the Overdue group header) ── */
+.dlt-group-header { position: relative; }
+.dlt-snoozeall-wrap { margin-left: auto; position: relative; }
+.dlt-snoozeall-btn {
+  font-size: .7rem; font-weight: 700; text-transform: none; letter-spacing: 0;
+  padding: 4px 10px; border-radius: 14px; border: 1.5px solid #f59e0b; color: #f59e0b;
+  background: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.dlt-snoozeall-btn:hover { background: #f59e0b; color: #fff; }
+.dlt-snoozeall-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px);
+  background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 8px;
+  box-shadow: var(--shadow-md); z-index: 25; flex-direction: column; min-width: 150px; overflow: hidden;
+}
+.dlt-snoozeall-menu.show { display: flex; }
+.dlt-snoozeall-menu button {
+  background: none; border: none; padding: 8px 12px; text-align: left; font-size: .8rem;
+  color: var(--text-dark); cursor: pointer; white-space: nowrap; touch-action: manipulation;
+}
+.dlt-snoozeall-menu button:hover { background: var(--bg-light); }
 
 /* ── Checklist (sub-tasks inside a manual deadline) ── */
 .dlt-checklist-wrap { margin-top: 5px; }
@@ -14939,6 +14969,12 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
             <button onclick="event.stopPropagation(); DLT.snooze('${d.id}',1)">😴 1 day</button>
             <button onclick="event.stopPropagation(); DLT.snooze('${d.id}',3)">😴 3 days</button>
             <button onclick="event.stopPropagation(); DLT.snooze('${d.id}',7)">😴 1 week</button>
+            <button onclick="event.stopPropagation(); DLT.snooze('${d.id}',14)">😴 2 weeks</button>
+            <button onclick="event.stopPropagation(); DLT.snooze('${d.id}',30)">😴 1 month</button>
+            <div class="dlt-snooze-custom" onclick="event.stopPropagation()">
+              <label>Custom date</label>
+              <input type="date" min="${localISODate()}" onchange="DLT.snoozeUntil('${d.id}', this.value)" />
+            </div>
           </div>
         </div>` : '';
 
@@ -14988,7 +15024,17 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 
     let html = groups.filter(g => g.items.length).map(g => `
       <div class="dlt-group">
-        <div class="dlt-group-header ${g.cls}">${g.label} <span class="dlt-group-count">${g.items.length}</span></div>
+        <div class="dlt-group-header ${g.cls}">${g.label} <span class="dlt-group-count">${g.items.length}</span>${g.key === 'overdue' ? `
+          <div class="dlt-snoozeall-wrap">
+            <button class="dlt-snoozeall-btn" onclick="event.stopPropagation(); DLT.toggleSnoozeAllMenu()" title="Snooze every overdue item at once">🔔 Snooze All</button>
+            <div class="dlt-snoozeall-menu" id="snoozeAllMenu">
+              <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(1)">😴 1 day</button>
+              <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(3)">😴 3 days</button>
+              <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(7)">😴 1 week</button>
+              <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(14)">😴 2 weeks</button>
+              <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(30)">😴 1 month</button>
+            </div>
+          </div>` : ''}</div>
         <div class="dlt-group-cards">${g.items.map(cardHTML).join('')}</div>
       </div>
     `).join('');
@@ -15500,10 +15546,42 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       if (typeof showNotification === 'function') showNotification(`😴 Snoozed for ${days} day(s)`, 'info');
     },
 
+    snoozeUntil(id, dateStr) {
+      if (!dateStr) return;
+      snoozeMap[id] = dateStr;
+      persist();
+      document.querySelectorAll('.dlt-snooze-menu.show').forEach(el => el.classList.remove('show'));
+      render();
+      if (typeof showNotification === 'function') showNotification(`😴 Snoozed until ${fmtDate(dateStr)}`, 'info');
+    },
+
     unsnooze(id) {
       delete snoozeMap[id];
       persist();
       render();
+    },
+
+    /* ─── Bulk Snooze (Overdue group header) ─── */
+    toggleSnoozeAllMenu() {
+      const menu = document.getElementById('snoozeAllMenu');
+      if (!menu) return;
+      const willShow = !menu.classList.contains('show');
+      document.querySelectorAll('.dlt-snooze-menu.show, .dlt-snoozeall-menu.show').forEach(el => el.classList.remove('show'));
+      if (willShow) menu.classList.add('show');
+    },
+
+    snoozeAllOverdue(days) {
+      const until = new Date();
+      until.setDate(until.getDate() + Number(days));
+      const untilISO = localISODate(until);
+      const targets = allItems().filter(d => !doneIds.includes(d.id) && !isSnoozed(d.id) && daysLeft(d.date) < 0);
+      targets.forEach(d => { snoozeMap[d.id] = untilISO; });
+      persist();
+      document.querySelectorAll('.dlt-snoozeall-menu.show').forEach(el => el.classList.remove('show'));
+      render();
+      if (typeof showNotification === 'function') {
+        showNotification(`😴 Snoozed ${targets.length} overdue item(s) for ${days} day(s)`, 'info');
+      }
     },
 
     /* ─── Checklist / Sub-tasks (manual items only) ─── */
@@ -15551,6 +15629,9 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.dlt-snooze-wrap')) {
       document.querySelectorAll('.dlt-snooze-menu.show').forEach(el => el.classList.remove('show'));
+    }
+    if (!e.target.closest('.dlt-snoozeall-wrap')) {
+      document.querySelectorAll('.dlt-snoozeall-menu.show').forEach(el => el.classList.remove('show'));
     }
   });
 
