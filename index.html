@@ -14659,7 +14659,8 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dlt-tl-bar-track {
   width: 100%; max-width: 26px; height: 52px;
   display: flex; align-items: flex-end; justify-content: center;
-  background: var(--bg-light); border-radius: 6px 6px 3px 3px; overflow: hidden;
+  background: var(--bg-light); border: 1px solid var(--border-color);
+  border-radius: 6px 6px 3px 3px; overflow: hidden;
 }
 .dlt-tl-bar {
   width: 100%; min-height: 4px; border-radius: 4px 4px 2px 2px;
@@ -15498,19 +15499,36 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 
   /* ─── Deadline density timeline ─── */
   /* Buckets: [0]=Overdue, [1..8]=Week 1..8 (7-day windows from today), [9]=Later (8+ weeks out).
-     Height = relative count (visual density). Color = grey(overdue) -> red -> green(far) -> slate(later),
-     so at a glance you can see which weeks are "packed" vs quiet. */
-  function timelineColor(idx, total) {
-    if (idx === 0) return '#6b7280';          // overdue — grey
-    if (idx === total - 1) return '#64748b';  // later — muted slate
-    const span = total - 3; // number of week buckets minus 1 (for interpolation)
-    const t = span > 0 ? (idx - 1) / span : 0;
-    const c1 = [239, 68, 68];   // red  (soon)
-    const c2 = [5, 150, 105];   // green (further out)
+     Height = relative count (visual density). Color = grey(overdue) -> traffic-light
+     (red -> orange -> amber -> yellow -> lime -> green -> teal, soonest to furthest) -> slate(later). */
+  function hexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function mixHex(a, b, t) {
+    const c1 = hexToRgb(a), c2 = hexToRgb(b);
     const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
     const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
-    const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
-    return `rgb(${r},${g},${b})`;
+    const bl = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+    return `rgb(${r},${g},${bl})`;
+  }
+  // Discrete, pre-tuned vivid stops rather than a continuous red->green RGB
+  // lerp — linearly blending saturated red and saturated green in RGB space
+  // crosses straight through a muddy, low-contrast brown/olive midpoint,
+  // which is exactly what read badly in both light and dark mode. Walking
+  // through neighboring stops (red→orange→amber→yellow→lime→green→teal)
+  // only ever blends adjacent, similar hues, so it stays vivid throughout
+  // and reads clearly against both a white and a dark-navy card background.
+  const TL_WEEK_STOPS = ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#a3e635', '#4ade80', '#10b981', '#14b8a6'];
+  function timelineColor(idx, total) {
+    if (idx === 0) return '#9ca3af';          // overdue — grey (matches .dlt-card.c-overdue)
+    if (idx === total - 1) return '#64748b';  // later (8+ weeks out) — muted slate
+    const weekCount = total - 2; // exclude the overdue + later buckets
+    const t = weekCount > 1 ? (idx - 1) / (weekCount - 1) : 0;
+    const pos = t * (TL_WEEK_STOPS.length - 1);
+    const i0 = Math.floor(pos), i1 = Math.min(TL_WEEK_STOPS.length - 1, i0 + 1);
+    const frac = pos - i0;
+    return frac === 0 ? TL_WEEK_STOPS[i0] : mixHex(TL_WEEK_STOPS[i0], TL_WEEK_STOPS[i1], frac);
   }
 
   function renderTimeline() {
