@@ -14620,34 +14620,64 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 </style>
 
 <style>
-/* ── Deadline density timeline (visual "which weeks are packed" bar) ── */
-.dlt-timeline-wrap { margin: 2px 0 16px; }
+/* ── Deadline density timeline (visual "which weeks are packed" bar) ──
+   Wrapped as its own elevated card (matches .dlt-card / .dlt-summary-card
+   styling elsewhere) instead of a bare row pinned between two border lines,
+   so it reads as a distinct widget rather than a leftover strip. */
+.dlt-timeline-wrap {
+  margin: 2px 0 16px; background: var(--bg-white); border: 1px solid var(--border-color);
+  border-radius: 12px; padding: 14px 12px 10px; box-shadow: var(--shadow-sm);
+}
 .dlt-timeline-title {
   font-size: .82rem; font-weight: 800; color: var(--text-dark);
-  margin-bottom: 8px; display: flex; align-items: baseline; gap: 6px;
+  margin-bottom: 10px; display: flex; align-items: baseline; gap: 6px;
 }
 .dlt-timeline-sub { font-size: .72rem; font-weight: 600; color: var(--text-muted); }
+
 .dlt-timeline {
-  display: flex; align-items: flex-end; gap: 5px;
-  padding: 10px 6px 8px;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-  overflow-x: auto;
+  display: flex; align-items: flex-end; gap: 4px;
+  padding: 4px 2px 0;
+  overflow-x: auto; overflow-y: hidden;
 }
+.dlt-timeline::-webkit-scrollbar { height: 5px; }
+.dlt-timeline::-webkit-scrollbar-track { background: transparent; }
+.dlt-timeline::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
 .dlt-tl-col {
-  flex: 1 1 0; min-width: 28px; display: flex; flex-direction: column;
-  align-items: center; gap: 3px;
+  flex: 1 1 0; min-width: 30px; display: flex; flex-direction: column;
+  align-items: center; gap: 4px; padding: 6px 2px 8px;
+  border-radius: 8px; position: relative; transition: background .15s ease;
 }
+.dlt-tl-col:hover { background: var(--bg-light); }
+/* Visual break between "Overdue" (the past) and the upcoming weeks (the future) */
+.dlt-tl-col.tl-overdue { margin-right: 5px; }
+.dlt-tl-col.tl-overdue::after {
+  content: ''; position: absolute; right: -5px; top: 8px; bottom: 16px; width: 1px;
+  background: var(--border-color);
+}
+
 .dlt-tl-bar-track {
-  width: 100%; max-width: 28px; height: 46px;
+  width: 100%; max-width: 26px; height: 52px;
   display: flex; align-items: flex-end; justify-content: center;
+  background: var(--bg-light); border-radius: 6px 6px 3px 3px; overflow: hidden;
 }
 .dlt-tl-bar {
-  width: 100%; border-radius: 4px 4px 2px 2px;
-  transition: height .25s ease;
+  width: 100%; min-height: 4px; border-radius: 4px 4px 2px 2px;
+  background-image: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0) 55%);
+  transition: height .3s cubic-bezier(.34,1.4,.64,1);
 }
-.dlt-tl-count { font-size: .68rem; font-weight: 800; color: var(--text-dark); min-height: 12px; }
-.dlt-tl-label { font-size: .62rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .2px; }
+/* Empty weeks fade into the track instead of showing a full-strength color chip */
+.dlt-tl-col.tl-empty .dlt-tl-bar { opacity: .3; }
+/* The single busiest bucket gets a glow so the eye lands there first */
+.dlt-tl-col.tl-peak .dlt-tl-bar { box-shadow: 0 0 0 1px rgba(255,255,255,.18), 0 3px 10px rgba(239,68,68,.4); }
+.dlt-tl-col.tl-peak .dlt-tl-count { color: #ef4444; }
+
+.dlt-tl-count { font-size: .7rem; font-weight: 800; color: var(--text-dark); min-height: 13px; line-height: 1; }
+.dlt-tl-label {
+  font-size: .6rem; color: var(--text-muted); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.dlt-tl-col.tl-overdue .dlt-tl-label { color: #9ca3af; }
 </style>
 
 <!-- HTML -->
@@ -15507,14 +15537,20 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     });
 
     const maxCount = Math.max(1, ...buckets.map(b => b.count));
-    const minH = 6, maxH = 46;
+    const minH = 4, maxH = 48;
+    // Highlight the single busiest bucket (only when something's actually
+    // there to highlight — skip it if everything is empty).
+    const peakCount = Math.max(...buckets.map(b => b.count));
+    const peakIdx = peakCount > 0 ? buckets.findIndex(b => b.count === peakCount) : -1;
 
     el.innerHTML = buckets.map((b, i) => {
       const h = b.count ? Math.round(minH + (b.count / maxCount) * (maxH - minH)) : minH;
       const color = timelineColor(i, buckets.length);
       const rangeLabel = b.from ? `${fmtDate(localISODate(b.from))} – ${fmtDate(localISODate(b.to))}` : (i === 0 ? 'Past due' : '8+ weeks out');
-      return `<div class="dlt-tl-col" title="${b.label} (${rangeLabel}): ${b.count} deadline(s)">
-        <div class="dlt-tl-bar-track"><div class="dlt-tl-bar" style="height:${h}px;background:${color};"></div></div>
+      const colCls = ['dlt-tl-col', i === 0 ? 'tl-overdue' : '', !b.count ? 'tl-empty' : '', i === peakIdx ? 'tl-peak' : '']
+        .filter(Boolean).join(' ');
+      return `<div class="${colCls}" title="${b.label} (${rangeLabel}): ${b.count} deadline(s)">
+        <div class="dlt-tl-bar-track"><div class="dlt-tl-bar" style="height:${h}px;background-color:${color};"></div></div>
         <div class="dlt-tl-count">${b.count || ''}</div>
         <div class="dlt-tl-label">${b.short}</div>
       </div>`;
