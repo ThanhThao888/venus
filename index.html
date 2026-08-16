@@ -14508,6 +14508,58 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 }
 .dlt-snoozeall-menu button:hover { background: var(--bg-light); }
 
+/* ── Push Deadline control (button + popover menu) — actually moves the
+   real due date forward, unlike Snooze which only mutes the urgency UI.
+   Works on every item, including auto-scanned courses/goals/deals. ── */
+.dlt-push-wrap { position: relative; }
+.dlt-push-btn {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1.5px solid #6366f1; color: #6366f1; background: none;
+  cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; touch-action: manipulation;
+}
+.dlt-push-btn:hover { background: #6366f1; color: #fff; }
+.dlt-push-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px);
+  background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 8px;
+  box-shadow: var(--shadow-md); z-index: 20; flex-direction: column; min-width: 132px; overflow: hidden;
+}
+.dlt-push-menu.show { display: flex; }
+.dlt-push-menu button {
+  background: none; border: none; padding: 8px 12px; text-align: left; font-size: .8rem;
+  color: var(--text-dark); cursor: pointer; white-space: nowrap; touch-action: manipulation;
+}
+.dlt-push-menu button:hover { background: rgba(99,102,241,.12); }
+.dlt-push-menu .dlt-push-custom {
+  border-top: 1px solid var(--border-color); padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 4px;
+}
+.dlt-push-menu .dlt-push-custom label { font-size: .68rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+.dlt-push-menu .dlt-push-custom input[type="date"] {
+  font-size: .78rem; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border-color);
+  background: var(--bg-white); color: var(--text-dark);
+}
+
+/* ── Bulk "Push All" (for the Overdue group header) ── */
+.dlt-pushall-wrap { position: relative; }
+.dlt-pushall-btn {
+  font-size: .7rem; font-weight: 700; text-transform: none; letter-spacing: 0;
+  padding: 4px 10px; border-radius: 14px; border: 1.5px solid #6366f1; color: #6366f1;
+  background: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.dlt-pushall-btn:hover { background: #6366f1; color: #fff; }
+.dlt-pushall-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px);
+  background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 8px;
+  box-shadow: var(--shadow-md); z-index: 25; flex-direction: column; min-width: 190px; overflow: hidden;
+}
+.dlt-pushall-menu.show { display: flex; }
+.dlt-pushall-menu button {
+  background: none; border: none; padding: 8px 12px; text-align: left; font-size: .8rem;
+  color: var(--text-dark); cursor: pointer; white-space: nowrap; touch-action: manipulation;
+}
+.dlt-pushall-menu button:hover { background: rgba(99,102,241,.12); }
+
 /* ── Note snippet on deadline card ── */
 .dlt-note {
   display: flex; align-items: flex-start; gap: 5px;
@@ -14899,6 +14951,95 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     return until ? `😴 Snoozed until ${fmtDate(until)}` : '';
   }
 
+  /* ─── Push Deadline (real date change, not a snooze) ───
+     Snoozing only hides the urgency styling — it doesn't touch the actual
+     due date, so an item that's already overdue just goes back to being
+     overdue the moment the snooze lapses. Pushing writes a new date back
+     to wherever the item's date actually lives:
+       - manual deadlines  → manualList (this module's own store)
+       - c_ / g_ / d_ / a_ → the underlying courses/goals/dealDiary/
+         investmentAnalyses record in localStorage, so the change is
+         reflected everywhere that record is shown, not just here. */
+  function writeDeadlineToSource(id, newDate) {
+    // Courses
+    if (id.startsWith('c_')) {
+      const rawId = id.slice(2);
+      const all = JSON.parse(localStorage.getItem('courses') || '[]');
+      const item = all.find(x => String(x.id) === rawId);
+      if (!item) return false;
+      item.deadline = newDate;
+      localStorage.setItem('courses', JSON.stringify(all));
+      if (typeof courses !== 'undefined') {
+        const live = courses.find(x => String(x.id) === rawId);
+        if (live) live.deadline = newDate;
+      }
+      if (typeof renderCourses === 'function') renderCourses();
+      return true;
+    }
+    // Goals
+    if (id.startsWith('g_')) {
+      const rawId = id.slice(2);
+      const all = JSON.parse(localStorage.getItem('goals') || '[]');
+      const item = all.find(x => String(x.id) === rawId);
+      if (!item) return false;
+      item.deadline = newDate;
+      localStorage.setItem('goals', JSON.stringify(all));
+      if (typeof goals !== 'undefined') {
+        const live = goals.find(x => String(x.id) === rawId);
+        if (live) live.deadline = newDate;
+      }
+      if (typeof renderGoals === 'function') renderGoals();
+      return true;
+    }
+    // Deal Diary
+    if (id.startsWith('d_')) {
+      const rawId = id.slice(2);
+      const all = JSON.parse(localStorage.getItem('dealDiary') || '[]');
+      const item = all.find(x => String(x.id) === rawId);
+      if (!item) return false;
+      item.date = newDate;
+      localStorage.setItem('dealDiary', JSON.stringify(all));
+      if (typeof dealDiary !== 'undefined') {
+        const live = dealDiary.find(x => String(x.id) === rawId);
+        if (live) live.date = newDate;
+      }
+      if (typeof renderDealCards === 'function') renderDealCards();
+      return true;
+    }
+    // Investment Analyses
+    if (id.startsWith('a_')) {
+      const rawId = id.slice(2);
+      const all = JSON.parse(localStorage.getItem('investmentAnalyses') || '[]');
+      const item = all.find(x => String(x.id) === rawId);
+      if (!item) return false;
+      item.date = newDate;
+      localStorage.setItem('investmentAnalyses', JSON.stringify(all));
+      if (typeof investmentAnalyses !== 'undefined') {
+        const live = investmentAnalyses.find(x => String(x.id) === rawId);
+        if (live) live.date = newDate;
+      }
+      if (typeof renderAnalysisCards === 'function') renderAnalysisCards();
+      return true;
+    }
+
+    // Manual deadline — this module owns the date directly.
+    const item = manualList.find(m => m.id === id);
+    if (!item) return false;
+    item.date = newDate;
+    return true;
+  }
+
+  /* When an item is overdue, "push forward N days" should count from TODAY,
+     not from the old (already-past) due date — otherwise "+3 days" on
+     something 20 days overdue would still leave it 17 days overdue, which
+     defeats the whole point. Upcoming items push forward from their own
+     current date as normal. */
+  function pushBaseDate(dateStr) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const cur = new Date(dateStr + 'T00:00:00');
+    return cur < today ? today : cur;
+  }
+
   /* Drop any snoozes whose date has already passed so the item goes back to normal. */
   function cleanupSnoozes() {
     const todayISO = localISODate();
@@ -15162,6 +15303,26 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
           </div>
         </div>` : '';
 
+      // Push Deadline quick-menu — for ALL active items, including
+      // auto-scanned courses/goals/deals/analyses (writes the real date
+      // back to wherever it came from). This is the "actually move it,
+      // don't just mute it" option for stuff that's already overdue.
+      const pushControl = !done ? `
+        <div class="dlt-push-wrap">
+          <button class="dlt-push-btn" onclick="event.stopPropagation(); DLT.togglePushMenu('${d.id}')" title="Push deadline forward (actually changes the due date)">⏩</button>
+          <div class="dlt-push-menu" id="push-menu-${d.id}">
+            <button onclick="event.stopPropagation(); DLT.pushDeadline('${d.id}',1)">⏩ +1 day</button>
+            <button onclick="event.stopPropagation(); DLT.pushDeadline('${d.id}',3)">⏩ +3 days</button>
+            <button onclick="event.stopPropagation(); DLT.pushDeadline('${d.id}',7)">⏩ +1 week</button>
+            <button onclick="event.stopPropagation(); DLT.pushDeadline('${d.id}',14)">⏩ +2 weeks</button>
+            <button onclick="event.stopPropagation(); DLT.pushDeadline('${d.id}',30)">⏩ +1 month</button>
+            <div class="dlt-push-custom" onclick="event.stopPropagation()">
+              <label>Custom date</label>
+              <input type="date" min="${localISODate()}" onchange="DLT.pushDeadlineTo('${d.id}', this.value)" />
+            </div>
+          </div>
+        </div>` : '';
+
       return `<div class="dlt-card ${cls}">
         <div class="dlt-days-wrap">
           <div class="dlt-days">${dNum}</div>
@@ -15182,6 +15343,7 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
           ${!done ? `<button class="dlt-done-btn" onclick="DLT.done('${d.id}',${days})" title="Mark done">✓</button>` : ''}
           ${canDel && !done ? `<button class="dlt-edit-btn" onclick="event.stopPropagation(); DLT.openEditModal('${d.id}')" title="Edit">✎</button>` : ''}
           ${snoozeControl}
+          ${pushControl}
           <a class="dlt-gcal-btn" href="${gcalUrl}" target="_blank" title="Add to Google Calendar" onclick="event.stopPropagation()">📅</a>
           ${canDel ? `<button class="dlt-del-btn" onclick="event.stopPropagation(); DLT.del('${d.id}')" title="Delete">✕</button>` : ''}
         </div>
@@ -15219,6 +15381,16 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
               <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(7)">😴 1 week</button>
               <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(14)">😴 2 weeks</button>
               <button onclick="event.stopPropagation(); DLT.snoozeAllOverdue(30)">😴 1 month</button>
+            </div>
+          </div>
+          <div class="dlt-pushall-wrap">
+            <button class="dlt-pushall-btn" onclick="event.stopPropagation(); DLT.togglePushAllMenu()" title="Actually push every overdue deadline's due date forward">⏩ Push All</button>
+            <div class="dlt-pushall-menu" id="pushAllMenu">
+              <button onclick="event.stopPropagation(); DLT.pushAllOverdue(1)">⏩ To tomorrow</button>
+              <button onclick="event.stopPropagation(); DLT.pushAllOverdue(3)">⏩ To 3 days from now</button>
+              <button onclick="event.stopPropagation(); DLT.pushAllOverdue(7)">⏩ To 1 week from now</button>
+              <button onclick="event.stopPropagation(); DLT.pushAllOverdue(14)">⏩ To 2 weeks from now</button>
+              <button onclick="event.stopPropagation(); DLT.pushAllOverdue(30)">⏩ To 1 month from now</button>
             </div>
           </div>` : ''}</div>
         <div class="dlt-group-cards">${g.items.map(cardHTML).join('')}</div>
@@ -15895,6 +16067,68 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
       }
     },
 
+    /* ─── Push Deadline (actually moves the due date — for when it's
+       already overdue and snoozing wouldn't fix anything) ─── */
+    togglePushMenu(id) {
+      const menu = document.getElementById('push-menu-' + id);
+      if (!menu) return;
+      const willShow = !menu.classList.contains('show');
+      document.querySelectorAll('.dlt-push-menu.show, .dlt-snooze-menu.show').forEach(el => el.classList.remove('show'));
+      if (willShow) menu.classList.add('show');
+    },
+
+    pushDeadline(id, days) {
+      const item = allItems().find(d => d.id === id);
+      if (!item) return;
+      const base = pushBaseDate(item.date);
+      base.setDate(base.getDate() + Number(days));
+      const newDate = localISODate(base);
+      if (!writeDeadlineToSource(id, newDate)) return;
+      delete snoozeMap[id]; // the real date moved, so any leftover snooze is redundant now
+      persist();
+      document.querySelectorAll('.dlt-push-menu.show').forEach(el => el.classList.remove('show'));
+      render();
+      if (typeof showNotification === 'function') showNotification(`⏩ Deadline pushed to ${fmtDate(newDate)}`, 'success');
+    },
+
+    pushDeadlineTo(id, dateStr) {
+      if (!dateStr) return;
+      if (!writeDeadlineToSource(id, dateStr)) return;
+      delete snoozeMap[id];
+      persist();
+      document.querySelectorAll('.dlt-push-menu.show').forEach(el => el.classList.remove('show'));
+      render();
+      if (typeof showNotification === 'function') showNotification(`⏩ Deadline pushed to ${fmtDate(dateStr)}`, 'success');
+    },
+
+    /* ─── Bulk Push (Overdue group header) — moves every overdue item's
+       real due date to N days from today, not just N days from wherever
+       it already was. ─── */
+    togglePushAllMenu() {
+      const menu = document.getElementById('pushAllMenu');
+      if (!menu) return;
+      const willShow = !menu.classList.contains('show');
+      document.querySelectorAll('.dlt-pushall-menu.show, .dlt-snoozeall-menu.show').forEach(el => el.classList.remove('show'));
+      if (willShow) menu.classList.add('show');
+    },
+
+    pushAllOverdue(days) {
+      const targets = allItems().filter(d => !doneIds.includes(d.id) && !isSnoozed(d.id) && daysLeft(d.date) < 0);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      today.setDate(today.getDate() + Number(days));
+      const newDate = localISODate(today);
+      let count = 0;
+      targets.forEach(d => {
+        if (writeDeadlineToSource(d.id, newDate)) { delete snoozeMap[d.id]; count++; }
+      });
+      persist();
+      document.querySelectorAll('.dlt-pushall-menu.show').forEach(el => el.classList.remove('show'));
+      render();
+      if (typeof showNotification === 'function') {
+        showNotification(`⏩ Pushed ${count} overdue deadline(s) to ${fmtDate(newDate)}`, 'success');
+      }
+    },
+
     /* ─── Checklist / Sub-tasks (manual items only) ─── */
     toggleChecklist(id) {
       if (expandedChecklists.has(id)) expandedChecklists.delete(id);
@@ -15943,6 +16177,12 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
     }
     if (!e.target.closest('.dlt-snoozeall-wrap')) {
       document.querySelectorAll('.dlt-snoozeall-menu.show').forEach(el => el.classList.remove('show'));
+    }
+    if (!e.target.closest('.dlt-push-wrap')) {
+      document.querySelectorAll('.dlt-push-menu.show').forEach(el => el.classList.remove('show'));
+    }
+    if (!e.target.closest('.dlt-pushall-wrap')) {
+      document.querySelectorAll('.dlt-pushall-menu.show').forEach(el => el.classList.remove('show'));
     }
   });
 
