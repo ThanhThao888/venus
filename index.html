@@ -12243,16 +12243,29 @@
         }
         body.dark-mode #yourProgressCard .chart-label { color: #e6a8c9; }
 
-        /* Both chart containers (7-day bars + XP donut) */
+        /* Both chart containers (7-day bars + skills breakdown).
+           Overrides the site-wide ".chart-container { display:flex; align-items:center;
+           justify-content:center }" rule, which was squeezing the label + canvas
+           side-by-side and wrapping the label text into a vertical column. */
         #yourProgressCard .chart-container {
+            display: block !important;
+            width: 100% !important;
             background: rgba(253, 244, 248, 0.6) !important;
             border: 1px solid rgba(219, 113, 175, 0.15);
             border-radius: 14px;
             box-shadow: none;
+            padding: 10px 8px 4px;
+            box-sizing: border-box;
         }
         body.dark-mode #yourProgressCard .chart-container {
-            background: rgba(255,255,255,0.03) !important;
+            background: rgba(255,255,255,0.04) !important;
             border-color: rgba(236, 72, 153, 0.18);
+        }
+        /* Skills-breakdown chart gets its own title, spacing, and min-height
+           so it doesn't look like a bare empty box when hours are still 0 */
+        #yourProgressCard .chart-container:has(#progressChart) {
+            height: 210px;
+            margin: 18px 0 0;
         }
 
         /* ── Meme widget ── */
@@ -12308,6 +12321,10 @@
             background: linear-gradient(135deg, rgba(236,72,153,0.1), rgba(251,191,36,0.08));
             border-color: rgba(236, 72, 153, 0.3);
             color: #f5c2dd;
+        }
+
+        body.dark-mode #yourProgressCard #dailyStudyChart {
+            filter: none;
         }
 
         @media (max-width: 480px) {
@@ -18888,8 +18905,7 @@ window.DBP={
                         <!-- Weekly trend: this week's total vs last week's total -->
                         <div class="weekly-trend-summary" id="weeklyTrendSummary">This week: 0.0 hours</div>
 
-                        <div class="chart-container" style="height: 140px; margin: 15px 0;">
-                            <div class="chart-label">📈 Last 7 Days</div>
+                        <div class="chart-container" style="height: 150px; margin: 15px 0;">
                             <canvas id="dailyStudyChart"></canvas>
                         </div>
                     
@@ -28839,6 +28855,7 @@ window.DBP={
 
         function initChart() {
             const ctx = document.getElementById('progressChart').getContext('2d');
+            const isDarkNow = document.body.classList.contains('dark-mode');
             progressChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -28847,20 +28864,22 @@ window.DBP={
                         label: 'Hours Studied',
                         data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                         backgroundColor: [
-                            '#e74c3c', // PE
-                            '#3498db', // IB
-                            '#f39c12', // HF
-                            '#2ecc71', // SC
-                            '#00ffef', // Fintech
-                            '#fbe82c', // English
-                            '#00ffd2', // Chinese
-                            '#ff1265', // Tools 
-                            '#00ff82', // CFA L1
-                            '#f94144', // China
-                            '#277da1'  // Quant
+                            '#db2777', // PE
+                            '#ec4899', // IB
+                            '#f472b6', // HF
+                            '#f9a8d4', // SC
+                            '#c084fc', // Fintech
+                            '#a78bfa', // English
+                            '#f6ad55', // Chinese
+                            '#fbbf24', // Tools
+                            '#fb923c', // CFA L1
+                            '#fda4af', // China
+                            '#e879f9'  // Quant
                         ],
-                        borderColor: Array(10).fill('#c4d3e0'),
-                        borderWidth: 1
+                        borderRadius: 6,
+                        borderSkipped: false,
+                        barPercentage: 0.7,
+                        categoryPercentage: 0.75
                     }]
                 },
                 options: {
@@ -28870,19 +28889,43 @@ window.DBP={
                         y: {
                             beginAtZero: true,
                             ticks: {
-                                color: '#666'
+                                color: isDarkNow ? '#e6a8c9' : '#b1568a'
+                            },
+                            grid: {
+                                color: isDarkNow ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)'
                             }
                         },
                         x: {
                             ticks: {
-                                color: '#666'
+                                color: isDarkNow ? '#e6a8c9' : '#b1568a'
+                            },
+                            grid: {
+                                display: false
                             }
                         }
                     },
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.parsed.y.toFixed(1)} hours`;
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: '🎯 Skills Breakdown',
+                            font: { size: 14, weight: 'bold' },
+                            color: isDarkNow ? '#f5c2dd' : '#9d2867',
+                            padding: 8
                         }
+                    },
+                    animation: {
+                        duration: 800,
+                        easing: 'easeOutQuart'
                     }
                 }
             });
@@ -28912,9 +28955,13 @@ window.DBP={
         function updateChartColors() {
             if (!progressChart) return;
             const isDarkMode = document.body.classList.contains('dark-mode');
-            const textColor = isDarkMode ? '#cbd5e1' : '#666';
+            const textColor = isDarkMode ? '#e6a8c9' : '#b1568a';
             progressChart.options.scales.x.ticks.color = textColor;
             progressChart.options.scales.y.ticks.color = textColor;
+            progressChart.options.scales.y.grid.color = isDarkMode ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+            if (progressChart.options.plugins && progressChart.options.plugins.title) {
+                progressChart.options.plugins.title.color = isDarkMode ? '#f5c2dd' : '#9d2867';
+            }
             progressChart.update();
         }
 
@@ -28943,10 +28990,24 @@ window.DBP={
                 solTrendChart.update();
             }
             if (dailyStudyChart) {
-                const textColor = isDark ? '#cbd5e1' : '#666';
+                const textColor = isDark ? '#e6a8c9' : '#b1568a';
                 dailyStudyChart.options.scales.y.ticks.color = textColor;
                 dailyStudyChart.options.scales.x.ticks.color = textColor;
+                dailyStudyChart.options.scales.y.grid.color = isDark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+                if (dailyStudyChart.options.plugins && dailyStudyChart.options.plugins.title) {
+                    dailyStudyChart.options.plugins.title.color = isDark ? '#f5c2dd' : '#9d2867';
+                }
                 dailyStudyChart.update();
+            }
+            if (progressChart) {
+                const textColor = isDark ? '#e6a8c9' : '#b1568a';
+                progressChart.options.scales.y.ticks.color = textColor;
+                progressChart.options.scales.x.ticks.color = textColor;
+                progressChart.options.scales.y.grid.color = isDark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+                if (progressChart.options.plugins && progressChart.options.plugins.title) {
+                    progressChart.options.plugins.title.color = isDark ? '#f5c2dd' : '#9d2867';
+                }
+                progressChart.update();
             }
             if (goalProgressChart) {
                 goalProgressChart.update();
@@ -30793,15 +30854,16 @@ window.DBP={
                         backgroundColor: function(context) {
                             const value = context.raw;
                             if (value === Math.max(...data)) {
-                                return '#3b82f6'; // Xanh dương đậm cho ngày cao nhất
+                                return '#db2777'; // deep rose for the highest day
                             }
-                            return '#60a5fa'; // Xanh nhạt cho các ngày còn lại
+                            return '#f9a8d4'; // soft blush for the rest
                         },
-                        borderColor: '#3b82f6',
-                        borderWidth: 1,
-                        borderRadius: 4,
-                        barPercentage: 0.8,
-                        categoryPercentage: 0.8
+                        borderColor: 'transparent',
+                        borderWidth: 0,
+                        borderRadius: 6,
+                        borderSkipped: false,
+                        barPercentage: 0.7,
+                        categoryPercentage: 0.75
                     }]
                 },
                 options: {
@@ -30820,12 +30882,12 @@ window.DBP={
                         },
                         title: {
                             display: true,
-                            text: 'Last 7 Days',
+                            text: '📈 Last 7 Days',
                             font: {
                                 size: 14,
                                 weight: 'bold'
                             },
-                            color: (getComputedStyle(document.documentElement).getPropertyValue('--text-dark').trim() || '#1e293b'),
+                            color: document.body.classList.contains('dark-mode') ? '#f5c2dd' : '#9d2867',
                             padding: 8
                         }
                     },
@@ -30833,16 +30895,16 @@ window.DBP={
                         y: {
                             beginAtZero: true,
                             ticks: {
-                                color: (getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#64748b'),
+                                color: document.body.classList.contains('dark-mode') ? '#e6a8c9' : '#b1568a',
                                 stepSize: 1
                             },
                             grid: {
-                                color: 'rgba(0,0,0,0.05)'
+                                color: document.body.classList.contains('dark-mode') ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)'
                             }
                         },
                         x: {
                             ticks: {
-                                color: (getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#64748b'),
+                                color: document.body.classList.contains('dark-mode') ? '#e6a8c9' : '#b1568a',
                                 maxRotation: 45,
                                 minRotation: 45
                             },
