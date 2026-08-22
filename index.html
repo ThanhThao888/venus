@@ -7732,6 +7732,25 @@
             to { transform: scale(1); }
         }
 
+        /* --- FAB filter dot: stays lit whenever "My quotes only" is on, so the
+           state is readable at a glance even with the popup closed — without
+           this, the FAB looks identical whether the filter is on or off. */
+        .quote-fab-filter-dot {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4f46e5;
+            border: 2px solid var(--bg-light);
+        }
+
+        .dark-mode .quote-fab-filter-dot {
+            background: #818cf8;
+            border-color: #0f172a;
+        }
+
         /* --- Saved-quotes panel: slides in over the quote view --- */
         .quote-saved-panel {
             position: absolute;
@@ -12328,6 +12347,30 @@
     }
     .dark-mode #customQuoteSection > div[style*="text-align: center"] {
         background: rgba(244,114,182,0.08) !important;
+    }
+
+    /* "+ Add Quote" — outline pill, no fill until hover, same pattern as
+       Manage My Quotes. Sits side-by-side with Manage in a compact row
+       instead of a full-width gradient bar. */
+    #customQuoteSection .cq-add-quote-btn {
+        background: #ffffff !important;
+        border: 1.5px solid #db2777 !important;
+        color: #db2777 !important;
+    }
+    #customQuoteSection .cq-add-quote-btn:hover {
+        background: rgba(219,113,175,0.1) !important;
+        border-color: #9d2867 !important;
+        color: #9d2867 !important;
+    }
+    .dark-mode #customQuoteSection .cq-add-quote-btn {
+        background: #2a1f2c !important;
+        border-color: #f9a8d4 !important;
+        color: #f9a8d4 !important;
+    }
+    .dark-mode #customQuoteSection .cq-add-quote-btn:hover {
+        background: rgba(244,114,182,0.12) !important;
+        border-color: #f472b6 !important;
+        color: #f472b6 !important;
     }
 
     /* "Manage My Quotes" — white pill + pink outline, same secondary-button
@@ -25250,25 +25293,26 @@ window.DBP={
                     onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomQuote();}"
                     style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); font-size: 0.95rem;">
             </div>
-            <button 
-                onclick="addCustomQuote()" 
-                class="add-time-btn" 
-                style="width: 100%; background: linear-gradient(135deg, #db2777, #f6ad55); margin-bottom: 10px;">
-                <i class="fas fa-plus"></i> Add Quote
-            </button>
-
             <!-- Stats: How many custom quotes -->
-            <div style="text-align: center; font-size: 0.85rem; color: var(--text-muted); padding: 8px; background: var(--bg-light); border-radius: 6px;">
+            <div style="text-align: center; font-size: 0.85rem; color: var(--text-muted); padding: 8px; background: var(--bg-light); border-radius: 6px; margin-bottom: 10px;">
                 <i class="fa-solid fa-note-sticky"></i> Custom Quotes: <strong id="customQuotesCount">0</strong>
             </div>
-            
-            <!-- Button to manage custom quotes -->
-            <button 
-                onclick="openManageQuotesModal()" 
-                class="add-time-btn" 
-                style="width: 100%; background: var(--bg-light); color: var(--text-dark); border: 1px solid var(--border-color); margin-top: 10px;">
-                <i class="fa-solid fa-clipboard-list"></i> Manage My Quotes
-            </button>
+
+            <!-- Compact action row: Add Quote + Manage My Quotes side by side -->
+            <div style="display: flex; gap: 8px;">
+                <button 
+                    onclick="addCustomQuote()" 
+                    class="add-time-btn cq-add-quote-btn" 
+                    style="flex: 1;">
+                    <i class="fas fa-plus"></i> Add Quote
+                </button>
+                <button 
+                    onclick="openManageQuotesModal()" 
+                    class="add-time-btn" 
+                    style="flex: 1; background: var(--bg-light); color: var(--text-dark); border: 1px solid var(--border-color);">
+                    <i class="fa-solid fa-clipboard-list"></i> Manage
+                </button>
+            </div>
         </div>
 
 
@@ -25913,6 +25957,7 @@ window.DBP={
     <!-- --- Motivational Quote Widget: FAB button + popup card --- -->
     <button id="quoteFab" onclick="toggleQuoteCard()" title="Motivational quote" aria-haspopup="true" aria-expanded="false" aria-controls="quotePopup">
         <i class="fas fa-quote-left"></i>
+        <span id="quoteFabFilterDot" class="quote-fab-filter-dot" hidden aria-hidden="true"></span>
     </button>
 
     <div id="quotePopup" role="dialog" aria-hidden="true" aria-label="Motivational quote">
@@ -29135,12 +29180,31 @@ window.DBP={
         // Load custom quotes from localStorage
         customQuotes = JSON.parse(localStorage.getItem('customQuotes')) || [];
 
+        // "My own quotes" = custom entries with NO author attached. A custom
+        // quote that names an author (e.g. a Grant Cardone line the user typed
+        // in on purpose) is something the user curated, not something they
+        // wrote — so it shouldn't wear the "Yours" badge or count toward
+        // "My quotes only", which is meant to isolate the user's own words.
+        function myOwnQuotes() {
+            return customQuotes.filter(q => !q.author || !q.author.trim());
+        }
+
         // Merge default + custom quotes
         let motivationalQuotes = [...defaultQuotes, ...customQuotes];
 
         // If true, Quote Boost ignores the built-in library + career/mood tagging
         // entirely and only shuffles through the user's own custom quotes.
         let quoteOnlyCustom = localStorage.getItem('quoteOnlyCustom') === 'true';
+
+        // Light up the FAB's filter dot immediately on load if the setting was
+        // already on from a previous visit — don't make the user open the
+        // popup just to find out the filter is active.
+        document.addEventListener('DOMContentLoaded', () => {
+            const fabDot = document.getElementById('quoteFabFilterDot');
+            if (fabDot) fabDot.hidden = !quoteOnlyCustom;
+            const fab = document.getElementById('quoteFab');
+            if (fab) fab.title = quoteOnlyCustom ? 'Motivational quote (showing only your quotes)' : 'Motivational quote';
+        });
 
 
 
@@ -29436,14 +29500,18 @@ window.DBP={
             const pool = motivationalQuotes.length ? motivationalQuotes : defaultQuotes;
 
             // "Only my quotes" mode: skip career/mood matching entirely and just
-            // shuffle through the user's own custom quotes.
-            if (quoteOnlyCustom && customQuotes.length > 0) {
-                let candidates = customQuotes;
+            // shuffle through the user's own custom quotes (no author attached —
+            // see myOwnQuotes()).
+            if (quoteOnlyCustom) {
+                let candidates = myOwnQuotes();
                 if (candidates.length > 1 && currentQuote) {
                     const withoutCurrent = candidates.filter(q => q.text !== currentQuote.text);
                     if (withoutCurrent.length) candidates = withoutCurrent;
                 }
-                return candidates[Math.floor(Math.random() * candidates.length)];
+                if (candidates.length > 0) {
+                    return candidates[Math.floor(Math.random() * candidates.length)];
+                }
+                // Nothing authorless to show — fall through to the normal pool below.
             }
 
             const career = typeof currentCareer !== 'undefined' ? currentCareer : null;
@@ -29486,7 +29554,10 @@ window.DBP={
             if (!textEl || !authorEl) return;
 
             // Custom quotes carry an `id`/`addedAt`; built-in ones never do.
-            const isOwn = !!(quote && quote.id);
+            // But an "id" alone isn't enough for the "Yours" badge — if the
+            // user typed in someone else's quote with an author attached,
+            // that's a curated pick, not their own words.
+            const isOwn = !!(quote && quote.id && (!quote.author || !quote.author.trim()));
 
             const applyText = () => {
                 textEl.textContent = quote.text;
@@ -29836,11 +29907,11 @@ window.DBP={
                                 ×
                             </button>
                         </div>
-                        <label style="display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 12px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); border-radius: 10px; cursor: ${customQuotes.length ? 'pointer' : 'not-allowed'}; font-size: 0.88rem; color: var(--text-dark); opacity: ${customQuotes.length ? '1' : '0.6'};">
-                            <input type="checkbox" id="quoteOnlyCustomToggle" onchange="toggleOnlyCustomQuotes(this.checked)" ${quoteOnlyCustom ? 'checked' : ''} ${customQuotes.length ? '' : 'disabled'} style="width: 16px; height: 16px; cursor: ${customQuotes.length ? 'pointer' : 'not-allowed'};">
+                        <label style="display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 12px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); border-radius: 10px; cursor: ${myOwnQuotes().length ? 'pointer' : 'not-allowed'}; font-size: 0.88rem; color: var(--text-dark); opacity: ${myOwnQuotes().length ? '1' : '0.6'};">
+                            <input type="checkbox" id="quoteOnlyCustomToggle" onchange="toggleOnlyCustomQuotes(this.checked)" ${quoteOnlyCustom ? 'checked' : ''} ${myOwnQuotes().length ? '' : 'disabled'} style="width: 16px; height: 16px; cursor: ${myOwnQuotes().length ? 'pointer' : 'not-allowed'};">
                             <span>
                                 <strong>Only show my quotes</strong>
-                                <span style="color: var(--text-muted); display: block; font-size: 0.78rem; margin-top: 2px;">${customQuotes.length ? `Skip the built-in library and career/mood matching — shuffle only through the ${customQuotes.length} quote${customQuotes.length === 1 ? '' : 's'} above.` : 'Add a custom quote below to unlock this.'}</span>
+                                <span style="color: var(--text-muted); display: block; font-size: 0.78rem; margin-top: 2px;">${myOwnQuotes().length ? `Skip the built-in library and career/mood matching — shuffle only through the ${myOwnQuotes().length} quote${myOwnQuotes().length === 1 ? '' : 's'} you wrote yourself (no author attached).` : 'Add a custom quote with no author below to unlock this.'}</span>
                             </span>
                         </label>
                     </div>
@@ -29876,14 +29947,14 @@ window.DBP={
         // This is the single source of truth; both the quick button in the popup
         // and the checkbox in the Manage Quotes modal call into this.
         function toggleOnlyCustomQuotes(checked) {
-            if (checked && customQuotes.length === 0) {
-                showNotification("📝 You don't have any custom quotes yet — add one first!", 'info');
+            if (checked && myOwnQuotes().length === 0) {
+                showNotification("📝 You don't have any custom quotes without an author yet — add one first!", 'info');
                 checked = false; // don't flip the flag on to a mode that has nothing to show
             }
             quoteOnlyCustom = checked;
             localStorage.setItem('quoteOnlyCustom', checked ? 'true' : 'false');
-            if (customQuotes.length > 0) {
-                showNotification(checked ? '📋 Now showing only your custom quotes' : '📋 Back to showing all quotes', 'info');
+            if (myOwnQuotes().length > 0) {
+                showNotification(checked ? '📋 Now showing only your own quotes' : '📋 Back to showing all quotes', 'info');
             }
             syncOnlyCustomToggleUI();
             // Refresh what's currently on screen (if the popup is open) so the
@@ -29908,6 +29979,15 @@ window.DBP={
             }
             const modalCheckbox = document.getElementById('quoteOnlyCustomToggle');
             if (modalCheckbox) modalCheckbox.checked = quoteOnlyCustom;
+
+            // Keep the FAB's dot + tooltip in sync too, so the filter state is
+            // visible even when the popup itself is closed.
+            const fab = document.getElementById('quoteFab');
+            const fabDot = document.getElementById('quoteFabFilterDot');
+            if (fabDot) fabDot.hidden = !quoteOnlyCustom;
+            if (fab) {
+                fab.title = quoteOnlyCustom ? 'Motivational quote (showing only your quotes)' : 'Motivational quote';
+            }
         }
 
         // Escapes text for safe placement inside an HTML attribute value.
@@ -30120,9 +30200,9 @@ window.DBP={
             // Update UI
             updateCustomQuotesCount();
 
-            // If that was the last custom quote and "only mine" was on, there's
-            // nothing left to shuffle through — turn it back off automatically.
-            if (customQuotes.length === 0 && quoteOnlyCustom) {
+            // If that was the last authorless custom quote and "only mine" was on,
+            // there's nothing left to shuffle through — turn it back off automatically.
+            if (myOwnQuotes().length === 0 && quoteOnlyCustom) {
                 toggleOnlyCustomQuotes(false);
             }
             
@@ -30136,21 +30216,22 @@ window.DBP={
             }
 
             // Keep the toggle row (checkbox enabled/disabled + hint text) in sync
-            // with the new count, in case this was the last (or first) quote.
+            // with the new count, in case this was the last (or first) authorless quote.
             const toggleRow = document.querySelector('#manageQuotesModal label');
             if (toggleRow) {
-                toggleRow.style.cursor = customQuotes.length ? 'pointer' : 'not-allowed';
-                toggleRow.style.opacity = customQuotes.length ? '1' : '0.6';
+                const ownCount = myOwnQuotes().length;
+                toggleRow.style.cursor = ownCount ? 'pointer' : 'not-allowed';
+                toggleRow.style.opacity = ownCount ? '1' : '0.6';
                 const checkbox = document.getElementById('quoteOnlyCustomToggle');
                 if (checkbox) {
-                    checkbox.disabled = customQuotes.length === 0;
-                    checkbox.style.cursor = customQuotes.length ? 'pointer' : 'not-allowed';
+                    checkbox.disabled = ownCount === 0;
+                    checkbox.style.cursor = ownCount ? 'pointer' : 'not-allowed';
                 }
                 const hint = toggleRow.querySelector('span span');
                 if (hint) {
-                    hint.textContent = customQuotes.length
-                        ? `Skip the built-in library and career/mood matching — shuffle only through the ${customQuotes.length} quote${customQuotes.length === 1 ? '' : 's'} above.`
-                        : 'Add a custom quote below to unlock this.';
+                    hint.textContent = ownCount
+                        ? `Skip the built-in library and career/mood matching — shuffle only through the ${ownCount} quote${ownCount === 1 ? '' : 's'} you wrote yourself (no author attached).`
+                        : 'Add a custom quote with no author below to unlock this.';
                 }
             }
             
