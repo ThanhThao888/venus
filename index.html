@@ -20730,6 +20730,11 @@ body.dark-mode .dlt-fg textarea {
 .dbp-subtitle{font-size:0.72rem;color:rgba(255,255,255,0.6);margin-top:3px;}
 .dbp-close{background:rgba(255,255,255,0.14);border:none;color:#fff;width:32px;height:32px;border-radius:50%;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.2s;flex-shrink:0;}
 .dbp-close:hover{background:rgba(255,255,255,0.28);}
+.dbp-notif-btn{background:rgba(255,255,255,0.14);border:none;color:rgba(255,255,255,0.6);width:32px;height:32px;border-radius:50%;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;flex-shrink:0;margin-right:6px;}
+.dbp-notif-btn:hover{background:rgba(255,255,255,0.28);}
+.dbp-notif-btn.on{color:#6ef2b0;background:rgba(16,185,129,0.22);}
+.dbp-notif-btn.off{color:#fca5a5;background:rgba(239,68,68,0.14);}
+.dbp-header-btns{display:flex;align-items:center;flex-shrink:0;}
 .dbp-tabs{display:flex;gap:4px;margin-top:13px;}
 .dbp-tab{padding:6px 14px;border-radius:20px;font-size:0.77rem;font-weight:600;cursor:pointer;border:1px solid rgba(255,255,255,0.22);color:rgba(255,255,255,0.68);background:transparent;transition:all 0.2s;}
 .dbp-tab.active{background:#fff;color:#db2777;border-color:#fff;}
@@ -20994,6 +20999,7 @@ body.dark-mode .dbp-mood-saved{color:#7ecdb4;}
     .dbp-history-tasks { font-size: 0.78rem; }
     .dbp-history-load, .dbp-history-del { padding: 4px 10px; font-size: 0.68rem; }
     #dbpTriggerBtn { bottom: calc(16px + env(safe-area-inset-bottom)); right: 16px; width: 46px; height: 46px; font-size: 1.15rem; }
+    .dbp-notif-btn, .dbp-close { width: 28px; height: 28px; font-size: 0.95rem; }
     #dbpToast { bottom: 80px; right: 16px; left: 16px; max-width: none; }
     #dbpFloatTimer { bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; min-width: 200px; padding: 12px 14px; }
     .dbpft-time { font-size: 1.8rem; }
@@ -21036,6 +21042,25 @@ body.dark-mode .dbp-field input, body.dark-mode .dbp-field select {
     border-color: var(--border-dark, #475569);
     color: var(--text-light, #f1f5f9);
 }
+
+/* ─── TASK TAGS / CATEGORIES ─── */
+.dbp-tag-badge{display:inline-flex;align-items:center;font-size:0.62rem;font-weight:700;
+    padding:1px 7px;border-radius:999px;margin-top:2px;white-space:nowrap;letter-spacing:0.01em;}
+.dbp-manual-tag-select{padding:9px 8px;border-radius:8px;border:1.5px dashed var(--border-color,#e2e8f0);
+    background:transparent;color:var(--text-dark,#1e293b);font-size:0.78rem;flex-shrink:0;max-width:104px;}
+body.dark-mode .dbp-manual-tag-select{background:var(--bg-darker,#334155);border-color:var(--border-dark,#475569);color:var(--text-light,#f1f5f9);}
+
+/* Per-category time totals shown after a plan is generated */
+.dbp-cat-breakdown{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 10px;}
+.dbp-cat-chip{display:inline-flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;
+    padding:4px 10px 4px 8px;border-radius:999px;background:var(--bg-light,#f8fafc);
+    border:1px solid var(--border-color,#e2e8f0);color:var(--text-dark,#1e293b);}
+.dbp-cat-chip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+body.dark-mode .dbp-cat-chip{background:var(--bg-darker,#334155);border-color:var(--border-dark,#475569);color:var(--text-light,#f1f5f9);}
+@media (max-width: 640px) {
+    .dbp-manual-tag-select { max-width: 88px; font-size: 0.72rem; padding: 8px 6px; }
+    .dbp-cat-chip { font-size: 0.63rem; padding: 3px 8px 3px 6px; }
+}
 </style>
 
 
@@ -21071,7 +21096,10 @@ body.dark-mode .dbp-field input, body.dark-mode .dbp-field select {
                 <div class="dbp-title">⚡ Daily Plan</div>
                 <div class="dbp-subtitle" id="dbpDateLabel"></div>
             </div>
-            <button class="dbp-close" onclick="DBP.close()">×</button>
+            <div class="dbp-header-btns">
+                <button class="dbp-notif-btn" id="dbpNotifBtn" onclick="DBP.toggleNotifPermission()" title="Browser notifications">🔔</button>
+                <button class="dbp-close" onclick="DBP.close()">×</button>
+            </div>
         </div>
         <div class="dbp-tabs">
             <button class="dbp-tab active" onclick="DBP.switchTab('plan',this)">📋 Plan</button>
@@ -21131,6 +21159,22 @@ body.dark-mode .dbp-field input, body.dark-mode .dbp-field select {
                 <input class="dbp-manual-input" id="dbpManualInput" type="text"
                     placeholder="+ Quick add (e.g. Review CFA notes, Read paper X)…"
                     onkeydown="if(event.key==='Enter')DBP.addManual()">
+                <select class="dbp-manual-tag-select" id="dbpManualTag" title="Category">
+                    <option value="">No tag</option>
+                    <option value="pe">PE</option>
+                    <option value="ib">IB</option>
+                    <option value="hf">HF</option>
+                    <option value="sc">Consulting</option>
+                    <option value="fintech">Fintech</option>
+                    <option value="english">English</option>
+                    <option value="chinese">Chinese</option>
+                    <option value="tools">Tools</option>
+                    <option value="cfa1">CFA</option>
+                    <option value="acca">ACCA</option>
+                    <option value="china">China</option>
+                    <option value="quant">Quant</option>
+                    <option value="other">Other</option>
+                </select>
                 <button class="dbp-manual-add" onclick="DBP.addManual()">Add</button>
             </div>
 
@@ -21395,22 +21439,65 @@ function loadOrder(tasks) {
 }
 
 
+/* ─── PRIORITY NORMALIZATION ───
+   Goals/Resources elsewhere in the app store priority as 'high'/'medium'/'low',
+   but this module's dot styling and sort only ever recognized 'high'/'mid'/'low'.
+   Normalize everything to that 3-value scale right when tasks are built, so a
+   goal/resource's real priority is never silently dropped into "unstyled". */
+function normPriority(p){
+    const s=String(p||'').toLowerCase();
+    if(s==='high') return 'high';
+    if(s==='low')  return 'low';
+    return 'mid'; // covers 'medium', 'mid', and anything unset/unrecognized
+}
+
+/* ─── TAGS / CATEGORIES ───
+   Reuses the app-wide career keys (pe, ib, hf, sc, fintech, english, chinese,
+   tools, cfa1, acca, china, quant) and their --{key}-color CSS vars so tags
+   look consistent with the rest of the app. Resource categories are free-text
+   (set by the user in the Resource Library), so those fall back to a hashed
+   color from TAG_FALLBACK_PALETTE instead of a fixed CSS var. */
+const TAG_LABELS = {
+    pe:'PE', ib:'IB', hf:'HF', sc:'Consulting', fintech:'Fintech', english:'English',
+    chinese:'Chinese', tools:'Tools', cfa1:'CFA', acca:'ACCA', china:'China',
+    quant:'Quant', other:'Other'
+};
+const TAG_FALLBACK_PALETTE=['#d17b96','#3498db','#f39c12','#2ecc71','#8e44ad','#16a085','#e67e22','#2980b9'];
+function tagLabel(tag){
+    if(!tag) return '';
+    const key=String(tag).toLowerCase();
+    return TAG_LABELS[key] || tag;
+}
+function tagColor(tag){
+    if(!tag) return null;
+    const key=String(tag).toLowerCase().replace(/[^a-z0-9]/g,'');
+    const cssVar=getComputedStyle(document.documentElement).getPropertyValue(`--${key}-color`).trim();
+    if(cssVar) return cssVar;
+    let h=0; for(const c of String(tag)) h=(h*31+c.charCodeAt(0))>>>0;
+    return TAG_FALLBACK_PALETTE[h % TAG_FALLBACK_PALETTE.length];
+}
+function tagBadge(tag){
+    if(!tag) return '';
+    const col=tagColor(tag);
+    return `<span class="dbp-tag-badge" style="background:${col}22;color:${col};border:1px solid ${col}55;">${tagLabel(tag)}</span>`;
+}
+
 /* ─── LIBRARY TASKS ─── */
 function getLibraryTasks(styleDef){
     const icons={video:'🎥',book:'📖',podcast:'🎙️',research:'📑',journal:'📰',tool:'🛠️',data:'📊',other:'📌'};
     const res=(store.get('resourceLibrary',[])||[])
         .filter(r=>r.status==='to-read'||r.status==='reading')
         .map(r=>({ id:'r_'+r.id, label:(icons[r.type]||'📌')+' '+r.title,
-            sub:[r.type,r.category].filter(Boolean).join(' · '),
-            def:styleDef, details:r.url||'', priority:r.priority||'mid',
+            sub:[r.type,r.category].filter(Boolean).join(' · '), tag:r.category||'',
+            def:styleDef, details:r.url||'', priority:normPriority(r.priority),
             isManual:false, checked:false }));
     const goals=(store.get('goals',[])||[])
         .filter(g=>!['completed','archived'].includes((g.status||'').toLowerCase()))
         .map(g=>({ id:'g_'+(g.id||Math.random()),
             label:'🎯 '+(g.title||g.name||'Goal'),
-            sub:'Goal · '+(g.career||''),
+            sub:'Goal · '+(g.career||''), tag:g.career||'',
             def:Math.round(styleDef*0.7/5)*5||60,
-            details:g.description||'', priority:g.priority||'mid',
+            details:g.description||'', priority:normPriority(g.priority),
             isManual:false, checked:false }));
     return [...res,...goals];
 }
@@ -21452,7 +21539,10 @@ function renderTasks(){
     saveManualTasks();
 
     const PRIO={high:0,mid:1,low:2};
-    if(_sortByPriority) _tasks.sort((a,b)=>(PRIO[a.priority]||1)-(PRIO[b.priority]||1));
+    // FIX: was `PRIO[a.priority]||1`, which breaks for 'high' — PRIO.high is 0,
+    // and 0||1 evaluates to 1 (0 is falsy), so every "high priority" task was
+    // silently ranked the same as "mid" and never actually sorted to the top.
+    if(_sortByPriority) _tasks.sort((a,b)=>(PRIO[a.priority] ?? 1)-(PRIO[b.priority] ?? 1));
 
     const list=gel('dbpTaskList');
     if(!_tasks.length){
@@ -21470,10 +21560,12 @@ function renderTasks(){
                 data-idx="${i}"
                 data-details="${encodeURIComponent(t.details||'')}"
                 data-label="${encodeURIComponent(t.label||'')}"
+                data-tag="${encodeURIComponent(t.tag||'')}"
                 onchange="DBP.cbChange(this)">
             <div class="dbp-task-info">
                 <div class="dbp-task-name">${t.label}</div>
                 ${t.sub?`<div class="dbp-task-sub">${t.sub}</div>`:''}
+                ${tagBadge(t.tag)}
             </div>
             <input class="dbp-task-dur" type="number" min="5" max="480" step="5" value="${t.def}"
                 onchange="DBP.durChange(this,${i})" title="Minutes">
@@ -21496,7 +21588,7 @@ function duplicateTask(idx){
     const copy = {
         id: 'm_'+_manualCount,
         label: '✏️ ' + baseLabel + ' (copy)',
-        sub: 'Manual task', def: src.def, details: src.details||'',
+        sub: 'Manual task', def: src.def, details: src.details||'', tag: src.tag||'',
         priority: src.priority||'mid', isManual: true, checked: false
     };
     _tasks.splice(idx+1, 0, copy);
@@ -21564,12 +21656,13 @@ function toggleSort(){
 /* ─── MANUAL ADD ─── */
 function addManual(){
     const inp=gel('dbpManualInput'); const val=(inp.value||'').trim(); if(!val)return;
+    const tagSel=gel('dbpManualTag'); const tag=tagSel?tagSel.value:'';
     pushUndo();
     const def=STYLES[gel('dbpStyle').value||'deep'].workDef;
     _manualCount++;
-    _tasks.push({id:'m_'+_manualCount, label:'✏️ '+val, sub:'Manual task',
+    _tasks.push({id:'m_'+_manualCount, label:'✏️ '+val, sub:'Manual task', tag,
         def, details:'', priority:'mid', isManual:true, checked:false});
-    inp.value=''; saveOrder(); renderTasks(); toast('✅ Task added');
+    inp.value=''; if(tagSel) tagSel.value=''; saveOrder(); renderTasks(); toast('✅ Task added');
 }
 
 function removeManual(idx){ pushUndo(); _tasks.splice(idx,1); saveOrder(); renderTasks(); toast('🗑 Removed'); }
@@ -21600,7 +21693,8 @@ function generate(){
         picked.push({
             name: decodeURIComponent(cb.dataset.label||'Task'),
             dur,
-            details: decodeURIComponent(cb.dataset.details||'')
+            details: decodeURIComponent(cb.dataset.details||''),
+            tag: decodeURIComponent(cb.dataset.tag||'')
         });
     });
 
@@ -21635,7 +21729,7 @@ function generate(){
                 name: task.name + (isContinuation ? ' (cont.)' : ''),
                 start: new Date(cursor),
                 end: addM(cursor, sessionDur),
-                isBreak: false, details: task.details, dur: sessionDur, done: false
+                isBreak: false, details: task.details, tag: task.tag||'', dur: sessionDur, done: false
             });
             cursor = addM(cursor, sessionDur);
             remaining -= sessionDur;
@@ -21667,6 +21761,22 @@ function generate(){
     renderSchedule(blocks);
 }
 
+/* ─── CATEGORY TIME BREAKDOWN ─── */
+// Sums focus minutes per tag across the work blocks (breaks excluded) and
+// renders one colored chip per category, sorted by time descending.
+function renderCatBreakdown(work){
+    const byTag={};
+    work.forEach(b=>{ const key=b.tag||''; byTag[key]=(byTag[key]||0)+b.dur; });
+    const entries=Object.entries(byTag).sort((a,b)=>b[1]-a[1]);
+    if(!entries.length) return '';
+    const fmtDur=m=>m>=60?`${(m/60).toFixed(1)}h`:`${m}m`;
+    return `<div class="dbp-cat-breakdown">${entries.map(([tag,mins])=>{
+        const col=tag?tagColor(tag):'var(--text-muted,#94a3b8)';
+        const label=tag?tagLabel(tag):'Untagged';
+        return `<span class="dbp-cat-chip"><span class="dbp-cat-chip-dot" style="background:${col};"></span>${label} · ${fmtDur(mins)}</span>`;
+    }).join('')}</div>`;
+}
+
 /* ─── RENDER SCHEDULE ─── */
 function renderSchedule(blocks){
     const work=blocks.filter(b=>!b.isBreak);
@@ -21694,6 +21804,7 @@ function renderSchedule(blocks){
                 <div class="dbp-plan-meta-key">Blocks</div>
             </div>
         </div>
+        ${renderCatBreakdown(work)}
         ${blocks.map((b,i)=>renderBlock(b,i)).join('')}
         <div class="dbp-reflection-wrap">
             <label>📝 Session Reflection (optional)</label>
@@ -21758,7 +21869,7 @@ function renderBlock(b,i){
             <div class="dbp-block-dur" id="dbpBkD${i}">${b.dur}m${actualTimeHtml(b)}</div>
             <div class="dbp-block-actions">
                 <button class="dbp-done-btn${b.done?' checked':''}" id="dbpDB${i}" onclick="DBP.markDone(${i})">${b.done?'✅':'○'}</button>
-                <button class="dbp-timer-btn" id="dbpTB${i}" onclick="DBP.toggleTimer(${i},${b.dur})">⏱ ${pad(Math.floor(b.dur/60))}:${pad(b.dur%60)}</button>
+                <button class="dbp-timer-btn" id="dbpTB${i}" onclick="DBP.toggleTimer(${i},${b.dur})">⏱ ${pad(b.dur)}:00</button>
                 <a class="dbp-gcal-btn" href="${gcalUrl(b.name,b.start,b.end,b.details)}" target="_blank" rel="noopener">📅</a>
             </div>
         </div>
@@ -21767,7 +21878,7 @@ function renderBlock(b,i){
              renders already-open for whichever block is the active timer. -->
         <div class="dbp-timer-panel${_activeTimerIdx===i?' visible':''}" id="dbpTP${i}">
             <div class="dbp-timer-task-name">${b.name}</div>
-            <div class="dbp-timer-display" id="dbpTD${i}">${pad(Math.floor(b.dur/60))}:${pad(b.dur%60)}</div>
+            <div class="dbp-timer-display" id="dbpTD${i}">${pad(b.dur)}:00</div>
             <div class="dbp-timer-prog-bar"><div class="dbp-timer-prog-fill" id="dbpPF${i}" style="width:0%"></div></div>
             <div class="dbp-timer-controls">
                 <button class="dbp-tc-btn dbp-tc-start" onclick="DBP.startTimer(${i})">▶ Start</button>
@@ -21815,6 +21926,16 @@ function markDone(i){
         setTimeout(()=>{
             beep();
             toast('🎉 ALL BLOCKS COMPLETE! Outstanding session! 🔥',4500,'success');
+            try{
+                if(window.Notification && Notification.permission==='granted' && document.hidden){
+                    const totalFocus = wb.reduce((s,b)=>s+b.dur,0);
+                    const n=new Notification('🎉 Daily Plan — Session complete!',{
+                        body:`${wb.length} blocks · ${(totalFocus/60).toFixed(1)}h focus. Outstanding work!`,
+                        tag:'dbp-session-complete'
+                    });
+                    n.onclick=()=>{ window.focus(); n.close(); };
+                }
+            }catch(_){}
             if(document.getElementById('dbpAllDoneBanner')) return;
             const banner = document.createElement('div');
             banner.id = 'dbpAllDoneBanner';
@@ -21825,6 +21946,35 @@ function markDone(i){
             if(sched) sched.insertBefore(banner, sched.firstChild);
         },400);
     }
+}
+
+/* ─── BROWSER NOTIFICATION PERMISSION ─── */
+// Small bell toggle in the header so the user can explicitly opt in/out
+// instead of only being silently prompted the first time a timer starts.
+function updateNotifBtn(){
+    const btn=gel('dbpNotifBtn'); if(!btn) return;
+    if(!('Notification' in window)){ btn.style.display='none'; return; }
+    const perm=Notification.permission;
+    btn.classList.remove('on','off');
+    if(perm==='granted'){ btn.classList.add('on'); btn.textContent='🔔'; btn.title='Notifications on — click to test'; }
+    else if(perm==='denied'){ btn.classList.add('off'); btn.textContent='🔕'; btn.title='Notifications blocked — enable them in your browser\'s site settings'; }
+    else { btn.textContent='🔔'; btn.title='Click to enable browser notifications for finished blocks'; }
+}
+function toggleNotifPermission(){
+    if(!('Notification' in window)){ toast('⚠️ Your browser doesn\'t support notifications'); return; }
+    if(Notification.permission==='denied'){
+        toast('🔕 Notifications are blocked — enable them in your browser\'s site settings', 4200, 'warn');
+        return;
+    }
+    if(Notification.permission==='granted'){
+        try{ new Notification('⚡ Daily Plan', {body:'Notifications are on — you\'ll be pinged when a block or session finishes.', tag:'dbp-test'}); }catch(_){}
+        toast('🔔 Notifications already on');
+        return;
+    }
+    Notification.requestPermission().then(p=>{
+        updateNotifBtn();
+        toast(p==='granted' ? '🔔 Notifications enabled!' : '🔕 Notifications not enabled', 3200);
+    }).catch(()=>{});
 }
 
 /* ─── TIMER — Date.now() accurate ─── */
@@ -21888,7 +22038,7 @@ function pauseTimer(i){
 function resetTimer(i,durMin){
     if(_timers[i]) clearInterval(_timers[i].interval);
     initTimer(i,durMin); refreshTimerUI(i);
-    const btn=gel('dbpTB'+i); if(btn){ btn.classList.remove('running'); btn.textContent=`⏱ ${pad(Math.floor(durMin/60))}:${pad(durMin%60)}`; }
+    const btn=gel('dbpTB'+i); if(btn){ btn.classList.remove('running'); }
     const mr=gel('dbpMR'+i); if(mr)mr.style.display='none';
     if(_activeTimerIdx === i){ _activeTimerIdx=null; gel('dbpFloatTimer').style.display='none'; }
     saveTimerState(); 
@@ -22160,6 +22310,7 @@ function open(){
     loadManualTasks();
     renderTasks();
     switchTab('plan',document.querySelector('.dbp-tab'));
+    updateNotifBtn();
     gel('dbpModal').classList.add('open');
     document.body.style.overflow='hidden';
     // Re-render schedule nếu đang có blocks (dù có timer hay không)
@@ -22196,11 +22347,11 @@ gel('dbpModal').addEventListener('click',e=>{ if(e.target===gel('dbpModal'))clos
 /* ─── PUBLIC API ─── */
 window.DBP={
     open,close, saveSettings, updateBudget, refreshTasks:renderTasks,
-    selectAll,clearAll,toggleSort, addManual,removeManual,
+    selectAll,clearAll,toggleSort, addManual,removeManual, duplicateTask,
     cbChange,durChange, generate, addAll,copyText,savePlan,
     toggleTimer,startTimer,pauseTimer,resetTimer, markDone, saveMood,
     switchTab,loadHist,delHist,
-    floatPauseResume,floatStop,
+    floatPauseResume,floatStop, toggleNotifPermission,
     _ds:ds,_do:dov,_dd:dd,_de:de
 };
 
