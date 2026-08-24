@@ -23784,10 +23784,6 @@ window.DBP={
                                     <button class="ft-break-preset" onclick="ftSetBreakDuration(15, this)">15m</button>
                                 </div>
                             </div>
-                            <label class="ft-autostart-toggle">
-                                <input type="checkbox" id="ftAutoStartCheckbox" onchange="ftToggleAutoStart(this)">
-                                <span>Auto-start next phase</span>
-                            </label>
                         </div>
 
                         <!-- Main control buttons -->
@@ -35576,7 +35572,7 @@ window.DBP={
         let ftMode = localStorage.getItem('ftMode') === 'break' ? 'break' : 'work';
         let ftWorkDuration = parseInt(localStorage.getItem('ftWorkDuration')) || timerDuration;
         let ftBreakDuration = parseInt(localStorage.getItem('ftBreakDuration')) || 5 * 60;
-        let ftAutoStartNext = localStorage.getItem('ftAutoStartNext') === 'true';
+        const ftAutoStartNext = false; // feature removed: phases never auto-chain
 
         // ── Daily / weekly focus goal state ──────────────────────────
         let ftDailyGoalMin = parseInt(localStorage.getItem('ftDailyGoalMin')) || 0;   // 0 = not set
@@ -35610,7 +35606,7 @@ window.DBP={
             localStorage.setItem('ftMode', ftMode);
             localStorage.setItem('ftWorkDuration', ftWorkDuration);
             localStorage.setItem('ftBreakDuration', ftBreakDuration);
-            localStorage.setItem('ftAutoStartNext', ftAutoStartNext);
+            localStorage.removeItem('ftAutoStartNext');
         }
 
         function beep60Warning() {
@@ -35752,9 +35748,7 @@ window.DBP={
                 beepAlarm();
 
                 const notificationTitle = "⏰ Focus Session Complete!";
-                const notificationBody = ftAutoStartNext
-                    ? `Nice work! A ${Math.round(ftBreakDuration / 60)}-min break is starting automatically…`
-                    : `Great job! Time for a ${Math.round(ftBreakDuration / 60)}-min break.`;
+                const notificationBody = `Great job! Time for a ${Math.round(ftBreakDuration / 60)}-min break.`;
                 showNotification(notificationTitle, 'success');
                 fireBrowserNotification(notificationTitle, notificationBody);
 
@@ -35771,9 +35765,7 @@ window.DBP={
             } else {
                 beepBreakOver();
                 const notificationTitle = "☕ Break's over!";
-                const notificationBody = ftAutoStartNext
-                    ? "Next focus session is starting automatically…"
-                    : "Ready to lock back in?";
+                const notificationBody = "Ready to lock back in?";
                 showNotification(notificationTitle, 'info');
                 fireBrowserNotification(notificationTitle, notificationBody);
 
@@ -35792,7 +35784,6 @@ window.DBP={
             updateTimerDisplay();
             ftUpdateRing();
             renderFtModeUI();
-            if (ftAutoStartNext) ftStartPhase();
         }
 
         function ftEnterWorkMode() {
@@ -35804,7 +35795,6 @@ window.DBP={
             updateTimerDisplay();
             ftUpdateRing();
             renderFtModeUI();
-            if (ftAutoStartNext) ftStartPhase();
         }
 
         // Starts whichever phase is currently active. Work phases still go
@@ -35836,8 +35826,6 @@ window.DBP={
             }
             const wrap = document.querySelector('.ft-ring-wrap');
             if (wrap) wrap.classList.toggle('break-mode', ftMode === 'break');
-            const autoCb = document.getElementById('ftAutoStartCheckbox');
-            if (autoCb) autoCb.checked = ftAutoStartNext;
             const banner = document.getElementById('ftLockBanner');
             if (banner) {
                 banner.textContent = ftMode === 'break'
@@ -35861,11 +35849,6 @@ window.DBP={
             persistTimerState();
             document.querySelectorAll('.ft-break-preset').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
-        }
-
-        function ftToggleAutoStart(checkbox) {
-            ftAutoStartNext = !!checkbox.checked;
-            persistTimerState();
         }
 
         // "Cycles today" = completed work sessions logged today, read straight
