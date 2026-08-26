@@ -15410,6 +15410,74 @@
         }
         body.dark-mode .goal-why-note { background: rgba(240, 184, 204, 0.10); }
 
+        /* Chain-stage pace line — shown on goal cards that have a valid
+           "Continues From" link. Visually distinct (blue) from the pink
+           "why" note so the two don't blur together. */
+        .goal-chain-stage {
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: rgba(59, 130, 246, 0.08);
+            border-left: 3px solid #3b82f6;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            color: var(--theme-text);
+        }
+        body.dark-mode .goal-chain-stage { background: rgba(96, 165, 250, 0.12); border-left-color: #60a5fa; }
+
+        /* Streak badge — shown next to priority when the goal has an
+           active (or best-ever) consecutive-day logging streak */
+        .goal-streak-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 6px;
+            margin-left: 8px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            background: rgba(249, 115, 22, 0.12);
+            color: #ea580c;
+        }
+        body.dark-mode .goal-streak-badge { background: rgba(251, 146, 60, 0.16); color: #fb923c; }
+        .goal-streak-badge.cold {
+            background: rgba(154, 118, 134, 0.10);
+            color: var(--theme-text-muted);
+        }
+        body.dark-mode .goal-streak-badge.cold { background: rgba(168, 132, 148, 0.12); color: var(--theme-text-muted); }
+
+        /* Milestone track — four ticks at 25/50/75/100% overlaid under the
+           progress bar so the person can see upcoming checkpoints, not just
+           a raw percentage */
+        .goal-milestone-track {
+            position: relative;
+            height: 14px;
+            margin-top: 2px;
+        }
+        .goal-milestone-dot {
+            position: absolute;
+            top: 0;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6rem;
+            background: var(--bg-white);
+            border: 2px solid var(--border-color);
+            color: var(--theme-text-muted);
+            transition: var(--transition);
+        }
+        .goal-milestone-dot.hit {
+            background: var(--theme-accent);
+            border-color: var(--theme-accent);
+            color: #fff;
+        }
+        body.dark-mode .goal-milestone-dot { background: var(--bg-white); border-color: var(--border-color); }
+        body.dark-mode .goal-milestone-dot.hit { background: var(--theme-accent); border-color: var(--theme-accent); }
+
         /* ═══════════════════════════════════════════════════════════
            COURSE MODAL — Blush Rose (light) / Champagne Gold (dark)
            Same wizard treatment as the Goal modal: a few small steps
@@ -29712,9 +29780,28 @@ window.DBP={
                         </div>
                     </div>
 
+                    <!-- Chain link — lets a staged goal (e.g. "B2 Entry") point at
+                         the goal it continues from (e.g. "B1 Solid") so the pace
+                         hint can show the pace for THIS stage, not a blended
+                         average diluted by all the days already spent on earlier
+                         stages. -->
+                    <div style="margin-bottom: 12px;">
+                        <label for="goalChainFrom" style="display:block; margin-bottom:5px; font-weight:500;">
+                            <i class="fa-solid fa-link"></i> Continues From <span style="font-weight:400; color: var(--theme-text-muted); font-size:0.78rem;">(optional — for staged/chained goals)</span>
+                        </label>
+                        <select id="goalChainFrom" style="width:100%; padding:10px; border-radius:6px;">
+                            <option value="">— None (standalone goal) —</option>
+                        </select>
+                    </div>
+
                     <!-- Live pace hint — updates as Target / Deadline are typed, so the
                          required pace is visible BEFORE saving, not after. -->
                     <div id="goalPaceHint" class="goal-pace-hint" style="display:none;"></div>
+
+                    <!-- Stage pace — only shown when "Continues From" is set. Shows
+                         the marginal pace for just this stage's window, separate
+                         from the overall/blended number above. -->
+                    <div id="goalStagePaceHint" class="goal-pace-hint" style="display:none;"></div>
 
                     <div style="margin: 10px 0 20px; font-size: 0.78rem; color: var(--theme-text-muted);">
                         <i class="fa-solid fa-clock"></i> Deadline dates are evaluated using Vietnam time (GMT+7).
@@ -37690,6 +37777,100 @@ window.DBP={
             localStorage.setItem('goals', JSON.stringify(goals));
         }
 
+        // ── Streaks & milestone celebrations ─────────────────────────
+        // Runs once per goal on every renderGoals() pass. It's idempotent:
+        // it only changes state (and only fires a celebration) when the
+        // goal's progress has actually moved since the last time this ran,
+        // so calling it repeatedly during a session is harmless.
+
+        function daysBetweenDateKeys(a, b) {
+            // a, b are 'YYYY-MM-DD' strings
+            const d1 = new Date(a + 'T00:00:00');
+            const d2 = new Date(b + 'T00:00:00');
+            return Math.round((d2 - d1) / (24 * 60 * 60 * 1000));
+        }
+
+        function updateGoalStreakAndMilestones(goal) {
+            const todayKey = getVietnamDateStr();
+            if (!goal.streak) goal.streak = { count: 0, best: 0, lastDate: null, lastProgress: 0 };
+            if (!Array.isArray(goal.milestonesHit)) goal.milestonesHit = [];
+
+            const progress = goal.currentProgress || 0;
+            const prevProgress = goal.streak.lastProgress || 0;
+            let changed = false;
+
+            // Progress moved since we last checked → counts as "active today"
+            if (progress > prevProgress + 0.001) {
+                if (goal.streak.lastDate !== todayKey) {
+                    const gap = goal.streak.lastDate ? daysBetweenDateKeys(goal.streak.lastDate, todayKey) : null;
+                    goal.streak.count = (gap === 1) ? goal.streak.count + 1 : 1;
+                    goal.streak.best = Math.max(goal.streak.best || 0, goal.streak.count);
+                    goal.streak.lastDate = todayKey;
+                }
+                goal.streak.lastProgress = progress;
+                changed = true;
+            } else if (goal.streak.lastDate && daysBetweenDateKeys(goal.streak.lastDate, todayKey) > 1) {
+                // More than a full day passed with no new progress → streak resets
+                if (goal.streak.count !== 0) {
+                    goal.streak.count = 0;
+                    changed = true;
+                }
+            }
+
+            // Milestone celebrations at 25 / 50 / 75 / 100%
+            const percent = goal.target > 0 ? Math.min(100, (progress / goal.target) * 100) : 0;
+            [25, 50, 75, 100].forEach(mark => {
+                if (percent >= mark && !goal.milestonesHit.includes(mark)) {
+                    goal.milestonesHit.push(mark);
+                    changed = true;
+                    celebrateGoalMilestone(goal, mark);
+                }
+            });
+
+            if (changed) saveGoals();
+        }
+
+        function celebrateGoalMilestone(goal, mark) {
+            const messages = {
+                25: `🌱 "${goal.title}" — 25% there. Nice start!`,
+                50: `🔥 "${goal.title}" — halfway done. Keep going!`,
+                75: `⚡ "${goal.title}" — 75% complete. Almost there!`,
+                100: `🎉 "${goal.title}" — goal complete! Amazing work.`
+            };
+            if (typeof confettiCelebrate === 'function') confettiCelebrate();
+            if (typeof showNotification === 'function') {
+                showNotification(messages[mark] || `${mark}% milestone reached!`, 'success');
+            }
+        }
+
+        function renderGoalStreakBadge(goal) {
+            const streak = goal.streak;
+            if (!streak || (!streak.count && !streak.best)) return '';
+            if (streak.count > 0) {
+                return `<span class="goal-streak-badge"><i class="fa-solid fa-fire"></i> ${streak.count}-day streak</span>`;
+            }
+            // No active streak right now, but there's a personal best worth showing
+            if (streak.best > 1) {
+                return `<span class="goal-streak-badge cold"><i class="fa-solid fa-fire"></i> Best: ${streak.best} days</span>`;
+            }
+            return '';
+        }
+
+        function renderGoalMilestoneTrack(goal, progressPercent) {
+            const hit = Array.isArray(goal.milestonesHit) ? goal.milestonesHit : [];
+            const marks = [25, 50, 75, 100];
+            return `
+                <div class="goal-milestone-track">
+                    ${marks.map(mark => `
+                        <div class="goal-milestone-dot ${hit.includes(mark) || progressPercent >= mark ? 'hit' : ''}"
+                             style="left:${mark}%;" title="${mark}% milestone${hit.includes(mark) ? ' — reached' : ''}">
+                            ${hit.includes(mark) ? '<i class="fa-solid fa-check"></i>' : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         function getGoalStatus(goal) {
             const now = getVietnamNow();
             // ✅ Completion check FIRST — a finished goal is never overdue
@@ -37813,6 +37994,8 @@ window.DBP={
             const priorityLabels = { high: '🔴 High', medium: '🟠 Medium', low: '🟢 Low' };
             const why = document.getElementById('goalWhy').value.trim();
             const unit = getGoalUnitLabel(type);
+            const chainFromId = document.getElementById('goalChainFrom')?.value || '';
+            const chainFromGoal = chainFromId ? goals.find(g => g.id === chainFromId) : null;
 
             let skillRow = '';
             if (type === 'skill_mastery') {
@@ -37828,6 +38011,7 @@ window.DBP={
                 <div class="goal-review-row"><span class="goal-review-label">Target</span><span class="goal-review-value">${escapeHtml(String(targetVal))} ${escapeHtml(unit)}</span></div>
                 <div class="goal-review-row"><span class="goal-review-label">Deadline</span><span class="goal-review-value">${deadline ? formatDate(deadline) : 'No deadline'}</span></div>
                 <div class="goal-review-row"><span class="goal-review-label">Priority</span><span class="goal-review-value">${priorityLabels[priority]}</span></div>
+                ${chainFromGoal ? `<div class="goal-review-row"><span class="goal-review-label">Continues From</span><span class="goal-review-value"><i class="fa-solid fa-link"></i> ${escapeHtml(chainFromGoal.title)}</span></div>` : ''}
                 ${why ? `<div class="goal-review-why">💭 ${escapeHtml(why)}</div>` : ''}
             `;
         }
@@ -37839,6 +38023,23 @@ window.DBP={
             if (customUnit !== undefined) return customUnit.trim() || 'items';
             const input = document.getElementById('goalCustomUnit');
             return (input && input.value.trim()) || 'items';
+        }
+
+        // Fills the "Continues From" dropdown with other goals in the same
+        // career (excluding the goal being edited, so it can't chain to itself).
+        // Options are labeled with target + deadline so it's clear which stage
+        // is which when picking a predecessor.
+        function populateGoalChainOptions(excludeId, selectedId) {
+            const select = document.getElementById('goalChainFrom');
+            if (!select) return;
+            const candidates = goals.filter(g => g.career === currentCareer && g.id !== excludeId);
+            select.innerHTML = '<option value="">— None (standalone goal) —</option>' +
+                candidates.map(g => {
+                    const unit = g.type === 'custom' ? (g.customUnit || 'items') : 'hours';
+                    const deadlineLabel = g.deadline ? formatDate(g.deadline) : 'no deadline';
+                    return `<option value="${g.id}">${escapeHtml(g.title)} (${g.target} ${escapeHtml(unit)}, due ${deadlineLabel})</option>`;
+                }).join('');
+            select.value = selectedId || '';
         }
 
         function openAddGoalModal() {
@@ -37858,8 +38059,11 @@ window.DBP={
             // Vietnam-time "today" so users can't pick a deadline that has already passed there
             const deadlineInput = document.getElementById('goalDeadline');
             if (deadlineInput) deadlineInput.min = getVietnamDateStr();
+            populateGoalChainOptions('', '');
             const paceHint = document.getElementById('goalPaceHint');
             if (paceHint) { paceHint.style.display = 'none'; paceHint.className = 'goal-pace-hint'; paceHint.innerHTML = ''; }
+            const stagePaceHint = document.getElementById('goalStagePaceHint');
+            if (stagePaceHint) { stagePaceHint.style.display = 'none'; stagePaceHint.className = 'goal-pace-hint'; stagePaceHint.innerHTML = ''; }
             document.getElementById('goalModal').style.display = 'flex';
             goalWizardShowStep(1);
         }
@@ -37885,6 +38089,7 @@ window.DBP={
                 deadlineInput.min = '';
                 deadlineInput.value = goal.deadline || '';
             }
+            populateGoalChainOptions(goal.id, goal.chainsFrom || '');
             document.getElementById('goalModal').style.display = 'flex';
             goalWizardShowStep(1);
             updateGoalPaceHint();
@@ -38405,6 +38610,7 @@ window.DBP={
                         <div class="goals-list">
                             ${activeGoals.map(goal => {
                                 calculateGoalProgress(goal);
+                                updateGoalStreakAndMilestones(goal);
                                 const status = getGoalStatus(goal);
                                 const progressPercent = getGoalProgressPercent(goal);
                                 const forecast = calculateGoalForecast(goal);
@@ -38441,6 +38647,7 @@ window.DBP={
                         <div class="goals-list completed-goals-list" style="display: ${isExpanded ? 'block' : 'none'};">
                             ${completedGoals.map(goal => {
                                 calculateGoalProgress(goal);
+                                updateGoalStreakAndMilestones(goal);
                                 const status = getGoalStatus(goal);
                                 const progressPercent = getGoalProgressPercent(goal);
                                 return renderGoalCard(goal, status, progressPercent, null);
@@ -38516,15 +38723,20 @@ window.DBP={
         // check: "is this target/deadline pair actually realistic?"
         function updateGoalPaceHint() {
             const hintEl = document.getElementById('goalPaceHint');
+            const stageHintEl = document.getElementById('goalStagePaceHint');
             if (!hintEl) return;
 
             const targetInput = document.getElementById('goalTarget');
             const deadlineInput = document.getElementById('goalDeadline');
             const goalType = document.getElementById('goalType')?.value;
             const editId = document.getElementById('editGoalId')?.value;
+            const chainFromId = document.getElementById('goalChainFrom')?.value || '';
 
             const targetVal = parseFloat(targetInput?.value);
             const deadlineVal = deadlineInput?.value;
+
+            // Always clear the stage hint first; it only reappears if a valid chain exists
+            if (stageHintEl) { stageHintEl.style.display = 'none'; stageHintEl.className = 'goal-pace-hint'; stageHintEl.innerHTML = ''; }
 
             // Not enough info yet — stay quiet rather than show a half sentence
             if (!targetVal || targetVal <= 0 || !deadlineVal) {
@@ -38584,19 +38796,69 @@ window.DBP={
             hintEl.style.display = 'block';
             hintEl.className = `goal-pace-hint ${tone}`;
             hintEl.innerHTML = `
-                <div class="goal-pace-headline">${toneLabel}</div>
+                <div class="goal-pace-headline">${toneLabel}${chainFromId ? ' <span style="font-weight:400; opacity:0.75;">(overall, since today)</span>' : ''}</div>
                 <div class="goal-pace-numbers">
                     → You'll need <strong>~${perDay.toFixed(1)} ${unit}/day</strong>
                     (~${perWeek.toFixed(1)} ${unit}/week) for the next ${daysLeft} day${daysLeft === 1 ? '' : 's'} to hit this deadline.
                 </div>
             `;
+
+            // ── Stage pace: only when a predecessor goal is selected ──
+            // Uses the PREVIOUS goal's deadline (not today) as the start of
+            // the window, and only the INCREMENTAL target beyond the
+            // previous goal's target — so it reflects the true intensity of
+            // just this stage, not a blend with every stage before it.
+            if (chainFromId && stageHintEl) {
+                const prevGoal = goals.find(g => g.id === chainFromId);
+                if (prevGoal) {
+                    const marginalTarget = targetVal - (prevGoal.target || 0);
+                    if (marginalTarget <= 0) {
+                        stageHintEl.style.display = 'block';
+                        stageHintEl.className = 'goal-pace-hint pace-warning';
+                        stageHintEl.innerHTML = `⚠️ <strong>Target must be greater than "${escapeHtml(prevGoal.title)}"'s target (${prevGoal.target} ${unit})</strong> for a chained goal — it should represent cumulative progress.`;
+                    } else {
+                        const prevDeadlineEnd = prevGoal.deadline ? getVietnamDeadlineEnd(prevGoal.deadline) : now;
+                        const stageStart = prevDeadlineEnd > now ? prevDeadlineEnd : now; // if predecessor's deadline already passed, stage starts today
+                        const stageMsLeft = deadlineEnd - stageStart;
+                        if (stageMsLeft <= 0) {
+                            stageHintEl.style.display = 'block';
+                            stageHintEl.className = 'goal-pace-hint pace-warning';
+                            stageHintEl.innerHTML = `⚠️ <strong>This deadline is before "${escapeHtml(prevGoal.title)}"'s deadline</strong> — a chained goal's deadline should come after the goal it continues from.`;
+                        } else {
+                            const stageDays = Math.max(1, Math.ceil(stageMsLeft / (24 * 60 * 60 * 1000)));
+                            const stagePerDay = marginalTarget / stageDays;
+                            const stagePerWeek = stagePerDay * 7;
+                            let stageTone = 'pace-ok';
+                            let stageLabel = '✅ Comfortable stage pace';
+                            if (stagePerDay >= warnCutoff) {
+                                stageTone = 'pace-warning';
+                                stageLabel = "⚠️ This stage is intense — consider more time before this deadline";
+                            } else if (stagePerDay >= ambitiousCutoff) {
+                                stageTone = 'pace-ambitious';
+                                stageLabel = '💪 Ambitious but doable — this stage';
+                            }
+                            stageHintEl.style.display = 'block';
+                            stageHintEl.className = `goal-pace-hint ${stageTone}`;
+                            stageHintEl.innerHTML = `
+                                <div class="goal-pace-headline">${stageLabel} <span style="font-weight:400; opacity:0.75;">(this stage only)</span></div>
+                                <div class="goal-pace-numbers">
+                                    → Since "${escapeHtml(prevGoal.title)}" (${prevGoal.deadline ? formatDate(prevGoal.deadline) : 'no deadline'}): <strong>~${stagePerDay.toFixed(1)} ${unit}/day</strong>
+                                    (~${stagePerWeek.toFixed(1)} ${unit}/week) for ${stageDays} day${stageDays === 1 ? '' : 's'} — this is the real intensity for THIS stage, not the blended average above.
+                                </div>
+                            `;
+                        }
+                    }
+                }
+            }
         }
 
         document.addEventListener('DOMContentLoaded', function() {
             const targetInput = document.getElementById('goalTarget');
             const deadlineInput = document.getElementById('goalDeadline');
+            const chainFromSelect = document.getElementById('goalChainFrom');
             if (targetInput) targetInput.addEventListener('input', updateGoalPaceHint);
             if (deadlineInput) deadlineInput.addEventListener('input', updateGoalPaceHint);
+            if (chainFromSelect) chainFromSelect.addEventListener('change', updateGoalPaceHint);
             const customUnitInput = document.getElementById('goalCustomUnit');
             if (customUnitInput) {
                 customUnitInput.addEventListener('input', function() {
@@ -38606,6 +38868,29 @@ window.DBP={
                 });
             }
         });
+
+        // Computes the marginal pace for a chained goal's own stage — using
+        // the predecessor's deadline (not today) as the start of the window,
+        // and only the incremental target beyond the predecessor's target.
+        // Returns null when the goal isn't chained, the chain is broken
+        // (predecessor deleted), or the chain data is invalid (target/date
+        // out of order), so the card simply omits the stage line.
+        function getGoalChainStage(goal) {
+            if (!goal.chainsFrom || !goal.deadline) return null;
+            const prevGoal = goals.find(g => g.id === goal.chainsFrom);
+            if (!prevGoal) return null;
+            const marginalTarget = goal.target - (prevGoal.target || 0);
+            if (marginalTarget <= 0) return null;
+            const now = getVietnamNow();
+            const deadlineEnd = getVietnamDeadlineEnd(goal.deadline);
+            const prevDeadlineEnd = prevGoal.deadline ? getVietnamDeadlineEnd(prevGoal.deadline) : now;
+            const stageStart = prevDeadlineEnd > now ? prevDeadlineEnd : now;
+            const msLeft = deadlineEnd - stageStart;
+            if (msLeft <= 0) return null;
+            const days = Math.max(1, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+            const perDay = marginalTarget / days;
+            return { prevGoal, marginalTarget, days, perDay, perWeek: perDay * 7 };
+        }
 
         // Render Individual Goal Card with Enhanced Visuals
         function renderGoalCard(goal, status, progressPercent, forecast) {
@@ -38648,6 +38933,8 @@ window.DBP={
                 : 'No deadline';
             
             const deadlineModifier = (status === 'overdue' || status === 'soon') ? status : '';
+            const unit = goal.type === 'custom' ? (goal.customUnit || 'items') : 'hours';
+            const chainStage = getGoalChainStage(goal);
             
             return `
                 <div class="goal-item" data-id="${goal.id}" style="border-left-color: ${config.borderColor};">
@@ -38662,6 +38949,7 @@ window.DBP={
                             <div class="goal-priority-badge priority-${priority}">
                                 <span class="goal-priority-dot"></span> ${priorityLabels[priority]} priority
                             </div>
+                            ${renderGoalStreakBadge(goal)}
                         </div>
                         <span class="goal-status-badge ${status}">${config.badge}</span>
                     </div>
@@ -38674,6 +38962,18 @@ window.DBP={
                     <div class="goal-progress-container">
                         <div class="goal-progress-fill ${status === 'completed' ? 'completed' : ''}" style="width: ${Math.min(100, progressPercent)}%;"></div>
                     </div>
+                    ${renderGoalMilestoneTrack(goal, progressPercent)}
+
+                    <!-- Chain stage pace — only for goals with a valid "Continues
+                         From" link. Shows the real per-day intensity for THIS
+                         stage's window, not a blended average since day one. -->
+                    ${chainStage && status !== 'completed' ? `
+                        <div class="goal-chain-stage">
+                            <i class="fa-solid fa-link"></i> <strong>This stage:</strong>
+                            ~${chainStage.perDay.toFixed(1)} ${unit}/day (~${chainStage.perWeek.toFixed(1)}/week) for ${chainStage.days} day${chainStage.days === 1 ? '' : 's'}
+                            <span style="opacity:0.75;"> — since "${escapeHtml(chainStage.prevGoal.title)}"</span>
+                        </div>
+                    ` : ''}
                     
                     <!-- Forecast Section -->
                     ${forecast && status !== 'completed' ? `
@@ -39601,6 +39901,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const priority = document.getElementById('goalPriority').value || 'medium';
             const why = document.getElementById('goalWhy').value.trim() || undefined;
             const customUnit = type === 'custom' ? getGoalUnitLabel('custom') : undefined;
+            const chainsFrom = document.getElementById('goalChainFrom')?.value || undefined;
 
             // --- Validate step by step, in the order the fields appear ---
             if (!title) {
@@ -39636,6 +39937,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
+            // Chained-goal sanity checks: target must be cumulative (greater
+            // than the predecessor's), and this deadline must come after it.
+            if (chainsFrom) {
+                const prevGoal = goals.find(g => g.id === chainsFrom);
+                if (prevGoal) {
+                    if (target <= prevGoal.target) {
+                        showGoalFormError(`Target must be greater than "${prevGoal.title}"'s target (${prevGoal.target}) since chained goals track cumulative progress.`);
+                        document.getElementById('goalTarget').focus();
+                        return;
+                    }
+                    if (deadline && prevGoal.deadline && getVietnamDeadlineEnd(deadline) <= getVietnamDeadlineEnd(prevGoal.deadline)) {
+                        showGoalFormError(`This goal's deadline must be after "${prevGoal.title}"'s deadline.`);
+                        document.getElementById('goalDeadline').focus();
+                        return;
+                    }
+                }
+            }
+
             if (id) {
                 const goalIndex = goals.findIndex(g => g.id === id);
                 if (goalIndex !== -1) {
@@ -39649,6 +39968,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         priority,
                         why,
                         customUnit,
+                        chainsFrom,
                         manuallyUpdated: false 
                     };
                     showNotification('Goal updated successfully!', 'success');
@@ -39665,6 +39985,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     priority,
                     why,
                     customUnit,
+                    chainsFrom,
                     currentProgress: 0,
                     manuallyUpdated: false,
                     createdAt: new Date().toISOString()
