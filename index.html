@@ -45632,7 +45632,9 @@ function getAverageByWeekday(bedtimes, isWeekend) {
         const filtered = bedtimes.filter(b => b.isWeekend === isWeekend);
         if (filtered.length === 0) return 'N/A';
         
-        const avgDecimal = filtered.reduce((sum, t) => sum + t.hour + (t.minute / 60), 0) / filtered.length;
+        // BUG FIX: raw hour+minute/60 averaging breaks across midnight (see
+        // toBedtimeDecimal for why); use the shifted decimal instead.
+        const avgDecimal = filtered.reduce((sum, t) => sum + toBedtimeDecimal(t.hour, t.minute), 0) / filtered.length;
         return formatTimeFromDecimal(avgDecimal);
     } catch (error) {
         console.error('Error in getAverageByWeekday:', error);
@@ -45644,9 +45646,8 @@ function calculateStudyStreak() {
     if (!dailyStudyData || Object.keys(dailyStudyData).length === 0) return 0;
     
     try {
-        const dates = Object.keys(dailyStudyData)
-            .filter(date => dailyStudyData[date] > 0)
-            .sort();
+        const dates = sortStudyDateKeys(Object.keys(dailyStudyData)
+            .filter(date => dailyStudyData[date] > 0));
         
         if (dates.length === 0) return 0;
         
@@ -45685,7 +45686,7 @@ function calculateMissedStudyDays(studyDays) {
     if (!studyDays || studyDays.length < 2) return 0;
     
     try {
-        const sorted = [...studyDays].sort();
+        const sorted = sortStudyDateKeys(studyDays);
         const start = new Date(sorted[0]);
         const end = new Date(sorted[sorted.length - 1]);
         const totalDays = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
@@ -45863,7 +45864,7 @@ function analyzeWeeklyStudyTrend(studyDays, dailyData) {
     }
     
     try {
-        const sortedDays = [...studyDays].sort();
+        const sortedDays = sortStudyDateKeys(studyDays);
         const recentDays = sortedDays.slice(-7);
         const previousDays = sortedDays.slice(-14, -7);
         
@@ -45894,7 +45895,7 @@ function calculateMonthlyGrowth(studyDays, dailyData) {
     }
     
     try {
-        const sortedDays = [...studyDays].sort();
+        const sortedDays = sortStudyDateKeys(studyDays);
         const recentMonth = sortedDays.slice(-30);
         const previousMonth = sortedDays.slice(-60, -30);
         
@@ -46526,8 +46527,7 @@ function assessBurnoutRisk() {
         let riskScore = 0;
         
         if (dailyStudyData) {
-            const recentDays = Object.keys(dailyStudyData)
-                .sort()
+            const recentDays = sortStudyDateKeys(Object.keys(dailyStudyData))
                 .slice(-7);
             
             const recentHours = recentDays.map(d => dailyStudyData[d] || 0);
@@ -46543,7 +46543,7 @@ function assessBurnoutRisk() {
         }
         
         if (sleepSessions && sleepSessions.length >= 7) {
-            const recentSleep = sleepSessions.slice(-7);
+            const recentSleep = getSortedSleepSessions().slice(-7);
             const avgSleep = recentSleep.reduce((sum, s) => sum + (s.duration || 0), 0) / recentSleep.length;
             const consistency = calculateConsistencyScore(recentSleep.map(s => s.duration || 0));
             
@@ -46571,8 +46571,7 @@ function assessBurnoutRisk() {
         }
         
         if (dailyStudyData) {
-            const recentDays = Object.keys(dailyStudyData)
-                .sort()
+            const recentDays = sortStudyDateKeys(Object.keys(dailyStudyData))
                 .slice(-7);
             
             const hasBreakDay = recentDays.some(d => (dailyStudyData[d] || 0) < 2);
@@ -46637,7 +46636,7 @@ function identifyTimeWasters() {
     try {
 
         if (sleepSessions && sleepSessions.length >= 7) {
-            const durations = sleepSessions.slice(-7).map(s => s.duration || 0);
+            const durations = getSortedSleepSessions().slice(-7).map(s => s.duration || 0);
             const consistency = calculateConsistencyScore(durations);
             
             if (consistency < 60) {
@@ -46651,7 +46650,7 @@ function identifyTimeWasters() {
         }
 
         if (dailyStudyData) {
-            const days = Object.keys(dailyStudyData).sort();
+            const days = sortStudyDateKeys(Object.keys(dailyStudyData));
             const missedDays = calculateMissedStudyDays(days);
             
             if (missedDays > 2) {
@@ -46688,7 +46687,7 @@ function calculateOptimizationPotential() {
         let potential = 0;
         const factors = [];
         if (sleepSessions && sleepSessions.length >= 7) {
-            const durations = sleepSessions.slice(-7).map(s => s.duration || 0);
+            const durations = getSortedSleepSessions().slice(-7).map(s => s.duration || 0);
             const consistency = calculateConsistencyScore(durations);
             
             if (consistency < 70) {
@@ -46934,7 +46933,7 @@ function analyzeEfficiencyTrend() {
     // Compare avg study hours last 7 days vs prior 7 days
     try {
         if (!dailyStudyData) return 'stable';
-        const sortedDays = Object.keys(dailyStudyData).sort();
+        const sortedDays = sortStudyDateKeys(Object.keys(dailyStudyData));
         if (sortedDays.length < 7) return 'insufficient_data';
 
         const recent = sortedDays.slice(-7);
@@ -47007,7 +47006,7 @@ function suggestSystemicImprovements() {
         const suggestions = [];
 
         if (sleepSessions && sleepSessions.length >= 5) {
-            const durations = sleepSessions.slice(-7).map(s => s.duration || 0);
+            const durations = getSortedSleepSessions().slice(-7).map(s => s.duration || 0);
             const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
             const consistency = calculateConsistencyScore(durations);
             if (consistency < 65) suggestions.push('Stabilise bedtime — your sleep duration varies significantly night to night');
@@ -47020,7 +47019,7 @@ function suggestSystemicImprovements() {
                 const consistency = calculateConsistencyScore(hours);
                 if (consistency < 60) suggestions.push('Build a fixed daily study block — your hours fluctuate too much week to week');
             }
-            const recentDays = Object.keys(dailyStudyData).sort().slice(-7);
+            const recentDays = sortStudyDateKeys(Object.keys(dailyStudyData)).slice(-7);
             const hasBreak = recentDays.some(d => (dailyStudyData[d] || 0) < 1);
             if (!hasBreak) suggestions.push('Schedule at least one low-intensity day per week to prevent burnout');
         }
@@ -47044,7 +47043,7 @@ function calculateSustainabilityScore() {
         let score = 100;
 
         if (dailyStudyData) {
-            const recentHours = Object.keys(dailyStudyData).sort().slice(-7)
+            const recentHours = sortStudyDateKeys(Object.keys(dailyStudyData)).slice(-7)
                 .map(d => dailyStudyData[d] || 0);
             if (recentHours.length > 0) {
                 const avg = recentHours.reduce((a, b) => a + b, 0) / recentHours.length;
@@ -47061,7 +47060,7 @@ function calculateSustainabilityScore() {
         }
 
         if (sleepSessions && sleepSessions.length >= 5) {
-            const recentSleep = sleepSessions.slice(-7).map(s => s.duration || 0);
+            const recentSleep = getSortedSleepSessions().slice(-7).map(s => s.duration || 0);
             const avgSleep = recentSleep.reduce((a, b) => a + b, 0) / recentSleep.length;
             if (avgSleep < 5.5) score -= 25;
             else if (avgSleep < 6.5) score -= 10;
@@ -47525,9 +47524,42 @@ function getConfidenceColor(confidence) {
 
 
 
+        // ===== Shared helpers for Pattern Detection =====
+        // BUG FIX: dailyStudyData is keyed by Date.toDateString() (e.g. "Wed Aug 27
+        // 2026"). Plain array.sort() sorts these alphabetically by weekday name first
+        // ("Fri ..." < "Mon ..." < "Sat ..." < "Sun ..." < "Thu ..." < "Tue ..." <
+        // "Wed ..."), which is NOT chronological order. Every pattern-detection helper
+        // that sorted these keys with a bare .sort() was silently picking the wrong
+        // "last 7 days" / "first/last day" once the tracked range spanned more than a
+        // few different weekdays (i.e. almost immediately). Use this everywhere a
+        // dailyStudyData key list needs to be in date order.
+        function sortStudyDateKeys(keys) {
+            return [...(keys || [])].sort((a, b) => new Date(a) - new Date(b));
+        }
+
+        // BUG FIX: bedtimes cluster around midnight (e.g. 23:30 one night, 00:15 the
+        // next), so averaging/measuring spread on raw "hour + minute/60" values is
+        // wrong — 23.5 and 0.25 average to ~11.9 (midday!) instead of ~23.9 (just
+        // before midnight). This shifts any clock time before noon onto the same
+        // continuous timeline as the evening before (adding 24h), so bedtimes that
+        // are actually close together in real time stay numerically close together.
+        // Pair with formatTimeFromDecimal(), which wraps back to a normal 0-23h
+        // clock for display.
+        function toBedtimeDecimal(hour, minute) {
+            const decimal = hour + (minute / 60);
+            return decimal < 12 ? decimal + 24 : decimal;
+        }
+
         function detectSleepPatterns() {
             window._detectSleepPatterns = window._detectSleepPatterns || detectSleepPatterns; // expose before override
             if (sleepSessions.length < 5) return { insufficientData: true };
+            
+            // BUG FIX: sleepSessions is stored in insertion order (whenever a session
+            // was logged/edited/imported), not necessarily chronological order. Using
+            // the raw array for "last 14 nights" slices and night-to-night interval
+            // checks silently compared the wrong nights whenever an entry was logged
+            // out of order. Sort once, up front, and use this everywhere below.
+            const sortedSessions = getSortedSleepSessions();
             
             const patterns = {
                 consistency: {},
@@ -47537,7 +47569,7 @@ function getConfidenceColor(confidence) {
             };
             
             try {
-                const durations = sleepSessions.map(s => s.duration);
+                const durations = sortedSessions.map(s => s.duration);
                 const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
                 const minDuration = Math.min(...durations);
                 const maxDuration = Math.max(...durations);
@@ -47548,10 +47580,10 @@ function getConfidenceColor(confidence) {
                     maxDuration: parseFloat(maxDuration.toFixed(1)),
                     consistencyScore: calculateConsistencyScore(durations),
                     stdDev: calculateStandardDeviation(durations),
-                    cv: (calculateStandardDeviation(durations) / avgDuration) * 100 
+                    cv: avgDuration > 0 ? (calculateStandardDeviation(durations) / avgDuration) * 100 : 0
                 };
                 
-                const bedtimes = sleepSessions.map(s => {
+                const bedtimes = sortedSessions.map(s => {
                     const start = new Date(s.start);
                     return {
                         hour: start.getHours(),
@@ -47561,20 +47593,26 @@ function getConfidenceColor(confidence) {
                     };
                 });
                 
-                const avgBedtimeHour = bedtimes.reduce((sum, t) => sum + t.hour + (t.minute / 60), 0) / bedtimes.length;
+                // BUG FIX: was `t.hour + t.minute/60` (raw clock hour), which breaks
+                // once bedtimes straddle midnight — see toBedtimeDecimal() above.
+                const avgBedtimeDecimal = bedtimes.reduce((sum, t) => sum + toBedtimeDecimal(t.hour, t.minute), 0) / bedtimes.length;
                 patterns.timing = {
-                    avgBedtime: formatTimeFromDecimal(avgBedtimeHour),
+                    avgBedtime: formatTimeFromDecimal(avgBedtimeDecimal),
                     bedtimeRange: getBedtimeRange(bedtimes),
                     weekdayBedtime: getAverageByWeekday(bedtimes, false),
                     weekendBedtime: getAverageByWeekday(bedtimes, true),
-                    bedtimeConsistency: calculateTimeConsistency(bedtimes.map(b => b.hour * 60 + b.minute))
+                    bedtimeConsistency: calculateTimeConsistency(bedtimes.map(b => toBedtimeDecimal(b.hour, b.minute) * 60))
                 };
                 
-                const qualityScores = sleepSessions.map(s => {
+                const qualityScores = sortedSessions.map(s => {
                     let score = 0;
                     if (s.duration >= 7 && s.duration <= 9) score += 40; 
                     const bedtime = new Date(s.start).getHours();
-                    if (bedtime >= 22 && bedtime <= 24) score += 30; 
+                    // BUG FIX: `bedtime >= 22 && bedtime <= 24` was unreachable above 23
+                    // (getHours() never returns 24) AND missed every after-midnight
+                    // bedtime (00:xx/01:xx), which is just as "on time" as 23:xx for
+                    // most schedules. Treat 22:00–01:59 as the on-time window.
+                    if (bedtime >= 22 || bedtime < 2) score += 30; 
                     if (!s.manual) score += 30; 
                     return score;
                 });
@@ -47582,15 +47620,15 @@ function getConfidenceColor(confidence) {
                 patterns.quality = {
                     avgQualityScore: Math.round(qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length),
                     qualityDistribution: getScoreDistribution(qualityScores),
-                    optimalSleepDays: sleepSessions.filter(s => s.duration >= 7 && s.duration <= 9).length,
-                    poorSleepDays: sleepSessions.filter(s => s.duration < 6 || s.duration > 10).length
+                    optimalSleepDays: sortedSessions.filter(s => s.duration >= 7 && s.duration <= 9).length,
+                    poorSleepDays: sortedSessions.filter(s => s.duration < 6 || s.duration > 10).length
                 };
 
-                patterns.anomalies = detectSleepAnomalies(sleepSessions);
+                patterns.anomalies = detectSleepAnomalies(sortedSessions);
 
-                patterns.weeklyTrend = analyzeWeeklyTrend(sleepSessions);
+                patterns.weeklyTrend = analyzeWeeklyTrend(sortedSessions);
 
-                patterns.improvement = detectImprovementTrend(sleepSessions.slice(-14)); // Last 2 weeks
+                patterns.improvement = detectImprovementTrend(sortedSessions.slice(-14)); // Last 2 weeks
                 
             } catch (error) {
                 console.error('Error detecting sleep patterns:', error);
@@ -47601,7 +47639,11 @@ function getConfidenceColor(confidence) {
         }
 
         function detectStudyPatterns() {
-            const studyDays = Object.keys(dailyStudyData || {});
+            // BUG FIX: was raw Object.keys() insertion order. Sort explicitly and
+            // chronologically (see sortStudyDateKeys) so studyDays[0]/[last] below,
+            // and everything passed downstream, are genuinely first/last by date —
+            // not just first/last logged, which breaks after any import or edit.
+            const studyDays = sortStudyDateKeys(Object.keys(dailyStudyData || {}));
             if (studyDays.length < 5) return { insufficientData: true };
             
             const patterns = {
@@ -47863,7 +47905,11 @@ function getConfidenceColor(confidence) {
         }
 
         function getBedtimeRange(bedtimes) {
-            const times = bedtimes.map(b => b.hour * 60 + b.minute);
+            // BUG FIX: raw "hour*60+minute" breaks near midnight — a 23:50 bedtime
+            // (1430 min) and a 00:10 bedtime (10 min) are 20 minutes apart in real
+            // life but ~23.7h apart by this math. Use the midnight-aware decimal so
+            // the earliest/latest/range reflect actual elapsed time.
+            const times = bedtimes.map(b => toBedtimeDecimal(b.hour, b.minute) * 60);
             const minTime = Math.min(...times);
             const maxTime = Math.max(...times);
             return {
@@ -50423,8 +50469,11 @@ function hasLowQualityIndicators(session) {
 }
 
 function formatTimeFromDecimal(decimal) {
-    const hour = Math.floor(decimal);
-    const minute = Math.round((decimal - hour) * 60);
+    // Callers may pass a midnight-shifted decimal (e.g. 25.5 for 01:30, see
+    // toBedtimeDecimal) so bedtimes spanning midnight average/compare correctly.
+    // Wrap back onto a normal 0-23h clock for display.
+    const hour = Math.floor(decimal) % 24;
+    const minute = Math.round((decimal - Math.floor(decimal)) * 60);
     return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 }
 
@@ -50630,7 +50679,8 @@ function checkRecoveryIndicators(data = {}) {
         const now = new Date();
         
         // Check sleep quality improvement
-        const sleepSessions = data.sleepSessions || window.sleepSessions || [];
+        const sleepSessions = [...(data.sleepSessions || window.sleepSessions || [])]
+            .sort((a, b) => a.start - b.start); // chronological, not insertion order
         if (sleepSessions.length >= 4) {
             const recentSleep = sleepSessions.slice(-3);
             const olderSleep = sleepSessions.slice(-6, -3);
