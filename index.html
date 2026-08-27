@@ -41076,6 +41076,56 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push(`Sleep goal: ${goal}h/night`);
             lines.push(`Regularity Index (7 nights, max SD of bed/wake time): ${reg ? Math.round(reg.score) + ' min (lower = more consistent)' : 'not enough data yet'}`);
 
+            // ── INSOMNIA PATTERN ANALYSIS ──
+            // Reuses the app's own analyzeInsomniaPatterns() engine (same numbers
+            // shown in the Insomnia Pattern Analysis card) so the AI gets the
+            // already-computed severity/type/cognitive-efficiency read, not just
+            // raw durations.
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('🌙 INSOMNIA PATTERN ANALYSIS');
+            lines.push(DIV);
+
+            const insomnia = (typeof analyzeInsomniaPatterns === 'function') ? analyzeInsomniaPatterns() : null;
+            if (!insomnia || insomnia.error) {
+                lines.push(`  ${insomnia?.message === 'Need at least 5 sleep sessions for analysis' ? 'Not enough sessions yet (need ≥5 logged nights) for insomnia analysis.' : 'Insomnia analysis unavailable.'}`);
+            } else {
+                lines.push(`All-nighter / extended-wake risk: ${insomnia.insomniaRisk}`);
+
+                if (insomnia.insomniaType) {
+                    lines.push(`Primary pattern: ${insomnia.insomniaType.primaryType} — ${insomnia.insomniaType.description}`);
+                    const p = insomnia.insomniaType.percentages || {};
+                    lines.push(`  Breakdown: sleep-onset ${p.sleepOnset}% · maintenance (frequent wake-ups) ${p.maintenance}% · early awakening ${p.earlyAwakening}% · non-restorative ${p.nonRestorative}%`);
+                }
+
+                if (insomnia.insomniaSeverity) {
+                    const sev = insomnia.insomniaSeverity;
+                    lines.push(`Severity: ${sev.severityLevel} (score ${sev.severityScore}/100) — ${sev.interpretation}`);
+                    lines.push(`  Suggested action (from app): ${sev.suggestedAction}`);
+                }
+
+                if (insomnia.cognitiveEfficiency) {
+                    const eff = insomnia.cognitiveEfficiency;
+                    lines.push(`Estimated learning efficiency right now: ${eff.efficiencyPercentage}% (${eff.efficiencyLevel})`);
+                    if (eff.studyROI && eff.studyROI.totalStudyHours > 0) {
+                        lines.push(`  Study ROI: of ${eff.studyROI.totalStudyHours}h logged studying, only ~${eff.studyROI.effectiveStudyHours}h was likely effective (${eff.studyROI.wastePercentage}% estimated wasted due to poor sleep)`);
+                    }
+                }
+
+                if (insomnia.recoveryPatterns && !insomnia.recoveryPatterns.insufficientData) {
+                    const rec = insomnia.recoveryPatterns;
+                    lines.push(`Cumulative sleep debt: ${rec.cumulativeDebt}h (avg ${rec.averageSleepDebt}h/day)`);
+                }
+
+                if (insomnia.recommendations && insomnia.recommendations.length > 0) {
+                    lines.push('  Top app-generated recommendations:');
+                    insomnia.recommendations.slice(0, 3).forEach(r => {
+                        lines.push(`   - [${r.priority}] ${r.action} — ${r.rationale}`);
+                    });
+                }
+            }
+
             // ── RECENT SLEEP SESSIONS ──
             lines.push('');
             lines.push(SEP);
@@ -41151,9 +41201,11 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push(DIV);
             lines.push('"Above is my sleep log for the last 14 nights (duration, debt vs. my');
             lines.push('sleep goal, sleep efficiency, quality rating, and any tags/notes I');
-            lines.push('logged), alongside the study hours I logged on those same days. I work');
-            lines.push('a full-time job and study on top of it, so my schedule is tight and my');
-            lines.push('sleep is often irregular or cut short.');
+            lines.push('logged), plus the app\'s own Insomnia Pattern Analysis (risk level,');
+            lines.push('primary insomnia type, severity, estimated learning efficiency, and');
+            lines.push('sleep debt), alongside the study hours I logged on those same days. I');
+            lines.push('work a full-time job and study on top of it, so my schedule is tight');
+            lines.push('and my sleep is often irregular or cut short.');
             lines.push('');
             lines.push('When I don\'t get enough sleep, studying feels doubly costly — I still');
             lines.push('spend the time, but my brain is too tired to actually absorb anything,');
@@ -41162,23 +41214,27 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('study, and at what time, given how I slept.');
             lines.push('');
             lines.push('Please:');
-            lines.push(' 1) Look for a pattern between my sleep (duration, debt, SE, quality,');
+            lines.push(' 1) Look at the Insomnia Pattern Analysis above (type, severity,');
+            lines.push('    estimated learning efficiency) and tell me plainly what it means in');
+            lines.push('    practice — is this occasional bad luck or a real pattern I should');
+            lines.push('    treat seriously?');
+            lines.push(' 2) Look for a pattern between my sleep (duration, debt, SE, quality,');
             lines.push('    regularity) and how much I actually studied on the following day —');
             lines.push('    tell me plainly if poor sleep is visibly costing me study output.');
-            lines.push(' 2) Flag which nights or patterns (e.g. short sleep, low SE, late');
+            lines.push(' 3) Flag which nights or patterns (e.g. short sleep, low SE, late');
             lines.push('    caffeine/alcohol/screen tags, irregular bed/wake times) look most');
             lines.push('    responsible for bad days, so I know what to fix first.');
-            lines.push(' 3) Give me a simple rule of thumb for deciding, each morning, what');
+            lines.push(' 4) Give me a simple rule of thumb for deciding, each morning, what');
             lines.push('    kind of study task fits how I slept — e.g. after a short or');
             lines.push('    low-quality night, suggest lighter/lower-stakes tasks (review,');
             lines.push('    flashcards, light reading) over the hardest, most demanding ones');
             lines.push('    (new concepts, problem sets, deep focus work), and tell me when it');
             lines.push('    genuinely makes more sense to rest or do a short nap instead of');
             lines.push('    pushing through a study session that won\'t stick anyway.');
-            lines.push(' 4) Suggest what a realistic recovery plan looks like if I\'m carrying');
+            lines.push(' 5) Suggest what a realistic recovery plan looks like if I\'m carrying');
             lines.push('    sleep debt right now — how many nights of better sleep I likely');
             lines.push('    need before pushing hard on studying again makes sense.');
-            lines.push(' 5) If my sleep is genuinely too irregular or too short across most of');
+            lines.push(' 6) If my sleep is genuinely too irregular or too short across most of');
             lines.push('    these nights, say so directly and prioritize a sleep-schedule fix');
             lines.push('    over a study-schedule fix — don\'t just optimize around bad sleep as');
             lines.push('    if it were fixed."');
@@ -53470,353 +53526,6 @@ const optimalSleepHybridCSS = `
         color: #1abc9c;
     }
     
-    /* Insights - From ML version */
-    .insights-section {
-        margin: 32px 0;
-    }
-    
-    .optimal-sleep-hybrid .insight-card {
-        background: linear-gradient(135deg, rgba(var(--os-panel2-rgb), 0.8) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 16px;
-        border-left: 4px solid;
-        transition: all 0.3s ease;
-    }
-    
-    .optimal-sleep-hybrid .insight-card:hover {
-        transform: translateX(4px);
-    }
-    
-    .optimal-sleep-hybrid .insight-card.high {
-        border-left-color: #e74c3c;
-        background: linear-gradient(135deg, rgba(231,76,60, 0.1) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-    }
-    
-    .optimal-sleep-hybrid .insight-card.medium {
-        border-left-color: #f39c12;
-        background: linear-gradient(135deg, rgba(243,156,18, 0.1) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-    }
-    
-    .optimal-sleep-hybrid .insight-card.low {
-        border-left-color: #1abc9c;
-        background: linear-gradient(135deg, rgba(26,188,156, 0.1) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-    }
-    
-    .optimal-sleep-hybrid .insight-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 12px;
-    }
-    
-    .optimal-sleep-hybrid .insight-icon {
-        font-size: 1.8rem;
-    }
-    
-    .optimal-sleep-hybrid .insight-title {
-        font-weight: bold;
-        color: var(--os-text);
-        font-size: 1.1rem;
-    }
-    
-    .optimal-sleep-hybrid .insight-message {
-        color: rgba(var(--os-line-rgb),0.85);
-        line-height: 1.6;
-        font-size: 0.95rem;
-    }
-    
-    /* Schedule - From ML version */
-    .schedule-card {
-        background: linear-gradient(135deg, rgba(var(--os-panel2-rgb), 0.8) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-        border-radius: 12px;
-        padding: 24px;
-        margin-bottom: 20px;
-        border-left: 4px solid;
-        transition: all 0.3s ease;
-    }
-    
-    .schedule-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-    }
-    
-    .schedule-card.p0 {
-        border-left-color: #e74c3c;
-        background: linear-gradient(135deg, rgba(231,76,60, 0.1) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-    }
-    
-    .schedule-card.p1 {
-        border-left-color: #f39c12;
-        background: linear-gradient(135deg, rgba(243,156,18, 0.1) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-    }
-    
-    .schedule-card.p2 {
-        border-left-color: #1abc9c;
-        background: linear-gradient(135deg, rgba(26,188,156, 0.1) 0%, rgba(var(--os-panel-rgb), 0.9) 100%);
-    }
-    
-    .schedule-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 16px;
-        flex-wrap: wrap;
-        gap: 12px;
-    }
-    
-    .schedule-action {
-        font-weight: bold;
-        color: var(--os-text);
-        font-size: 1.2rem;
-    }
-    
-    .schedule-priority {
-        padding: 6px 16px;
-        border-radius: 16px;
-        font-size: 0.8rem;
-        font-weight: bold;
-        color: white;
-        text-transform: uppercase;
-    }
-    
-    .schedule-priority.p0 {
-        background: linear-gradient(135deg, #e74c3c, #c0392b);
-    }
-    
-    .schedule-priority.p1 {
-        background: linear-gradient(135deg, #f39c12, #e67e22);
-    }
-    
-    .schedule-priority.p2 {
-        background: linear-gradient(135deg, #1abc9c, #16a085);
-    }
-    
-    .schedule-timeframe {
-        font-size: 0.9rem;
-        color: rgba(var(--os-line-rgb),0.7);
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    
-    .schedule-rationale {
-        font-size: 0.95rem;
-        color: rgba(var(--os-line-rgb),0.8);
-        margin-bottom: 16px;
-        line-height: 1.6;
-    }
-    
-    .schedule-steps {
-        margin: 0 0 0 20px;
-        padding: 0;
-        color: rgba(var(--os-line-rgb),0.85);
-        line-height: 1.8;
-    }
-    
-    .schedule-steps li {
-        margin-bottom: 8px;
-        padding-left: 8px;
-    }
-    
-    .schedule-steps li::marker {
-        color: #f472b6;
-        font-weight: bold;
-    }
-    
-    .schedule-impact {
-        margin-top: 16px;
-        padding: 14px;
-        background: linear-gradient(135deg, rgba(26,188,156, 0.15), rgba(26,188,156, 0.05));
-        border-radius: 10px;
-        color: #1abc9c;
-        font-weight: 500;
-        font-size: 0.95rem;
-        border: 1px solid rgba(26,188,156, 0.3);
-    }
-    
-    /* ===== ENHANCED CIRCADIAN TIMELINE (KEEP OLD DESIGN) ===== */
-    .timeline-section {
-        margin: 32px 0;
-    }
-    
-    .circadian-timeline {
-        position: relative;
-        height: 240px;
-        margin: 24px 0;
-        background: linear-gradient(135deg, rgba(var(--os-panel-rgb), 0.95) 0%, rgba(var(--os-panel2-rgb), 0.9) 100%);
-        border-radius: 16px;
-        padding: 24px;
-        border: 2px solid rgba(219,113,175, 0.2);
-        overflow: hidden;
-    }
-    
-    /* Time Axis */
-    .timeline-axis {
-        position: absolute;
-        top: 50%;
-        left: 40px;
-        right: 40px;
-        height: 3px;
-        background: linear-gradient(90deg, 
-            transparent 0%, 
-            rgba(219,113,175, 0.3) 10%, 
-            rgba(219,113,175, 0.6) 50%, 
-            rgba(219,113,175, 0.3) 90%, 
-            transparent 100%
-        );
-        transform: translateY(-50%);
-    }
-    
-    /* Wraps the timeline bars with the exact same inset as .timeline-axis, so a
-       bar's left/width (in %) lines up with the correct point on the axis/markers
-       below instead of being positioned in unrelated, disconnected coordinates. */
-    .timeline-track {
-        position: absolute;
-        top: 0;
-        left: 40px;
-        right: 40px;
-        bottom: 0;
-    }
-    
-    /* Time Markers */
-    .timeline-markers {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 180px;
-        padding: 0 40px;
-        font-size: 0.8rem;
-        color: rgba(var(--os-line-rgb), 0.6);
-        font-weight: 600;
-    }
-    
-    /* Timeline Bars - Enhanced */
-    .timeline-bar {
-        position: absolute;
-        height: 40px;
-        border-radius: 20px;
-        padding: 0 20px;
-        font-size: 0.9rem;
-        display: flex;
-        align-items: center;
-        font-weight: 600;
-        border: 2px solid transparent;
-        transition: all 0.3s ease;
-        min-width: 120px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        backdrop-filter: blur(10px);
-        transform: translateZ(0); /* [FIX] force GPU layer to avoid Chromium backdrop-filter invisible-until-repaint bug */
-    }
-    
-    .timeline-bar:hover {
-        transform: translateX(8px);
-        z-index: 10;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    }
-    
-    /* Enhanced Melatonin Bar — 9:30-11:30 PM = 4.17%-20.83% of the 9PM-9AM axis */
-    .timeline-bar.melatonin { 
-        background: linear-gradient(90deg, rgba(184,146,201, 0.7), rgba(184,146,201, 0.4)); 
-        color: #e2e8f0; 
-        top: 20px; 
-        left: 4.17%; 
-        width: 16.67%; 
-        border: 2px solid rgba(184,146,201, 0.5);
-    }
-    
-    /* Enhanced Deep Sleep Bar — 11PM-3AM = 16.67%-50% of the axis */
-    .timeline-bar.deep-sleep { 
-        background: linear-gradient(90deg, rgba(219,113,175, 0.7), rgba(219,113,175, 0.4)); 
-        color: #e2e8f0; 
-        top: 80px; 
-        left: 16.67%; 
-        width: 33.33%; 
-        border: 2px solid rgba(219,113,175, 0.5);
-    }
-    
-    /* Enhanced REM Sleep Bar — 5AM-7AM = 66.67%-83.33% of the axis */
-    .timeline-bar.rem-sleep { 
-        background: linear-gradient(90deg, rgba(26,188,156, 0.7), rgba(26,188,156, 0.4)); 
-        color: #e2e8f0; 
-        top: 140px; 
-        left: 66.67%; 
-        width: 16.67%; 
-        border: 2px solid rgba(26,188,156, 0.5);
-    }
-    
-    /* Enhanced Your Optimal Bar — left/width are set inline per-user from their
-       actual computed optimal bedtime/duration, not a fixed constant, so this bar
-       genuinely lines up with the reference bands above instead of floating at an
-       arbitrary, unrelated spot. */
-    .timeline-bar.your-optimal { 
-        background: linear-gradient(90deg, rgba(243,156,18, 0.8), rgba(243,156,18, 0.5)); 
-        color: #fef3c7; 
-        top: 200px; 
-        border: 3px solid #f39c12;
-        box-shadow: 0 6px 20px rgba(243,156,18, 0.4);
-        animation: optimal-pulse 3s infinite;
-        font-weight: 700;
-    }
-    
-    @keyframes optimal-pulse {
-        0%, 100% { box-shadow: 0 6px 20px rgba(243,156,18, 0.4); }
-        50% { box-shadow: 0 6px 30px rgba(243,156,18, 0.7); }
-    }
-    
-    /* Timeline Icons */
-    .timeline-icon {
-        margin-right: 10px;
-        font-size: 1.2rem;
-    }
-    
-    /* Alignment Score Box */
-    .alignment-score-box {
-        position: absolute;
-        right: 30px;
-        top: 30px;
-        background: linear-gradient(135deg, rgba(26,188,156, 0.15), rgba(26,188,156, 0.05));
-        border-radius: 12px;
-        padding: 20px;
-        border: 2px solid rgba(26,188,156, 0.3);
-        text-align: center;
-        min-width: 160px;
-        box-shadow: 0 4px 16px rgba(26,188,156, 0.2);
-        backdrop-filter: blur(10px);
-        transform: translateZ(0); /* [FIX] force GPU layer to avoid Chromium backdrop-filter invisible-until-repaint bug */
-    }
-    
-    .alignment-score-value {
-        font-size: 2.2rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #1abc9c, #16a085);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin-bottom: 5px;
-    }
-    
-    .alignment-score-label {
-        font-size: 0.85rem;
-        color: rgba(var(--os-line-rgb), 0.7);
-        font-weight: 500;
-    }
-    
-    /* Add these badges */
-    .timeline-badge {
-        position: absolute;
-        top: -10px;
-        right: -10px;
-        background: linear-gradient(135deg, #1abc9c, #16a085);
-        color: white;
-        padding: 4px 10px;
-        border-radius: 10px;
-        font-size: 0.7rem;
-        font-weight: bold;
-        box-shadow: 0 3px 10px rgba(26,188,156, 0.4);
-        z-index: 1;
-    }
-    
     .error-state {
         text-align: center;
         padding: 60px 40px;
@@ -53875,50 +53584,9 @@ const optimalSleepHybridCSS = `
         .heatmap-container {
             padding: 16px 12px;
         }
-        
-        .circadian-timeline {
-            height: 280px;
-            padding: 20px;
-        }
-        
-        .timeline-bar {
-            font-size: 0.8rem;
-            padding: 0 15px;
-            min-width: 100px;
-        }
-        
-        .alignment-score-box {
-            position: relative;
-            right: auto;
-            top: auto;
-            margin-top: 20px;
-            margin-left: auto;
-            margin-right: auto;
-            max-width: 200px;
-        }
-        
-        .timeline-markers {
-            padding: 0 20px;
-            font-size: 0.75rem;
-        }
     }
     
     @media (max-width: 480px) {
-        .circadian-timeline {
-            height: 320px;
-            padding: 15px;
-        }
-        
-        .timeline-bar {
-            font-size: 0.75rem;
-            height: 35px;
-        }
-        
-        .timeline-bar.melatonin { top: 30px; }
-        .timeline-bar.deep-sleep { top: 90px; }
-        .timeline-bar.rem-sleep { top: 150px; }
-        .timeline-bar.your-optimal { top: 210px; }
-        
         .heatmap-cell {
             font-size: 0.65rem;
         }
@@ -55172,109 +54840,6 @@ function renderOptimalSleepWindow() {
                 </div>
             </div>
 
-            <!-- Circadian Timeline -->
-            <div class="timeline-section">
-                <div class="section-title">🌙 Circadian Rhythm Alignment</div>
-                <div class="circadian-timeline">
-                    <!-- Time Axis -->
-                    <div class="timeline-axis"></div>
-                    
-                    <!-- Timeline Bars -->
-                    <div class="timeline-track">
-                    <div class="timeline-bar melatonin">
-                        <span class="timeline-icon">🌜</span>
-                        Melatonin Window (9:30-11:30 PM)
-                        <div class="timeline-badge">Peak</div>
-                    </div>
-                    
-                    <div class="timeline-bar deep-sleep">
-                        <span class="timeline-icon">💤</span>
-                        Deep Sleep Peak (11PM-3AM)
-                        <div class="timeline-badge">Critical</div>
-                    </div>
-                    
-                    <div class="timeline-bar rem-sleep">
-                        <span class="timeline-icon">🌈</span>
-                        REM Sleep Peak (5-7 AM)
-                        <div class="timeline-badge">Essential</div>
-                    </div>
-                    
-                    ${(() => {
-                        const pos = circadianOptimalBarStyle(optimalWindow.stats.avgBedtime, optimalWindow.stats.avgDuration);
-                        return `
-                    <div class="timeline-bar your-optimal" style="left:${pos.left}%; width:${pos.width}%;" title="${formatHour(optimalWindow.stats.avgBedtime)} - ${formatHour(optimalWindow.stats.avgBedtime + optimalWindow.stats.avgDuration)}">
-                        <span class="timeline-icon">🎯</span>
-                        Your Optimal Window
-                        <div class="timeline-badge">${optimalWindow.circadianAlignment}%</div>
-                    </div>`;
-                    })()}
-                    </div>
-                    
-                    <!-- Time Markers -->
-                    <div class="timeline-markers">
-                        <span>9PM</span>
-                        <span>12AM</span>
-                        <span>3AM</span>
-                        <span>6AM</span>
-                        <span>9AM</span>
-                    </div>
-                    
-                    <!-- Alignment Score -->
-                    <div class="alignment-score-box" title="How well your recommended bedtime/wake window overlaps the melatonin, deep-sleep, and REM reference bands above — not the same metric as the 'Circadian Alignment' figure in the Insights section, which measures your actual logged nights instead of the recommendation.">
-                        <div class="alignment-score-value">${optimalWindow.circadianAlignment}%</div>
-                        <div class="alignment-score-label">
-                            ${optimalWindow.circadianAlignment >= 80 ? '✨ Excellent Window Fit' :
-                            optimalWindow.circadianAlignment >= 60 ? '✓ Good Window Fit' :
-                            optimalWindow.circadianAlignment >= 40 ? '⚡ Moderate Window Fit' :
-                            '⚠️ Poor Window Fit'}
-                        </div>
-                        <div style="font-size:0.65rem; opacity:0.75; margin-top:4px; max-width:140px;">vs. melatonin/deep-sleep/REM bands</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Insights -->
-            <div class="insights-section">
-                <div class="section-title">💡 Insights</div>
-                ${insights.map(insight => `
-                    <div class="insight-card ${insight.impact}">
-                        <div class="insight-header">
-                            <span class="insight-icon">${insight.icon}</span>
-                            <span class="insight-title">${insight.title}</span>
-                        </div>
-                        <div class="insight-message">${insight.message}</div>
-                    </div>
-                `).join('')}
-            </div>
-            
-            <!-- Personalized Schedule -->
-            <div style="margin: 32px 0;">
-                <div class="section-title">🚀 Personalized Sleep Schedule</div>
-                ${recommendations.map(rec => `
-                    <div class="schedule-card ${rec.priority.toLowerCase()}">
-                        <div class="schedule-header">
-                            <div class="schedule-action">${rec.action}</div>
-                            <div class="schedule-priority ${rec.priority.toLowerCase()}">${rec.priority}</div>
-                        </div>
-                        <div class="schedule-timeframe">
-                            <span>⏱️</span> ${rec.timeframe}
-                        </div>
-                        <div class="schedule-rationale">${rec.rationale}</div>
-                        <ol class="schedule-steps">
-                            ${rec.steps.map(step => `<li>${step}</li>`).join('')}
-                        </ol>
-                        <div class="schedule-impact">
-                            📈 ${rec.expectedImpact}
-                        </div>
-                        ${rec.scientificBasis ? `
-                            <div style="margin-top: 12px; padding: 10px; background: rgba(var(--os-line-rgb),0.06); border-radius: 8px; font-size: 0.85rem; color: rgba(var(--os-line-rgb),0.7);">
-                                🔬 ${rec.scientificBasis}
-                            </div>
-                        ` : ''}
-                    </div>
-                `).join('')}
-            </div>
-            
             <!-- Stats Footer -->
             <div class="stats-footer">
                 <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
@@ -55617,9 +55182,6 @@ console.log('🔍 Features:');
 console.log('   • 📊 Personalized sleep insights');
 console.log('   • 🎯 Performance Scoring with Study Data');
 console.log('   • 📊 Interactive Efficiency Heatmap');
-console.log('   • 🌙 Circadian Rhythm Alignment');
-console.log('   • 💡 Personalized Insights & Recommendations');
-console.log('   • 🚀 Actionable Sleep Schedule');
 
 
 // ===== FIX: Load Sleep Data & Daily Study Data into Global Variables =====
