@@ -4904,6 +4904,41 @@
             color: #f472b6;
         }
 
+        /* "Copy Book Context for AI" — same soft outline pill treatment as
+           the Goals section's copy button, themed to the Reading List's
+           pink palette instead of the Sakura Mist accent. */
+        #readingListCard .book-context-btn {
+            flex-shrink: 0;
+            width: 40px;
+            padding: 8px 0;
+            background: #ffffff;
+            color: #d17b96;
+            border: 1.5px dashed #d17b96;
+            border-radius: 20px;
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        #readingListCard .book-context-btn:hover {
+            background: rgba(219,113,175,0.1);
+            border-color: #9d2867;
+            color: #9d2867;
+        }
+        .dark-mode #readingListCard .book-context-btn {
+            background: #2a1f2c;
+            border-color: #f9a8d4;
+            color: #f9a8d4;
+        }
+        .dark-mode #readingListCard .book-context-btn:hover {
+            background: rgba(244,114,182,0.12);
+            border-color: #f472b6;
+            color: #f472b6;
+        }
+
         .filter-section, .sort-filter-container { 
             display: none !important; 
         } 
@@ -28122,6 +28157,9 @@ window.DBP={
                     <button class="add-book-btn" onclick="openAddBookModal()">
                         <i class="fas fa-plus"></i> Add
                     </button>
+                    <button class="book-context-btn" onclick="copyBookContextForAI()" title="Copy Book Context for AI" aria-label="Copy Book Context for AI">
+                        <i class="fa-solid fa-clipboard-list"></i>
+                    </button>
                 </div>
 
                 <div class="reading-container" id="readingListContainer">
@@ -39826,6 +39864,168 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.execCommand('copy');
                     document.body.removeChild(ta);
                     showNotification('📋 Goals context copied!', 'success');
+                });
+            };
+            doClipboard(fullText);
+        }
+
+
+        // Scoped clipboard export for the Reading List only — full detail
+        // (status, genre, rating, review, pages, edition, progress) for
+        // every book, so an AI can recommend what to read next from
+        // whatever's actually in the list, without Goals/Study-Hours/Courses
+        // noise. Designed to scale from hundreds to thousands of books:
+        // grouped by status first, then by genre, so the list stays
+        // scannable even as it grows.
+        function copyBookContextForAI() {
+            const lines = [];
+            const SEP = '═'.repeat(52);
+            const DIV = '─'.repeat(52);
+
+            const dateStr = new Date().toLocaleDateString('en-GB', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            });
+
+            const currentRL = JSON.parse(localStorage.getItem('readingList') || '[]');
+
+            lines.push('📚 Reading List — AI Context Snapshot');
+            lines.push(`Generated: ${dateStr}`);
+            lines.push(SEP);
+
+            const rlReading  = currentRL.filter(b => b.status === 'reading');
+            const rlFinished = currentRL.filter(b => b.status === 'finished');
+            const rlWant     = currentRL.filter(b => b.status === 'want');
+
+            lines.push('');
+            lines.push(`${currentRL.length} total  ·  ${rlReading.length} reading  ·  ${rlWant.length} want to read  ·  ${rlFinished.length} finished`);
+
+            // ── helpers ──
+            const starStr = b => {
+                if (b.rating === null || b.rating === undefined || isNaN(b.rating)) return '';
+                const r = Math.round(b.rating * 2) / 2; // round to 0.5
+                const full = Math.floor(r);
+                const half = r % 1 !== 0;
+                return '  ' + '★'.repeat(full) + (half ? '½' : '') + ` (${Number(b.rating).toFixed(1)})`;
+            };
+
+            const fmtBook = b => {
+                const meta = [b.genre || 'Other'];
+                if (b.pages) meta.push(`${b.pages}pp`);
+                if (b.firstPublished) meta.push(String(b.firstPublished));
+                if (b.currentEdition) meta.push(`Ed.${b.currentEdition}`);
+                return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]`;
+            };
+
+            const pushBookFull = b => {
+                lines.push(fmtBook(b) + starStr(b));
+                if (b.status === 'reading' && b.pages && b.currentPage) {
+                    const pct = Math.min(100, Math.round((b.currentPage / b.pages) * 100));
+                    lines.push(`      📖 Progress: page ${b.currentPage} / ${b.pages} (${pct}%)`);
+                }
+                if (b.review && b.review.trim()) {
+                    b.review.trim().split('\n').forEach(line => {
+                        if (line.trim()) lines.push(`      📝 ${line}`);
+                    });
+                }
+            };
+
+            const pushGroupedByGenre = list => {
+                const byGenre = {};
+                list.forEach(b => {
+                    const g = b.genre || 'Other';
+                    if (!byGenre[g]) byGenre[g] = [];
+                    byGenre[g].push(b);
+                });
+                Object.keys(byGenre).sort().forEach(genre => {
+                    lines.push(`  [${genre}]`);
+                    byGenre[genre].forEach(pushBookFull);
+                });
+            };
+
+            // ── Currently Reading ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push(`📖 CURRENTLY READING (${rlReading.length})`);
+            lines.push(DIV);
+            if (rlReading.length > 0) {
+                rlReading.forEach(pushBookFull);
+            } else {
+                lines.push('  Nothing in progress right now.');
+            }
+
+            // ── Want to Read — grouped by genre ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push(`🎯 WANT TO READ (${rlWant.length}) — grouped by genre`);
+            lines.push(DIV);
+            if (rlWant.length > 0) {
+                pushGroupedByGenre(rlWant);
+            } else {
+                lines.push('  Nothing queued up yet.');
+            }
+
+            // ── Finished — grouped by genre ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push(`✅ FINISHED (${rlFinished.length}) — grouped by genre`);
+            lines.push(DIV);
+            if (rlFinished.length > 0) {
+                pushGroupedByGenre(rlFinished);
+            } else {
+                lines.push('  Nothing marked finished yet.');
+            }
+
+            // ── SUGGESTED PROMPT ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('💬 SUGGESTED PROMPT:');
+            lines.push(DIV);
+            lines.push('"Above is my full Reading List (finished, currently reading, and want');
+            lines.push('to read — with genre, rating, and my own review/notes for each book');
+            lines.push('where available). This list will keep growing over time (possibly into');
+            lines.push('the thousands), so don\'t assume it covers everything I might be');
+            lines.push('interested in — just use it to understand my reading taste and current');
+            lines.push('status.');
+            lines.push('');
+            lines.push('Based on the specific context I give you in this message (e.g. my mood');
+            lines.push('today, an upcoming work/study goal, how much free time I have, or a');
+            lines.push('specific question like "what should I read on a flight" / "what pairs');
+            lines.push('well with what I\'m studying for CFA / Equity Research right now" /');
+            lines.push('"recommend something similar to book X that I just enjoyed"), please:');
+            lines.push(' 1) Recommend one book to read next (prefer something already in my');
+            lines.push('    "Want to Read" list if it fits; suggest something outside the list');
+            lines.push('    only if nothing in it fits) — with a short reason tied to the');
+            lines.push('    context I just gave.');
+            lines.push(' 2) Offer 2–3 alternative picks, each with one line explaining how it');
+            lines.push('    differs (easier read / more advanced / different mood).');
+            lines.push(' 3) If I have a book in progress (Currently Reading) that\'s relevant to');
+            lines.push('    my question, flag it and ask whether I should finish that one first');
+            lines.push('    or switch.');
+            lines.push(' 4) If my reviews/notes reveal a clear pattern in my taste (themes,');
+            lines.push('    authors, difficulty level, writing style), briefly name that pattern');
+            lines.push('    and use it to justify the recommendation.');
+            lines.push(' 5) If I haven\'t given any specific context, ask me one short question');
+            lines.push('    first (e.g. looking to unwind or read something demanding?) before');
+            lines.push('    recommending anything, instead of guessing."');
+
+            const fullText = lines.join('\n');
+
+            const doClipboard = text => {
+                navigator.clipboard.writeText(text).then(() => {
+                    showNotification('📋 Book context copied! Paste into Claude or ChatGPT.', 'success');
+                }).catch(() => {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    showNotification('📋 Book context copied!', 'success');
                 });
             };
             doClipboard(fullText);
