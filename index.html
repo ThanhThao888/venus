@@ -23797,7 +23797,7 @@ window.DBP={
                                 <i class="fas fa-plus"></i> Add
                             </button>
 
-                            <button class="goal-context-btn" onclick="copyContextForAI()" title="Copy Context for AI" aria-label="Copy Context for AI">
+                            <button class="goal-context-btn" onclick="copyGoalsContextForAI()" title="Copy Goals Context for AI" aria-label="Copy Goals Context for AI">
                                 <i class="fa-solid fa-clipboard-list"></i>
                             </button>
                         </div>
@@ -39692,7 +39692,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
 
-        function copyContextForAI() {
+        // Scoped clipboard export for Goal-plan-execution prompts only.
+        // Deliberately excludes Reading List and Courses data — those get
+        // their own copy buttons later (copyBookContextForAI / copyCourseContextForAI).
+        function copyGoalsContextForAI() {
             const lines = [];
             const SEP = '═'.repeat(52);
             const DIV = '─'.repeat(52);
@@ -39701,7 +39704,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
             });
 
-            lines.push('📊 Goals Tracker — AI Context Snapshot');
+            lines.push('🎯 Goals Tracker — AI Context Snapshot');
             lines.push(`Generated: ${dateStr}`);
             lines.push(SEP);
 
@@ -39777,91 +39780,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
-            // ── READING LIST ──
-            const currentRL = JSON.parse(localStorage.getItem('readingList') || '[]');
-            lines.push('');
-            lines.push(SEP);
-            lines.push('');
-            lines.push('📚 READING LIST');
-            lines.push(DIV);
-
-            const rlReading  = currentRL.filter(b => b.status === 'reading');
-            const rlFinished = currentRL.filter(b => b.status === 'finished');
-            const rlWant     = currentRL.filter(b => b.status === 'want');
-
-            lines.push(`${rlReading.length} reading · ${rlWant.length} want to read · ${rlFinished.length} finished`);
-
-            // ── helpers ──
-            const starStr = b => {
-                if (!b.rating) return '';
-                const r = Math.round(b.rating * 2) / 2; // round to 0.5
-                const full = Math.floor(r);
-                const half = r % 1 !== 0;
-                return '  ' + '★'.repeat(full) + (half ? '½' : '') + ` (${Number(b.rating).toFixed(1)})`;
-            };
-
-            const fmtBook = b => {
-                const meta = [b.genre];
-                if (b.pages) meta.push(`${b.pages}pp`);
-                if (b.firstPublished) meta.push(String(b.firstPublished));
-                if (b.currentEdition) meta.push(`Ed.${b.currentEdition}`);
-                return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]`;
-            };
-
-            const pushBookFull = b => {
-                lines.push(fmtBook(b) + starStr(b));
-                if (b.review && b.review.trim()) {
-                    b.review.trim().split('\n').forEach(line => {
-                        if (line.trim()) lines.push(`      📝 ${line}`);
-                    });
-                }
-            };
-
-            // ── Currently Reading ──
-            if (rlReading.length > 0) {
-                lines.push('');
-                lines.push('Currently Reading:');
-                rlReading.forEach(pushBookFull);
-            }
-
-            // ── Want to Read — grouped by genre ──
-            if (rlWant.length > 0) {
-                lines.push('');
-                lines.push(`Want to Read — ${rlWant.length} books (grouped by genre):`);
-                const byGenre = {};
-                rlWant.forEach(b => {
-                    const g = b.genre || 'Other';
-                    if (!byGenre[g]) byGenre[g] = [];
-                    byGenre[g].push(b);
-                });
-                Object.keys(byGenre).sort().forEach(genre => {
-                    lines.push(`  [${genre}]`);
-                    byGenre[genre].forEach(pushBookFull);
-                });
-            }
-
-            // ── Finished ──
-            if (rlFinished.length > 0) {
-                lines.push('');
-                lines.push(`Already Finished (${rlFinished.length}):`);
-                rlFinished.forEach(pushBookFull);
-            }
-
-            // ── COURSES ──
-            const allCourses = JSON.parse(localStorage.getItem('courses') || '[]');
-            if (allCourses.length > 0) {
-                lines.push('');
-                lines.push(SEP);
-                lines.push('');
-                lines.push('🎓 COURSES');
-                lines.push(DIV);
-                allCourses.forEach(c => {
-                    const statusStr = c.completed ? '✅ Completed' : (c.hoursStudied > 0 ? '📖 In Progress' : '⏳ Not Started');
-                    const hrsStr = `${(c.hoursStudied || 0).toFixed(1)}h`;
-                    lines.push(`  • ${c.name}  [${statusStr} · ${hrsStr} studied]`);
-                });
-            }
-
             // ── OVERALL ──
             lines.push('');
             lines.push(SEP);
@@ -39882,19 +39800,23 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('');
             lines.push('💬 SUGGESTED PROMPT:');
             lines.push(DIV);
-            lines.push('"Based on my study snapshot above, please:');
-            lines.push(' 1) Suggest a reading order for my Want-to-Read list — from foundational');
-            lines.push('    to advanced, grouped by career relevance (PE, finance, etc.)');
-            lines.push(' 2) Flag any books I should prioritize given my current study hours');
-            lines.push(' 3) Suggest 3–5 specific goals for the next 30 days based on my gaps');
-            lines.push(' 4) Note any skill areas I am neglecting entirely.');
-            lines.push(' 5) Based on my book reviews (📝 notes above), identify patterns in what I respond to intellectually and recommend next reads accordingly."')
+            lines.push('"Based on my goals snapshot above, please:');
+            lines.push(' 1) Flag which active goals are most at risk given their deadline and');
+            lines.push('    current pace (hours logged so far vs. hours still needed).');
+            lines.push(' 2) Suggest a realistic weekly hours allocation across tracks for the');
+            lines.push('    next 30 days that prioritizes at-risk goals without abandoning the rest.');
+            lines.push(' 3) Suggest 3–5 specific, measurable sub-goals or milestones for the next');
+            lines.push('    30 days that would move the needle on my biggest gaps.');
+            lines.push(' 4) Note any goal or track I am neglecting entirely (0 or near-0 hours)');
+            lines.push('    relative to its target and deadline.');
+            lines.push(' 5) If any goals look unrealistic given the deadline and my current pace,');
+            lines.push('    say so directly and suggest a revised target or deadline."');
 
             const fullText = lines.join('\n');
 
             const doClipboard = text => {
                 navigator.clipboard.writeText(text).then(() => {
-                    showNotification('📋 Context copied! Paste into Claude or ChatGPT.', 'success');
+                    showNotification('📋 Goals context copied! Paste into Claude or ChatGPT.', 'success');
                 }).catch(() => {
                     const ta = document.createElement('textarea');
                     ta.value = text;
@@ -39903,7 +39825,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ta.select();
                     document.execCommand('copy');
                     document.body.removeChild(ta);
-                    showNotification('📋 Context copied!', 'success');
+                    showNotification('📋 Goals context copied!', 'success');
                 });
             };
             doClipboard(fullText);
