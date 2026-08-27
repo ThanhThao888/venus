@@ -41043,36 +41043,145 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // ===== Copy Sleep Context for AI — mirror pattern "📋 Copy Context for AI" đã có =====
+        // Copy sleep + study context for AI — last 14 nights of sleep detail
+        // (duration, debt vs goal, SE, SOL, quality, tags, notes) alongside
+        // study hours logged on those same days, so an AI can help correlate
+        // sleep debt with study capacity and suggest a realistic study
+        // schedule instead of just analyzing sleep in isolation.
         function copySleepContextForAI() {
-            const sorted = getSortedSleepSessions().slice(-14); // 14 đêm gần nhất
-            if (sorted.length === 0) { alert('Chưa có dữ liệu giấc ngủ nào để copy.'); return; }
+            const sorted = getSortedSleepSessions().slice(-14); // last 14 nights
+            if (sorted.length === 0) { alert('No sleep data logged yet to copy.'); return; }
+
+            const SEP = '═'.repeat(52);
+            const DIV = '─'.repeat(52);
+            const lines = [];
 
             const goal = getSleepGoal();
             const reg = computeSleepRegularity(7);
+            const studyByDate = (typeof getStudyHoursByLocalDate === 'function') ? getStudyHoursByLocalDate() : {};
+            const qualityLabels = ['', 'Very poor', 'Poor', 'Fair', 'Good', 'Excellent'];
+            const qualityEmojis = ['', '😫', '😞', '😐', '😊', '😄'];
 
-            let text = `SLEEP DATA EXPORT (14 đêm gần nhất, xuất lúc ${new Date().toLocaleString('vi-VN')})\n`;
-            text += `Mục tiêu ngủ: ${goal}h/đêm. Regularity Index (7đ, max SD giờ ngủ/dậy): ${reg ? Math.round(reg.score) + ' phút' : 'chưa đủ dữ liệu'}.\n`;
-            text += `Ghi chú: nhờ bạn phân tích pattern giấc ngủ của tôi — đêm nào bất thường, factor nào (caffeine/ăn trễ/alcohol/tập luyện/screen) tương quan với SOL hoặc SE thấp.\n\n`;
+            const dateStr = new Date().toLocaleDateString('en-GB', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            });
+
+            lines.push('😴 Sleep + Study Context — AI Context Snapshot');
+            lines.push(`Generated: ${dateStr}`);
+            lines.push(SEP);
+
+            lines.push('');
+            lines.push(`Sleep goal: ${goal}h/night`);
+            lines.push(`Regularity Index (7 nights, max SD of bed/wake time): ${reg ? Math.round(reg.score) + ' min (lower = more consistent)' : 'not enough data yet'}`);
+
+            // ── RECENT SLEEP SESSIONS ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push(`📜 RECENT SLEEP SESSIONS (last ${sorted.length} nights)`);
+            lines.push(DIV);
 
             sorted.forEach(s => {
                 const se = computeSleepEfficiency(s);
-                const d = new Date(s.start);
-                const dateLabel = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+                const startD = new Date(s.start);
+                const endD = new Date(s.end);
+                const dateKey = toLocalDateStr(startD);
+                const nextDateKey = toLocalDateStr(new Date(startD.getTime() + 24 * 60 * 60 * 1000));
+                const dateLabel = `${String(startD.getDate()).padStart(2,'0')}/${String(startD.getMonth()+1).padStart(2,'0')}`;
+                const debt = s.duration - goal;
+                const debtStr = debt >= 0 ? `+${debt.toFixed(1)}h vs goal` : `${debt.toFixed(1)}h vs goal (short)`;
+
                 const tagList = [];
-                if (s.tags?.screen) tagList.push('screen');
+                if (s.tags?.screen) tagList.push('screen before bed');
                 if (s.tags?.alcohol) tagList.push('alcohol');
-                if (s.auto_tags?.caffeineLate) tagList.push('caffeine muộn');
-                if (s.auto_tags?.lateMeal) tagList.push('ăn trễ');
-                if (s.auto_tags?.exercise) tagList.push('có tập');
-                text += `${dateLabel}: ${s.duration}h`;
-                text += s.sol != null ? `, SOL ${s.sol}p` : '';
-                text += s.awakenings_min != null ? `, thức giấc ${s.awakenings_min}p` : '';
-                text += se !== null ? `, SE ${se.toFixed(0)}%` : '';
-                text += s.quality ? `, chất lượng ${s.quality}/5` : '';
-                text += tagList.length ? `, tags: ${tagList.join('/')}` : '';
-                text += s.notes ? `, ghi chú: "${s.notes}"` : '';
-                text += `\n`;
+                if (s.auto_tags?.caffeineLate) tagList.push('late caffeine');
+                if (s.auto_tags?.lateMeal) tagList.push('late meal');
+                if (s.auto_tags?.exercise) tagList.push('exercised');
+
+                let line = `${dateLabel}: ${s.duration}h (${debtStr})`;
+                line += s.sol != null ? `, SOL ${s.sol}m` : '';
+                line += s.awakenings_min != null ? `, awake ${s.awakenings_min}m` : '';
+                line += se !== null ? `, SE ${se.toFixed(0)}%` : '';
+                line += s.quality ? `, quality: ${qualityEmojis[s.quality]} ${qualityLabels[s.quality]}` : '';
+                line += tagList.length ? `, tags: ${tagList.join('/')}` : '';
+                lines.push(`  • ${line}`);
+
+                const studySameDay = studyByDate[dateKey] || 0;
+                const studyNextDay = studyByDate[nextDateKey] || 0;
+                if (studySameDay > 0 || studyNextDay > 0) {
+                    lines.push(`      📚 Study logged — same day: ${studySameDay.toFixed(1)}h, day after waking: ${studyNextDay.toFixed(1)}h`);
+                }
+                if (s.notes && s.notes.trim()) {
+                    lines.push(`      📝 Note: ${s.notes.trim()}`);
+                }
             });
+
+            // ── STUDY HOURS OVER SAME PERIOD ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('📚 STUDY HOURS (same period, all tracks combined)');
+            lines.push(DIV);
+
+            const periodDates = [];
+            for (let i = 13; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                periodDates.push(toLocalDateStr(d));
+            }
+            let periodTotal = 0;
+            periodDates.forEach(dk => {
+                const hrs = studyByDate[dk] || 0;
+                periodTotal += hrs;
+                if (hrs > 0) {
+                    const [y, m, d] = dk.split('-');
+                    lines.push(`  • ${d}/${m}: ${hrs.toFixed(1)}h studied`);
+                }
+            });
+            if (periodTotal === 0) lines.push('  No study hours logged in the last 14 days.');
+            lines.push(`Total over last 14 days: ${periodTotal.toFixed(1)}h`);
+
+            // ── SUGGESTED PROMPT ──
+            lines.push('');
+            lines.push(SEP);
+            lines.push('');
+            lines.push('💬 SUGGESTED PROMPT:');
+            lines.push(DIV);
+            lines.push('"Above is my sleep log for the last 14 nights (duration, debt vs. my');
+            lines.push('sleep goal, sleep efficiency, quality rating, and any tags/notes I');
+            lines.push('logged), alongside the study hours I logged on those same days. I work');
+            lines.push('a full-time job and study on top of it, so my schedule is tight and my');
+            lines.push('sleep is often irregular or cut short.');
+            lines.push('');
+            lines.push('When I don\'t get enough sleep, studying feels doubly costly — I still');
+            lines.push('spend the time, but my brain is too tired to actually absorb anything,');
+            lines.push('so the hours feel wasted, and that makes me more stressed on top of');
+            lines.push('being tired. I also often don\'t know how to sequence my day — what to');
+            lines.push('study, and at what time, given how I slept.');
+            lines.push('');
+            lines.push('Please:');
+            lines.push(' 1) Look for a pattern between my sleep (duration, debt, SE, quality,');
+            lines.push('    regularity) and how much I actually studied on the following day —');
+            lines.push('    tell me plainly if poor sleep is visibly costing me study output.');
+            lines.push(' 2) Flag which nights or patterns (e.g. short sleep, low SE, late');
+            lines.push('    caffeine/alcohol/screen tags, irregular bed/wake times) look most');
+            lines.push('    responsible for bad days, so I know what to fix first.');
+            lines.push(' 3) Give me a simple rule of thumb for deciding, each morning, what');
+            lines.push('    kind of study task fits how I slept — e.g. after a short or');
+            lines.push('    low-quality night, suggest lighter/lower-stakes tasks (review,');
+            lines.push('    flashcards, light reading) over the hardest, most demanding ones');
+            lines.push('    (new concepts, problem sets, deep focus work), and tell me when it');
+            lines.push('    genuinely makes more sense to rest or do a short nap instead of');
+            lines.push('    pushing through a study session that won\'t stick anyway.');
+            lines.push(' 4) Suggest what a realistic recovery plan looks like if I\'m carrying');
+            lines.push('    sleep debt right now — how many nights of better sleep I likely');
+            lines.push('    need before pushing hard on studying again makes sense.');
+            lines.push(' 5) If my sleep is genuinely too irregular or too short across most of');
+            lines.push('    these nights, say so directly and prioritize a sleep-schedule fix');
+            lines.push('    over a study-schedule fix — don\'t just optimize around bad sleep as');
+            lines.push('    if it were fixed."');
+
+            const fullText = lines.join('\n');
 
             const finish = () => {
                 const msg = document.getElementById('sleepBriefCopyMsg');
@@ -41089,9 +41198,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.body.removeChild(ta);
             };
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(finish).catch(() => { fallbackCopySleep(text); finish(); });
+                navigator.clipboard.writeText(fullText).then(finish).catch(() => { fallbackCopySleep(fullText); finish(); });
             } else {
-                fallbackCopySleep(text);
+                fallbackCopySleep(fullText);
                 finish();
             }
         }
