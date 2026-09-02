@@ -16213,6 +16213,7 @@
     border-radius:12px; cursor:pointer; transition:var(--transition);
 }
 .cal-delete-option:last-child { margin-bottom:2px; }
+.cal-delete-option:disabled { cursor:default; opacity:.85; }
 .cal-delete-option:hover {
     border-color:var(--primary); background:var(--primary-light);
     transform:translateY(-1px); box-shadow:var(--shadow-sm);
@@ -16231,6 +16232,30 @@
     transition:var(--transition);
 }
 .cal-delete-confirm-btn:hover { filter:brightness(1.06); box-shadow:var(--shadow-md); }
+
+/* Visible focus ring on the delete-choice options — makes it obvious
+   which button Enter/Space will trigger (defaults to the safe one). */
+.cal-delete-option:focus-visible,
+.cal-delete-confirm-btn:focus-visible,
+#calDeleteCancelBtn:focus-visible {
+    outline:2.5px solid var(--primary); outline-offset:2px;
+}
+.cal-delete-option-danger:focus-visible { outline-color:#e2637f; }
+
+/* Brief shake on the "delete entire series" button when clicked, so the
+   destructive action gets a half-second beat of visual warning before
+   it actually fires (see CAL.confirmDeleteSeriesGuarded). */
+@keyframes calDangerShake {
+    10%, 90% { transform:translateX(-1px); }
+    20%, 80% { transform:translateX(2px); }
+    30%, 50%, 70% { transform:translateX(-4px); }
+    40%, 60% { transform:translateX(4px); }
+}
+.cal-delete-option-danger.shaking {
+    animation:calDangerShake .45s ease;
+    border-color:#e2637f; background:rgba(226,99,127,.14);
+    box-shadow:0 0 0 3px rgba(226,99,127,.18);
+}
 
 .dark-mode .cal-delete-box { background:var(--bg-white); border-color:var(--theme-border-strong); }
 .dark-mode .cal-delete-option { background:rgba(255,255,255,.03); border-color:var(--border-color); }
@@ -16686,7 +16711,7 @@ body.todo-dragging-active,body.todo-dragging-active *{user-select:none !importan
       <div id="calDeleteSeriesOptions" style="display:none;">
         <p class="cal-delete-hint"><svg class="icon-svg" aria-hidden="true"><use href="#icon-repeat"></use></svg> Đây là một sự kiện lặp lại. Hãy chọn phạm vi muốn xóa:</p>
 
-        <button type="button" class="cal-delete-option" onclick="CAL.confirmDeleteChoice('this')">
+        <button type="button" id="calDeleteThisBtn" class="cal-delete-option" onclick="CAL.confirmDeleteChoice('this')">
           <span class="cal-delete-option-icon"><svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-pin"></use></svg></span>
           <span class="cal-delete-option-text">
             <strong>Chỉ xóa buổi này</strong>
@@ -16694,7 +16719,7 @@ body.todo-dragging-active,body.todo-dragging-active *{user-select:none !importan
           </span>
         </button>
 
-        <button type="button" class="cal-delete-option cal-delete-option-danger" onclick="CAL.confirmDeleteChoice('series')">
+        <button type="button" id="calDeleteSeriesBtn" class="cal-delete-option cal-delete-option-danger" onclick="CAL.confirmDeleteSeriesGuarded(this)">
           <span class="cal-delete-option-icon"><svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-repeat"></use></svg></span>
           <span class="cal-delete-option-text">
             <strong>Xóa toàn bộ chuỗi lặp lại</strong>
@@ -16709,7 +16734,7 @@ body.todo-dragging-active,body.todo-dragging-active *{user-select:none !importan
       </div>
     </div>
     <div class="cal-slot-actions">
-      <button class="cal-slot-cancel" onclick="CAL.closeDeleteChoice()">Hủy</button>
+      <button id="calDeleteCancelBtn" class="cal-slot-cancel" onclick="CAL.closeDeleteChoice()">Hủy</button>
       <button id="calDeleteSingleBtn" class="cal-delete-confirm-btn" style="display:none;" onclick="CAL.confirmDeleteChoice('single')"><svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-trash-2"></use></svg> Xóa sự kiện</button>
     </div>
   </div>
@@ -17549,11 +17574,39 @@ const CAL = (() => {
       }
 
       document.getElementById('calDeleteChoiceModal')?.classList.add('open');
+
+      // Default focus goes to the SAFE action, never the destructive one —
+      // so an accidental Enter/Space right after opening can't nuke a
+      // whole series. Recurring event → "Chỉ xóa buổi này"; plain event
+      // (only one destructive button exists) → "Hủy".
+      setTimeout(() => {
+        const target = ev.seriesId
+          ? document.getElementById('calDeleteThisBtn')
+          : document.getElementById('calDeleteCancelBtn');
+        target?.focus();
+      }, 50);
     },
 
     closeDeleteChoice() {
       _pendingDeleteId = null;
       document.getElementById('calDeleteChoiceModal')?.classList.remove('open');
+    },
+
+    /* "Xóa toàn bộ chuỗi" is the single most destructive click in this
+       whole modal, so it gets one extra half-beat of friction: the button
+       shakes + flashes red for ~450ms before the deletion actually runs.
+       Not a second confirm dialog (that's just the native-confirm problem
+       again) — just enough of a pause that a stray/fast click registers
+       as "whoa, that's the red one" before anything is gone. */
+    confirmDeleteSeriesGuarded(btn) {
+      if (!btn || btn.classList.contains('shaking')) return; // ignore double-click mid-animation
+      btn.classList.add('shaking');
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.classList.remove('shaking');
+        btn.disabled = false;
+        this.confirmDeleteChoice('series');
+      }, 450);
     },
 
     /* mode: 'single' (non-recurring event) | 'this' (only this occurrence
