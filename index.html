@@ -18504,6 +18504,16 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
   <path d="M22 22H2" />
   <path d="m8 6 4-4 4 4" />
   <path d="M16 18a4 4 0 0 0-8 0" /></symbol>
+  <symbol id="icon-sunset" viewBox="0 0 24 24"><path d="M12 10V2" />
+  <path d="m4.93 10.93 1.41 1.41" />
+  <path d="M2 18h2" />
+  <path d="M20 18h2" />
+  <path d="m19.07 10.93-1.41 1.41" />
+  <path d="M22 22H2" />
+  <path d="m16 5-4 4-4-4" />
+  <path d="M16 18a4 4 0 0 0-8 0" /></symbol>
+  <symbol id="icon-cloud-moon" viewBox="0 0 24 24"><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z" />
+  <path d="M10.083 9A6.5 6.5 0 0 1 16.5 3a1 1 0 0 0 1.077 1.076A4.5 4.5 0 0 1 20 12a4.34 4.34 0 0 1-.128.986" /></symbol>
   <symbol id="icon-trending-down" viewBox="0 0 24 24"><path d="M16 17h6v-6" />
   <path d="m22 17-8.5-8.5-5 5L2 7" /></symbol>
   <symbol id="icon-utensils" viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
@@ -43641,7 +43651,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (d0.getTime() === yesterday.getTime()) return 'Hôm qua';
                 return `${dayNames[d.getDay()]} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
             }
-            
+
+            // Lịch ngủ thất thường (không cố định một buổi) nên icon đầu mỗi
+            // session được chọn theo GIỜ BẮT ĐẦU đi ngủ thực tế, không mặc định
+            // là mặt trăng. 4 khung giờ tương ứng 4 icon khác nhau.
+            function sleepPeriodIcon(startTs) {
+                const h = new Date(startTs).getHours();
+                if (h >= 5 && h < 11)  return { icon: 'icon-sunrise', label: 'Ngủ buổi sáng' };
+                if (h >= 11 && h < 17) return { icon: 'icon-sun',     label: 'Ngủ buổi trưa/chiều' };
+                if (h >= 17 && h < 21) return { icon: 'icon-sunset',  label: 'Ngủ buổi tối (sớm)' };
+                return { icon: 'icon-moon', label: 'Ngủ ban đêm' };
+            }
+
             container.innerHTML = recentSessions.map(session => {
                 const qualityEmojis = ['','<svg class="icon-svg" aria-hidden="true"><use href="#icon-frown"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-face-slightly-frowning"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-meh"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-smile"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-laugh"></use></svg>'];
                 const qualityLabels = ['','Rất tệ','Tệ','Bình thường','Tốt','Rất tốt'];
@@ -43666,14 +43687,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 const seBadge = seVal !== null
                     ? `<span style="font-size:0.72rem;color:${seColor(seVal)};background:rgba(0,0,0,0.04);padding:1px 7px;border-radius:10px;white-space:nowrap;" title="Sleep Efficiency — ${seLabel(seVal)}">SE ${seVal.toFixed(0)}%</span>`
                     : '';
-                const tagIcons = [];
-                if (session.tags?.screen) tagIcons.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-smartphone"></use></svg>');
-                if (session.tags?.alcohol) tagIcons.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-beer"></use></svg>');
-                if (session.auto_tags?.caffeineLate) tagIcons.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>');
-                if (session.auto_tags?.lateMeal) tagIcons.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-utensils"></use></svg>');
-                if (session.auto_tags?.exercise) tagIcons.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-dumbbell"></use></svg>');
-                const tagsBadge = tagIcons.length
-                    ? `<span style="font-size:0.85rem;" title="Tags đêm: ${tagIcons.join(' ')}">${tagIcons.join('')}</span>`
+                // Mỗi tag là 1 icon riêng, có title (plain text, không nhúng HTML/SVG
+                // vào attribute) để hiện tooltip đúng nghĩa khi hover/focus.
+                const tagDefs = [];
+                if (session.tags?.screen) tagDefs.push({ icon: 'icon-smartphone', label: 'Dùng màn hình trước khi ngủ' });
+                if (session.tags?.alcohol) tagDefs.push({ icon: 'icon-beer', label: 'Có uống rượu bia' });
+                if (session.auto_tags?.caffeineLate) tagDefs.push({ icon: 'icon-coffee', label: 'Dùng caffeine muộn' });
+                if (session.auto_tags?.lateMeal) tagDefs.push({ icon: 'icon-utensils', label: 'Ăn muộn trước khi ngủ' });
+                if (session.auto_tags?.exercise) tagDefs.push({ icon: 'icon-dumbbell', label: 'Có tập thể dục' });
+                const tagsBadge = tagDefs.length
+                    ? `<span style="display:inline-flex; align-items:center; gap:4px; font-size:0.85rem;">${tagDefs.map(t =>
+                        `<span class="icon-svg" role="img" aria-label="${t.label}" title="${t.label}" style="display:inline-flex;"><svg class="icon-svg" aria-hidden="true"><use href="#${t.icon}"></use></svg></span>`
+                      ).join('')}</span>`
                     : '';
 
                 return `
@@ -43681,7 +43706,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
                         <div style="flex:1; min-width:0;">
                             <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                <svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> ${session.duration}h
+                                ${(() => { const p = sleepPeriodIcon(session.start); return `<svg class="icon-svg" aria-hidden="true" role="img"><title>${p.label}</title><use href="#${p.icon}"></use></svg>`; })()} ${session.duration}h
                                 <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">· ${relativeDay(session.start)}</span>
                                 ${session.manual ? '<span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">(Manual)</span>' : ''}
                                 ${q > 0 ? `<span style="font-size:0.85rem;color:${qualityColors[q]};" title="${qualityLabels[q]}">${qualityEmojis[q]}</span>` : ''}
