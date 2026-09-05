@@ -14906,7 +14906,7 @@
         }
 
         #yourProgressCard .chart-container:has(#progressChart) {
-            height: 210px;
+            height: 340px;
             margin: 18px 0 0;
         }
 
@@ -24416,7 +24416,7 @@ window.DBP={
                         <div class="badges-section">
                             <h4 class="badges-title"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg> Badges Earned</h4>
                             <div id="badgesList" class="badges-list">
-                                <div class="badges-empty">No badges yet — log study hours to earn your first! <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></div>
+                                <div class="badges-empty">No badges yet — log study hours to earn your first! <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1.2em;height:1.2em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg></div>
                             </div>
                         </div>
                     </div>
@@ -35254,13 +35254,13 @@ window.DBP={
             
             // Achievement milestones
             if (totalHours === 1) {
-                addAchievement(`🎯 First hour in ${skillName}!`);
+                addAchievement(`First hour in ${skillName}!`, '<i class="fa-solid fa-hourglass-start"></i>');
                 showNotification(`Achievement Unlocked: First hour in ${skillName}!`, 'achievement');
             } else if (totalHours === 5) {
-                addAchievement(`🚀 5 hours milestone in ${skillName}!`);
+                addAchievement(`5 hours milestone in ${skillName}!`, '<i class="fa-solid fa-rocket"></i>');
                 showNotification(`Achievement Unlocked: 5 hours milestone!`, 'achievement');
             } else if (totalHours >= targetHours) {
-                addAchievement(`💪 MASTERED: ${skillName} (${targetHours}h)!`);
+                addAchievement(`MASTERED: ${skillName} (${targetHours}h)!`, '<i class="fa-solid fa-medal"></i>');
                 showNotification(`🎉 Achievement Unlocked: ${skillName} MASTERED!`, 'achievement');
             }
         }
@@ -35290,7 +35290,7 @@ window.DBP={
         }
 
 
-        function addAchievement(text, icon = '🏆') {
+        function addAchievement(text, icon = '<i class="fa-solid fa-trophy"></i>') {
             // Ephemeral toast — same pop-and-fade feedback as before.
             const achievementsDiv = document.getElementById('achievements');
             if (achievementsDiv) {
@@ -35319,18 +35319,40 @@ window.DBP={
             renderBadges();
         }
 
+        // Backward-compat: badges saved to localStorage before the emoji->icon
+        // switch still have raw emoji in `icon` (e.g. '🏆', '🔥') and a leading
+        // emoji baked into `text` (e.g. '🎯 First hour in X!'). This maps old
+        // emoji icons to the new Font Awesome markup and strips the leading
+        // emoji from old text, WITHOUT touching what's actually stored in
+        // localStorage — purely a display-time fix, so nothing can break.
+        const LEGACY_BADGE_ICON_MAP = {
+            '🏆': '<i class="fa-solid fa-trophy"></i>',
+            '🔥': '<i class="fa-solid fa-fire"></i>',
+            '🎯': '<i class="fa-solid fa-hourglass-start"></i>',
+            '🚀': '<i class="fa-solid fa-rocket"></i>',
+            '💪': '<i class="fa-solid fa-medal"></i>'
+        };
+        function normalizeBadgeIcon(icon) {
+            if (!icon) return '<i class="fa-solid fa-trophy"></i>';
+            if (icon.includes('<')) return icon; // already icon markup (new-format badge)
+            return LEGACY_BADGE_ICON_MAP[icon] || '<i class="fa-solid fa-trophy"></i>';
+        }
+        function stripLegacyBadgeEmoji(text) {
+            return String(text || '').replace(/^\s*(?:🎯|🚀|💪|🔥|🏆)\s*/u, '');
+        }
+
         function renderBadges() {
             const container = document.getElementById('badgesList');
             if (!container) return;
             const badges = gamification.badges || [];
             if (badges.length === 0) {
-                container.innerHTML = `<div class="badges-empty">No badges yet — log study hours to earn your first! <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></div>`;
+                container.innerHTML = `<div class="badges-empty">No badges yet — log study hours to earn your first! <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1.2em;height:1.2em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg></div>`;
                 return;
             }
             container.innerHTML = badges.slice(0, 20).map(b => `
                 <div class="badge-chip" title="${escapeHtml(b.date || '')}">
-                    <span class="badge-chip-icon">${escapeHtml(b.icon || '🏆')}</span>
-                    <span class="badge-chip-text">${escapeHtml(b.text)}</span>
+                    <span class="badge-chip-icon">${normalizeBadgeIcon(b.icon)}</span>
+                    <span class="badge-chip-text">${escapeHtml(stripLegacyBadgeEmoji(b.text))}</span>
                 </div>
             `).join('');
         }
@@ -35353,7 +35375,7 @@ window.DBP={
                 localStorage.setItem('gamification', JSON.stringify(gamification));
 
                 if (gamification.streak % 7 === 0) {
-                    addAchievement(`🔥 ${gamification.streak} day streak! Keep going!`, '🔥');
+                    addAchievement(`${gamification.streak} day streak! Keep going!`, '<i class="fa-solid fa-fire"></i>');
                     showNotification(`Achievement Unlocked: ${gamification.streak} day streak!`, 'achievement');
                 }
             }
@@ -35398,14 +35420,20 @@ window.DBP={
         function initChart() {
             const ctx = document.getElementById('progressChart').getContext('2d');
             const isDarkNow = document.body.classList.contains('dark-mode');
+            const labelColor = isDarkNow ? '#e6a8c9' : '#b1568a';
+            const gridColor = isDarkNow ? 'rgba(236,72,153,0.15)' : 'rgba(219,113,175,0.18)';
+            const angleColor = isDarkNow ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
             progressChart = new Chart(ctx, {
-                type: 'bar',
+                type: 'radar',
                 data: {
                     labels: ['PE', 'IB', 'HF', 'SC', 'Fintech', 'English', 'Chinese', 'German', 'Tools', 'CFA L1', 'China', 'Quant'],
                     datasets: [{
                         label: 'Hours Studied',
                         data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                        backgroundColor: [
+                        backgroundColor: isDarkNow ? 'rgba(240,168,196,0.20)' : 'rgba(219,113,175,0.22)',
+                        borderColor: isDarkNow ? '#f0a8c4' : '#db2777',
+                        borderWidth: 2,
+                        pointBackgroundColor: [
                             '#db2777', // PE
                             '#ec4899', // IB
                             '#f472b6', // HF
@@ -35419,31 +35447,33 @@ window.DBP={
                             '#fda4af', // China
                             '#e879f9'  // Quant
                         ],
-                        borderRadius: 6,
-                        borderSkipped: false,
-                        barPercentage: 0.7,
-                        categoryPercentage: 0.75
+                        pointBorderColor: isDarkNow ? '#1e141c' : '#fffbfc',
+                        pointBorderWidth: 1.5,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        fill: true
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        y: {
+                        r: {
                             beginAtZero: true,
-                            ticks: {
-                                color: isDarkNow ? '#e6a8c9' : '#b1568a'
+                            angleLines: {
+                                color: angleColor
                             },
                             grid: {
-                                color: isDarkNow ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)'
-                            }
-                        },
-                        x: {
-                            ticks: {
-                                color: isDarkNow ? '#e6a8c9' : '#b1568a'
+                                color: gridColor
                             },
-                            grid: {
-                                display: false
+                            pointLabels: {
+                                color: labelColor,
+                                font: { size: 10, weight: '600' }
+                            },
+                            ticks: {
+                                color: labelColor,
+                                backdropColor: 'transparent',
+                                font: { size: 9 }
                             }
                         }
                     },
@@ -35454,13 +35484,13 @@ window.DBP={
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return `${context.parsed.y.toFixed(1)} hours`;
+                                    return `${context.parsed.r.toFixed(1)} hours`;
                                 }
                             }
                         },
                         title: {
                             display: true,
-                            text: '🎯 Skills Breakdown',
+                            text: 'Skills Breakdown',
                             font: { size: 14, weight: 'bold' },
                             color: isDarkNow ? '#f5c2dd' : '#9d2867',
                             padding: 8
@@ -35500,9 +35530,13 @@ window.DBP={
             if (!progressChart) return;
             const isDarkMode = document.body.classList.contains('dark-mode');
             const textColor = isDarkMode ? '#e6a8c9' : '#b1568a';
-            progressChart.options.scales.x.ticks.color = textColor;
-            progressChart.options.scales.y.ticks.color = textColor;
-            progressChart.options.scales.y.grid.color = isDarkMode ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+            progressChart.options.scales.r.pointLabels.color = textColor;
+            progressChart.options.scales.r.ticks.color = textColor;
+            progressChart.options.scales.r.angleLines.color = isDarkMode ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+            progressChart.options.scales.r.grid.color = isDarkMode ? 'rgba(236,72,153,0.15)' : 'rgba(219,113,175,0.18)';
+            progressChart.data.datasets[0].backgroundColor = isDarkMode ? 'rgba(240,168,196,0.20)' : 'rgba(219,113,175,0.22)';
+            progressChart.data.datasets[0].borderColor = isDarkMode ? '#f0a8c4' : '#db2777';
+            progressChart.data.datasets[0].pointBorderColor = isDarkMode ? '#1e141c' : '#fffbfc';
             if (progressChart.options.plugins && progressChart.options.plugins.title) {
                 progressChart.options.plugins.title.color = isDarkMode ? '#f5c2dd' : '#9d2867';
             }
@@ -35545,9 +35579,13 @@ window.DBP={
             }
             if (progressChart) {
                 const textColor = isDark ? '#e6a8c9' : '#b1568a';
-                progressChart.options.scales.y.ticks.color = textColor;
-                progressChart.options.scales.x.ticks.color = textColor;
-                progressChart.options.scales.y.grid.color = isDark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+                progressChart.options.scales.r.pointLabels.color = textColor;
+                progressChart.options.scales.r.ticks.color = textColor;
+                progressChart.options.scales.r.angleLines.color = isDark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+                progressChart.options.scales.r.grid.color = isDark ? 'rgba(236,72,153,0.15)' : 'rgba(219,113,175,0.18)';
+                progressChart.data.datasets[0].backgroundColor = isDark ? 'rgba(240,168,196,0.20)' : 'rgba(219,113,175,0.22)';
+                progressChart.data.datasets[0].borderColor = isDark ? '#f0a8c4' : '#db2777';
+                progressChart.data.datasets[0].pointBorderColor = isDark ? '#1e141c' : '#fffbfc';
                 if (progressChart.options.plugins && progressChart.options.plugins.title) {
                     progressChart.options.plugins.title.color = isDark ? '#f5c2dd' : '#9d2867';
                 }
@@ -39423,7 +39461,7 @@ window.DBP={
             if (activeGoals.length === 0 && completedGoals.length === 0) {
                 container.innerHTML = `
                     <div style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
-                        <i class="fa-solid fa-bullseye" style="font-size: 5rem; margin-bottom: 15px; opacity: 0.5;"></i>
+                        <i class="fa-solid fa-flag-checkered" style="font-size: 5rem; margin-bottom: 15px; opacity: 0.5;"></i>
                         <h3 style="margin: 0 0 10px 0; color: var(--text-dark);">No Goals Yet</h3>
                         <p style="margin: 0 0 20px 0; font-size: 0.95rem;">
                             Set your first goal to start tracking progress in ${careerData ? careerData.title : currentCareer}.
