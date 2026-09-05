@@ -26601,8 +26601,27 @@ window.DBP={
                 <button class="sleep-chart-range-btn" data-range="30" onclick="setSleepChartRange(30)" aria-label="Hiện 30 đêm gần nhất" aria-pressed="false"
                     style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">30đ</button>
             </div>
-            <div class="chart-container" style="margin: 0 0 20px;">
+            <div class="chart-container" style="margin: 0 0 6px;">
                 <canvas id="sleepChart"></canvas>
+            </div>
+            <div style="font-size:0.7rem; color:var(--text-muted); text-align:right; margin: 0 0 20px; display:flex; justify-content:flex-end; align-items:center; gap:5px;">
+                <span style="display:inline-flex; align-items:center; gap:3px;">
+                    <span style="width:5px;height:5px;border-radius:50%;background:rgba(139,92,246,0.4);border:1px solid #8b5cf6;display:inline-block;"></span>
+                    <span style="width:9px;height:9px;border-radius:50%;background:rgba(124,58,237,1);border:1px solid #5b21b6;display:inline-block;"></span>
+                </span>
+                chấm tím trên cột = chất lượng giấc ngủ (to & đậm hơn = ngủ ngon hơn)
+            </div>
+
+            <!-- Sleep Timeline — bedtime → wake-up on a 24h axis, so two nights with the
+                 same total duration (e.g. 11PM–6AM vs 3AM–10AM) are visibly different,
+                 not just "7 hours" both times. -->
+            <div style="margin: 0 0 20px;">
+                <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;">
+                    <svg class="icon-svg" aria-hidden="true"><use href="#icon-timer"></use></svg> Sleep Timeline <span style="font-weight:400;">(bedtime → wake-up)</span>
+                </div>
+                <div class="chart-container" id="sleepTimelineWrap" style="margin:0;">
+                    <canvas id="sleepTimelineChart"></canvas>
+                </div>
             </div>
 
             <!-- Sleep History -->
@@ -36063,6 +36082,12 @@ window.DBP={
                 sleepChart.options.scales.x.ticks.color = textColor;
                 sleepChart.update();
             }
+            if (sleepTimelineChart) {
+                const textColor = isDark ? '#cbd5e1' : '#666';
+                sleepTimelineChart.options.scales.y.ticks.color = textColor;
+                sleepTimelineChart.options.scales.x.ticks.color = textColor;
+                sleepTimelineChart.update();
+            }
             if (solTrendChart) {
                 const textColor = isDark ? '#94a3b8' : '#94a3b8';
                 solTrendChart.options.scales.y.ticks.color = textColor;
@@ -41723,6 +41748,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let pendingSleepSession = null; // Session awaiting quick note/quality before being saved (see openQuickSleepNoteModal)
         sleepSessions = JSON.parse(localStorage.getItem('sleepSessions')) || [];
         let sleepChart = null;
+        let sleepTimelineChart = null;
         let solTrendChart = null;
 
         // ✅ Mục tiêu giờ ngủ (mặc định 8h, lưu riêng cho từng user trong localStorage)
@@ -44380,6 +44406,38 @@ document.addEventListener('DOMContentLoaded', function() {
         // nhìn xu hướng dài hơn (đặc biệt hữu ích khi so sánh với nợ ngủ/regularity theo tuần).
         let sleepChartRangeDays = 7;
 
+        // Toàn bộ nhãn ngày/giờ trên Sleep Chart & Sleep Timeline luôn quy đổi theo giờ
+        // Việt Nam (Asia/Ho_Chi_Minh), bất kể trình duyệt/máy của người dùng đang để múi
+        // giờ nào — tránh trường hợp lệch cả ngày trong tuần lẫn giờ đi ngủ khi thiết bị
+        // (hoặc dữ liệu import) không cùng múi giờ VN. Dùng chung VN_TIMEZONE đã khai báo
+        // ở phần Goal deadlines phía trên.
+        function getVNDateTimeParts(ts) {
+            const parts = new Intl.DateTimeFormat('en-US', {
+                timeZone: VN_TIMEZONE,
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', hour12: false,
+                weekday: 'short'
+            }).formatToParts(new Date(ts));
+            const get = t => parts.find(p => p.type === t)?.value;
+            let hour = parseInt(get('hour'), 10);
+            if (hour === 24) hour = 0; // vài engine trả '24' cho nửa đêm khi hour12:false
+            return {
+                year: parseInt(get('year'), 10),
+                month: parseInt(get('month'), 10),
+                day: parseInt(get('day'), 10),
+                hour,
+                minute: parseInt(get('minute'), 10),
+                weekday: get('weekday') // 'Sun','Mon',...,'Sat'
+            };
+        }
+        const VN_WEEKDAY_TO_VI = { Sun:'CN', Mon:'T2', Tue:'T3', Wed:'T4', Thu:'T5', Fri:'T6', Sat:'T7' };
+
+        // Nhãn "Thứ dd/mm" cho 1 trục ngày, luôn tính theo giờ VN.
+        function vnDayLabel(ts) {
+            const p = getVNDateTimeParts(ts);
+            return `${VN_WEEKDAY_TO_VI[p.weekday] || p.weekday} ${String(p.day).padStart(2,'0')}/${String(p.month).padStart(2,'0')}`;
+        }
+
         function setSleepChartRange(days) {
             sleepChartRangeDays = days;
             document.querySelectorAll('.sleep-chart-range-btn').forEach(btn => {
@@ -44391,17 +44449,26 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSleepChart();
         }
 
+        // Bảng màu chấm chất lượng — cố tình dùng tông tím/violet, khác hẳn dải màu
+        // đỏ/cam/xanh lá/hồng đang dùng cho cột (theo mục tiêu giờ ngủ), để mắt phân biệt
+        // ngay đâu là "thời lượng" và đâu là "chất lượng" mà không cần đọc chú thích.
+        // Đậm hơn + to hơn = chất lượng cao hơn (mã hoá kép màu sắc + kích thước, thân
+        // thiện hơn với người khó phân biệt màu so với chỉ dùng màu).
+        const QUALITY_DOT_STYLE = {
+            1: { color: 'rgba(139,92,246,0.35)', border: '#8b5cf6', radius: 4 },
+            2: { color: 'rgba(139,92,246,0.55)', border: '#8b5cf6', radius: 5 },
+            3: { color: 'rgba(139,92,246,0.72)', border: '#7c3aed', radius: 6 },
+            4: { color: 'rgba(139,92,246,0.88)', border: '#6d28d9', radius: 7 },
+            5: { color: 'rgba(124,58,237,1)',    border: '#5b21b6', radius: 8 }
+        };
+
         function renderSleepChart() {
             const ctx = document.getElementById('sleepChart');
             if (!ctx) return;
             
             const goal = getSleepGoal();
             const recentSessions = getSortedSleepSessions().slice(-sleepChartRangeDays); // N phiên gần nhất theo range đã chọn, đúng thứ tự thời gian
-            const labels = recentSessions.map(session => {
-                const d = new Date(session.start);
-                const days = ['CN','T2','T3','T4','T5','T6','T7'];
-                return `${days[d.getDay()]} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
-            });
+            const labels = recentSessions.map(session => vnDayLabel(session.start));
             const durations = recentSessions.map(session => session.duration);
             const qualities = recentSessions.map(session => session.quality || 0);
 
@@ -44414,6 +44481,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return { bg: 'rgba(209,123,150,0.7)', border: '#d17b96' };
             }
             const barColors = durations.map(colorForDuration);
+
+            // Chấm chất lượng đặt cao hơn đỉnh cột 1 khoảng cố định — không có ý nghĩa
+            // "giá trị" theo trục Y, chỉ để chấm luôn nổi rõ phía trên cột dù cột cao/thấp.
+            // Đêm chưa chấm điểm (quality = 0) thì để null → Chart.js tự bỏ qua, không vẽ chấm.
+            const DOT_OFFSET = 0.55;
+            const qualityDotY = durations.map((d, i) => qualities[i] > 0 ? d + DOT_OFFSET : null);
+            const maxDataVal = Math.max(goal, ...durations, 0);
             
             if (sleepChart) {
                 sleepChart.destroy();
@@ -44444,6 +44518,23 @@ document.addEventListener('DOMContentLoaded', function() {
                             pointRadius: 0,
                             fill: false,
                             order: 1
+                        },
+                        {
+                            // Chấm chất lượng giấc ngủ (1-5) phía trên mỗi cột — gộp 2 chiều dữ
+                            // liệu (thời lượng + chất lượng) vào cùng 1 chart, khỏi phải hover
+                            // mới thấy được quality như trước.
+                            type: 'line',
+                            label: 'Quality',
+                            data: qualityDotY,
+                            showLine: false,
+                            spanGaps: false,
+                            pointStyle: 'circle',
+                            pointRadius: qualities.map(q => q > 0 ? QUALITY_DOT_STYLE[q].radius : 0),
+                            pointHoverRadius: qualities.map(q => q > 0 ? QUALITY_DOT_STYLE[q].radius + 1.5 : 0),
+                            pointBackgroundColor: qualities.map(q => q > 0 ? QUALITY_DOT_STYLE[q].color : 'transparent'),
+                            pointBorderColor: qualities.map(q => q > 0 ? QUALITY_DOT_STYLE[q].border : 'transparent'),
+                            pointBorderWidth: 1.5,
+                            order: 0
                         }
                     ]
                 },
@@ -44452,14 +44543,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     plugins: {
                         legend: { display: false },
                         tooltip: {
+                            filter: (item) => !(item.dataset.label === 'Quality' && qualities[item.dataIndex] === 0),
                             callbacks: {
                                 label: function(context) {
-                                    if (context.dataset.type === 'line') {
+                                    if (context.dataset.label && context.dataset.label.startsWith('Goal')) {
                                         return `Goal: ${goal} hours`;
                                     }
-                                    const q = qualities[context.dataIndex];
-                                    const base = `Duration: ${context.parsed.y} hours`;
-                                    return q > 0 ? `${base} · ${qualityLabels[q]}` : base;
+                                    if (context.dataset.label === 'Quality') {
+                                        const q = qualities[context.dataIndex];
+                                        return `Quality: ${qualityLabels[q]} (${q}/5)`;
+                                    }
+                                    return `Duration: ${context.parsed.y} hours`;
                                 }
                             }
                         }
@@ -44470,6 +44564,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         },
                         y: {
                             beginAtZero: true,
+                            suggestedMax: maxDataVal + DOT_OFFSET + 0.8, // chừa chỗ cho chấm chất lượng phía trên cột cao nhất
                             title: {
                                 display: true,
                                 text: 'Hours'
@@ -44485,6 +44580,131 @@ document.addEventListener('DOMContentLoaded', function() {
                 sleepChart.options.scales.y.ticks.color = '#cbd5e1';
                 sleepChart.options.scales.x.ticks.color = '#cbd5e1';
                 sleepChart.update();
+            }
+
+            renderSleepTimelineChart(recentSessions, goal);
+        }
+
+        // ===== Sleep Timeline — horizontal "bedtime → wake-up" bars on a 24h axis =====
+        // Trục X biểu diễn "thời điểm trong ngày" thay vì tổng số giờ ngủ. Điều này lộ ra
+        // sự bất thường mà biểu đồ cột số-giờ không thấy được: 7h ngủ lúc 23:00→06:00 rất
+        // khác 7h ngủ lúc 03:00→10:00, dù tổng số giờ bằng nhau.
+        //
+        // Cách quy đổi: mọi mốc giờ-trong-ngày (tính theo giờ Việt Nam) trước 12:00 trưa
+        // được cộng thêm 24 để nó "rơi" vào dải sau nửa đêm (24h-36h) thay vì đầu ngày
+        // (0h-12h) — nhờ vậy một đêm ngủ xuyên nửa đêm (vd 23:00 → 6:00) luôn được vẽ liền
+        // mạch, không bị ngắt quãng ở mốc 0h. Điểm kết thúc = điểm bắt đầu + session.duration
+        // (giờ), nên không cần tính lại từ session.end — tránh lệch giờ do làm tròn phút/DST.
+        function sleepTimeToAxisHour(ts) {
+            const p = getVNDateTimeParts(ts);
+            const h = p.hour + p.minute / 60;
+            return h < 12 ? h + 24 : h;
+        }
+
+        function renderSleepTimelineChart(recentSessions, goal) {
+            const ctx = document.getElementById('sleepTimelineChart');
+            if (!ctx) return;
+
+            recentSessions = recentSessions || getSortedSleepSessions().slice(-sleepChartRangeDays);
+            goal = (typeof goal === 'number') ? goal : getSleepGoal();
+
+            const labels = recentSessions.map(session => vnDayLabel(session.start));
+
+            const qualityLabels = ['Chưa đánh giá','Rất tệ','Tệ','Bình thường','Tốt','Rất tốt'];
+            function colorForDuration(duration) {
+                if (duration > 16 || duration < 3) return { bg: 'rgba(239,68,68,0.75)', border: '#ef4444' };
+                if (duration < goal - 1.5) return { bg: 'rgba(245,158,11,0.75)', border: '#f59e0b' };
+                if (duration >= goal - 0.25 && duration <= goal + 1.5) return { bg: 'rgba(16,185,129,0.75)', border: '#10b981' };
+                return { bg: 'rgba(209,123,150,0.75)', border: '#d17b96' };
+            }
+
+            const ranges = recentSessions.map(session => {
+                const xStart = sleepTimeToAxisHour(session.start);
+                return [xStart, xStart + session.duration];
+            });
+            const barColors = recentSessions.map(session => colorForDuration(session.duration));
+
+            // Format a raw axis-hour value (có thể > 24) thành nhãn giờ:phút trong ngày (00:00-23:59)
+            function axisHourToLabel(h) {
+                let hh = ((h % 24) + 24) % 24;
+                const hours = Math.floor(hh);
+                const minutes = Math.round((hh - hours) * 60);
+                const mm = minutes === 60 ? 0 : minutes;
+                const hFinal = minutes === 60 ? hours + 1 : hours;
+                return `${String(hFinal % 24).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+            }
+
+            // Trục X cố định 12:00 trưa → 12:00 trưa hôm sau (12–36), vừa đủ chứa mọi khung
+            // giờ ngủ thường gặp mà vẫn giữ tỉ lệ nhất quán giữa các lần vẽ lại.
+            let axisMin = 12, axisMax = 36;
+            ranges.forEach(([s, e]) => {
+                if (s < axisMin) axisMin = Math.floor(s / 3) * 3;
+                if (e > axisMax) axisMax = Math.ceil(e / 3) * 3;
+            });
+
+            if (sleepTimelineChart) {
+                sleepTimelineChart.destroy();
+            }
+
+            sleepTimelineChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Sleep window',
+                        data: ranges,
+                        backgroundColor: barColors.map(c => c.bg),
+                        borderColor: barColors.map(c => c.border),
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        barPercentage: 0.65,
+                        categoryPercentage: 0.8
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => items[0]?.label || '',
+                                label: (context) => {
+                                    const session = recentSessions[context.dataIndex];
+                                    const bedtime = axisHourToLabel(ranges[context.dataIndex][0]);
+                                    const wake = axisHourToLabel(ranges[context.dataIndex][1]);
+                                    const q = session.quality || 0;
+                                    const qStr = q > 0 ? ` · ${qualityLabels[q]}` : '';
+                                    return `${bedtime} → ${wake} · ${session.duration}h${qStr}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            min: axisMin,
+                            max: axisMax,
+                            ticks: {
+                                color: '#666',
+                                stepSize: 3,
+                                callback: (value) => axisHourToLabel(value)
+                            },
+                            title: { display: true, text: 'Time of day' },
+                            grid: {
+                                color: (c) => (Math.round(c.tick.value) % 24 === 0) ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.15)'
+                            }
+                        },
+                        y: {
+                            ticks: { color: '#666', autoSkip: true }
+                        }
+                    }
+                }
+            });
+
+            if (document.body.classList.contains('dark-mode')) {
+                sleepTimelineChart.options.scales.y.ticks.color = '#cbd5e1';
+                sleepTimelineChart.options.scales.x.ticks.color = '#cbd5e1';
+                sleepTimelineChart.update();
             }
         }
 
