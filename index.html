@@ -2613,6 +2613,114 @@
             text-shadow: 0 1px 2px rgba(0,0,0,0.2);
         }
 
+        /* ── Goal Completion ring (replaces the old Chart.js doughnut,
+           which rendered as a flat opaque block whenever there were 0
+           goals and had unreadable title text in dark mode) ── */
+        .goal-ring-wrap {
+            position: relative;
+            width: 160px;
+            height: 160px;
+            margin: 10px auto 4px;
+        }
+        .goal-ring-svg {
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+            filter: drop-shadow(0 2px 6px rgba(219, 39, 119, 0.18));
+        }
+        .goal-ring-track {
+            fill: none;
+            stroke: rgba(219, 113, 175, 0.16);
+            stroke-width: 12;
+        }
+        .dark-mode .goal-ring-track {
+            stroke: rgba(244, 114, 182, 0.14);
+        }
+        .goal-ring-fill {
+            fill: none;
+            stroke: url(#goalRingGradient);
+            stroke-width: 12;
+            stroke-linecap: round;
+            stroke-dasharray: 427.26; /* 2 * PI * 68 */
+            stroke-dashoffset: 427.26;
+            transition: stroke-dashoffset 1s cubic-bezier(0.65, 0, 0.35, 1);
+        }
+        .goal-ring-center {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            pointer-events: none;
+        }
+        .goal-ring-icon {
+            font-size: 1.1rem;
+            color: #db2777;
+            opacity: 0.55;
+            margin-bottom: 2px;
+        }
+        .dark-mode .goal-ring-icon {
+            color: #f9a8d4;
+        }
+        .goal-ring-percent {
+            font-size: 1.9rem;
+            font-weight: 800;
+            font-family: 'Segoe UI', sans-serif;
+            color: var(--text-dark);
+            letter-spacing: -0.5px;
+            line-height: 1;
+        }
+        .dark-mode .goal-ring-percent {
+            color: #fdf2f8;
+        }
+        .goal-ring-caption {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+        }
+        .goal-ring-wrap.is-empty .goal-ring-fill {
+            stroke-dashoffset: 427.26;
+        }
+        .goal-ring-wrap.is-complete .goal-ring-icon {
+            color: #10b981;
+            opacity: 1;
+        }
+
+        .goal-ring-legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6px 14px;
+            margin-top: 14px;
+        }
+        .goal-ring-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-dark);
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .dark-mode .goal-ring-legend-item {
+            color: #f1e4ec;
+        }
+        .goal-ring-legend-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 0 3px rgba(0,0,0,0.03);
+        }
+        .goal-ring-legend-item .goal-ring-legend-count {
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
         .goal-empty-state {
             text-align: center;
             color: var(--text-muted);
@@ -24560,9 +24668,27 @@ window.DBP={
 
                         <div class="goal-progress-summary">
                             <h4 class="goal-progress-title"><i class="fa-solid fa-bullseye"></i> Goal Completion</h4>
-                            <div class="chart-container" style="height: 120px; margin: 12px 0;">
-                                <canvas id="goalProgressChart"></canvas>
+
+                            <div class="goal-ring-wrap" id="goalRingWrap">
+                                <svg viewBox="0 0 160 160" class="goal-ring-svg" aria-hidden="true">
+                                    <defs>
+                                        <linearGradient id="goalRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stop-color="#f472b6"/>
+                                            <stop offset="100%" stop-color="#a78bfa"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <circle class="goal-ring-track" cx="80" cy="80" r="68"></circle>
+                                    <circle class="goal-ring-fill" id="goalRingFill" cx="80" cy="80" r="68"></circle>
+                                </svg>
+                                <div class="goal-ring-center">
+                                    <div class="goal-ring-icon" id="goalRingIcon"><i class="fa-solid fa-bullseye"></i></div>
+                                    <div class="goal-ring-percent" id="goalRingPercent">0%</div>
+                                    <div class="goal-ring-caption" id="goalRingCaption">No goals yet</div>
+                                </div>
                             </div>
+
+                            <div class="goal-ring-legend" id="goalRingLegend"></div>
+
                             <div class="goal-progress-text" id="goalProgressSummary">
                                 0/0 goals completed
                             </div>
@@ -34586,11 +34712,11 @@ window.DBP={
         document.addEventListener('DOMContentLoaded', function() {
             const savedCareer = localStorage.getItem('currentCareer');
             const careerToLoad = savedCareer || 'pe';
+            initChart();
             loadCareer(careerToLoad);
             updateStats();
             updateGamificationStats();
             updateDailyStreak();
-            initChart();
             getRandomMeme();
             updateDailyStudyDisplay();
 
@@ -34677,6 +34803,7 @@ window.DBP={
             refreshMasteryPhaseBar(row.closest('.phase-block')?.id?.replace('ph-block-', ''));
             updateStats();
             updateChart();
+            checkGlobalAchievements();
         }
 
         function subMasteryTime(skillName, button) {
@@ -35408,6 +35535,80 @@ window.DBP={
         }
 
 
+        // One-time-forever badges (hours totals, XP, levels, career mastery,
+        // long streaks). Unlike addAchievement's same-day dedupe, these are
+        // guarded by a permanent key in gamification.unlockedMilestones so a
+        // milestone the user already passed doesn't re-fire every day just
+        // because the underlying number (hours, XP…) is still above it.
+        function addMilestoneAchievement(key, text, icon = '<i class="fa-solid fa-trophy"></i>') {
+            if (!Array.isArray(gamification.unlockedMilestones)) gamification.unlockedMilestones = [];
+            if (gamification.unlockedMilestones.includes(key)) return;
+            gamification.unlockedMilestones.push(key);
+            localStorage.setItem('gamification', JSON.stringify(gamification));
+            addAchievement(text, icon);
+            showNotification(`Achievement Unlocked: ${text}`, 'achievement');
+        }
+
+        // Cross-skill / cross-career badges. Cheap to recompute, so this is
+        // safe to call after any action that could move one of these numbers
+        // (logging hours, gaining XP, streak update) as well as once on page
+        // load to backfill milestones the user already passed before this
+        // existed.
+        function checkGlobalAchievements() {
+            let grandTotal = 0;
+            let distinctSkills = 0;
+            Object.keys(studyHours || {}).forEach(career => {
+                Object.values(studyHours[career] || {}).forEach(h => {
+                    if (h > 0) { grandTotal += h; distinctSkills += 1; }
+                });
+            });
+
+            [10, 25, 50, 100, 200, 500].forEach(m => {
+                if (grandTotal >= m) {
+                    addMilestoneAchievement(`total-hours-${m}`, `${m} total hours logged!`, '<i class="fa-solid fa-chart-line"></i>');
+                }
+            });
+
+            [5, 10, 15].forEach(m => {
+                if (distinctSkills >= m) {
+                    addMilestoneAchievement(`breadth-${m}`, `${m} different skills started!`, '<i class="fa-solid fa-layer-group"></i>');
+                }
+            });
+
+            [100, 500, 1000, 2500, 5000].forEach(m => {
+                if ((gamification.points || 0) >= m) {
+                    addMilestoneAchievement(`xp-${m}`, `${m} XP earned!`, '<i class="fa-solid fa-bolt"></i>');
+                }
+            });
+
+            [5, 10, 15, 20].forEach(m => {
+                if ((gamification.level || 1) >= m) {
+                    addMilestoneAchievement(`level-${m}`, `Reached Level ${m}!`, '<i class="fa-solid fa-star"></i>');
+                }
+            });
+
+            [30, 60, 100, 365].forEach(m => {
+                if ((gamification.streak || 0) >= m) {
+                    addMilestoneAchievement(`streak-${m}`, `${m} day streak!`, '<i class="fa-solid fa-fire"></i>');
+                }
+            });
+
+            Object.keys(skillsData || {}).forEach(career => {
+                if (career === 'mastery') return;
+                const careerData = skillsData[career];
+                if (!careerData || !careerData.categories) return;
+                let allSkills = [];
+                Object.values(careerData.categories).forEach(cat => {
+                    allSkills = allSkills.concat(cat.skills || []);
+                });
+                if (allSkills.length === 0) return;
+                const done = allSkills.every(s => (studyHours[career]?.[s.name] || 0) >= (s.targetHours || 10));
+                if (done) {
+                    addMilestoneAchievement(`career-mastered-${career}`, `Career Mastered: ${careerData.title}!`, '<i class="fa-solid fa-crown"></i>');
+                }
+            });
+        }
+
         function addAchievement(text, icon = '<i class="fa-solid fa-trophy"></i>') {
             // Ephemeral toast — same pop-and-fade feedback as before.
             const achievementsDiv = document.getElementById('achievements');
@@ -35498,6 +35699,7 @@ window.DBP={
                 }
             }
             updateGamificationStats();
+            checkGlobalAchievements();
         }
 
         function updateGamificationStats() {
@@ -41160,75 +41362,90 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
         // --- GOAL PROGRESS CHART ---
-        let goalProgressChart = null;
+        // Goal Completion ring — SVG-based (no Chart.js dependency for this
+        // one). Shows 4-way breakdown (completed / active / due soon /
+        // overdue) via getGoalStatus, animates the ring fill, and has a
+        // proper empty state instead of a flat colored block.
+        const GOAL_RING_CIRCUMFERENCE = 2 * Math.PI * 68; // r=68, matches the SVG circle
+        const GOAL_STATUS_META = {
+            completed: { label: 'Completed', color: '#10b981' },
+            active:    { label: 'On track',  color: '#a78bfa' },
+            soon:      { label: 'Due soon',  color: '#f59e0b' },
+            overdue:   { label: 'Overdue',   color: '#f43f5e' }
+        };
+
+        let goalProgressChart = null; // kept as a no-op alias so any legacy
+                                       // code checking `if (goalProgressChart)` elsewhere is harmless
         function initGoalProgressChart() {
-            const ctx = document.getElementById('goalProgressChart').getContext('2d');
-            if (goalProgressChart) {
-                goalProgressChart.destroy();
-            }
+            const wrap = document.getElementById('goalRingWrap');
+            const fill = document.getElementById('goalRingFill');
+            const percentEl = document.getElementById('goalRingPercent');
+            const captionEl = document.getElementById('goalRingCaption');
+            const iconEl = document.getElementById('goalRingIcon');
+            const legendEl = document.getElementById('goalRingLegend');
+            const summaryEl = document.getElementById('goalProgressSummary');
+            if (!wrap || !fill || !percentEl || !captionEl || !legendEl || !summaryEl) return;
+
             const filteredGoals = goals.filter(g => g.career === currentCareer);
             const totalGoals = filteredGoals.length;
-            const completedGoals = filteredGoals.filter(g => getGoalStatus(g) === 'completed').length;
-            const remainingGoals = totalGoals - completedGoals;
-            const completionRate = totalGoals > 0 ? Math.round((completedGoals / totalGoals) * 100) : 0;
-            const data = {
-                labels: ['Completed', 'Remaining'],
-                datasets: [{
-                    data: [completedGoals, remainingGoals],
-                    backgroundColor: [
-                        '#10b981', 
-                        '#e2e8f0' 
-                    ],
-                    borderColor: [
-                        '#059669',
-                        '#cbd5e1'
-                    ],
-                    borderWidth: 2,
-                    cutout: '70%' 
-                }]
-            };
-            const options = {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.raw || 0;
-                                return `${label}: ${value}`;
-                            }
-                        }
-                    },
-                    title: {
-                        display: true,
-                        text: `${completionRate}% Complete`,
-                        font: {
-                            size: 16,
-                            weight: 'bold'
-                        },
-                        color: (getComputedStyle(document.documentElement).getPropertyValue('--text-dark').trim() || '#1e293b'),
-                        padding: 10
-                    }
-                },
-                animation: {
-                    duration: 1000,
-                    easing: 'easeOutBounce'
-                }
-            };
-            goalProgressChart = new Chart(ctx, {
-                type: 'doughnut',
-                data: data,
-                options: options
+
+            const counts = { completed: 0, active: 0, soon: 0, overdue: 0 };
+            filteredGoals.forEach(g => {
+                const status = getGoalStatus(g);
+                if (counts[status] !== undefined) counts[status] += 1;
             });
-            document.getElementById('goalProgressSummary').textContent = `${completedGoals}/${totalGoals} goals completed`;
+            const completedGoals = counts.completed;
+            const completionRate = totalGoals > 0 ? Math.round((completedGoals / totalGoals) * 100) : 0;
+
+            // Ring fill.
+            const offset = totalGoals > 0
+                ? GOAL_RING_CIRCUMFERENCE * (1 - completionRate / 100)
+                : GOAL_RING_CIRCUMFERENCE;
+            // Force a reflow so the transition always animates from the
+            // previous value instead of jumping straight to the new one.
+            requestAnimationFrame(() => { fill.style.strokeDashoffset = String(offset); });
+
+            wrap.classList.toggle('is-empty', totalGoals === 0);
+            wrap.classList.toggle('is-complete', totalGoals > 0 && completedGoals === totalGoals);
+
+            if (totalGoals === 0) {
+                percentEl.textContent = '—';
+                captionEl.textContent = 'No goals yet';
+                iconEl.innerHTML = '<i class="fa-solid fa-bullseye"></i>';
+            } else if (completedGoals === totalGoals) {
+                percentEl.textContent = '100%';
+                captionEl.textContent = 'All complete!';
+                iconEl.innerHTML = '<i class="fa-solid fa-champagne-glasses"></i>';
+            } else {
+                percentEl.textContent = `${completionRate}%`;
+                captionEl.textContent = 'Complete';
+                iconEl.innerHTML = '<i class="fa-solid fa-bullseye"></i>';
+            }
+
+            // Legend — only show statuses that actually have goals in them,
+            // so an all-active goal list doesn't show three empty "0" chips.
+            if (totalGoals === 0) {
+                legendEl.innerHTML = '';
+            } else {
+                legendEl.innerHTML = Object.keys(GOAL_STATUS_META)
+                    .filter(key => counts[key] > 0)
+                    .map(key => {
+                        const meta = GOAL_STATUS_META[key];
+                        return `
+                            <div class="goal-ring-legend-item">
+                                <span class="goal-ring-legend-dot" style="background:${meta.color};"></span>
+                                <span>${meta.label}</span>
+                                <span class="goal-ring-legend-count">${counts[key]}</span>
+                            </div>
+                        `;
+                    }).join('');
+            }
+
+            summaryEl.textContent = `${completedGoals}/${totalGoals} goals completed`;
         }
 
         function updateGoalProgressChart() {
-            if (document.getElementById('goalProgressChart')) {
+            if (document.getElementById('goalRingWrap')) {
                 initGoalProgressChart();
             }
         }
