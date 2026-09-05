@@ -14905,9 +14905,110 @@
             border-color: rgba(236, 72, 153, 0.18);
         }
 
-        #yourProgressCard .chart-container:has(#progressChart) {
-            height: 340px;
+        #yourProgressCard .skills-chart-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: stretch;
             margin: 18px 0 0;
+        }
+
+        #yourProgressCard .skills-chart-container {
+            flex: 1 1 260px;
+            min-width: 260px;
+            width: auto;
+            height: 340px;
+            margin: 0;
+            background: transparent;
+        }
+
+        #yourProgressCard .skills-stats-panel {
+            flex: 1 1 190px;
+            min-width: 190px;
+            max-width: 260px;
+            background: var(--theme-surface);
+            border: 1px solid var(--theme-border);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        #yourProgressCard .skills-stats-highlights {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed var(--theme-border-strong);
+        }
+
+        #yourProgressCard .skills-stats-highlight {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        #yourProgressCard .skills-stats-highlight-label {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--theme-text-muted);
+        }
+
+        #yourProgressCard .skills-stats-highlight-value {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--theme-accent-deep);
+        }
+
+        #yourProgressCard .skills-stats-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        #yourProgressCard .skills-stats-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+        }
+
+        #yourProgressCard .skills-stats-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        #yourProgressCard .skills-stats-name {
+            flex: 1;
+            color: var(--theme-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #yourProgressCard .skills-stats-hours {
+            color: var(--theme-text-muted);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #yourProgressCard .skills-stats-empty {
+            font-size: 0.78rem;
+            color: var(--theme-text-muted);
+            line-height: 1.4;
+        }
+
+        @media (max-width: 420px) {
+            #yourProgressCard .skills-stats-panel {
+                max-width: none;
+            }
         }
 
         /* ── Meme widget ── */
@@ -24406,8 +24507,25 @@ window.DBP={
                                 <button id="editCurrentMemeBtn" onclick="event.stopPropagation(); editCurrentMemeCaption();" title="Edit caption" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; transition: all 0.2s ease; flex-shrink: 0; display: none;"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg></button>
                             </div>
                         </div>                        
-                        <div class="chart-container">
-                            <canvas id="progressChart"></canvas>
+                        <div class="skills-chart-row">
+                            <div class="chart-container skills-chart-container">
+                                <canvas id="progressChart"></canvas>
+                            </div>
+                            <div class="skills-stats-panel">
+                                <div class="skills-stats-highlights">
+                                    <div class="skills-stats-highlight">
+                                        <span class="skills-stats-highlight-label">Total hours</span>
+                                        <span class="skills-stats-highlight-value" id="skillsStatsTotal">0.0h</span>
+                                    </div>
+                                    <div class="skills-stats-highlight">
+                                        <span class="skills-stats-highlight-label">Top skill</span>
+                                        <span class="skills-stats-highlight-value" id="skillsStatsTop">—</span>
+                                    </div>
+                                </div>
+                                <div class="skills-stats-list" id="skillsStatsList">
+                                    <div class="skills-stats-empty">Log study hours to see your breakdown here.</div>
+                                </div>
+                            </div>
                         </div>
                         <div id="achievements">
                         </div>
@@ -35505,6 +35623,53 @@ window.DBP={
         }
 
 
+        // Shared metadata (label + point color) for the 12 skill tracks —
+        // order must match the `hours` array built in updateChart(), and
+        // colors must match progressChart's pointBackgroundColor list.
+        const SKILLS_RADAR_META = [
+            { label: 'PE',      color: '#db2777' },
+            { label: 'IB',      color: '#ec4899' },
+            { label: 'HF',      color: '#f472b6' },
+            { label: 'SC',      color: '#f9a8d4' },
+            { label: 'Fintech', color: '#c084fc' },
+            { label: 'English', color: '#a78bfa' },
+            { label: 'Chinese', color: '#f6ad55' },
+            { label: 'German',  color: '#d4a017' },
+            { label: 'Tools',   color: '#fbbf24' },
+            { label: 'CFA L1',  color: '#fb923c' },
+            { label: 'China',   color: '#fda4af' },
+            { label: 'Quant',   color: '#e879f9' }
+        ];
+
+        function updateSkillsStatsPanel(hours) {
+            const totalEl = document.getElementById('skillsStatsTotal');
+            const topEl = document.getElementById('skillsStatsTop');
+            const listEl = document.getElementById('skillsStatsList');
+            if (!totalEl || !topEl || !listEl) return;
+
+            const total = hours.reduce((sum, h) => sum + (h || 0), 0);
+            totalEl.textContent = `${total.toFixed(1)}h`;
+
+            if (total <= 0) {
+                topEl.textContent = '—';
+                listEl.innerHTML = '<div class="skills-stats-empty">Log study hours to see your breakdown here.</div>';
+                return;
+            }
+
+            const rows = SKILLS_RADAR_META.map((m, i) => ({ label: m.label, color: m.color, hours: hours[i] || 0 }))
+                .sort((a, b) => b.hours - a.hours);
+
+            topEl.textContent = `${rows[0].label} · ${rows[0].hours.toFixed(1)}h`;
+
+            listEl.innerHTML = rows.map(r => `
+                <div class="skills-stats-row">
+                    <span class="skills-stats-dot" style="background:${r.color};"></span>
+                    <span class="skills-stats-name">${r.label}</span>
+                    <span class="skills-stats-hours">${r.hours.toFixed(1)}h</span>
+                </div>
+            `).join('');
+        }
+
         function updateChart() {
             if (!progressChart) return;
             const hours = [
@@ -35523,6 +35688,7 @@ window.DBP={
             ];
             progressChart.data.datasets[0].data = hours;
             progressChart.update();
+            updateSkillsStatsPanel(hours);
         }       
 
 
