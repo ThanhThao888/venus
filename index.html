@@ -43593,6 +43593,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const defaultSol = 0;
             const solChipOptions = [0, 10, 15, 20, 30, 45, 60];
+            const defaultAwake = 0;
+            const awakeChipOptions = [0, 5, 10, 20, 30, 45];
 
             const solSectionHtml = `
                 <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Tối qua mất khoảng bao lâu để vào giấc?</label>
@@ -43602,6 +43604,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         >${m === 0 ? 'Ngủ luôn' : m + 'p'}</button>`).join('')}
                 </div>
                 <div style="font-size:0.7rem;color:var(--text-muted);margin-top:5px;">Ước lượng thôi cũng được — dùng để trừ ra giờ ngủ thực tế.</div>
+            `;
+
+            // Tổng thời gian tỉnh giấc GIỮA đêm (khác với SOL — lúc mới nằm xuống).
+            // Không trừ vào duration (giữ đúng quy ước sẵn có của Manual/Edit: chỉ SOL
+            // mới trừ vào giờ ngủ chính) — số này chỉ để tính Sleep Efficiency (SE)
+            // cho chuẩn hơn, không làm duration đổi khác đi so với trước.
+            const awakeSectionHtml = `
+                <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Có tỉnh giấc giữa đêm không? Tổng khoảng bao lâu?</label>
+                <div id="quickSleepAwakeChips" style="display:flex; gap:5px; flex-wrap:wrap;">
+                    ${awakeChipOptions.map(m => `<button type="button" data-awake="${m}" onclick="selectSleepAwake(${m})"
+                        style="padding:5px 10px;border-radius:14px;border:1.5px solid ${m === 0 ? 'var(--primary)' : 'var(--border-color)'};background:${m === 0 ? 'var(--primary)' : 'var(--bg-light)'};color:${m === 0 ? '#fff' : 'var(--text-dark)'};cursor:pointer;font-size:0.76rem;font-weight:600;"
+                        >${m === 0 ? 'Không' : m + 'p'}</button>`).join('')}
+                </div>
+                <div style="font-size:0.7rem;color:var(--text-muted);margin-top:5px;">Không trừ vào giờ ngủ chính — chỉ dùng để tính Sleep Efficiency chính xác hơn.</div>
             `;
 
             const html = `
@@ -43617,6 +43633,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="form-group">
                             ${solSectionHtml}
                             <input type="hidden" id="quickSleepSolVal" value="${defaultSol}">
+                        </div>
+                        <div class="form-group">
+                            ${awakeSectionHtml}
+                            <input type="hidden" id="quickSleepAwakeVal" value="${defaultAwake}">
                         </div>
                         <div class="form-group">
                             <label style="display:block; margin-bottom:6px; font-weight:500; color:var(--text-dark);">Chất lượng giấc ngủ</label>
@@ -43663,6 +43683,19 @@ document.addEventListener('DOMContentLoaded', function() {
             updateQuickSleepPreview();
         }
 
+        // Cập nhật chip tỉnh-giấc-giữa-đêm đang chọn (không ảnh hưởng preview giờ
+        // ngủ chính, vì số này không trừ vào duration — chỉ nuôi Sleep Efficiency).
+        function selectSleepAwake(min) {
+            const awakeInput = document.getElementById('quickSleepAwakeVal');
+            if (awakeInput) awakeInput.value = min;
+            document.querySelectorAll('#quickSleepAwakeChips button').forEach(b => {
+                const active = parseInt(b.dataset.awake, 10) === min;
+                b.style.background = active ? 'var(--primary)' : 'var(--bg-light)';
+                b.style.color = active ? '#fff' : 'var(--text-dark)';
+                b.style.borderColor = active ? 'var(--primary)' : 'var(--border-color)';
+            });
+        }
+
         function updateQuickSleepPreview() {
             if (!pendingSleepSession) return;
             const solInput = document.getElementById('quickSleepSolVal');
@@ -43675,9 +43708,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 : `Bạn vừa ngủ ${pendingSleepSession.duration}h. Ghi nhanh vài chữ trong khi còn nhớ — tuỳ chọn, có thể bỏ qua.`;
         }
 
-        // Trừ số phút SOL (chọn tay hoặc ghi tự động từ "Vừa ngủ") vào duration,
-        // để mọi số liệu khác trong app (chart, nợ ngủ, streak...) phản ánh giờ
-        // NGỦ THỰC TẾ thay vì giờ nằm giường.
+        // Trừ số phút SOL vào duration, để mọi số liệu khác trong app (chart, nợ
+        // ngủ, streak...) phản ánh giờ NGỦ THỰC TẾ thay vì giờ nằm giường. Awakenings
+        // giữa đêm được lưu riêng (không trừ vào duration, theo đúng quy ước ở Manual/
+        // Edit) — chỉ dùng để tính Sleep Efficiency.
         function applySleepSol(session) {
             const solInput = document.getElementById('quickSleepSolVal');
             const solMin = solInput ? (parseInt(solInput.value, 10) || 0) : (session.sol || 0);
@@ -43686,6 +43720,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 session.timeInBed = session.duration;
                 session.duration = parseFloat(Math.max(0, session.duration - solMin / 60).toFixed(2));
             }
+
+            const awakeInput = document.getElementById('quickSleepAwakeVal');
+            const awakeMin = awakeInput ? (parseInt(awakeInput.value, 10) || 0) : 0;
+            session.awakenings_min = awakeMin;
         }
 
         function closeQuickSleepNoteModal() {
