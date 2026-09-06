@@ -26610,12 +26610,15 @@ window.DBP={
             <div class="chart-container" style="margin: 0 0 6px;">
                 <canvas id="sleepChart"></canvas>
             </div>
-            <div style="font-size:0.7rem; color:var(--text-muted); text-align:right; margin: 0 0 20px; display:flex; justify-content:flex-end; align-items:center; gap:5px;">
-                <span style="display:inline-flex; align-items:center; gap:3px;">
-                    <span style="width:5px;height:5px;border-radius:50%;background:rgba(139,92,246,0.4);border:1px solid #8b5cf6;display:inline-block;"></span>
-                    <span style="width:9px;height:9px;border-radius:50%;background:rgba(124,58,237,1);border:1px solid #5b21b6;display:inline-block;"></span>
+            <div style="font-size:0.7rem; color:var(--text-muted); margin: 0 0 20px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span><svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-pencil"></use></svg> Nhấn vào 1 cột để sửa đêm đó</span>
+                <span style="display:flex; align-items:center; gap:5px;">
+                    <span style="display:inline-flex; align-items:center; gap:3px;">
+                        <span style="width:5px;height:5px;border-radius:50%;background:rgba(139,92,246,0.4);border:1px solid #8b5cf6;display:inline-block;"></span>
+                        <span style="width:9px;height:9px;border-radius:50%;background:rgba(124,58,237,1);border:1px solid #5b21b6;display:inline-block;"></span>
+                    </span>
+                    chấm tím trên cột = chất lượng giấc ngủ (to & đậm hơn = ngủ ngon hơn)
                 </span>
-                chấm tím trên cột = chất lượng giấc ngủ (to & đậm hơn = ngủ ngon hơn)
             </div>
 
             <!-- Sleep Timeline — bedtime → wake-up on a 24h axis, so two nights with the
@@ -26625,8 +26628,11 @@ window.DBP={
                 <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;">
                     <svg class="icon-svg" aria-hidden="true"><use href="#icon-timer"></use></svg> Sleep Timeline <span style="font-weight:400;">(bedtime → wake-up)</span>
                 </div>
-                <div class="chart-container" id="sleepTimelineWrap" style="margin:0;">
+                <div class="chart-container" id="sleepTimelineWrap" style="margin:0 0 4px;">
                     <canvas id="sleepTimelineChart"></canvas>
+                </div>
+                <div style="font-size:0.7rem; color:var(--text-muted);">
+                    <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-pencil"></use></svg> Nhấn vào 1 hàng để sửa đêm đó
                 </div>
             </div>
 
@@ -44712,6 +44718,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 options: {
                     responsive: true,
+                    // Click-to-edit (#8): bấm vào bất kỳ đâu trong cột (kể cả phần trống
+                    // phía trên, dưới chấm Quality) đều mở modal sửa đêm đó — dùng
+                    // getElementsAtEventForMode với mode 'index' + intersect:false thay vì
+                    // dựa vào `elements` mặc định, vì mặc định chỉ bắt trúng phần tử GẦN
+                    // NHẤT dưới con trỏ, dễ bị chấm Quality (nằm đè lên đỉnh cột) "chiếm"
+                    // mất click khi bấm gần đỉnh cột cao.
+                    onClick: (evt, elements, chart) => {
+                        const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                        const barEl = els.find(el => el.datasetIndex === 0);
+                        if (!barEl) return;
+                        const session = recentSessions[barEl.index];
+                        if (session) editSleepSession(session.id);
+                    },
+                    onHover: (evt, elements, chart) => {
+                        const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                        const overBar = els.some(el => el.datasetIndex === 0);
+                        if (evt.native && evt.native.target) evt.native.target.style.cursor = overBar ? 'pointer' : 'default';
+                    },
                     plugins: {
                         legend: { display: false },
                         tooltip: {
@@ -44841,6 +44865,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 options: {
                     indexAxis: 'y',
                     responsive: true,
+                    // Click-to-edit (#8): cùng cơ chế với Hours chart — bấm vào bất kỳ
+                    // đâu dọc theo hàng (đêm) đó, không cần trúng chính xác thanh, đều mở
+                    // modal sửa đêm đó.
+                    onClick: (evt, elements, chart) => {
+                        const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                        const barEl = els.find(el => el.datasetIndex === 0);
+                        if (!barEl) return;
+                        const session = recentSessions[barEl.index];
+                        if (session) editSleepSession(session.id);
+                    },
+                    onHover: (evt, elements, chart) => {
+                        const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+                        const overBar = els.some(el => el.datasetIndex === 0);
+                        if (evt.native && evt.native.target) evt.native.target.style.cursor = overBar ? 'pointer' : 'default';
+                    },
                     plugins: {
                         legend: { display: false },
                         tooltip: {
