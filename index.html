@@ -26592,6 +26592,12 @@ window.DBP={
             </div>
             </div>
 
+            <!-- Sleep Insight Banner — tự tổng hợp 1 kết luận ngắn gọn (duration/nợ ngủ/streak
+                 tuần này so với tuần trước), thay vì bắt người dùng tự soi biểu đồ để suy ra. -->
+            <div id="sleepInsightBanner" style="display:none; margin: 4px 0 12px; padding:11px 14px; border-radius: var(--radius-md); border:1px solid; font-size:0.83rem; line-height:1.55; color:var(--text-dark);">
+                <span id="sleepInsightText"></span>
+            </div>
+
             <!-- Sleep Chart -->
             <div role="group" aria-label="Chọn số đêm hiển thị trên biểu đồ" style="display:flex; justify-content:flex-end; gap:6px; margin: 20px 0 6px;">
                 <button class="sleep-chart-range-btn" data-range="7" onclick="setSleepChartRange(7)" aria-label="Hiện 7 đêm gần nhất" aria-pressed="true"
@@ -26622,6 +26628,36 @@ window.DBP={
                 <div class="chart-container" id="sleepTimelineWrap" style="margin:0;">
                     <canvas id="sleepTimelineChart"></canvas>
                 </div>
+            </div>
+
+            <!-- Sleep Heatmap — "GitHub contribution" style, 3 tháng gần nhất. Bar chart hợp
+                 để soi chi tiết 7-30 đêm, nhưng muốn thấy pattern dài hơi (đi ngủ thất
+                 thường theo tuần/tháng) thì ô vuông đậm-nhạt gọn hơn nhiều so với kéo dài
+                 trục X của bar chart. -->
+            <div style="margin: 0 0 20px;">
+                <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:8px;">
+                    <svg class="icon-svg" aria-hidden="true"><use href="#icon-calendar"></use></svg> Sleep Heatmap <span style="font-weight:400;">(3 tháng gần nhất)</span>
+                </div>
+                <div style="margin:0; padding:14px 14px 10px; overflow-x:auto; background:var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                    <div id="sleepHeatmapGrid" style="display:inline-block; min-width:100%;"></div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:8px; flex-wrap:wrap;">
+                        <span id="sleepHeatmapSummary" style="font-size:0.72rem; color:var(--text-muted);"></span>
+                        <span style="display:flex; align-items:center; gap:4px; font-size:0.7rem; color:var(--text-muted);">
+                            Ít <span id="sleepHeatmapLegend" style="display:flex; gap:3px;"></span> Nhiều
+                        </span>
+                    </div>
+                </div>
+                <div id="sleepHeatmapTooltip" style="display:none; position:fixed; z-index:9999; pointer-events:none; background:var(--text-dark); color:#fff; font-size:0.72rem; line-height:1.5; padding:6px 9px; border-radius:6px; box-shadow:0 4px 14px rgba(0,0,0,0.25); max-width:220px;"></div>
+            </div>
+
+            <!-- Weekday vs Weekend (Social Jetlag) — so sánh giờ ngủ ngày thường (T2-T6) với
+                 cuối tuần (T7-CN). Lệch nhiều = dấu hiệu "social jetlag" (đồng hồ sinh học
+                 bị xáo trộn giữa tuần và cuối tuần), khá phổ biến ở dân văn phòng/sinh viên. -->
+            <div id="sleepWeekdayWeekendWrap" style="margin: 0 0 20px; display:none;">
+                <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:8px;">
+                    <svg class="icon-svg" aria-hidden="true"><use href="#icon-scale"></use></svg> Ngày thường vs Cuối tuần
+                </div>
+                <div id="sleepWeekdayWeekendCard" style="border-radius: var(--radius-md); border:1px solid var(--border-color); background:var(--bg-light); padding:14px;"></div>
             </div>
 
             <!-- Sleep History -->
@@ -36088,6 +36124,7 @@ window.DBP={
                 sleepTimelineChart.options.scales.x.ticks.color = textColor;
                 sleepTimelineChart.update();
             }
+            if (typeof renderSleepHeatmap === 'function') renderSleepHeatmap();
             if (solTrendChart) {
                 const textColor = isDark ? '#94a3b8' : '#94a3b8';
                 solTrendChart.options.scales.y.ticks.color = textColor;
@@ -44449,6 +44486,141 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSleepChart();
         }
 
+        // ===== Sleep Insight Banner — biến dữ liệu thô thành 1 kết luận ngắn gọn =====
+        // Không phụ thuộc vào toggle 7đ/14đ/30đ của biểu đồ — luôn so sánh "7 đêm có log
+        // gần nhất" với "7 đêm có log trước đó", giống đúng cách solTrend/regularity đã
+        // làm, để nhất quán và không bị lệch nếu người dùng có ngày quên log.
+        function avgOf(arr) { return arr.reduce((a, b) => a + b, 0) / arr.length; }
+
+        // Gom theo ngày (giờ VN) — tái dùng bucket đã xây cho Sleep Heatmap để khỏi lặp
+        // logic gom nhóm, và đảm bảo mọi nơi tính "theo ngày" đều thống nhất 1 múi giờ VN.
+        function getDailySleepTotalsVN() {
+            const buckets = buildSleepHeatmapBuckets();
+            return Object.keys(buckets).sort().map(dateStr => ({
+                date: dateStr,
+                duration: buckets[dateStr].duration,
+                qualities: buckets[dateStr].qualities
+            }));
+        }
+
+        function getSleepDurationTrendVN() {
+            const daily = getDailySleepTotalsVN();
+            const last7 = daily.slice(-7), prev7 = daily.slice(-14, -7);
+            if (last7.length < 3 || prev7.length < 3) return null;
+            const avgLast = avgOf(last7.map(d => d.duration));
+            const avgPrev = avgOf(prev7.map(d => d.duration));
+            return { avgLast, avgPrev, diff: avgLast - avgPrev, lastCount: last7.length, prevCount: prev7.length, lastDate: last7[last7.length - 1].date };
+        }
+
+        function getSleepQualityTrendVN() {
+            const rated = getDailySleepTotalsVN()
+                .filter(d => d.qualities.length > 0)
+                .map(d => ({ date: d.date, q: avgOf(d.qualities) }));
+            const last7 = rated.slice(-7), prev7 = rated.slice(-14, -7);
+            if (last7.length < 3 || prev7.length < 3) return null;
+            const avgLast = avgOf(last7.map(d => d.q));
+            const avgPrev = avgOf(prev7.map(d => d.q));
+            return { avgLast, avgPrev, diff: avgLast - avgPrev, lastCount: last7.length, prevCount: prev7.length, lastDate: last7[last7.length - 1].date };
+        }
+
+        function getSleepDebt7VN(goal) {
+            const last7 = getDailySleepTotalsVN().slice(-7);
+            if (last7.length < 3) return null;
+            const debt = last7.reduce((sum, d) => sum + Math.max(0, goal - d.duration), 0);
+            return { debt, nights: last7.length, lastDate: last7[last7.length - 1].date };
+        }
+
+        const INSIGHT_TONE_STYLE = {
+            caution: { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.4)' },
+            positive: { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.4)' },
+            info: { bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.35)' }
+        };
+
+        // Chọn 1 insight "đáng nói nhất" theo thứ tự ưu tiên: thay đổi thời lượng rõ rệt
+        // (kèm nhắc nợ ngủ nếu có) > thay đổi chất lượng rõ rệt > chuỗi đạt mục tiêu dài >
+        // nợ ngủ nặng nhưng không đổi (nợ mãn tính) > ổn định > (không đủ dữ liệu thì ẩn).
+        //
+        // Lưu ý thứ tự: ban đầu để "nợ ngủ" lên đầu, nhưng ngủ ít đi tuần này gần như luôn
+        // kéo theo nợ ngủ tăng, nên nó liên tục "che" mất đúng insight về thời lượng mà
+        // tính năng này được yêu cầu để làm nổi bật. Giải pháp: ưu tiên câu về thời lượng,
+        // và nếu nợ ngủ cũng đang nặng thì nối thêm 1 vế vào cùng câu đó, thay vì 2 banner
+        // cạnh tranh nhau. Nợ ngủ chỉ đứng ra làm insight riêng khi nó "mãn tính" — tức
+        // không đi kèm 1 thay đổi rõ rệt nào tuần này để giải thích.
+        function computeSleepInsight() {
+            const goal = getSleepGoal();
+            const durTrend = getSleepDurationTrendVN();
+            const debt = getSleepDebt7VN(goal);
+
+            if (durTrend && Math.abs(durTrend.diff) >= 0.3) {
+                const more = durTrend.diff > 0;
+                const closerToGoal = Math.abs(durTrend.avgLast - goal) < Math.abs(durTrend.avgPrev - goal);
+                let tone = closerToGoal ? 'positive' : 'caution';
+                let text = `Tuần này bạn ngủ trung bình <strong>${more ? 'nhiều hơn' : 'ít hơn'} ${Math.abs(durTrend.diff).toFixed(1)} giờ</strong> so với tuần trước (${durTrend.avgPrev.toFixed(1)}h → ${durTrend.avgLast.toFixed(1)}h), mục tiêu hiện tại là ${goal}h.`;
+                if (debt && debt.debt > 5) {
+                    tone = 'caution';
+                    text += ` Đang nợ ngủ ${debt.debt.toFixed(1)}h trong ${debt.nights} đêm gần nhất.`;
+                }
+                return { tone, icon: more ? 'icon-trending-up' : 'icon-trending-down', signature: `dur:${durTrend.lastDate}`, text };
+            }
+
+            const qTrend = getSleepQualityTrendVN();
+            if (qTrend && Math.abs(qTrend.diff) >= 0.4) {
+                const better = qTrend.diff > 0;
+                return {
+                    tone: better ? 'positive' : 'caution', icon: 'icon-sparkles', signature: `qual:${qTrend.lastDate}`,
+                    text: `Chất lượng giấc ngủ tuần này <strong>${better ? 'tăng' : 'giảm'}</strong> — trung bình ${qTrend.avgPrev.toFixed(1)}/5 → ${qTrend.avgLast.toFixed(1)}/5 so với tuần trước.`
+                };
+            }
+
+            const dailyForStreak = getDailySleepTotalsVN();
+            let streak = 0;
+            for (let i = dailyForStreak.length - 1; i >= 0; i--) {
+                if (dailyForStreak[i].duration >= goal - 0.25) streak++;
+                else break;
+            }
+            if (streak >= 5) {
+                return {
+                    tone: 'positive', icon: 'icon-flame', signature: `streak:${dailyForStreak[dailyForStreak.length - 1]?.date}:${streak}`,
+                    text: `Bạn đang đạt mục tiêu <strong>${streak} đêm liên tiếp</strong> — cứ giữ đều giờ giấc như vậy nhé.`
+                };
+            }
+
+            // Nợ ngủ "mãn tính" — nặng nhưng không phải do 1 thay đổi rõ rệt tuần này
+            // (nếu là thay đổi rõ rệt thì đã được nêu ở nhánh duration phía trên rồi).
+            if (debt && debt.debt > 5) {
+                return {
+                    tone: 'caution', icon: 'icon-flame', signature: `debt:${debt.lastDate}`,
+                    text: `Bạn đang nợ ngủ <strong>${debt.debt.toFixed(1)}h</strong> trong ${debt.nights} đêm gần nhất — thử lên giường sớm hơn vài chục phút vài đêm liền để trả dần.`
+                };
+            }
+
+            if (durTrend) {
+                return {
+                    tone: 'info', icon: 'icon-sparkles', signature: `stable:${durTrend.lastDate}`,
+                    text: `Giấc ngủ tuần này khá ổn định, không thay đổi nhiều so với tuần trước (${durTrend.avgLast.toFixed(1)}h/đêm).`
+                };
+            }
+
+            return null; // chưa đủ dữ liệu 2 tuần để so sánh — ẩn banner, không bịa insight
+        }
+
+        function renderSleepInsightBanner() {
+            const banner = document.getElementById('sleepInsightBanner');
+            const textEl = document.getElementById('sleepInsightText');
+            if (!banner || !textEl) return;
+
+            if (sleepSessions.length === 0) { banner.style.display = 'none'; return; }
+
+            const insight = computeSleepInsight();
+            if (!insight) { banner.style.display = 'none'; return; }
+
+            const style = INSIGHT_TONE_STYLE[insight.tone] || INSIGHT_TONE_STYLE.info;
+            banner.style.background = style.bg;
+            banner.style.borderColor = style.border;
+            textEl.innerHTML = `<svg class="icon-svg" aria-hidden="true"><use href="#${insight.icon}"></use></svg> ${insight.text}`;
+            banner.style.display = 'block';
+        }
+
         // Bảng màu chấm chất lượng — cố tình dùng tông tím/violet, khác hẳn dải màu
         // đỏ/cam/xanh lá/hồng đang dùng cho cột (theo mục tiêu giờ ngủ), để mắt phân biệt
         // ngay đâu là "thời lượng" và đâu là "chất lượng" mà không cần đọc chú thích.
@@ -44583,6 +44755,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             renderSleepTimelineChart(recentSessions, goal);
+            renderSleepHeatmap();
+            renderSleepInsightBanner();
+            renderWeekdayWeekendCard();
         }
 
         // ===== Sleep Timeline — horizontal "bedtime → wake-up" bars on a 24h axis =====
@@ -44599,6 +44774,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const p = getVNDateTimeParts(ts);
             const h = p.hour + p.minute / 60;
             return h < 12 ? h + 24 : h;
+        }
+
+        // Format a raw axis-hour value (có thể >24, ví dụ 25.5 = 01:30 sáng) thành nhãn
+        // giờ:phút trong ngày (00:00-23:59). Dùng chung cho Sleep Timeline và card
+        // Weekday-vs-Weekend để hiển thị giờ đi ngủ/thức dậy trung bình.
+        function axisHourToClockLabel(h) {
+            let hh = ((h % 24) + 24) % 24;
+            const hours = Math.floor(hh);
+            const minutes = Math.round((hh - hours) * 60);
+            const mm = minutes === 60 ? 0 : minutes;
+            const hFinal = minutes === 60 ? hours + 1 : hours;
+            return `${String(hFinal % 24).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
         }
 
         function renderSleepTimelineChart(recentSessions, goal) {
@@ -44623,16 +44810,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 return [xStart, xStart + session.duration];
             });
             const barColors = recentSessions.map(session => colorForDuration(session.duration));
-
-            // Format a raw axis-hour value (có thể > 24) thành nhãn giờ:phút trong ngày (00:00-23:59)
-            function axisHourToLabel(h) {
-                let hh = ((h % 24) + 24) % 24;
-                const hours = Math.floor(hh);
-                const minutes = Math.round((hh - hours) * 60);
-                const mm = minutes === 60 ? 0 : minutes;
-                const hFinal = minutes === 60 ? hours + 1 : hours;
-                return `${String(hFinal % 24).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-            }
 
             // Trục X cố định 12:00 trưa → 12:00 trưa hôm sau (12–36), vừa đủ chứa mọi khung
             // giờ ngủ thường gặp mà vẫn giữ tỉ lệ nhất quán giữa các lần vẽ lại.
@@ -44671,8 +44848,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                 title: (items) => items[0]?.label || '',
                                 label: (context) => {
                                     const session = recentSessions[context.dataIndex];
-                                    const bedtime = axisHourToLabel(ranges[context.dataIndex][0]);
-                                    const wake = axisHourToLabel(ranges[context.dataIndex][1]);
+                                    const bedtime = axisHourToClockLabel(ranges[context.dataIndex][0]);
+                                    const wake = axisHourToClockLabel(ranges[context.dataIndex][1]);
                                     const q = session.quality || 0;
                                     const qStr = q > 0 ? ` · ${qualityLabels[q]}` : '';
                                     return `${bedtime} → ${wake} · ${session.duration}h${qStr}`;
@@ -44687,7 +44864,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             ticks: {
                                 color: '#666',
                                 stepSize: 3,
-                                callback: (value) => axisHourToLabel(value)
+                                callback: (value) => axisHourToClockLabel(value)
                             },
                             title: { display: true, text: 'Time of day' },
                             grid: {
@@ -44706,6 +44883,268 @@ document.addEventListener('DOMContentLoaded', function() {
                 sleepTimelineChart.options.scales.x.ticks.color = '#cbd5e1';
                 sleepTimelineChart.update();
             }
+        }
+
+        // ===== Sleep Heatmap — "GitHub contribution" style, ~13 tuần (3 tháng) gần nhất =====
+        // Bar chart / timeline hợp để soi 7-30 đêm gần nhất; nhưng muốn thấy pattern dài
+        // hơi (vd "cứ cuối tháng là ngủ tệ hẳn") thì lưới ô vuông đậm-nhạt gói gọn 3 tháng
+        // trong một khoảng nhỏ, không cần kéo dài trục X như bar chart.
+        //
+        // Mỗi ô = 1 ngày (bucket theo ngày bắt đầu ngủ, tính theo giờ VN). Độ đậm = điểm
+        // tổng hợp giữa "ngủ có sát mục tiêu không" (duration) và "chất lượng tự chấm"
+        // (quality, nếu có) — không phải chỉ số giờ đơn thuần, vì 10h ngủ (dư quá nhiều)
+        // không nên đậm hơn 8h ngủ đúng mục tiêu.
+        const SLEEP_HEATMAP_DAYS = 90; // ~13 tuần ≈ 3 tháng
+        const SLEEP_HEATMAP_ROWS = ['CN','T2','T3','T4','T5','T6','T7']; // Sun→Sat, đồng bộ thứ tự dùng ở nơi khác trong app
+
+        function vnDateStrFromTs(ts) {
+            const p = getVNDateTimeParts(ts);
+            return `${p.year}-${String(p.month).padStart(2,'0')}-${String(p.day).padStart(2,'0')}`;
+        }
+
+        function buildSleepHeatmapBuckets() {
+            const map = {};
+            sleepSessions.forEach(s => {
+                if (typeof s.start !== 'number' || typeof s.duration !== 'number') return;
+                const key = vnDateStrFromTs(s.start);
+                if (!map[key]) map[key] = { duration: 0, qualities: [], sessions: [] };
+                map[key].duration += s.duration;
+                if (s.quality) map[key].qualities.push(s.quality);
+                map[key].sessions.push(s);
+            });
+            return map;
+        }
+
+        // Điểm tổng hợp 0-1: 50% "sát mục tiêu giờ ngủ", 50% "chất lượng tự chấm" (nếu có
+        // chấm điểm đêm đó); nếu chưa chấm điểm thì dùng 100% điểm thời lượng.
+        function heatmapCompositeScore(entry, goal) {
+            const durationScore = Math.max(0, 1 - Math.abs(entry.duration - goal) / goal);
+            const rated = entry.qualities.length > 0;
+            const avgQuality = rated ? entry.qualities.reduce((a, b) => a + b, 0) / entry.qualities.length : null;
+            const qualityScore = rated ? avgQuality / 5 : null;
+            const composite = rated ? (durationScore * 0.5 + qualityScore * 0.5) : durationScore;
+            return { composite, durationScore, avgQuality };
+        }
+
+        function heatmapScoreToLevel(composite) {
+            if (composite >= 0.85) return 4;
+            if (composite >= 0.6) return 3;
+            if (composite >= 0.35) return 2;
+            return 1;
+        }
+
+        // Tông hồng/magenta đồng bộ với màu thương hiệu của card Sleep Tracker (#9d2867 /
+        // #f9a8d4), chỉ khác độ đậm — đúng tinh thần "1 màu, nhiều mức đậm nhạt" của GitHub
+        // heatmap, thay vì đổi hue như bar chart (nơi hue mang nghĩa khác — vượt/thiếu mục tiêu).
+        function heatmapLevelColor(level, isDark) {
+            if (level === 0) return isDark ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.18)'; // chưa có dữ liệu
+            const base = isDark ? '249,168,212' : '157,40,103'; // #f9a8d4 (dark) / #9d2867 (light)
+            const opacities = { 1: 0.22, 2: 0.45, 3: 0.68, 4: 0.92 };
+            return `rgba(${base},${opacities[level]})`;
+        }
+
+        function renderSleepHeatmap() {
+            const grid = document.getElementById('sleepHeatmapGrid');
+            const legendEl = document.getElementById('sleepHeatmapLegend');
+            const summaryEl = document.getElementById('sleepHeatmapSummary');
+            const tooltipEl = document.getElementById('sleepHeatmapTooltip');
+            if (!grid) return;
+
+            const isDark = document.body.classList.contains('dark-mode');
+            const goal = getSleepGoal();
+            const buckets = buildSleepHeatmapBuckets();
+
+            // Neo lưới vào "hôm nay" theo giờ VN (lấy qua getVietnamDateStr()), rồi làm toàn
+            // bộ phép tính ngày-tháng bằng Date.UTC trên đúng bộ (năm, tháng, ngày) đó — coi
+            // như lịch thuần tuý, không quy đổi timezone thêm lần nào nữa. Cách này tránh
+            // đúng bẫy hay gặp: nếu lấy "00:00 giờ VN" rồi gọi .getUTCDay(), kết quả sẽ lệch
+            // 1 ngày (vì 00:00 VN = 17:00 UTC hôm trước) — ở đây ta không đi qua bước đó.
+            const [tY, tM, tD] = getVietnamDateStr().split('-').map(Number);
+            const todayUTC = Date.UTC(tY, tM - 1, tD);
+            const rangeStartUTC = todayUTC - (SLEEP_HEATMAP_DAYS - 1) * 86400000;
+            const startSundayUTC = rangeStartUTC - new Date(rangeStartUTC).getUTCDay() * 86400000;
+
+            const weekCount = Math.ceil((todayUTC - startSundayUTC) / 86400000 / 7) + 1;
+            const cellSize = 12, cellGap = 3;
+
+            let monthsRowHtml = '';
+            let gridHtml = '';
+            let lastMonth = null;
+            let daysWithData = 0, totalNights = 0;
+
+            for (let w = 0; w < weekCount; w++) {
+                const colStartUTC = startSundayUTC + w * 7 * 86400000;
+                const colStart = new Date(colStartUTC);
+                const colMonth = colStart.getUTCMonth();
+                let monthLabel = '';
+                if (colMonth !== lastMonth) {
+                    monthLabel = `Th${colMonth + 1}`;
+                    lastMonth = colMonth;
+                }
+                monthsRowHtml += `<div style="width:${cellSize}px; font-size:0.62rem; color:var(--text-muted); white-space:nowrap; overflow:visible;">${monthLabel}</div>`;
+
+                let colHtml = '';
+                for (let d = 0; d < 7; d++) {
+                    const cellUTC = colStartUTC + d * 86400000;
+                    const cellDate = new Date(cellUTC);
+                    const cellDateStr = `${cellDate.getUTCFullYear()}-${String(cellDate.getUTCMonth()+1).padStart(2,'0')}-${String(cellDate.getUTCDate()).padStart(2,'0')}`;
+                    const isFuture = cellUTC > todayUTC;
+                    const isBeforeRange = cellUTC < rangeStartUTC;
+
+                    if (isFuture || isBeforeRange) {
+                        colHtml += `<div style="width:${cellSize}px; height:${cellSize}px;"></div>`;
+                        continue;
+                    }
+
+                    const entry = buckets[cellDateStr];
+                    let level = 0, tooltipHtml;
+                    const displayDate = cellDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+                    if (entry) {
+                        daysWithData++;
+                        totalNights += entry.sessions.length;
+                        const { composite, avgQuality } = heatmapCompositeScore(entry, goal);
+                        level = heatmapScoreToLevel(composite);
+                        const qStr = avgQuality !== null ? ` · Chất lượng ${avgQuality.toFixed(1)}/5` : ' · Chưa đánh giá';
+                        tooltipHtml = `<b>${displayDate}</b><br>${entry.duration.toFixed(1)}h ngủ${qStr}`;
+                    } else {
+                        tooltipHtml = `<b>${displayDate}</b><br>Không có dữ liệu`;
+                    }
+                    const bg = heatmapLevelColor(level, isDark);
+
+                    colHtml += `<div class="sleep-heatmap-cell" data-tip="${tooltipHtml.replace(/"/g, '&quot;')}"
+                        style="width:${cellSize}px; height:${cellSize}px; border-radius:3px; background:${bg}; cursor:${entry ? 'pointer' : 'default'};"></div>`;
+                }
+                gridHtml += `<div style="display:flex; flex-direction:column; gap:${cellGap}px;">${colHtml}</div>`;
+            }
+
+            grid.innerHTML = `
+                <div style="display:flex; gap:${cellGap}px; margin-left:26px; margin-bottom:3px;">${monthsRowHtml}</div>
+                <div style="display:flex; gap:4px;">
+                    <div style="display:flex; flex-direction:column; gap:${cellGap}px; width:22px;">
+                        ${SLEEP_HEATMAP_ROWS.map((r, i) => `<div style="height:${cellSize}px; font-size:0.6rem; line-height:${cellSize}px; color:var(--text-muted);">${i % 2 === 1 ? r : ''}</div>`).join('')}
+                    </div>
+                    <div style="display:flex; gap:${cellGap}px;">${gridHtml}</div>
+                </div>
+            `;
+
+            if (legendEl) {
+                legendEl.innerHTML = [0, 1, 2, 3, 4].map(lvl =>
+                    `<span style="width:10px; height:10px; border-radius:2px; display:inline-block; background:${heatmapLevelColor(lvl, isDark)};"></span>`
+                ).join('');
+            }
+            if (summaryEl) {
+                summaryEl.textContent = `${daysWithData}/${SLEEP_HEATMAP_DAYS} ngày có ghi nhận · ${totalNights} đêm`;
+            }
+
+            // Tooltip nổi theo con trỏ chuột — dùng event delegation để khỏi gắn listener cho từng ô.
+            if (tooltipEl && !grid.dataset.tooltipBound) {
+                grid.addEventListener('mousemove', (e) => {
+                    const cell = e.target.closest('.sleep-heatmap-cell');
+                    if (!cell) { tooltipEl.style.display = 'none'; return; }
+                    tooltipEl.innerHTML = cell.dataset.tip;
+                    tooltipEl.style.display = 'block';
+                    tooltipEl.style.left = Math.min(e.clientX + 12, window.innerWidth - 230) + 'px';
+                    tooltipEl.style.top = Math.max(e.clientY - 40, 6) + 'px';
+                });
+                grid.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
+                grid.dataset.tooltipBound = '1';
+            }
+        }
+
+        // ===== Weekday vs Weekend (Social Jetlag) =====
+        // Lấy trực tiếp từng session (không dùng bucket theo ngày của Heatmap), vì cần cả
+        // GIỜ đi ngủ/thức dậy, không chỉ tổng số giờ — bucket theo ngày không giữ thông tin đó.
+        // Phân loại ngày thường/cuối tuần dựa trên thứ-trong-tuần của NGÀY BẮT ĐẦU NGỦ, tính
+        // theo giờ VN (đồng bộ với mọi chỗ khác trong Sleep Tracker).
+        const SOCIAL_JETLAG_MIN_WEEKDAY_NIGHTS = 5; // tối thiểu 5 đêm ngày thường
+        const SOCIAL_JETLAG_MIN_WEEKEND_NIGHTS = 3;  // tối thiểu 3 đêm cuối tuần (ít cơ hội hơn/tuần)
+
+        function computeWeekdayWeekendComparison() {
+            const weekday = { duration: [], bedtime: [], midSleep: [] };
+            const weekend = { duration: [], bedtime: [], midSleep: [] };
+
+            sleepSessions.forEach(s => {
+                if (typeof s.start !== 'number' || typeof s.duration !== 'number') return;
+                const p = getVNDateTimeParts(s.start);
+                const weekdayIdx = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay(); // 0=CN...6=T7, tính thuần theo lịch, không lệch múi giờ
+                const bedtimeAxis = sleepTimeToAxisHour(s.start);
+                const midSleep = bedtimeAxis + s.duration / 2;
+                const bucket = (weekdayIdx === 0 || weekdayIdx === 6) ? weekend : weekday;
+                bucket.duration.push(s.duration);
+                bucket.bedtime.push(bedtimeAxis);
+                bucket.midSleep.push(midSleep);
+            });
+
+            if (weekday.duration.length < SOCIAL_JETLAG_MIN_WEEKDAY_NIGHTS || weekend.duration.length < SOCIAL_JETLAG_MIN_WEEKEND_NIGHTS) {
+                return null;
+            }
+
+            const avgWeekdayDur = avgOf(weekday.duration);
+            const avgWeekendDur = avgOf(weekend.duration);
+            const avgWeekdayBed = avgOf(weekday.bedtime);
+            const avgWeekendBed = avgOf(weekend.bedtime);
+            const avgWeekdayWake = avgWeekdayBed + avgWeekdayDur;
+            const avgWeekendWake = avgWeekendBed + avgWeekendDur;
+            const avgWeekdayMid = avgOf(weekday.midSleep);
+            const avgWeekendMid = avgOf(weekend.midSleep);
+
+            // Social jetlag đúng định nghĩa khoa học (Roenneberg): |điểm giữa giấc ngủ cuối
+            // tuần − điểm giữa giấc ngủ ngày thường|. Cuối tuần thường ngủ trễ hơn (dương).
+            const jetlagHours = Math.abs(avgWeekendMid - avgWeekdayMid);
+            const weekendLater = avgWeekendMid > avgWeekdayMid;
+
+            return {
+                weekdayNights: weekday.duration.length, weekendNights: weekend.duration.length,
+                avgWeekdayDur, avgWeekendDur, avgWeekdayBed, avgWeekendBed, avgWeekdayWake, avgWeekendWake,
+                jetlagHours, weekendLater
+            };
+        }
+
+        function jetlagSeverity(hours) {
+            if (hours < 0.5) return { label: 'Rất đều', color: '#10b981' };
+            if (hours < 1) return { label: 'Khá đều', color: '#10b981' };
+            if (hours < 2) return { label: 'Có lệch, đáng chú ý', color: '#f59e0b' };
+            return { label: 'Lệch nhiều — social jetlag rõ rệt', color: '#ef4444' };
+        }
+
+        function renderWeekdayWeekendCard() {
+            const wrap = document.getElementById('sleepWeekdayWeekendWrap');
+            const card = document.getElementById('sleepWeekdayWeekendCard');
+            if (!wrap || !card) return;
+
+            const cmp = computeWeekdayWeekendComparison();
+            if (!cmp) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+
+            const sev = jetlagSeverity(cmp.jetlagHours);
+            const durDiff = cmp.avgWeekendDur - cmp.avgWeekdayDur;
+
+            const row = (label, weekdayVal, weekendVal) => `
+                <div style="display:grid; grid-template-columns: 1fr auto auto; gap:10px; padding:6px 0; font-size:0.82rem; border-bottom:1px solid var(--border-color);">
+                    <div style="color:var(--text-muted);">${label}</div>
+                    <div style="min-width:64px; text-align:right; font-weight:600;">${weekdayVal}</div>
+                    <div style="min-width:64px; text-align:right; font-weight:600;">${weekendVal}</div>
+                </div>`;
+
+            card.innerHTML = `
+                <div style="display:grid; grid-template-columns: 1fr auto auto; gap:10px; padding-bottom:6px; margin-bottom:2px; border-bottom:2px solid var(--border-color); font-size:0.72rem; color:var(--text-muted); font-weight:600;">
+                    <div></div>
+                    <div style="min-width:64px; text-align:right;">Ngày thường (${cmp.weekdayNights}đ)</div>
+                    <div style="min-width:64px; text-align:right;">Cuối tuần (${cmp.weekendNights}đ)</div>
+                </div>
+                ${row('Giờ đi ngủ TB', axisHourToClockLabel(cmp.avgWeekdayBed), axisHourToClockLabel(cmp.avgWeekendBed))}
+                ${row('Giờ thức dậy TB', axisHourToClockLabel(cmp.avgWeekdayWake), axisHourToClockLabel(cmp.avgWeekendWake))}
+                ${row('Số giờ ngủ TB', cmp.avgWeekdayDur.toFixed(1) + 'h', cmp.avgWeekendDur.toFixed(1) + 'h')}
+                <div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:${sev.color}18; border:1px solid ${sev.color}55;">
+                    <div style="font-weight:600; color:${sev.color}; font-size:0.83rem;">
+                        <svg class="icon-svg" aria-hidden="true"><use href="#icon-scale"></use></svg> ${sev.label} — lệch ${cmp.jetlagHours.toFixed(1)}h
+                    </div>
+                    <div style="font-size:0.76rem; color:var(--text-muted); margin-top:4px; line-height:1.5;">
+                        Cuối tuần bạn ${cmp.weekendLater ? 'ngủ trễ và dậy trễ hơn' : 'ngủ sớm và dậy sớm hơn'} ngày thường, và ngủ ${durDiff >= 0 ? 'nhiều hơn' : 'ít hơn'} trung bình ${Math.abs(durDiff).toFixed(1)}h/đêm.
+                        ${cmp.jetlagHours >= 1 ? ' Lệch giờ giấc quá 1h giữa 2 nhóm ngày là dấu hiệu "social jetlag" — cơ thể phải liên tục điều chỉnh lại đồng hồ sinh học mỗi đầu tuần, có thể khiến sáng thứ Hai mệt mỏi hơn bình thường.' : ''}
+                    </div>
+                </div>
+            `;
         }
 
         // Bảng thống kê nhanh: trung bình 7 đêm gần nhất, chuỗi ngày đủ giấc liên tiếp, và "nợ ngủ" so với mục tiêu
