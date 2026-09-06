@@ -23283,10 +23283,15 @@ body.dark-mode .dbp-mood-saved{color:#7ecdb4;}
 .dbp-btn-pulse{width:8px;height:8px;background:#10b981;border-radius:50%;animation:dbp-pulse 2s infinite;flex-shrink:0;}
 
 /* ─── TOAST ─── */
-#dbpToast{position:fixed;bottom:138px;right:24px;background:#1e293b;color:#fff;padding:10px 16px;border-radius:10px;font-size:0.82rem;font-weight:600;z-index:3000;opacity:0;transform:translateY(10px);transition:all 0.3s;pointer-events:none;max-width:260px;box-shadow:0 4px 12px rgba(0,0,0,0.15);}
-#dbpToast.show{opacity:1;transform:translateY(0);}
-#dbpToast.success{background:#059669;}
-#dbpToast.warn{background:#d97706;}
+#dbpToast{position:fixed;bottom:138px;right:24px;display:flex;align-items:center;gap:9px;background:#1e293b;color:#fff;padding:11px 16px 11px 13px;border-radius:13px;font-size:0.83rem;font-weight:600;line-height:1.35;letter-spacing:0.01em;z-index:3000;opacity:0;transform:translateY(8px) scale(0.98);transition:opacity 0.38s cubic-bezier(.22,1,.36,1),transform 0.38s cubic-bezier(.22,1,.36,1);pointer-events:none;max-width:280px;box-shadow:0 10px 28px -6px rgba(15,23,42,0.35),0 2px 8px rgba(15,23,42,0.12);}
+#dbpToast.show{opacity:1;transform:translateY(0) scale(1);}
+#dbpToast .dbp-toast-icon{flex:0 0 auto;width:18px;height:18px;display:flex;align-items:center;justify-content:center;}
+#dbpToast .dbp-toast-icon svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round;}
+#dbpToast.success{background:#0d9668;}
+#dbpToast.success .dbp-toast-icon{color:#86efac;}
+#dbpToast.warn{background:#b45309;}
+#dbpToast.warn .dbp-toast-icon{color:#fde68a;}
+#dbpToast:not(.success):not(.warn) .dbp-toast-icon{color:#93c5fd;}
 
 /* ─── FLOATING TIMER ─── */
 #dbpFloatTimer{
@@ -23606,9 +23611,16 @@ function beep(){
 
 /* ─── TOAST ─── */
 let _toastTimer=null;
-function toast(msg, dur=2400, type=''){
+const DBP_TOAST_ICONS = {
+    success: '<svg viewBox="0 0 24 24"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>',
+    warn:    '<svg viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    '':      '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>'
+};
+function toast(msg, dur=3000, type=''){
     const t=gel('dbpToast');
-    t.textContent=msg; t.className='show'+(type?' '+type:'');
+    const clean = stripEmoji(msg);
+    t.innerHTML = `<span class="dbp-toast-icon">${DBP_TOAST_ICONS[type]||DBP_TOAST_ICONS['']}</span><span>${escapeHtml(clean)}</span>`;
+    t.className='show'+(type?' '+type:'');
     clearTimeout(_toastTimer);
     _toastTimer=setTimeout(()=>{ t.className=''; },dur);
 }
@@ -59105,51 +59117,111 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Strip emoji/pictographs from a string — used by all toast/notification
+// helpers so every popup shows plain text + an SVG icon instead of emoji,
+// regardless of what individual call sites happen to pass in.
+function stripEmoji(text) {
+    if (!text) return text;
+    return String(text)
+        .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{2300}-\u{23FF}\u{FE0F}\u{200D}]/gu, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+}
+
 // Notification helper — real toast (replaces console-only stub)
+//
+// Design notes: plain white card, soft two-layer shadow, a tinted icon
+// badge (not a loud left-border stripe) carrying an SVG glyph per type,
+// and a stacking container so several toasts queue neatly instead of
+// overlapping. Message text always passes through stripEmoji() so no
+// call site — however old — can sneak an emoji glyph back in; the SVG
+// badge is the only "icon" the user ever sees.
+const FC_TOAST_PALETTE = {
+    success:     { fg: '#0d9668', bg: '#e7f8f1' },
+    error:       { fg: '#dc2626', bg: '#fdecec' },
+    warning:     { fg: '#b45309', bg: '#fef3e2' },
+    info:        { fg: '#2563eb', bg: '#eaf1fe' },
+    achievement: { fg: '#b45309', bg: '#fef3e2' }
+};
+const FC_TOAST_ICONS = {
+    success:     '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
+    error:       '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+    warning:     '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    info:        '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+    achievement: '<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>'
+};
+
+function fcToastContainer() {
+    let c = document.getElementById('fc-toast-container');
+    if (!c) {
+        c = document.createElement('div');
+        c.id = 'fc-toast-container';
+        c.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:99999;display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none;max-width:min(360px,calc(100vw - 32px));';
+        document.body.appendChild(c);
+    }
+    return c;
+}
+
 function showNotification(message, type = 'info') {
-    // Remove stale toasts beyond 3
-    const existing = document.querySelectorAll('.fc-toast');
-    if (existing.length >= 3) existing[0].remove();
+    const container = fcToastContainer();
 
-    // FIX: 9 call sites across Goals/Skills/Streak features pass type:'achievement'
-    // expecting a celebratory look, but this map never had that key — so every
-    // achievement toast has been silently rendering as a plain blue "info" toast.
-    const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6', achievement: '#f59e0b' };
-    const icons  = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️', achievement: '🏆' };
+    // Cap the stack at 3 visible toasts — drop the oldest first.
+    const existing = container.querySelectorAll('.fc-toast');
+    if (existing.length >= 3) dismissFcToast(existing[0]);
 
-    const toast = document.createElement('div');
-    toast.className = 'fc-toast';
-    toast.style.cssText = [
-        'position:fixed;bottom:24px;right:24px;z-index:99999',
-        'display:flex;align-items:center;gap:10px',
-        'padding:12px 18px;border-radius:12px',
-        'background:var(--fc-bg,#fff);color:var(--fc-text,#111)',
-        `border-left:4px solid ${colors[type]||colors.info}`,
-        'box-shadow:0 4px 20px rgba(0,0,0,0.18)',
-        'font-size:0.92rem;font-weight:500;max-width:340px',
-        'animation:fcToastIn 0.25s ease',
+    const palette = FC_TOAST_PALETTE[type] || FC_TOAST_PALETTE.info;
+    const iconPath = FC_TOAST_ICONS[type] || FC_TOAST_ICONS.info;
+    const clean = stripEmoji(message);
+
+    const toastEl = document.createElement('div');
+    toastEl.className = 'fc-toast';
+    toastEl.style.cssText = [
+        'display:flex;align-items:flex-start;gap:11px;pointer-events:auto',
+        'width:100%;box-sizing:border-box',
+        'padding:13px 14px;border-radius:14px',
+        'background:#ffffff;color:#1e293b',
+        'box-shadow:0 12px 32px -8px rgba(15,23,42,0.22),0 2px 8px rgba(15,23,42,0.07)',
+        'border:1px solid rgba(15,23,42,0.06)',
+        'font-size:0.9rem;font-weight:500;line-height:1.42',
+        'opacity:0;transform:translateY(10px) scale(0.97)',
+        'transition:opacity 0.38s cubic-bezier(.22,1,.36,1),transform 0.38s cubic-bezier(.22,1,.36,1)',
         'cursor:pointer'
     ].join(';');
 
-    toast.innerHTML = `<span>${icons[type]||icons.info}</span><span style="flex:1">${message}</span>`;
-    toast.onclick = () => toast.remove();
+    toastEl.innerHTML = `
+        <span style="flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${palette.bg};color:${palette.fg};">
+            <svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;">${iconPath}</svg>
+        </span>
+        <span style="flex:1;padding-top:2px;">${escapeHtml(clean)}</span>
+        <button type="button" aria-label="Dismiss" style="flex:0 0 auto;background:none;border:none;padding:2px;margin:-2px -2px 0 0;color:#94a3b8;cursor:pointer;line-height:0;">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+    `;
 
-    // Inject keyframe once
-    if (!document.getElementById('fc-toast-style')) {
-        const s = document.createElement('style');
-        s.id = 'fc-toast-style';
-        s.textContent = `
-            @keyframes fcToastIn  { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-            @keyframes fcToastOut { from { opacity:1; transform:translateY(0);   } to { opacity:0; transform:translateY(12px); } }
-        `;
-        document.head.appendChild(s);
-    }
+    toastEl.querySelector('button').addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismissFcToast(toastEl);
+    });
+    toastEl.addEventListener('click', () => dismissFcToast(toastEl));
 
-    document.body.appendChild(toast);
-    setTimeout(() => {
-        toast.style.animation = 'fcToastOut 0.25s ease forwards';
-        toast.addEventListener('animationend', () => toast.remove());
-    }, 3500);
+    container.appendChild(toastEl);
+    // Force reflow so the entrance transition actually plays.
+    requestAnimationFrame(() => {
+        toastEl.style.opacity = '1';
+        toastEl.style.transform = 'translateY(0) scale(1)';
+    });
+
+    const life = setTimeout(() => dismissFcToast(toastEl), 4200);
+    toastEl._fcLifeTimer = life;
+}
+
+function dismissFcToast(toastEl) {
+    if (!toastEl || toastEl._fcDismissing) return;
+    toastEl._fcDismissing = true;
+    clearTimeout(toastEl._fcLifeTimer);
+    toastEl.style.opacity = '0';
+    toastEl.style.transform = 'translateY(10px) scale(0.97)';
+    setTimeout(() => toastEl.remove(), 320);
 }
 
 // Get mastery color
@@ -64842,11 +64914,11 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const text = buildProgressSummaryText(hpw);
                     const ok = () => {
                         if (typeof showNotification === 'function')
-                            showNotification('📋 Progress summary copied to clipboard!', 'success');
+                            showNotification('Progress summary copied to clipboard!', 'success');
                     };
                     const fail = () => {
                         if (typeof showNotification === 'function')
-                            showNotification('⚠️ Could not copy — please copy manually.', 'error');
+                            showNotification('Could not copy — please copy manually.', 'error');
                     };
                     // Local fallback (execCommand). NOTE: the Wellness module's
                     // `fallbackCopy` lives in a different closure and is NOT
