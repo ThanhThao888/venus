@@ -26627,14 +26627,46 @@ window.DBP={
             </div>
 
                 <!-- Smart Bedtime Reminder -->
-            <div style="margin: 0 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
-                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem; font-weight:600; color:var(--text-dark);">
-                    <input type="checkbox" id="sleepReminderToggle" onchange="setSleepReminderEnabled(this.checked)" style="width:16px;height:16px;">
-                    <svg class="icon-svg" aria-hidden="true"><use href="#icon-bell"></use></svg> Nhắc giờ đi ngủ thông minh
-                </label>
-                <div id="sleepReminderStatus" style="font-size:0.75rem; color:var(--text-muted); margin-top:6px; line-height:1.5;"></div>
+            <div style="margin: 0 0 14px; padding:14px 16px; background: linear-gradient(155deg, var(--bg-light), var(--bg-white)); border-radius: 14px; border:1px solid var(--border-color); box-shadow:0 1px 3px rgba(15,23,42,0.04);">
+                <div style="display:flex; align-items:flex-start; gap:11px;">
+                    <span style="flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:rgba(99,102,241,0.12); color:#6366f1; display:flex; align-items:center; justify-content:center; margin-top:1px;">
+                        <svg class="icon-svg" aria-hidden="true" style="width:18px;height:18px;"><use href="#icon-bell"></use></svg>
+                    </span>
+                    <div style="flex:1; min-width:0;">
+                        <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
+                            <span style="font-size:0.87rem; font-weight:700; color:var(--text-dark);">Nhắc giờ đi ngủ thông minh</span>
+                            <span class="sleep-reminder-switch">
+                                <input type="checkbox" id="sleepReminderToggle" onchange="setSleepReminderEnabled(this.checked)">
+                                <span class="sleep-reminder-switch-track"><span class="sleep-reminder-switch-thumb"></span></span>
+                            </span>
+                        </label>
+                        <div id="sleepReminderProgress" style="margin-top:8px;"></div>
+                        <div id="sleepReminderStatus" style="font-size:0.78rem; color:var(--text-muted); margin-top:7px; line-height:1.55;"></div>
+                        <div id="sleepReminderPermBadge" style="display:none; margin-top:8px;"></div>
+                        <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+                            <button type="button" onclick="testSleepReminder()" style="font-size:0.75rem; font-weight:600; padding:6px 12px; border-radius:9px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">
+                                <svg class="icon-svg" aria-hidden="true" style="width:13px;height:13px;vertical-align:-2px;"><use href="#icon-bell"></use></svg> Xem thử thông báo
+                            </button>
+                        </div>
+                        <div style="font-size:0.71rem; color:var(--text-muted); margin-top:9px; line-height:1.5; border-top:1px dashed var(--border-color); padding-top:8px;">
+                            <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;vertical-align:-1px;"><use href="#icon-triangle-alert"></use></svg>
+                            Lưu ý: đây là nhắc nhở chạy trong tab trình duyệt (không phải thông báo nền hệ thống) — cần giữ tab này mở (có thể ở nền, không cần focus) vào đúng giờ nhắc thì mới nhận được. Đóng tab hoặc tắt hẳn trình duyệt sẽ không nhắc được.
+                        </div>
+                    </div>
+                </div>
             </div>
+            <style>
+                .sleep-reminder-switch{position:relative;display:inline-block;width:38px;height:22px;flex:0 0 auto;}
+                .sleep-reminder-switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:1;}
+                .sleep-reminder-switch-track{position:absolute;inset:0;background:#cbd5e1;border-radius:999px;transition:background 0.2s ease;}
+                .sleep-reminder-switch-thumb{position:absolute;top:2px;left:2px;width:18px;height:18px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.25);transition:transform 0.2s ease;}
+                .sleep-reminder-switch input:checked + .sleep-reminder-switch-track{background:#6366f1;}
+                .sleep-reminder-switch input:checked + .sleep-reminder-switch-track .sleep-reminder-switch-thumb{transform:translateX(16px);}
+                .sleep-reminder-progress-track{height:6px;border-radius:999px;background:var(--border-color);overflow:hidden;}
+                .sleep-reminder-progress-fill{height:100%;border-radius:999px;background:#6366f1;transition:width 0.3s ease;}
+            </style>
             </div>
+
 
             <div class="sleep-section-header" onclick="toggleSleepInsights()">
                 <span><svg class="icon-svg" aria-hidden="true"><use href="#icon-bar-chart-3"></use></svg> Insight &amp; phân tích</span>
@@ -26645,7 +26677,7 @@ window.DBP={
             <div id="sleepBriefWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                     <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Morning Sleep Brief</span>
-                    <button onclick="copySleepContextForAI()" aria-label="Sao chép dữ liệu giấc ngủ để phân tích với AI" style="font-size:0.72rem; padding:3px 10px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Copy for AI</button>
+                    <button onclick="copySleepContextForAI()" title="Copy for AI" aria-label="Sao chép dữ liệu giấc ngủ để phân tích với AI" style="font-size:0.72rem; padding:5px 8px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; display:inline-flex; align-items:center;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg></button>
                 </div>
                 <div id="sleepBriefBody" style="font-size:0.82rem; line-height:1.7; color:var(--text-dark);"></div>
                 <div id="sleepBriefCopyMsg" style="display:none; font-size:0.72rem; color:#10b981; margin-top:6px;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Đã copy vào clipboard!</div>
@@ -26659,11 +26691,6 @@ window.DBP={
                     <span id="cogReadinessScoreBadge" style="font-size:0.78rem; font-weight:700; padding:2px 10px; border-radius:10px;"></span>
                 </div>
                 <div id="cogReadinessBody" style="font-size:0.82rem; line-height:1.7; color:var(--text-dark);"></div>
-                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.8rem; font-weight:600; color:var(--text-dark); margin-top:10px; padding-top:10px; border-top:1px dashed var(--border-color);">
-                    <input type="checkbox" id="nightShiftToggle" onchange="setNightShiftToday(this.checked)" style="width:16px;height:16px;">
-                    <svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Hôm nay làm ca đêm (thức xuyên đêm)
-                </label>
-                <div id="nightShiftGuidance" style="display:none; font-size:0.82rem; line-height:1.7; color:var(--text-dark); margin-top:8px; padding:10px; background:var(--bg-white); border-radius:8px; border:1px solid var(--border-color);"></div>
             </div>
 
                 <!-- #27 Sleep → Focus correlation — đối chiếu SE/nợ ngủ đêm trước với
@@ -26791,8 +26818,8 @@ window.DBP={
                     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                         <button onclick="exportSleepSessionsCSV()" aria-label="Xuất toàn bộ dữ liệu giấc ngủ ra file CSV"
                             style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-download"></use></svg> CSV</button>
-                        <button onclick="copySleepContextForAI()" title="Copy Sleep + Study Context for AI" aria-label="Copy Sleep + Study Context for AI"
-                            style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Copy for AI</button>
+                        <button onclick="copySleepContextForAI()" title="Copy for AI" aria-label="Copy Sleep + Study Context for AI"
+                            style="font-size:0.72rem; padding:5px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg></button>
                         <input type="text" id="sleepHistorySearch" oninput="renderSleepHistory()" placeholder="Tìm ghi chú..." aria-label="Tìm kiếm ghi chú trong lịch sử giấc ngủ"
                             style="font-size:0.75rem; padding:5px 9px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); width:130px;">
                     </div>
@@ -42374,8 +42401,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${info.confidence ? `<div style="margin-top:6px; font-size:0.72rem; color:var(--text-muted); font-style:italic;">ℹ️ ${info.confidence}</div>` : ''}
             `;
             wrap.style.display = 'block';
-
-            renderNightShiftGuidance();
         }
 
         // ===== #27 Sleep → Focus correlation — nối dữ liệu SE/nợ ngủ đêm trước với
@@ -42499,56 +42524,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${otherLines ? `<ul style="margin:8px 0 0; padding-left:18px; color:var(--text-muted); font-size:0.78rem;">${otherLines}</ul>` : ''}
             `;
             wrap.style.display = 'block';
-        }
-
-        // ===== Night shift mode — hướng dẫn riêng cho ngày phải thức xuyên đêm làm việc,
-        // chia 3 giai đoạn theo giờ hiện tại: trước ca / trong ca / sau ca về nhà =====
-        const NIGHT_SHIFT_KEY = 'sleepNightShiftDate';
-
-        function isNightShiftToday() {
-            return localStorage.getItem(NIGHT_SHIFT_KEY) === toLocalDateStr(new Date());
-        }
-
-        function setNightShiftToday(checked) {
-            if (checked) localStorage.setItem(NIGHT_SHIFT_KEY, toLocalDateStr(new Date()));
-            else localStorage.removeItem(NIGHT_SHIFT_KEY);
-            renderNightShiftGuidance();
-        }
-
-        function renderNightShiftGuidance() {
-            const toggle = document.getElementById('nightShiftToggle');
-            const guidanceEl = document.getElementById('nightShiftGuidance');
-            if (!toggle || !guidanceEl) return;
-            const on = isNightShiftToday();
-            toggle.checked = on;
-            if (!on) { guidanceEl.style.display = 'none'; return; }
-
-            const now = new Date();
-            const nowH = now.getHours() + now.getMinutes() / 60;
-            let html;
-            if (nowH < 20) {
-                html = `
-                    <div style="font-weight:700; margin-bottom:4px;">🌆 Trước ca (dự kiến vào ca ~20h)</div>
-                    <div>• Nếu còn rảnh và chưa quá 17h, tranh thủ nap 90 phút (đúng 1 chu kỳ trọn) — tránh nap sau 17h vì sẽ khó vào giấc "core sleep" sau khi tan ca.</div>
-                    <div>• Dồn phần học/luận văn khó nhất vào khung còn tỉnh táo nhất chiều nay, trước khi chuẩn bị đồ ăn lúc 20h — đừng để dồn qua đêm.</div>
-                    <div>• Nếu dùng caffeine, uống liều đầu ngay trước/đầu ca thay vì rải đều suốt đêm, để không ảnh hưởng giấc ngủ core sau ca.</div>
-                `;
-            } else if (nowH >= 20 || nowH < 7) {
-                html = `
-                    <div style="font-weight:700; margin-bottom:4px;">🌙 Trong ca (20h–7h)</div>
-                    <div>• Não đang thức lệch nhịp sinh học — đừng kỳ vọng tư duy phức tạp ngang ban ngày. Nếu chen được việc học, chọn dạng ôn tập/đọc lại, không tạo nội dung mới.</div>
-                    <div>• Đáy circadian rơi vào khoảng 3h–5h sáng — nếu có khoảng nghỉ trong ca, đây là lúc dễ buồn ngủ nhất, không phải lúc để học.</div>
-                `;
-            } else {
-                html = `
-                    <div style="font-weight:700; margin-bottom:4px;">🌅 Sau ca (về nhà ~7h sáng)</div>
-                    <div>• Ngủ core ngay khi về — dùng 🧮 Calculator ở trên (chế độ "Tôi biết giờ sẽ LÊN GIƯỜNG", nhập ~07:00) để canh đúng số chu kỳ 90 phút, tránh dậy giữa giấc sâu.</div>
-                    <div>• Đừng học/làm luận văn ngay lúc vừa về — não đang ở mức thấp nhất sau thức đêm, quyết định/tư duy lúc này dễ sai. Ngủ trước.</div>
-                    <div>• Sau khi dậy, chờ thêm 30–60 phút (qua giai đoạn sleep inertia) rồi mới bắt đầu việc cần tư duy sâu nhất trong ngày.</div>
-                `;
-            }
-            guidanceEl.innerHTML = html;
-            guidanceEl.style.display = 'block';
         }
 
         // ===== Export toàn bộ Sleep Sessions ra CSV — khác với Copy for AI (chỉ 14 đêm,
@@ -42901,22 +42876,84 @@ document.addEventListener('DOMContentLoaded', function() {
         function updateSleepReminderStatus() {
             const el = document.getElementById('sleepReminderStatus');
             const toggle = document.getElementById('sleepReminderToggle');
+            const progressWrap = document.getElementById('sleepReminderProgress');
+            const permBadge = document.getElementById('sleepReminderPermBadge');
             if (!el) return;
             if (toggle) toggle.checked = isSleepReminderEnabled();
 
+            const nightsLogged = getSortedSleepSessions().length;
+            const NEEDED = 3;
+
+            // Progress bar toward the 3-night minimum — this is the #1 reason
+            // the toggle looked "dead" with a fresh account: there was no
+            // feedback at all that logging sleep sessions is what unlocks it.
+            if (progressWrap) {
+                if (nightsLogged >= NEEDED) {
+                    progressWrap.innerHTML = '';
+                } else {
+                    const pct = Math.round((nightsLogged / NEEDED) * 100);
+                    progressWrap.innerHTML = `
+                        <div class="sleep-reminder-progress-track"><div class="sleep-reminder-progress-fill" style="width:${pct}%"></div></div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Đã ghi ${nightsLogged}/${NEEDED} đêm — ghi thêm ${NEEDED - nightsLogged} đêm nữa ở mục "Ghi giấc ngủ" bên trên để tính được giờ nhắc.</div>`;
+                }
+            }
+
             const target = computeSmartBedtimeTarget();
             if (!target) {
-                el.textContent = 'Cần tối thiểu 3 đêm dữ liệu (giờ dậy) để tính giờ nhắc.';
+                el.textContent = nightsLogged === 0
+                    ? 'Chưa có đêm ngủ nào được ghi — hãy bắt đầu/kết thúc một phiên ngủ hoặc thêm thủ công ở trên trước.'
+                    : `Cần tối thiểu ${NEEDED} đêm dữ liệu (giờ dậy) để tính giờ nhắc.`;
+                if (permBadge) permBadge.style.display = 'none';
                 return;
             }
             const timeLabel = `${String(target.hh).padStart(2, '0')}:${String(target.mm).padStart(2, '0')}`;
             if (!isSleepReminderEnabled()) {
-                el.textContent = `Giờ lên giường gợi ý (dựa trên giờ dậy trung vị 14 đêm): ${timeLabel}. Bật để nhận nhắc nhở.`;
-            } else if (!('Notification' in window) || Notification.permission === 'denied') {
-                el.textContent = `Trình duyệt chưa cho phép thông báo. Bật quyền Notification để nhận nhắc lúc ${timeLabel}.`;
+                el.textContent = `Giờ lên giường gợi ý (dựa trên giờ dậy trung vị 14 đêm): ${timeLabel}. Bật công tắc để nhận nhắc nhở.`;
+                if (permBadge) permBadge.style.display = 'none';
             } else {
                 el.textContent = `Sẽ nhắc lúc ${timeLabel} (giờ VN) — tính từ giờ dậy trung vị 14 đêm trừ mục tiêu ngủ và SOL trung bình.`;
+                if (permBadge) {
+                    permBadge.style.display = 'block';
+                    const supported = 'Notification' in window;
+                    const perm = supported ? Notification.permission : 'unsupported';
+                    const badges = {
+                        granted:      { bg: '#e7f8f1', fg: '#0d9668', text: 'Đã cho phép thông báo hệ thống' },
+                        denied:       { bg: '#fdecec', fg: '#dc2626', text: 'Thông báo hệ thống đang bị chặn — bạn vẫn thấy nhắc trong app nếu tab đang mở, nhưng để nhận cả thông báo hệ thống, hãy bật lại quyền Notification cho trang này trong cài đặt trình duyệt.' },
+                        default:      { bg: '#fef3e2', fg: '#b45309', text: 'Chưa cấp quyền thông báo hệ thống — nhấn "Xem thử thông báo" bên dưới để được hỏi cấp quyền.' },
+                        unsupported:  { bg: '#f1f5f9', fg: '#64748b', text: 'Trình duyệt này không hỗ trợ thông báo hệ thống — vẫn sẽ nhắc trong app nếu tab đang mở.' }
+                    };
+                    const b = badges[perm] || badges.unsupported;
+                    permBadge.innerHTML = `<div style="font-size:0.72rem;line-height:1.5;padding:6px 9px;border-radius:8px;background:${b.bg};color:${b.fg};">${b.text}</div>`;
+                }
             }
+        }
+
+        // Fires an immediate preview of exactly what the scheduled reminder
+        // will look like (in-app toast + system notification if permitted),
+        // so the user isn't stuck waiting until the actual bedtime to find
+        // out whether it's set up correctly.
+        function testSleepReminder() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission().then(() => {
+                    testSleepReminder();
+                    updateSleepReminderStatus();
+                });
+                return;
+            }
+            const target = computeSmartBedtimeTarget();
+            const timeLabel = target ? `${String(target.hh).padStart(2, '0')}:${String(target.mm).padStart(2, '0')}` : '--:--';
+            if (typeof showNotification === 'function') {
+                showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Xem thử: đến giờ chuẩn bị ngủ (mục tiêu ${timeLabel})`, 'info');
+            }
+            if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    new Notification('Giờ đi ngủ (xem thử)', {
+                        body: `Mục tiêu ${timeLabel} — dựa trên giờ dậy trung vị 14 đêm gần nhất.`,
+                        tag: 'sleep-bedtime-reminder-test'
+                    });
+                } catch (e) {}
+            }
+            updateSleepReminderStatus();
         }
 
         function setSleepReminderEnabled(enabled) {
