@@ -26788,6 +26788,7 @@ window.DBP={
             <div style="margin: 0 0 20px;">
                 <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:8px;">
                     <svg class="icon-svg" aria-hidden="true"><use href="#icon-calendar"></use></svg> Sleep Heatmap <span style="font-weight:400;">(3 tháng gần nhất)</span>
+                    <span style="font-weight:400; font-size:0.72rem;">— bấm vào ô để xem chi tiết đêm đó</span>
                 </div>
                 <div style="margin:0; padding:14px 14px 10px; overflow-x:auto; background:var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                     <div id="sleepHeatmapGrid" style="display:inline-block; min-width:100%;"></div>
@@ -26824,6 +26825,7 @@ window.DBP={
                             style="font-size:0.75rem; padding:5px 9px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); width:130px;">
                     </div>
                 </div>
+                <div id="sleepHistoryDateFilterChip" style="display:none; margin-bottom:8px;"></div>
                 <div id="sleepHistoryContainer" style="max-height: 300px; overflow-y: auto;">
                     <!-- History will render here -->
                 </div>
@@ -44674,6 +44676,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (sleepSessions.length === 0) {
                 container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px; font-style: italic;">No sleep sessions recorded yet.</div>';
                 if (moreBtn) moreBtn.style.display = 'none';
+                const chip = document.getElementById('sleepHistoryDateFilterChip');
+                if (chip) chip.style.display = 'none';
                 return;
             }
 
@@ -44681,7 +44685,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const searchEl = document.getElementById('sleepHistorySearch');
             const searchTerm = (searchEl?.value || '').trim().toLowerCase();
 
+            renderSleepHistoryDateFilterChip();
+
             let allSessions = getSortedSleepSessions().reverse(); // newest first, luôn đúng thứ tự
+            if (sleepHistoryDateFilter) {
+                allSessions = allSessions.filter(s => typeof s.start === 'number' && vnDateStrFromTs(s.start) === sleepHistoryDateFilter);
+            }
             if (searchTerm) {
                 allSessions = allSessions.filter(s => (s.notes || '').toLowerCase().includes(searchTerm));
                 sleepHistoryShowAll = true; // đang tìm kiếm thì bỏ giới hạn 10 đêm để không bỏ sót kết quả cũ
@@ -44702,7 +44711,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             if (recentSessions.length === 0) {
-                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px; font-style: italic;">Không tìm thấy đêm nào khớp ghi chú tìm kiếm.</div>';
+                const emptyMsg = sleepHistoryDateFilter
+                    ? 'Không có đêm nào được ghi cho ngày này.'
+                    : 'Không tìm thấy đêm nào khớp ghi chú tìm kiếm.';
+                container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 20px; font-style: italic;">${emptyMsg}</div>`;
                 return;
             }
 
@@ -45442,7 +45454,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     const bg = heatmapLevelColor(level, isDark);
 
-                    colHtml += `<div class="sleep-heatmap-cell" data-tip="${tooltipHtml.replace(/"/g, '&quot;')}"
+                    colHtml += `<div class="sleep-heatmap-cell" data-tip="${tooltipHtml.replace(/"/g, '&quot;')}" ${entry ? `data-date="${cellDateStr}"` : ''}
                         style="width:${cellSize}px; height:${cellSize}px; border-radius:3px; background:${bg}; cursor:${entry ? 'pointer' : 'default'};"></div>`;
                 }
                 gridHtml += `<div style="display:flex; flex-direction:column; gap:${cellGap}px;">${colHtml}</div>`;
@@ -45478,8 +45490,46 @@ document.addEventListener('DOMContentLoaded', function() {
                     tooltipEl.style.top = Math.max(e.clientY - 40, 6) + 'px';
                 });
                 grid.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
+                grid.addEventListener('click', (e) => {
+                    const cell = e.target.closest('.sleep-heatmap-cell');
+                    if (!cell || !cell.dataset.date) return;
+                    showSleepHistoryForDate(cell.dataset.date);
+                });
                 grid.dataset.tooltipBound = '1';
             }
+        }
+
+        // Bấm 1 ô trên Heatmap (đã có dữ liệu) → lọc "Recent Sessions" chỉ còn đêm(s)
+        // của đúng ngày đó và cuộn tới, kèm chip để bỏ lọc quay lại danh sách đầy đủ.
+        let sleepHistoryDateFilter = null;
+
+        function showSleepHistoryForDate(dateStr) {
+            sleepHistoryDateFilter = dateStr;
+            sleepHistoryShowAll = true; // đảm bảo không bị giới hạn 10 đêm che mất kết quả
+            renderSleepHistory();
+            const container = document.getElementById('sleepHistoryContainer');
+            if (container) container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function clearSleepHistoryDateFilter() {
+            sleepHistoryDateFilter = null;
+            renderSleepHistory();
+        }
+
+        function renderSleepHistoryDateFilterChip() {
+            const chip = document.getElementById('sleepHistoryDateFilterChip');
+            if (!chip) return;
+            if (!sleepHistoryDateFilter) { chip.style.display = 'none'; chip.innerHTML = ''; return; }
+            const [y, m, d] = sleepHistoryDateFilter.split('-');
+            chip.style.display = 'block';
+            chip.innerHTML = `
+                <span style="display:inline-flex; align-items:center; gap:6px; font-size:0.75rem; font-weight:600; color:var(--primary); background:rgba(var(--primary-rgb),0.1); border:1px solid rgba(var(--primary-rgb),0.3); border-radius:999px; padding:4px 10px;">
+                    <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-calendar"></use></svg>
+                    Đang lọc: ${d}/${m}/${y}
+                    <button type="button" onclick="clearSleepHistoryDateFilter()" aria-label="Bỏ lọc theo ngày" style="background:none; border:none; padding:0; margin:0 0 0 2px; cursor:pointer; color:var(--primary); display:flex; align-items:center;">
+                        <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-x"></use></svg>
+                    </button>
+                </span>`;
         }
 
         // ===== Weekday vs Weekend (Social Jetlag) =====
