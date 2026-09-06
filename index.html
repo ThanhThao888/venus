@@ -42626,7 +42626,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
             });
 
-            lines.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Sleep + Study Context — AI Context Snapshot');
+            lines.push('Sleep + Study Context — AI Context Snapshot');
             lines.push(`Generated: ${dateStr}`);
             lines.push(SEP);
 
@@ -42642,7 +42642,7 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('');
             lines.push(SEP);
             lines.push('');
-            lines.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> INSOMNIA PATTERN ANALYSIS');
+            lines.push('INSOMNIA PATTERN ANALYSIS');
             lines.push(DIV);
 
             const insomnia = (typeof analyzeInsomniaPatterns === 'function') ? analyzeInsomniaPatterns() : null;
@@ -42679,7 +42679,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (insomnia.recommendations && insomnia.recommendations.length > 0) {
                     lines.push('  Top app-generated recommendations:');
                     insomnia.recommendations.slice(0, 3).forEach(r => {
-                        lines.push(`   - [${r.priority}] ${r.action} — ${r.rationale}`);
+                        lines.push(`   - [${r.priority}] ${stripEmoji(r.action)} — ${r.rationale}`);
                     });
                 }
             }
@@ -42688,7 +42688,7 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('');
             lines.push(SEP);
             lines.push('');
-            lines.push(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-scroll-text"></use></svg> RECENT SLEEP SESSIONS (last ${sorted.length} nights)`);
+            lines.push(`RECENT SLEEP SESSIONS (last ${sorted.length} nights)`);
             lines.push(DIV);
 
             sorted.forEach(s => {
@@ -42719,10 +42719,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const studySameDay = studyByDate[dateKey] || 0;
                 const studyNextDay = studyByDate[nextDateKey] || 0;
                 if (studySameDay > 0 || studyNextDay > 0) {
-                    lines.push(`      <svg class="icon-svg" aria-hidden="true"><use href="#icon-book-open"></use></svg> Study logged — same day: ${studySameDay.toFixed(1)}h, day after waking: ${studyNextDay.toFixed(1)}h`);
+                    lines.push(`      Study logged — same day: ${studySameDay.toFixed(1)}h, day after waking: ${studyNextDay.toFixed(1)}h`);
                 }
                 if (s.notes && s.notes.trim()) {
-                    lines.push(`      <svg class="icon-svg" aria-hidden="true"><use href="#icon-file-text"></use></svg> Note: ${s.notes.trim()}`);
+                    lines.push(`      Note: ${s.notes.trim()}`);
                 }
             });
 
@@ -42730,7 +42730,7 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('');
             lines.push(SEP);
             lines.push('');
-            lines.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-book-open"></use></svg> STUDY HOURS (same period, all tracks combined)');
+            lines.push('STUDY HOURS (same period, all tracks combined)');
             lines.push(DIV);
 
             const periodDates = [];
@@ -42755,7 +42755,7 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push('');
             lines.push(SEP);
             lines.push('');
-            lines.push('<svg class="icon-svg" aria-hidden="true"><use href="#icon-message-square"></use></svg> SUGGESTED PROMPT:');
+            lines.push('SUGGESTED PROMPT:');
             lines.push(DIV);
             lines.push('"Above is my sleep log for the last 14 nights (duration, debt vs. my');
             lines.push('sleep goal, sleep efficiency, quality rating, and any tags/notes I');
@@ -59173,6 +59173,15 @@ function showNotification(message, type = 'info') {
     const iconPath = FC_TOAST_ICONS[type] || FC_TOAST_ICONS.info;
     const clean = stripEmoji(message);
 
+    // Many call sites embed their own context-specific SVG icon inline in the
+    // message (moon for sleep, coffee for a caffeine cutoff, etc.) rather than
+    // relying on the generic per-type icon. That markup is intentional and
+    // trusted (authored in this file, not user input) — escaping it would
+    // print the raw "<svg...>" tag text instead of rendering the icon. When a
+    // message supplies its own icon we skip the generic badge and render the
+    // message as-is; otherwise we escape it as plain text and show the badge.
+    const hasInlineIcon = /<svg[\s>]/i.test(clean);
+
     const toastEl = document.createElement('div');
     toastEl.className = 'fc-toast';
     toastEl.style.cssText = [
@@ -59188,11 +59197,17 @@ function showNotification(message, type = 'info') {
         'cursor:pointer'
     ].join(';');
 
-    toastEl.innerHTML = `
+    const badgeHtml = hasInlineIcon ? '' : `
         <span style="flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${palette.bg};color:${palette.fg};">
             <svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;">${iconPath}</svg>
-        </span>
-        <span style="flex:1;padding-top:2px;">${escapeHtml(clean)}</span>
+        </span>`;
+    const bodyHtml = hasInlineIcon
+        ? clean.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, m => `<span style="display:inline-flex;vertical-align:-3px;width:16px;height:16px;color:${palette.fg};margin-right:2px;">${m.replace('<svg ', '<svg style="width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;" ')}</span>`)
+        : escapeHtml(clean);
+
+    toastEl.innerHTML = `
+        ${badgeHtml}
+        <span style="flex:1;padding-top:2px;">${bodyHtml}</span>
         <button type="button" aria-label="Dismiss" style="flex:0 0 auto;background:none;border:none;padding:2px;margin:-2px -2px 0 0;color:#94a3b8;cursor:pointer;line-height:0;">
             <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
