@@ -26442,8 +26442,29 @@ window.DBP={
             </div>
             </div>
 
-            <!-- Sleep Stats Summary -->
-            <div id="sleepStatsRow" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap:8px; margin: 12px 0;"></div>
+            <!-- Sleep Goal Ring — đồng bộ style với Goal Completion ring bên Goals tracker
+                 (cùng gradient hồng→tím, cùng kiểu vòng SVG). Hiện "X/7 đêm đạt mục tiêu"
+                 thay vì chỉ đọc số trong ô "Nợ ngủ"/"Trung bình". -->
+            <div style="display:flex; align-items:center; gap:14px; margin: 12px 0; flex-wrap:wrap;">
+                <div class="goal-ring-wrap" id="sleepGoalRingWrap" style="width:96px; height:96px; margin:0; flex-shrink:0;">
+                    <svg viewBox="0 0 160 160" class="goal-ring-svg" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="sleepGoalRingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#f472b6"/>
+                                <stop offset="100%" stop-color="#a78bfa"/>
+                            </linearGradient>
+                        </defs>
+                        <circle class="goal-ring-track" cx="80" cy="80" r="68"></circle>
+                        <circle class="goal-ring-fill" id="sleepGoalRingFill" cx="80" cy="80" r="68" style="stroke:url(#sleepGoalRingGradient);"></circle>
+                    </svg>
+                    <div class="goal-ring-center">
+                        <div class="goal-ring-percent" id="sleepGoalRingPercent" style="font-size:1.15rem;">—</div>
+                        <div class="goal-ring-caption" id="sleepGoalRingCaption" style="font-size:0.52rem; letter-spacing:0.02em;">chưa có dữ liệu</div>
+                    </div>
+                </div>
+                <!-- Sleep Stats Summary -->
+                <div id="sleepStatsRow" style="flex:1; min-width:220px; display:grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap:8px;"></div>
+            </div>
 
             <div class="sleep-section-header" onclick="toggleSleepSetup()">
                 <span><svg class="icon-svg" aria-hidden="true"><use href="#icon-wrench"></use></svg> Thiết lập &amp; nhắc nhở</span>
@@ -45187,6 +45208,42 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Bảng thống kê nhanh: trung bình 7 đêm gần nhất, chuỗi ngày đủ giấc liên tiếp, và "nợ ngủ" so với mục tiêu
+        // ===== Sleep Goal Ring (#4) — "X/7 đêm đạt mục tiêu", đồng bộ style với vòng
+        // Goal Completion bên Goals tracker (dùng lại đúng GOAL_RING_CIRCUMFERENCE vì cùng
+        // bán kính r=68 trong viewBox 160x160, chỉ hiển thị nhỏ hơn qua width/height). =====
+        // Dùng "7 đêm có log gần nhất" (qua getDailySleepTotalsVN, bucket theo giờ VN) —
+        // nhất quán với Insight Banner/Heatmap, thay vì mốc lịch tuần cứng (T2-CN), để không
+        // bị trống nếu người dùng mới log vài ngày giữa tuần.
+        function renderSleepGoalRing() {
+            const wrap = document.getElementById('sleepGoalRingWrap');
+            const fill = document.getElementById('sleepGoalRingFill');
+            const percentEl = document.getElementById('sleepGoalRingPercent');
+            const captionEl = document.getElementById('sleepGoalRingCaption');
+            if (!wrap || !fill || !percentEl || !captionEl) return;
+
+            const goal = getSleepGoal();
+            const last7 = getDailySleepTotalsVN().slice(-7);
+            const total = last7.length;
+            const achieved = last7.filter(d => d.duration >= goal - 0.25).length;
+            const pct = total > 0 ? (achieved / total) * 100 : 0;
+
+            const offset = total > 0
+                ? GOAL_RING_CIRCUMFERENCE * (1 - pct / 100)
+                : GOAL_RING_CIRCUMFERENCE;
+            requestAnimationFrame(() => { fill.style.strokeDashoffset = String(offset); });
+
+            wrap.classList.toggle('is-empty', total === 0);
+            wrap.classList.toggle('is-complete', total > 0 && achieved === total);
+
+            if (total === 0) {
+                percentEl.textContent = '—';
+                captionEl.textContent = 'chưa có dữ liệu';
+            } else {
+                percentEl.textContent = `${achieved}/${total}`;
+                captionEl.textContent = achieved === total ? 'đạt mục tiêu! 🎉' : 'đêm đạt mục tiêu';
+            }
+        }
+
         function renderSleepStats() {
             const row = document.getElementById('sleepStatsRow');
             if (!row) return;
@@ -45194,6 +45251,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const goalInput = document.getElementById('sleepGoalInput');
             const goal = getSleepGoal();
             if (goalInput) goalInput.value = goal;
+
+            renderSleepGoalRing();
 
             if (sleepSessions.length === 0) {
                 row.innerHTML = `
