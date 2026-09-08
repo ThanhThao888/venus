@@ -27079,6 +27079,16 @@ window.DBP={
                 background: var(--primary);
                 color: #fff;
             }
+            /* Icon mặc định luôn tô màu var(--primary) (xem rule .icon-svg gốc),
+               nên khi nút active có nền cũng là var(--primary) thì icon hồng
+               trên nền hồng -> biến mất. Ép icon về trắng khi tab đang active. */
+            .wln-tab-btn.active .icon-svg {
+                color: #fff;
+            }
+            .wln-tab-btn:hover:not(.active) {
+                border-color: var(--primary);
+                background: var(--primary-light);
+            }
             .wln-food-preset-btn {
                 padding: 6px 10px;
                 border-radius: 14px;
@@ -27741,11 +27751,13 @@ window.DBP={
                 } catch (e) { sessions = []; }
                 if (!sessions.length) return;
 
-                const [y, m, d] = key.split('-').map(Number);
-                const windowEnd = new Date(y, m - 1, d, 14, 0, 0).getTime();      // 14:00 ngày `key`
-                const windowStart = windowEnd - 20 * 3600000;                     // 20 tiếng trước đó (~18:00 hôm trước)
-
-                const candidates = sessions.filter(s => s.end >= windowStart && s.end <= windowEnd);
+                // "Đêm ngủ" của ngày `key` = mọi session có giờ THỨC DẬY (end) rơi
+                // đúng vào ngày dương lịch `key`, bất kể dậy lúc mấy giờ. Trước đây
+                // code cắt cứng theo khung giờ cố định 18:00 hôm trước -> 14:00 hôm
+                // nay, nên hễ dậy sau 14h (hoặc mở app trước 14h để xem) là bị bỏ
+                // sót, làm tưởng nhầm là "chưa đồng bộ được". Gộp theo NGÀY THỨC DẬY
+                // vừa đúng ý "log giấc ngủ đêm qua" vừa không phụ thuộc giờ giấc.
+                const candidates = sessions.filter(s => wlnLocalDateStr(new Date(s.end)) === key);
                 if (!candidates.length) return;
 
                 const bed = Math.min(...candidates.map(s => s.start));
