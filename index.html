@@ -7147,6 +7147,29 @@
             overflow: hidden;
         }
 
+        /* --- Dark/Light toggle button: icon + label layout --- */
+        #darkModeToggleBtn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+        }
+        #darkModeToggleBtn .dark-toggle-icon {
+            flex-shrink: 0;
+        }
+
+        /* On mobile, collapse the Dark/Light Mode button to icon-only so it
+           matches the size of the other round icon buttons and the row
+           doesn't wrap to a second line. */
+        @media (max-width: 768px) {
+            #darkModeToggleBtn {
+                padding: 8px 13px;
+                gap: 0;
+            }
+            #darkModeToggleBtn .dark-toggle-label {
+                display: none;
+            }
+        }
+
         .dark-mode-toggle::after {
             content: '';
             position: absolute;
@@ -15569,7 +15592,10 @@
 <body>
 
     <div class="dark-mode-container" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
-        <button class="dark-mode-toggle" onclick="toggleDarkMode()">Dark Mode</button>
+        <button id="darkModeToggleBtn" class="dark-mode-toggle" onclick="toggleDarkMode()">
+            <svg class="icon-svg icon-inherit icon-lg dark-toggle-icon" aria-hidden="true"><use href="#icon-moon"></use></svg>
+            <span class="dark-toggle-label">Dark Mode</span>
+        </button>
         <button id="calendarFAB" onclick="openCalendarModal()" title="Visual Planner"
             class="dark-mode-toggle"
             style="padding:8px 13px;"><svg class="icon-svg icon-lg icon-inherit" aria-hidden="true"><use href="#icon-calendar"></use></svg></button>
@@ -34439,6 +34465,7 @@ window.DBP={
                 document.body.classList.add('dark-mode');
                 updateChartColors();
             }
+            updateDarkModeToggleUI();
             getRandomQuote();
         });            
 
@@ -35624,10 +35651,24 @@ window.DBP={
         }
 
 
+        function updateDarkModeToggleUI() {
+            const btn = document.getElementById('darkModeToggleBtn');
+            if (!btn) return;
+            const isDark = document.body.classList.contains('dark-mode');
+            const icon = btn.querySelector('.dark-toggle-icon use');
+            const label = btn.querySelector('.dark-toggle-label');
+            // When it's currently dark, the button's job is to switch to light,
+            // so it should say/show "Light Mode" (sun) — and vice versa.
+            if (icon) icon.setAttribute('href', isDark ? '#icon-sun' : '#icon-moon');
+            if (label) label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+            btn.title = isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+        }
+
         function toggleDarkMode() {
             const body = document.body;
             const isDark = body.classList.toggle('dark-mode');
             localStorage.setItem('darkMode', isDark);
+            updateDarkModeToggleUI();
             updateChartColors();
             if (sleepChart) {
                 const textColor = isDark ? '#c895a8' : '#a3808f';
