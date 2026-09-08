@@ -6191,6 +6191,62 @@
             text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
 
+        .career-mobile-select-wrap {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .career-grid {
+                display: none;
+            }
+            .career-mobile-select-wrap {
+                display: block;
+                position: relative;
+                width: 100%;
+                margin-bottom: 30px;
+            }
+            .career-mobile-select {
+                width: 100%;
+                margin: 0;
+                padding: 14px 40px 14px 16px;
+                font-size: 1rem;
+                font-weight: 600;
+                color: var(--primary, #d17b96);
+                background: var(--bg-white, #fffbfc);
+                border: 1px solid var(--border-color, #f0d7de);
+                border-radius: 16px;
+                box-shadow:
+                    0 8px 24px rgba(var(--primary-rgb, 209, 123, 150), 0.08),
+                    inset 0 1px 1px rgba(255, 255, 255, 0.6);
+                -webkit-appearance: none;
+                -moz-appearance: none;
+                appearance: none;
+                background-image: none;
+            }
+            .career-mobile-select::-ms-expand {
+                display: none;
+            }
+            .career-mobile-select-chevron {
+                position: absolute;
+                top: 50%;
+                right: 16px;
+                transform: translateY(-50%);
+                font-size: 0.85rem;
+                color: var(--primary, #d17b96);
+                pointer-events: none;
+            }
+            .dark-mode .career-mobile-select {
+                color: var(--text-dark, #f3e4ec);
+                background-color: rgba(30, 20, 28, 0.65);
+                border-color: rgba(240, 168, 196, 0.16);
+                box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+                background-image: none;
+            }
+            .dark-mode .career-mobile-select-chevron {
+                color: #f0a8c4;
+            }
+        }
+
         .career-card[data-career="pe"] { border-top: 4px solid var(--pe-color, #ef4444); }
         .career-card[data-career="pe"].selected { border-color: var(--pe-color, #ef4444); }
 
@@ -7145,29 +7201,6 @@
                 inset 0 1px 1px rgba(255, 255, 255, 0.2);
             position: relative;
             overflow: hidden;
-        }
-
-        /* --- Dark/Light toggle button: icon + label layout --- */
-        #darkModeToggleBtn {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-        }
-        #darkModeToggleBtn .dark-toggle-icon {
-            flex-shrink: 0;
-        }
-
-        /* On mobile, collapse the Dark/Light Mode button to icon-only so it
-           matches the size of the other round icon buttons and the row
-           doesn't wrap to a second line. */
-        @media (max-width: 768px) {
-            #darkModeToggleBtn {
-                padding: 8px 13px;
-                gap: 0;
-            }
-            #darkModeToggleBtn .dark-toggle-label {
-                display: none;
-            }
         }
 
         .dark-mode-toggle::after {
@@ -15592,10 +15625,7 @@
 <body>
 
     <div class="dark-mode-container" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
-        <button id="darkModeToggleBtn" class="dark-mode-toggle" onclick="toggleDarkMode()">
-            <svg class="icon-svg icon-inherit icon-lg dark-toggle-icon" aria-hidden="true"><use href="#icon-moon"></use></svg>
-            <span class="dark-toggle-label">Dark Mode</span>
-        </button>
+        <button class="dark-mode-toggle" onclick="toggleDarkMode()">Dark Mode</button>
         <button id="calendarFAB" onclick="openCalendarModal()" title="Visual Planner"
             class="dark-mode-toggle"
             style="padding:8px 13px;"><svg class="icon-svg icon-lg icon-inherit" aria-hidden="true"><use href="#icon-calendar"></use></svg></button>
@@ -17986,6 +18016,27 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
                 <div class="career-card" data-career="mastery" onclick="selectCareer('mastery')" title="Mastery Roadmap">
                     <div class="career-icon"><i class="fa-solid fa-route"></i></div>
                 </div>
+            </div>
+
+            <div class="career-mobile-select-wrap">
+                <select id="careerMobileSelect" class="career-mobile-select" onchange="selectCareer(this.value)" aria-label="Choose track">
+                    <option value="pe">PE</option>
+                    <option value="ib">IB</option>
+                    <option value="hf">HF</option>
+                    <option value="sc">SC</option>
+                    <option value="fintech">Fintech</option>
+                    <option value="english">English</option>
+                    <option value="chinese">Chinese</option>
+                    <option value="german">German</option>
+                    <option value="tools">Tools</option>
+                    <option value="cfa1">CFA1</option>
+                    <option value="acca">ACCA</option>
+                    <option value="china">China Finance</option>
+                    <option value="quant">Quant</option>
+                    <option value="analyst">Analyst</option>
+                    <option value="mastery">Mastery</option>
+                </select>
+                <i class="fa-solid fa-chevron-down career-mobile-select-chevron" aria-hidden="true"></i>
             </div>
 
             <div class="progress-overview">
@@ -34465,7 +34516,6 @@ window.DBP={
                 document.body.classList.add('dark-mode');
                 updateChartColors();
             }
-            updateDarkModeToggleUI();
             getRandomQuote();
         });            
 
@@ -34739,6 +34789,8 @@ window.DBP={
             currentCareer = career;
             document.querySelectorAll('.career-card').forEach(card => card.classList.remove('selected'));
             document.querySelector(`[data-career="${career}"]`).classList.add('selected');
+            const mobileSel = document.getElementById('careerMobileSelect');
+            if (mobileSel) mobileSel.value = career;
             if (career !== 'mastery') document.getElementById('career-title').textContent = skillsData[career].title;
             if (career !== 'mastery') document.getElementById('currentCareerTitle').textContent = skillsData[career].title;
             loadSkills(career);
@@ -35651,24 +35703,10 @@ window.DBP={
         }
 
 
-        function updateDarkModeToggleUI() {
-            const btn = document.getElementById('darkModeToggleBtn');
-            if (!btn) return;
-            const isDark = document.body.classList.contains('dark-mode');
-            const icon = btn.querySelector('.dark-toggle-icon use');
-            const label = btn.querySelector('.dark-toggle-label');
-            // When it's currently dark, the button's job is to switch to light,
-            // so it should say/show "Light Mode" (sun) — and vice versa.
-            if (icon) icon.setAttribute('href', isDark ? '#icon-sun' : '#icon-moon');
-            if (label) label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
-            btn.title = isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
-        }
-
         function toggleDarkMode() {
             const body = document.body;
             const isDark = body.classList.toggle('dark-mode');
             localStorage.setItem('darkMode', isDark);
-            updateDarkModeToggleUI();
             updateChartColors();
             if (sleepChart) {
                 const textColor = isDark ? '#c895a8' : '#a3808f';
