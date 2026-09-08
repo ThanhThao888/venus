@@ -1436,8 +1436,6 @@
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
-            max-height: 160px;
-            overflow-y: auto;
         }
         .badges-empty {
             font-size: 0.8rem;
@@ -1446,6 +1444,28 @@
             width: 100%;
             padding: 8px 0;
         }
+        .badges-count-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+        .badges-show-more {
+            display: block;
+            margin-top: 8px;
+            width: 100%;
+            text-align: center;
+            background: transparent;
+            border: 1px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #db2777;
+            cursor: pointer;
+        }
+        .badges-show-more:hover { background: var(--bg-light); }
+        .dark-mode .badges-show-more { color: #f0a8c4; border-color: rgba(148,163,184,0.3); }
+        .dark-mode .badges-show-more:hover { background: rgba(51,65,85,0.6); }
         .badge-chip {
             display: flex;
             align-items: center;
@@ -12329,6 +12349,34 @@
         transform: scale(1.08) rotate(-20deg);
     }
 
+    /* One-click "never mind the break" — only shown while ftMode === 'break' */
+    .ft-skip-break-btn {
+        display: block;
+        width: 100%;
+        margin-top: 10px;
+        padding: 9px 14px;
+        border: 1.5px dashed var(--primary);
+        border-radius: 10px;
+        background: rgba(219,39,119,0.06);
+        color: var(--primary);
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: all 0.18s ease;
+    }
+    .ft-skip-break-btn:hover {
+        background: rgba(219,39,119,0.12);
+        border-style: solid;
+        transform: translateY(-1px);
+    }
+    .dark-mode .ft-skip-break-btn {
+        background: rgba(244,114,182,0.1);
+    }
+
     /* Ring animations */
     @keyframes ftPulse {
         0%,100% { filter: drop-shadow(0 0 0px rgba(219,39,119,0)); }
@@ -15697,6 +15745,194 @@
 </style>
 </head>
 <body>
+<script>
+/* Sakura Mist -- Unified themed dialogs (replace native confirm()/alert()/prompt(),
+   which render as ugly OS popups and are silently blocked in some sandboxed
+   previews / mobile webviews).
+   Usage:
+     await skConfirm('Delete this item?')            -> true/false
+     await skConfirm('Delete?', {title:'Delete Item', danger:true, okText:'Delete'})
+     await skAlert('Saved!')                          -> undefined
+     await skPrompt('Enter hours', '1.0')              -> string|null
+*/
+(function () {
+  function svgIcon(name, size) {
+    size = size || '1.5rem';
+    return '<svg aria-hidden="true" style="width:' + size + ';height:' + size + ';"><use href="#icon-' + name + '"/></svg>';
+  }
+
+  function buildOverlay() {
+    var overlay = document.createElement('div');
+    overlay.className = 'sk-dialog-overlay';
+    overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(30, 15, 22, 0.5); backdrop-filter: blur(2px); z-index: 100000; display: flex; align-items: center; justify-content: center; padding: 20px; animation: skFadeIn .15s ease;';
+    return overlay;
+  }
+
+  function buildCard(iconName, iconColor) {
+    var card = document.createElement('div');
+    card.style.cssText = 'background: var(--bg-white); border-radius: 16px; padding: 26px 24px; max-width: 400px; width: 100%; box-shadow: 0 20px 50px rgba(74, 50, 64, 0.35); border: 1px solid var(--border-color); animation: skPopIn .18s cubic-bezier(.34,1.56,.64,1);';
+    if (iconName) {
+      var iconWrap = document.createElement('div');
+      iconWrap.style.cssText = 'display:flex; justify-content:center; margin-bottom: 10px; color:' + iconColor + ';';
+      iconWrap.innerHTML = svgIcon(iconName, '2.25rem');
+      card.appendChild(iconWrap);
+    }
+    return card;
+  }
+
+  function styleBtn(btn, variant) {
+    btn.style.cssText = 'flex: 1; padding: 11px; border-radius: 10px; cursor: pointer; font-size: 0.95rem; font-weight: 600; font-family: inherit; transition: transform .12s ease, filter .12s ease; border: none;';
+    if (variant === 'ghost') {
+      btn.style.background = 'var(--bg-light)';
+      btn.style.color = 'var(--text-dark)';
+      btn.style.border = '1px solid var(--border-color)';
+      btn.style.fontWeight = '500';
+    } else if (variant === 'danger') {
+      btn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+      btn.style.color = '#fff';
+    } else {
+      btn.style.background = 'linear-gradient(135deg, var(--primary), var(--primary-dark))';
+      btn.style.color = '#fff';
+    }
+    btn.onmouseenter = function(){ btn.style.filter = 'brightness(1.06)'; };
+    btn.onmouseleave = function(){ btn.style.filter = 'none'; };
+  }
+
+  if (!document.getElementById('sk-dialog-keyframes')) {
+    var style = document.createElement('style');
+    style.id = 'sk-dialog-keyframes';
+    style.textContent = '@keyframes skFadeIn { from{opacity:0} to{opacity:1} } @keyframes skPopIn { from{opacity:0; transform:scale(.92) translateY(6px)} to{opacity:1; transform:scale(1) translateY(0)} }';
+    document.head.appendChild(style);
+  }
+
+  function closeOverlay(overlay) {
+    overlay.style.animation = 'skFadeIn .12s ease reverse';
+    setTimeout(function(){ overlay.remove(); }, 100);
+  }
+
+  window.skConfirm = function (message, opts) {
+    opts = opts || {};
+    return new Promise(function(resolve) {
+      var overlay = buildOverlay();
+      var danger = opts.danger !== false;
+      var card = buildCard(opts.icon || (danger ? 'triangle-alert' : 'circle-check'), danger ? '#ef4444' : 'var(--primary)');
+
+      var title = document.createElement('h3');
+      title.style.cssText = 'margin:0 0 8px; font-size:1.1rem; color:var(--text-dark); text-align:center; font-weight:700;';
+      title.textContent = opts.title || 'Xác nhận';
+      card.appendChild(title);
+
+      var msg = document.createElement('p');
+      msg.style.cssText = 'margin:0 0 22px; color:var(--text-muted); font-size:0.9rem; text-align:center; line-height:1.55; white-space:pre-line;';
+      msg.textContent = message || '';
+      card.appendChild(msg);
+
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:10px;';
+      var cancelBtn = document.createElement('button');
+      cancelBtn.textContent = opts.cancelText || 'Hủy';
+      styleBtn(cancelBtn, 'ghost');
+      var okBtn = document.createElement('button');
+      okBtn.textContent = opts.okText || (danger ? 'Xóa' : 'Đồng ý');
+      styleBtn(okBtn, danger ? 'danger' : 'primary');
+
+      function finish(result) { closeOverlay(overlay); resolve(result); }
+      cancelBtn.onclick = function(){ finish(false); };
+      okBtn.onclick = function(){ finish(true); };
+      overlay.addEventListener('click', function(e) { if (e.target === overlay) finish(false); });
+      document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape') { finish(false); document.removeEventListener('keydown', esc); }
+      });
+
+      row.appendChild(cancelBtn); row.appendChild(okBtn);
+      card.appendChild(row);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      okBtn.focus();
+    });
+  };
+
+  window.skAlert = function (message, opts) {
+    opts = opts || {};
+    return new Promise(function(resolve) {
+      var overlay = buildOverlay();
+      var card = buildCard(opts.icon || 'circle-check', 'var(--primary)');
+
+      var title = document.createElement('h3');
+      title.style.cssText = 'margin:0 0 8px; font-size:1.1rem; color:var(--text-dark); text-align:center; font-weight:700;';
+      title.textContent = opts.title || 'Thông báo';
+      card.appendChild(title);
+
+      var msg = document.createElement('p');
+      msg.style.cssText = 'margin:0 0 22px; color:var(--text-muted); font-size:0.9rem; text-align:center; line-height:1.55; white-space:pre-line;';
+      msg.textContent = message || '';
+      card.appendChild(msg);
+
+      var okBtn = document.createElement('button');
+      okBtn.textContent = opts.okText || 'OK';
+      okBtn.style.width = '100%';
+      styleBtn(okBtn, 'primary');
+      function finish() { closeOverlay(overlay); resolve(); }
+      okBtn.onclick = finish;
+      overlay.addEventListener('click', function(e) { if (e.target === overlay) finish(); });
+      document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape' || e.key === 'Enter') { finish(); document.removeEventListener('keydown', esc); }
+      });
+
+      card.appendChild(okBtn);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      okBtn.focus();
+    });
+  };
+
+  window.skPrompt = function (message, defaultValue, opts) {
+    opts = opts || {};
+    return new Promise(function(resolve) {
+      var overlay = buildOverlay();
+      var card = buildCard(null);
+
+      var title = document.createElement('h3');
+      title.style.cssText = 'margin:0 0 12px; font-size:1.1rem; color:var(--text-dark); text-align:center; font-weight:700;';
+      title.textContent = message || '';
+      card.appendChild(title);
+
+      var input = document.createElement(opts.textarea ? 'textarea' : 'input');
+      if (!opts.textarea) input.type = opts.type || 'text';
+      input.value = defaultValue != null ? defaultValue : '';
+      input.style.cssText = 'width: 100%; box-sizing: border-box; padding: 10px 12px; margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-light); color: var(--text-dark); font-size: 0.95rem; font-family: inherit;';
+      if (opts.textarea) input.style.minHeight = '80px';
+      card.appendChild(input);
+
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:10px;';
+      var cancelBtn = document.createElement('button');
+      cancelBtn.textContent = opts.cancelText || 'Hủy';
+      styleBtn(cancelBtn, 'ghost');
+      var okBtn = document.createElement('button');
+      okBtn.textContent = opts.okText || 'OK';
+      styleBtn(okBtn, 'primary');
+
+      function finish(result) { closeOverlay(overlay); resolve(result); }
+      cancelBtn.onclick = function(){ finish(null); };
+      okBtn.onclick = function(){ finish(input.value); };
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !opts.textarea) { e.preventDefault(); finish(input.value); }
+        if (e.key === 'Escape') finish(null);
+      });
+      overlay.addEventListener('click', function(e) { if (e.target === overlay) finish(null); });
+
+      row.appendChild(cancelBtn); row.appendChild(okBtn);
+      card.appendChild(row);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      input.focus();
+      if (input.select) input.select();
+    });
+  };
+})();
+</script>
+
 
     <div class="dark-mode-container" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
         <button class="dark-mode-toggle" onclick="toggleDarkMode()">Dark Mode</button>
@@ -17451,7 +17687,7 @@ const CAL = (() => {
     closeSlotModal() {
       document.getElementById('calSlotModal').classList.remove('open');
     },
-    saveSlot() {
+    async saveSlot() {
       const name  = document.getElementById('calSlotName').value.trim();
       if (!name) { document.getElementById('calSlotName').style.border='1.5px solid #ef4444'; return; }
       document.getElementById('calSlotName').style.border='';
@@ -17462,11 +17698,11 @@ const CAL = (() => {
       const category = document.getElementById('calSlotCategory').value;
       const notes    = document.getElementById('calSlotNotes').value.trim();
 
-      if (!startVal || !endVal) { alert('Please set start and end time'); return; }
+      if (!startVal || !endVal) { await skAlert('Please set start and end time'); return; }
       const startDt = new Date(startVal);
       const endDt   = new Date(endVal);
-      if (isNaN(startDt) || isNaN(endDt)) { alert('Please set start and end time'); return; }
-      if (endDt <= startDt) { alert('End time must be after start time'); return; }
+      if (isNaN(startDt) || isNaN(endDt)) { await skAlert('Please set start and end time'); return; }
+      if (endDt <= startDt) { await skAlert('End time must be after start time'); return; }
 
       // dateISO anchors the event to its start day; startH is the decimal
       // hour within that day; dur is the REAL duration in hours and can now
@@ -21201,7 +21437,7 @@ body.dark-mode .dlt-fg textarea {
 
     closeModal() { document.getElementById('dltModal').classList.remove('open'); editingId = null; },
 
-    save() {
+    async save() {
       const name = document.getElementById('dltName').value.trim();
       const date = document.getElementById('dltDate').value;
       const time = document.getElementById('dltTime').value; // "HH:MM" or ""
@@ -21215,7 +21451,7 @@ body.dark-mode .dlt-fg textarea {
       const repeatCustomDays = repeatType === 'custom'
         ? Math.max(1, parseInt(document.getElementById('dltRepeatCustomDays')?.value, 10) || 14)
         : null;
-      if (!name || !date) { alert('Please fill in name and date!'); return; }
+      if (!name || !date) { await skAlert('Please fill in name and date!'); return; }
 
       if (editingId) {
         const item = manualList.find(m => m.id === editingId);
@@ -23564,7 +23800,7 @@ function removeManual(idx){ pushUndo(); _tasks.splice(idx,1); saveOrder(); rende
 
 
 /* ─── GENERATE ─── */
-function generate(){
+async function generate(){
     const [sh,sm] = (gel('dbpStartTime').value||'08:00').split(':').map(Number);
     const style = gel('dbpStyle').value||'deep';
     const s = STYLES[style];
@@ -23601,7 +23837,7 @@ function generate(){
 
     // FIX: warn before silently nuking progress on an existing plan (done blocks / timers run)
     const hasProgress = _blocks.some(b=>b.done || b.actualStart);
-    if(hasProgress && !confirm('You already have progress on today\'s plan (completed blocks or a timer run). Generating a new plan will overwrite it. Continue?')){
+    if(hasProgress && !(await skConfirm("You already have progress on today's plan (completed blocks or a timer run). Generating a new plan will overwrite it. Continue?", {title:'Overwrite Plan?', danger:true, okText:'Overwrite'}))){
         return;
     }
 
@@ -24170,8 +24406,8 @@ function loadHist(idx){
     DBP.switchTab('plan',document.querySelector('.dbp-tab'));
     renderSchedule(_blocks); toast('↩ Plan loaded!');
 }
-function delHist(idx){
-    if(!confirm('Delete this saved plan?'))return;
+async function delHist(idx){
+    if(!(await skConfirm('Delete this saved plan?', {title:'Delete Plan?', danger:true, okText:'Delete'})))return;
     const hist=store.get('dbpHistory',[]); hist.splice(idx,1); store.set('dbpHistory',hist);
     renderHistory(); toast('Deleted');
 }
@@ -24361,10 +24597,14 @@ window.DBP={
 
                         <!-- Persistent achievements / badges list (doesn't disappear like the toast above) -->
                         <div class="badges-section">
-                            <h4 class="badges-title"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg> Badges Earned</h4>
+                            <h4 class="badges-title" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="toggleBadgesSection()">
+                                <span><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg> Badges Earned <span id="badgesCountLabel" class="badges-count-label"></span></span>
+                                <span id="badgesCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
+                            </h4>
                             <div id="badgesList" class="badges-list">
                                 <div class="badges-empty">No badges yet — log study hours to earn your first! <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1.2em;height:1.2em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg></div>
                             </div>
+                            <button type="button" id="badgesShowMoreBtn" class="badges-show-more" onclick="toggleBadgesShowAll()" style="display:none;"></button>
                         </div>
                     </div>
 
@@ -24564,6 +24804,13 @@ window.DBP={
                                 <span style="font-size:15px;"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-shuffle"/></svg></span>
                             </button>
                         </div>
+                        <!-- Only visible during a break: bail out of it in one click and drop
+                             straight into a fresh Focus session, instead of having to guess
+                             that the Reset button also happens to do this. -->
+                        <button class="ft-skip-break-btn" id="ftSkipBreakBtn" onclick="ftSkipBreak()" style="display:none;" title="Skip the break and start focusing now">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.95em;height:0.95em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;"><use href="#ft-icon-focus"/></svg>
+                            Skip break, start focusing
+                        </button>
                         <div id="ftCurrentGoalLabel" style="text-align:center;font-size:0.75rem;color:var(--text-muted);margin-top:6px;display:none;"></div>
                         <div id="ftCycleCounter" class="ft-cycle-counter"></div>
                         </div><!-- end #ftBody -->
@@ -27272,9 +27519,9 @@ window.DBP={
                 pushFoodEntry(f);
             }
 
-            function removeFoodPreset(i) {
+            async function removeFoodPreset(i) {
                 if (!data.foodPresets || !data.foodPresets[i]) return;
-                if (!confirm(`Xóa preset "${data.foodPresets[i].name}"?`)) return;
+                if (!(await skConfirm(`Xóa preset "${data.foodPresets[i].name}"?`, {title:'Xóa preset?', danger:true, okText:'Xóa'}))) return;
                 data.foodPresets.splice(i, 1);
                 save();
                 renderFoodPresets();
@@ -27290,13 +27537,13 @@ window.DBP={
                 form.style.display = form.style.display === 'none' ? 'block' : 'none';
             }
 
-            function addCustomFood() {
+            async function addCustomFood() {
                 const name = document.getElementById('wlnCustomName').value.trim();
                 const cal = parseFloat(document.getElementById('wlnCustomCal').value) || 0;
                 const sugar = parseFloat(document.getElementById('wlnCustomSugar').value) || 0;
                 const natri = parseFloat(document.getElementById('wlnCustomNatri').value) || 0;
                 const kali = parseFloat(document.getElementById('wlnCustomKali').value) || 0;
-                if (!name) { alert('Nhập tên món trước đã nhé.'); return; }
+                if (!name) { await skAlert('Nhập tên món trước đã nhé.'); return; }
                 pushFoodEntry({ name, cal, sugar, natri, kali });
                 const saveAsPreset = document.getElementById('wlnCustomFoodSaveAsPreset');
                 if (saveAsPreset && saveAsPreset.checked) {
@@ -27461,10 +27708,10 @@ window.DBP={
                 _wlnSleepQuality = q;
                 document.querySelectorAll('#wlnSleepModalOverlay .wln-mood-btn').forEach(b => b.classList.toggle('active', +b.dataset.q === q));
             }
-            function saveSleepLog() {
+            async function saveSleepLog() {
                 const bedVal = document.getElementById('wlnSleepBedInput').value;
                 const wakeVal = document.getElementById('wlnSleepWakeInput').value;
-                if (!bedVal || !wakeVal) { alert('Nhập đủ giờ đi ngủ và giờ thức dậy nhé.'); return; }
+                if (!bedVal || !wakeVal) { await skAlert('Nhập đủ giờ đi ngủ và giờ thức dậy nhé.'); return; }
                 const [bh, bm] = bedVal.split(':').map(Number);
                 const [wh, wm] = wakeVal.split(':').map(Number);
                 const wakeDate = new Date();
@@ -27473,7 +27720,7 @@ window.DBP={
                 bedDate.setDate(bedDate.getDate() - 1);
                 bedDate.setHours(bh, bm, 0, 0);
                 const hours = (wakeDate.getTime() - bedDate.getTime()) / 3600000;
-                if (hours <= 0 || hours > 16) { alert('Giờ đi ngủ/thức dậy có vẻ không hợp lý, kiểm tra lại nhé.'); return; }
+                if (hours <= 0 || hours > 16) { await skAlert('Giờ đi ngủ/thức dậy có vẻ không hợp lý, kiểm tra lại nhé.'); return; }
                 data.sleepLogs[todayKey()] = { bed: bedDate.getTime(), wake: wakeDate.getTime(), hours, quality: _wlnSleepQuality };
                 save();
                 closeSleepModal();
@@ -27596,7 +27843,7 @@ window.DBP={
                 const timeInput = document.getElementById('wlnCaffeineTimeInput');
                 const ts = timeInputToTimestamp(timeInput ? timeInput.value : null);
                 if (ts > Date.now() + 5 * 60000) {
-                    alert('Không thể chọn giờ trong tương lai.');
+                    skAlert('Không thể chọn giờ trong tương lai.');
                     return null;
                 }
                 return ts;
@@ -27615,8 +27862,8 @@ window.DBP={
             function addCustomCaffeine() {
                 const name = document.getElementById('wlnCustomCaffeineName').value.trim();
                 const mg = parseFloat(document.getElementById('wlnCustomCaffeineMg').value);
-                if (!name) { alert('Nhập tên loại đồ uống trước đã nhé.'); return; }
-                if (!mg || mg <= 0) { alert('Nhập hàm lượng caffeine (mg) hợp lệ.'); return; }
+                if (!name) { skAlert('Nhập tên loại đồ uống trước đã nhé.'); return; }
+                if (!mg || mg <= 0) { skAlert('Nhập hàm lượng caffeine (mg) hợp lệ.'); return; }
                 const ts = readCaffeineTimeInput();
                 if (ts === null) return;
                 addCaffeine(mg, name, ts);
@@ -27660,9 +27907,9 @@ window.DBP={
                 addCaffeine(p.mg, p.name, ts);
             }
 
-            function removeCaffeinePreset(i) {
+            async function removeCaffeinePreset(i) {
                 if (!data.caffeinePresets || !data.caffeinePresets[i]) return;
-                if (!confirm(`Xóa preset "${data.caffeinePresets[i].name}"?`)) return;
+                if (!await skConfirm(`Xóa preset "${data.caffeinePresets[i].name}"?`, {title: 'Xóa preset', danger: true, okText: 'Xóa'})) return;
                 data.caffeinePresets.splice(i, 1);
                 save();
                 renderCaffeinePresets();
@@ -27706,7 +27953,7 @@ window.DBP={
                 const input = document.getElementById('wlnEditCafTimeInput');
                 if (!input.value) { input.style.borderColor = '#ef4444'; return; }
                 const ts = timeInputToTimestamp(input.value);
-                if (ts > Date.now() + 5 * 60000) { alert('Không thể chọn giờ trong tương lai.'); return; }
+                if (ts > Date.now() + 5 * 60000) { skAlert('Không thể chọn giờ trong tương lai.'); return; }
                 const day = getDay(todayKey());
                 const c = day.caffeine[_wlnEditCaffeineIdx];
                 if (c) c.t = ts;
@@ -27836,10 +28083,10 @@ window.DBP={
             }
             function addManualMeal() {
                 const input = document.getElementById('wlnManualMealTime');
-                if (!input.value) { alert('Chọn ngày giờ đã ăn nhé.'); return; }
+                if (!input.value) { skAlert('Chọn ngày giờ đã ăn nhé.'); return; }
                 const ts = new Date(input.value).getTime();
-                if (isNaN(ts)) { alert('Ngày giờ không hợp lệ.'); return; }
-                if (ts > Date.now() + 5 * 60000) { alert('Không thể chọn thời điểm trong tương lai.'); return; }
+                if (isNaN(ts)) { skAlert('Ngày giờ không hợp lệ.'); return; }
+                if (ts > Date.now() + 5 * 60000) { skAlert('Không thể chọn thời điểm trong tương lai.'); return; }
                 const key = wlnLocalDateStr(new Date(ts));
                 const day = getDay(key);
                 day.foods.push({ name: 'Bữa ăn (nhập thủ công)', cal: 0, sugar: 0, natri: 0, kali: 0, t: ts });
@@ -27848,7 +28095,7 @@ window.DBP={
                 if (key === todayKey()) {
                     renderLogTab();
                 } else {
-                    alert(`Đã lưu mốc ăn vào ngày ${key} (khác hôm nay).`);
+                    skAlert(`Đã lưu mốc ăn vào ngày ${key} (khác hôm nay).`);
                 }
             }
 
@@ -28237,7 +28484,7 @@ window.DBP={
 
             function saveWeeklyWeight() {
                 const val = parseFloat(document.getElementById('wlnWeightInput').value);
-                if (!val || val <= 0) { alert('Nhập số cân hợp lệ nhé.'); return; }
+                if (!val || val <= 0) { skAlert('Nhập số cân hợp lệ nhé.'); return; }
                 const wk = isoWeekKey(new Date());
                 data.weights[wk] = { value: val, t: Date.now() };
                 save();
@@ -28539,8 +28786,8 @@ window.DBP={
                 const name = document.getElementById('wlnSuppNewName').value.trim();
                 const dose = parseFloat(document.getElementById('wlnSuppNewDose').value);
                 const unit = document.getElementById('wlnSuppNewUnit').value;
-                if (!name) { alert('Nhập tên chất trước đã nhé.'); return; }
-                if (isNaN(dose) || dose <= 0) { alert('Nhập hàm lượng hợp lệ nhé.'); return; }
+                if (!name) { skAlert('Nhập tên chất trước đã nhé.'); return; }
+                if (isNaN(dose) || dose <= 0) { skAlert('Nhập hàm lượng hợp lệ nhé.'); return; }
 
                 let preset = data.suppPresets.find(p => p.name.toLowerCase() === name.toLowerCase() && p.unit === unit);
                 if (!preset) {
@@ -28586,7 +28833,7 @@ window.DBP={
 
             function copySuppData() {
                 const dayKeys = Object.keys(data.suppLogs).sort();
-                if (!dayKeys.length) { alert('Chưa có dữ liệu supplement nào để copy.'); return; }
+                if (!dayKeys.length) { skAlert('Chưa có dữ liệu supplement nào để copy.'); return; }
 
                 let text = `SUPPLEMENT / THUỐC LOG (xuất ngày ${todayKey()})\n`;
                 text += `Ghi chú: đây là dữ liệu thô, nhờ bạn đóng vai chuyên gia dinh dưỡng phân tích giúp tôi xem có liều nào vượt ngưỡng khuyến nghị hàng ngày, có tương tác/trùng lặp chất nào cần lưu ý không.\n\n`;
@@ -28640,10 +28887,10 @@ window.DBP={
                 a.click();
                 URL.revokeObjectURL(url);
             }
-            function importAllData(input) {
+            async function importAllData(input) {
                 const file = input.files[0];
                 if (!file) return;
-                if (!confirm('Import sẽ GHI ĐÈ toàn bộ dữ liệu Wellness Tracker hiện tại bằng file này. Tiếp tục?')) {
+                if (!await skConfirm('Import sẽ GHI ĐÈ toàn bộ dữ liệu Wellness Tracker hiện tại bằng file này. Tiếp tục?', {title: 'Import dữ liệu', danger: true, okText: 'Tiếp tục'})) {
                     input.value = '';
                     return;
                 }
@@ -28669,9 +28916,9 @@ window.DBP={
                         renderSuppPresets();
                         setTab(currentTab);
                         renderLogTab();
-                        alert('Đã import dữ liệu thành công!');
+                        skAlert('Đã import dữ liệu thành công!');
                     } catch (e) {
-                        alert('File không hợp lệ hoặc bị hỏng.');
+                        skAlert('File không hợp lệ hoặc bị hỏng.');
                     }
                     input.value = '';
                 };
@@ -35369,16 +35616,16 @@ window.DBP={
                 return false;
             });
             
-            // Achievement milestones
-            if (totalHours === 1) {
-                addAchievement(`First hour in ${skillName}!`, '<i class="fa-solid fa-hourglass-start"></i>');
-                showNotification(`Achievement Unlocked: First hour in ${skillName}!`, 'achievement');
-            } else if (totalHours === 5) {
-                addAchievement(`5 hours milestone in ${skillName}!`, '<i class="fa-solid fa-rocket"></i>');
-                showNotification(`Achievement Unlocked: 5 hours milestone!`, 'achievement');
-            } else if (totalHours >= targetHours) {
-                addAchievement(`MASTERED: ${skillName} (${targetHours}h)!`, '<i class="fa-solid fa-medal"></i>');
-                showNotification(`🎉 Achievement Unlocked: ${skillName} MASTERED!`, 'achievement');
+            // Achievement milestones — keyed by career+skill so each one can
+            // only ever unlock once, even if hours later get adjusted down
+            // (via the -/+ stepper) and cross the same threshold again.
+            const skillKey = `${career}::${skillName}`;
+            if (totalHours >= targetHours) {
+                addMilestoneAchievement(`mastered-${skillKey}`, `MASTERED: ${skillName} (${targetHours}h)!`, '<i class="fa-solid fa-medal"></i>');
+            } else if (totalHours >= 5) {
+                addMilestoneAchievement(`5h-${skillKey}`, `5 hours milestone in ${skillName}!`, '<i class="fa-solid fa-rocket"></i>');
+            } else if (totalHours >= 1) {
+                addMilestoneAchievement(`first-hour-${skillKey}`, `First hour in ${skillName}!`, '<i class="fa-solid fa-hourglass-start"></i>');
             }
         }
 
@@ -35532,20 +35779,58 @@ window.DBP={
             return String(text || '').replace(/^\s*(?:🎯|🚀|💪|🔥|🏆)\s*/u, '');
         }
 
+        // How many badge chips show before the list is truncated behind a
+        // "Show all" button. Keeps the sidebar from growing unbounded once
+        // someone has earned a lot of badges.
+        const BADGES_COLLAPSED_LIMIT = 6;
+        let _badgesShowAll = false;
+
         function renderBadges() {
             const container = document.getElementById('badgesList');
+            const countLabel = document.getElementById('badgesCountLabel');
+            const showMoreBtn = document.getElementById('badgesShowMoreBtn');
             if (!container) return;
-            const badges = gamification.badges || [];
+            // De-dupe defensively at render time too, in case older data saved
+            // to localStorage before this fix still has duplicate entries
+            // (same text earned on more than one date).
+            const seen = new Set();
+            const badges = (gamification.badges || []).filter(b => {
+                if (seen.has(b.text)) return false;
+                seen.add(b.text);
+                return true;
+            });
+
+            if (countLabel) countLabel.textContent = badges.length ? `(${badges.length})` : '';
+
             if (badges.length === 0) {
                 container.innerHTML = `<div class="badges-empty">No badges yet — log study hours to earn your first! <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1.2em;height:1.2em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg></div>`;
+                if (showMoreBtn) showMoreBtn.style.display = 'none';
                 return;
             }
-            container.innerHTML = badges.slice(0, 20).map(b => `
+
+            const visible = _badgesShowAll ? badges : badges.slice(0, BADGES_COLLAPSED_LIMIT);
+            container.innerHTML = visible.map(b => `
                 <div class="badge-chip" title="${escapeHtml(b.date || '')}">
                     <span class="badge-chip-icon">${normalizeBadgeIcon(b.icon)}</span>
                     <span class="badge-chip-text">${escapeHtml(stripLegacyBadgeEmoji(b.text))}</span>
                 </div>
             `).join('');
+
+            if (showMoreBtn) {
+                if (badges.length > BADGES_COLLAPSED_LIMIT) {
+                    showMoreBtn.style.display = 'block';
+                    showMoreBtn.textContent = _badgesShowAll
+                        ? 'Show less'
+                        : `Show all ${badges.length} badges`;
+                } else {
+                    showMoreBtn.style.display = 'none';
+                }
+            }
+        }
+
+        function toggleBadgesShowAll() {
+            _badgesShowAll = !_badgesShowAll;
+            renderBadges();
         }
 
 
@@ -35566,8 +35851,12 @@ window.DBP={
                 localStorage.setItem('gamification', JSON.stringify(gamification));
 
                 if (gamification.streak % 7 === 0) {
-                    addAchievement(`${gamification.streak} day streak! Keep going!`, '<i class="fa-solid fa-fire"></i>');
-                    showNotification(`Achievement Unlocked: ${gamification.streak} day streak!`, 'achievement');
+                    // Keyed by the exact streak length reached, and guarded
+                    // permanently via addMilestoneAchievement — so breaking a
+                    // streak and rebuilding it back up to a number you've
+                    // already hit (e.g. 7 again) won't post the same badge
+                    // a second time.
+                    addMilestoneAchievement(`weekly-streak-${gamification.streak}`, `${gamification.streak} day streak! Keep going!`, '<i class="fa-solid fa-fire"></i>');
                 }
             }
             updateGamificationStats();
@@ -35618,10 +35907,10 @@ window.DBP={
             progressChart = new Chart(ctx, {
                 type: 'radar',
                 data: {
-                    labels: ['PE', 'IB', 'HF', 'SC', 'Fintech', 'English', 'Chinese', 'German', 'Tools', 'CFA L1', 'China', 'Quant'],
+                    labels: ['PE', 'IB', 'HF', 'SC', 'Fintech', 'English', 'Chinese', 'German', 'Tools', 'CFA L1', 'ACCA', 'China', 'Quant', 'Analyst'],
                     datasets: [{
                         label: 'Hours Studied',
-                        data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                         backgroundColor: isDarkNow ? 'rgba(240,168,196,0.20)' : 'rgba(219,113,175,0.22)',
                         borderColor: isDarkNow ? '#f0a8c4' : '#db2777',
                         borderWidth: 2,
@@ -35636,8 +35925,10 @@ window.DBP={
                             '#d4a017', // German
                             '#fbbf24', // Tools
                             '#fb923c', // CFA L1
+                            '#ffb703', // ACCA
                             '#fda4af', // China
-                            '#e879f9'  // Quant
+                            '#e879f9', // Quant
+                            '#7048e8'  // Analyst
                         ],
                         pointBorderColor: isDarkNow ? '#1e141c' : '#fffbfc',
                         pointBorderWidth: 1.5,
@@ -35697,7 +35988,7 @@ window.DBP={
         }
 
 
-        // Shared metadata (label + point color) for the 12 skill tracks —
+        // Shared metadata (label + point color) for the 14 skill tracks —
         // order must match the `hours` array built in updateChart(), and
         // colors must match progressChart's pointBackgroundColor list.
         const SKILLS_RADAR_META = [
@@ -35711,8 +36002,10 @@ window.DBP={
             { label: 'German',  color: '#d4a017' },
             { label: 'Tools',   color: '#fbbf24' },
             { label: 'CFA L1',  color: '#fb923c' },
+            { label: 'ACCA',    color: '#ffb703' },
             { label: 'China',   color: '#fda4af' },
-            { label: 'Quant',   color: '#e879f9' }
+            { label: 'Quant',   color: '#e879f9' },
+            { label: 'Analyst', color: '#7048e8' }
         ];
 
         function updateSkillsStatsPanel(hours) {
@@ -35757,8 +36050,10 @@ window.DBP={
                 calculateTotalHours('german'),
                 calculateTotalHours('tools'), 
                 calculateTotalHours('cfa1'),
+                calculateTotalHours('acca'),
                 calculateTotalHours('china'),
-                calculateTotalHours('quant')
+                calculateTotalHours('quant'),
+                calculateTotalHours('analyst')
             ];
             progressChart.data.datasets[0].data = hours;
             progressChart.update();
@@ -36068,8 +36363,8 @@ window.DBP={
             btn.textContent = isCollapsed ? '▲ Show less' : '▼ Show more';
         }
 
-        function deleteSessionLog(id) {
-            if (confirm("Are you sure you want to delete this note?")) {
+        async function deleteSessionLog(id) {
+            if (await skConfirm("Are you sure you want to delete this note?", {title: 'Delete Note', danger: true, okText: 'Delete'})) {
                 sessionLogs = sessionLogs.filter(log => log.id !== id);
                 localStorage.setItem('sessionLogs', JSON.stringify(sessionLogs));
                 renderSessionLogs();
@@ -36881,6 +37176,10 @@ window.DBP={
             localStorage.setItem('ftWorkDuration', ftWorkDuration);
             localStorage.setItem('ftBreakDuration', ftBreakDuration);
             localStorage.removeItem('ftAutoStartNext');
+            // Used on next load to tell a "still on today's break" pause apart
+            // from a stale break left over from a previous day — see the
+            // stale-break guard in restoreTimerOnLoad().
+            localStorage.setItem('ftLastSavedDate', new Date().toDateString());
         }
 
         function beep60Warning() {
@@ -37071,6 +37370,21 @@ window.DBP={
             renderFtModeUI();
         }
 
+        // Explicit "never mind the break" escape hatch — stops whatever the
+        // break was doing (running or paused) and drops straight into a
+        // fresh, ready-to-start Focus phase. Distinct from focusResetTimer()
+        // in name/intent only; behaviorally both end up in the same place,
+        // but this one is reachable via a button that's actually labeled
+        // for what it does instead of a bare reset icon.
+        function ftSkipBreak() {
+            if (ftMode !== 'break') return;
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            timerRunning = false;
+            focusStartTimestamp = null;
+            remainingAtStart = null;
+            ftEnterWorkMode();
+        }
+
         // Starts whichever phase is currently active. Work phases still go
         // through focusStartTimer() so the goal-lock & session logging rules
         // are unchanged; break phases skip both since there's no goal to log.
@@ -37111,6 +37425,8 @@ window.DBP={
                     ? 'linear-gradient(90deg, #f472b6, #db2777)'
                     : 'linear-gradient(90deg, #db2777, #9d2867)';
             }
+            const skipBtn = document.getElementById('ftSkipBreakBtn');
+            if (skipBtn) skipBtn.style.display = ftMode === 'break' ? 'flex' : 'none';
         }
 
         function ftSetBreakDuration(mins, btn) {
@@ -37938,8 +38254,8 @@ window.DBP={
             }).join('');
         }
 
-        function deleteFocusLog(id) {
-            if (!confirm('Delete this session from history? The streak and charts will be recalculated.')) return;
+        async function deleteFocusLog(id) {
+            if (!await skConfirm('Delete this session from history? The streak and charts will be recalculated.', {title: 'Delete Session', danger: true, okText: 'Delete'})) return;
             const logs = getFocusSessionLogs().filter(l => l.id !== id);
             saveFocusSessionLogs(logs);
             renderFhmList();
@@ -37949,9 +38265,9 @@ window.DBP={
             renderFtGoalProgress();
         }
 
-        function clearAllFocusHistory() {
+        async function clearAllFocusHistory() {
             if (!getFocusSessionLogs().length) return;
-            if (!confirm('Delete ALL Focus session history? This action cannot be undone.')) return;
+            if (!await skConfirm('Delete ALL Focus session history? This action cannot be undone.', {title: 'Clear All History', danger: true, okText: 'Delete All'})) return;
             saveFocusSessionLogs([]);
             renderFhmList();
             renderFocusFragmentationChart();
@@ -38041,6 +38357,48 @@ window.DBP={
             const storedRunning = localStorage.getItem('focusRunning') === 'true';
             const storedStart = parseInt(localStorage.getItem('focusStartTimestamp'));
             const storedRemainingAtStart = parseInt(localStorage.getItem('focusRemainingAtStart'));
+
+            // ── Stale break guard ────────────────────────────────────────
+            // A break is only ever meant to last a few minutes. Without this,
+            // closing the tab mid-break (or right as one finishes) leaves
+            // ftMode stuck on 'break' forever — reopening the app tomorrow
+            // still shows a paused break screen instead of a fresh Focus
+            // session, because nothing ever ran the "break ended → back to
+            // work" transition that normally fires while the tab stays open
+            // (see onTimerComplete's break branch → ftEnterWorkMode()).
+            // Treat a break as stale — and silently roll back to Focus —
+            // when either:
+            //   (a) it's a different calendar day than it was last saved on
+            //       (nobody takes a multi-day break), or
+            //   (b) it WAS running and the break duration has already fully
+            //       elapsed in real time, even if still "today".
+            // A break paused earlier today, not yet expired, is left alone —
+            // that's a deliberate short pause, not staleness.
+            if (ftMode === 'break') {
+                const lastSavedDate = localStorage.getItem('ftLastSavedDate');
+                const isNewDay = lastSavedDate && lastSavedDate !== new Date().toDateString();
+                const elapsedSinceStart = storedStart ? Math.floor((Date.now() - storedStart) / 1000) : 0;
+                const breakAlreadyOver = storedRunning && storedStart && !isNaN(storedRemainingAtStart)
+                    && (storedRemainingAtStart - elapsedSinceStart) <= 0;
+
+                if (isNewDay || breakAlreadyOver) {
+                    ftMode = 'work';
+                    timerDuration = ftWorkDuration;
+                    remainingSeconds = ftWorkDuration;
+                    timerRunning = false;
+                    focusStartTimestamp = null;
+                    remainingAtStart = null;
+                    persistTimerState();
+                    updateTimerDisplay();
+                    ftUpdateRing();
+                    updateFtGoalLockUI();
+                    if (typeof renderFtModeUI === 'function') renderFtModeUI();
+                    if (typeof showNotification === 'function') {
+                        showNotification('☕ Break cũ đã qua rồi — quay lại chế độ Focus, học ngay được nè!', 'info');
+                    }
+                    return;
+                }
+            }
 
             if (storedRunning && storedStart && !isNaN(storedRemainingAtStart)) {
                 const elapsed = Math.floor((Date.now() - storedStart) / 1000);
@@ -38939,8 +39297,8 @@ window.DBP={
             closeCourseModal();
         }
 
-        function deleteCourse(courseId) {
-            if (confirm('Are you sure you want to delete this course?')) {
+        async function deleteCourse(courseId) {
+            if (await skConfirm('Are you sure you want to delete this course?', {title: 'Delete Course', danger: true, okText: 'Delete'})) {
                 courses = courses.filter(c => c.id !== courseId);
                 saveCourses();
                 renderCourses();
@@ -39464,13 +39822,13 @@ window.DBP={
         }
 
 
-        function quickAddStudyTime(goalId) {
+        async function quickAddStudyTime(goalId) {
             const goal = goals.find(g => g.id === goalId);
             if (!goal) {
                 showNotification('Goal not found!', 'error');
                 return;
             }
-            const hours = parseFloat(prompt('How many hours did you study?', '1.0'));
+            const hours = parseFloat(await skPrompt('How many hours did you study?', '1.0', {type: 'number'}));
             if (!hours || hours <= 0) {
                 showNotification('Please enter a valid number of hours.', 'error');
                 return;
@@ -42064,7 +42422,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         function exportSleepSessionsCSV() {
             if (!sleepSessions || sleepSessions.length === 0) {
-                alert('Chưa có dữ liệu giấc ngủ nào để xuất.');
+                skAlert('Chưa có dữ liệu giấc ngủ nào để xuất.');
                 return;
             }
             const sorted = getSortedSleepSessions();
@@ -42114,7 +42472,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // schedule instead of just analyzing sleep in isolation.
         function copySleepContextForAI() {
             const sorted = getSortedSleepSessions().slice(-14); // last 14 nights
-            if (sorted.length === 0) { alert('No sleep data logged yet to copy.'); return; }
+            if (sorted.length === 0) { skAlert('No sleep data logged yet to copy.'); return; }
 
             const SEP = '═'.repeat(52);
             const DIV = '─'.repeat(52);
@@ -43724,7 +44082,7 @@ document.addEventListener('DOMContentLoaded', function() {
             eventListeners.updateDuration();
             
             // Form submission with improved validation
-            eventListeners.formSubmit = function(e) {
+            eventListeners.formSubmit = async function(e) {
                 e.preventDefault();
                 
                 const start = new Date(startInput.value);
@@ -43732,12 +44090,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Validate inputs
                 if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-                    alert('Please enter valid date and time values.');
+                    skAlert('Please enter valid date and time values.');
                     return;
                 }
                 
                 if (end <= start) {
-                    alert('End time must be after start time!');
+                    skAlert('End time must be after start time!');
                     return;
                 }
                 
@@ -43755,21 +44113,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Check if sleep session is in the future
                 if (start > new Date()) {
-                    if (!confirm('Sleep start time is in the future. Are you sure this is correct?')) {
+                    if (!await skConfirm('Sleep start time is in the future. Are you sure this is correct?', {danger: false, title: 'Confirm Sleep Time', okText: 'Yes, continue'})) {
                         return;
                     }
                 }
                 
                 // Duration validation
                 if (durationHours < 0.25) { // Less than 15 minutes
-                    if (!confirm(`Sleep duration is only ${Math.round(durationHours * 60)} minutes. This seems very short. Continue?`)) {
+                    if (!await skConfirm(`Sleep duration is only ${Math.round(durationHours * 60)} minutes. This seems very short. Continue?`, {title: 'Very Short Sleep', okText: 'Continue'})) {
                         return;
                     }
                 } else if (durationHours > 24) {
-                    alert('Sleep duration cannot exceed 24 hours. Please check your times.');
+                    skAlert('Sleep duration cannot exceed 24 hours. Please check your times.');
                     return;
                 } else if (durationHours > 16) {
-                    if (!confirm(`Sleep duration is ${durationHours.toFixed(1)} hours (>16h). This might be a mistake. Continue?`)) {
+                    if (!await skConfirm(`Sleep duration is ${durationHours.toFixed(1)} hours (>16h). This might be a mistake. Continue?`, {title: 'Unusual Duration', okText: 'Continue'})) {
                         return;
                     }
                 }
@@ -43778,7 +44136,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const overlapping = findOverlappingSleepSessions(start.getTime(), end.getTime());
                 if (overlapping.length > 0) {
                     const names = overlapping.map(s => `${s.startFormatted || new Date(s.start).toLocaleString('vi-VN')} → ${s.endFormatted || new Date(s.end).toLocaleString('vi-VN')}`).join('\n');
-                    if (!confirm(`Khoảng thời gian này trùng với ${overlapping.length} đêm đã ghi:\n${names}\n\nVẫn lưu tiếp?`)) {
+                    if (!await skConfirm(`Khoảng thời gian này trùng với ${overlapping.length} đêm đã ghi:\n${names}\n\nVẫn lưu tiếp?`, {title: 'Trùng thời gian', okText: 'Vẫn lưu'})) {
                         return;
                     }
                 }
@@ -44035,14 +44393,14 @@ document.addEventListener('DOMContentLoaded', function() {
             endInput.addEventListener('change', updateDuration);
             document.getElementById('editSleepSOL')?.addEventListener('input', updateDuration);
             
-            document.getElementById('editSleepForm').addEventListener('submit', function(e) {
+            document.getElementById('editSleepForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
                 const start = new Date(startInput.value).getTime();
                 const end = new Date(endInput.value).getTime();
                 
                 if (end <= start) {
-                    alert('End time must be after start time!');
+                    skAlert('End time must be after start time!');
                     return;
                 }
                 
@@ -44056,7 +44414,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const durationHours = Math.max(0, timeInBedHours - editSolMin / 60);
                 
                 if (timeInBedHours > 16) {
-                    if (!confirm(`Duration is ${timeInBedHours.toFixed(1)} hours (>16h). Continue?`)) {
+                    if (!await skConfirm(`Duration is ${timeInBedHours.toFixed(1)} hours (>16h). Continue?`, {title: 'Unusual Duration', okText: 'Continue'})) {
                         return;
                     }
                 }
@@ -44065,7 +44423,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const overlapping = findOverlappingSleepSessions(start, end, id);
                 if (overlapping.length > 0) {
                     const names = overlapping.map(s => `${s.startFormatted || new Date(s.start).toLocaleString('vi-VN')} → ${s.endFormatted || new Date(s.end).toLocaleString('vi-VN')}`).join('\n');
-                    if (!confirm(`Khoảng thời gian này trùng với ${overlapping.length} đêm khác:\n${names}\n\nVẫn lưu tiếp?`)) {
+                    if (!await skConfirm(`Khoảng thời gian này trùng với ${overlapping.length} đêm khác:\n${names}\n\nVẫn lưu tiếp?`, {title: 'Trùng thời gian', okText: 'Vẫn lưu'})) {
                         return;
                     }
                 }
@@ -44158,8 +44516,8 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Đã khôi phục đêm ngủ', 'success');
         }
 
-        function deleteSleepSession(id) {
-            if (confirm('<svg class="icon-svg" aria-hidden="true"><use href="#icon-trash-2"></use></svg> Delete this sleep session?')) {
+        async function deleteSleepSession(id) {
+            if (await skConfirm('Delete this sleep session?', {title: 'Delete Sleep Session', danger: true, okText: 'Delete'})) {
                 const removed = sleepSessions.find(s => s.id === id);
                 sleepSessions = sleepSessions.filter(s => s.id !== id);
                 saveSleepData();
@@ -45671,7 +46029,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 modal.style.display = 'flex';
             } else {
                 console.error('Book details modal elements not found');
-                alert(`Details for "${book.title}":\nAuthor: ${book.author}\nGenre: ${book.genre}\nStatus: ${getStatusText(book.status)}\nPages: ${book.pages || 'N/A'}\nFirst Published: ${book.firstPublished || 'N/A'}\nEdition: ${book.currentEdition || 'N/A'}\nRating: ${book.rating || 'N/A'}\nReview: ${book.review || 'N/A'}`);
+                skAlert(`Details for "${book.title}":\nAuthor: ${book.author}\nGenre: ${book.genre}\nStatus: ${getStatusText(book.status)}\nPages: ${book.pages || 'N/A'}\nFirst Published: ${book.firstPublished || 'N/A'}\nEdition: ${book.currentEdition || 'N/A'}\nRating: ${book.rating || 'N/A'}\nReview: ${book.review || 'N/A'}`);
             }
         }
 
@@ -57789,8 +58147,8 @@ function saveDailyStudyData() {
             openAnalysisModal(id);
         }
 
-        function deleteAnalysis(id) {
-            if (confirm('Are you sure you want to delete this analysis?')) {
+        async function deleteAnalysis(id) {
+            if (await skConfirm('Are you sure you want to delete this analysis?', {title: 'Delete Analysis', danger: true, okText: 'Delete'})) {
                 investmentAnalyses = investmentAnalyses.filter(a => a.id != id);
                 saveAnalyses();
                 renderAnalysisCards();
@@ -58163,8 +58521,8 @@ function saveDailyStudyData() {
             openDealModal(id);
         }
 
-        function deleteDeal(id) {
-            if (confirm('Are you sure you want to delete this deal?')) {
+        async function deleteDeal(id) {
+            if (await skConfirm('Are you sure you want to delete this deal?', {title: 'Delete Deal', danger: true, okText: 'Delete'})) {
                 dealDiary = dealDiary.filter(d => d.id != id);
                 saveDeals();
                 renderDealCards();
@@ -58205,7 +58563,7 @@ function saveDailyStudyData() {
         function showFullReview(reviewText, bookTitle) {
             const modal = document.getElementById('fullReviewModal');
             if (!modal) {
-                alert(`Review for "${bookTitle}":\n\n${reviewText}`);
+                skAlert(`Review for "${bookTitle}":\n\n${reviewText}`);
                 return;
             }
             
@@ -58902,7 +59260,7 @@ function importFlashcards(event) {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         let parsed;
         try {
             parsed = JSON.parse(e.target.result);
@@ -58948,10 +59306,10 @@ function importFlashcards(event) {
             repetitions: typeof c.repetitions === 'number' ? c.repetitions : 0
         }));
 
-        const replaceAll = confirm(
+        const replaceAll = await skConfirm(
             `Found ${normalized.length} flashcards in this file.\n\n` +
-            `Click OK to MERGE with your current ${flashcards.length} flashcards (matching IDs will be updated).\n` +
-            `Click Cancel to instead REPLACE your entire flashcard set with this file.`
+            `Choose Merge to combine with your current ${flashcards.length} flashcards (matching IDs will be updated), or Replace all to swap your entire flashcard set with this file.`,
+            {title: 'Import Flashcards', danger: false, okText: 'Merge', cancelText: 'Replace all'}
         );
 
         if (replaceAll) {
@@ -59156,8 +59514,8 @@ function saveFlashcard() {
     renderManageFlashcards();
 }
 
-function deleteFlashcard(id) {
-    if (confirm('🗑️ Delete?')) {
+async function deleteFlashcard(id) {
+    if (await skConfirm('Delete this flashcard?', {title: 'Delete Flashcard', danger: true, okText: 'Delete'})) {
         flashcards = flashcards.filter(f => f.id !== id);
         saveFlashcardsToStorage();
         renderManageFlashcards();
@@ -61166,8 +61524,8 @@ window.fcRenderTagChips = fcRenderTagChips;
             openResourceModal(id);
         }
 
-        function deleteResource(id) {
-            if (confirm('Are you sure you want to delete this resource?')) {
+        async function deleteResource(id) {
+            if (await skConfirm('Are you sure you want to delete this resource?', {title: 'Delete Resource', danger: true, okText: 'Delete'})) {
                 resourceLibrary = resourceLibrary.filter(r => r.id != id);
                 saveResources();
                 renderResourceCards();
@@ -61229,11 +61587,11 @@ window.fcRenderTagChips = fcRenderTagChips;
         }
 
         // Prompts for hours and logs them to the resource's linked skill (adds to Study Hours)
-        function promptLogResourceHours(id) {
+        async function promptLogResourceHours(id) {
             const resource = resourceLibrary.find(r => r.id == id);
             if (!resource || !resource.linkedSkill || !resource.linkedCareer) return;
 
-            const input = prompt(`How many hours to log to "${resource.linkedSkill}"?`, '1');
+            const input = await skPrompt(`How many hours to log to "${resource.linkedSkill}"?`, '1', {type: 'number'});
             if (input === null) return;
             const hours = parseFloat(input);
             if (!hours || hours <= 0) {
@@ -61339,9 +61697,9 @@ window.fcRenderTagChips = fcRenderTagChips;
             clearBulkSelection();
         }
 
-        function applyBulkDelete() {
+        async function applyBulkDelete() {
             if (bulkSelectedIds.size === 0) return;
-            if (!confirm(`Delete ${bulkSelectedIds.size} selected resource(s)? This cannot be undone.`)) return;
+            if (!await skConfirm(`Delete ${bulkSelectedIds.size} selected resource(s)? This cannot be undone.`, {title: 'Delete Resources', danger: true, okText: 'Delete'})) return;
             resourceLibrary = resourceLibrary.filter(r => !bulkSelectedIds.has(r.id));
             saveResources();
             showNotification(`Deleted ${bulkSelectedIds.size} resource(s)`, 'success');
@@ -61636,6 +61994,21 @@ window.fcRenderTagChips = fcRenderTagChips;
                 if(icon){
                     icon.textContent = _rlReadOpen ? '▲' : '▼';
                 }
+            };
+        })();
+
+        // ===== COLLAPSE / EXPAND — BADGES EARNED =====
+        (function(){
+            let _badgesSectionOpen = true;
+            window.toggleBadgesSection = function(){
+                _badgesSectionOpen = !_badgesSectionOpen;
+                const list = document.getElementById('badgesList');
+                const showMoreBtn = document.getElementById('badgesShowMoreBtn');
+                const icon = document.getElementById('badgesCollapseIcon');
+                if (list) list.style.display = _badgesSectionOpen ? '' : 'none';
+                if (showMoreBtn && !_badgesSectionOpen) showMoreBtn.style.display = 'none';
+                else if (showMoreBtn) renderBadges(); // recompute show-more visibility when reopened
+                if (icon) icon.textContent = _badgesSectionOpen ? '▲' : '▼';
             };
         })();
 
@@ -61950,7 +62323,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             if (!file) return;
 
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 try {
                     const parsed = JSON.parse(e.target.result);
 
@@ -61986,20 +62359,22 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const projectedSize = currentSizeExcludingOverwritten + incomingSize;
 
                     if (projectedSize > maxStorage * 0.95) {
-                        const proceedAnyway = confirm(
-                            `⚠️ Dữ liệu sau khi import ước tính chiếm ~${(projectedSize / 1024 / 1024).toFixed(2)}MB, ` +
+                        const proceedAnyway = await skConfirm(
+                            `Dữ liệu sau khi import ước tính chiếm ~${(projectedSize / 1024 / 1024).toFixed(2)}MB, ` +
                             `gần hoặc vượt giới hạn localStorage (~5MB).\n` +
                             `Import có thể lỗi giữa chừng và làm dữ liệu lẫn lộn.\n` +
-                            `Vẫn muốn tiếp tục? (Khuyến nghị: xoá bớt memes/flashcards cũ trước khi import)`
+                            `Vẫn muốn tiếp tục? (Khuyến nghị: xoá bớt memes/flashcards cũ trước khi import)`,
+                            {title: 'Dung lượng gần giới hạn', danger: true, okText: 'Vẫn tiếp tục'}
                         );
                         if (!proceedAnyway) { event.target.value = ''; return; }
                     }
 
-                    const ok = confirm(
+                    const ok = await skConfirm(
                         `Sắp khôi phục ${keys.length} mục dữ liệu từ file backup.\n` +
                         `Dữ liệu hiện tại trong app sẽ bị GHI ĐÈ bởi dữ liệu trong file.\n` +
                         `Một bản backup an toàn của dữ liệu HIỆN TẠI sẽ tự động tải về trước khi ghi đè.\n` +
-                        `Tiếp tục?`
+                        `Tiếp tục?`,
+                        {title: 'Khôi phục dữ liệu', danger: true, okText: 'Tiếp tục'}
                     );
                     if (!ok) { event.target.value = ''; return; }
 
@@ -64249,7 +64624,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 // Auto-create a Goal (type: skill_mastery) tracking the current
                 // Focus Now skill, target = its full hour requirement, deadline
                 // estimated from the selected hrs/week pace.
-                createGoalFromFocus(track) {
+                async createGoalFromFocus(track) {
                     const curriculum = getCurriculum(track);
                     if (!curriculum) return;
                     const completedSet = new Set(getCompleted(track));
@@ -64288,7 +64663,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     // of leaving a half-working Goal behind.
                     if (typeof currentCareer !== 'undefined' && currentCareer !== track) {
                         const trackLabel = (typeof TRACK_META !== 'undefined' && TRACK_META[track] && TRACK_META[track].label) || track;
-                        const ok = confirm(`This Goal needs "${trackLabel}" to be your current career so its progress tracks correctly. Switch to "${trackLabel}" now and create the Goal?`);
+                        const ok = await skConfirm(`This Goal needs "${trackLabel}" to be your current career so its progress tracks correctly. Switch to "${trackLabel}" now and create the Goal?`, {title: 'Switch Career Track', danger: false, okText: 'Switch & Create'});
                         if (!ok || typeof selectCareer !== 'function') {
                             if (typeof showNotification === 'function')
                                 showNotification('Goal not created — switch to this track first so its progress can track correctly.', 'info');
@@ -65843,17 +66218,17 @@ return {
     this.openTodoView();
   },
 
-  todoDelete(id) {
-    if (!confirm('Xoá việc này?')) return;
+  async todoDelete(id) {
+    if (!await skConfirm('Xoá việc này?', {title: 'Xoá việc', danger: true, okText: 'Xoá'})) return;
     saveTodos(getTodos().filter(t => t.id !== id));
     this.openTodoView();
   },
 
-  todoEdit(id) {
+  async todoEdit(id) {
     const list = getTodos();
     const t = list.find(x => x.id === id);
     if (!t) return;
-    const val = prompt('Sửa nội dung việc:', t.text);
+    const val = await skPrompt('Sửa nội dung việc:', t.text);
     if (val === null) return;
     const trimmed = val.trim();
     if (!trimmed) return;
@@ -65887,8 +66262,8 @@ return {
     this.openTodoView();
   },
 
-  todoClearDone() {
-    if (!confirm('Xoá tất cả việc đã hoàn thành?')) return;
+  async todoClearDone() {
+    if (!await skConfirm('Xoá tất cả việc đã hoàn thành?', {title: 'Xoá việc đã xong', danger: true, okText: 'Xoá'})) return;
     saveTodos(getTodos().filter(t => !t.done));
     this.openTodoView();
   },
