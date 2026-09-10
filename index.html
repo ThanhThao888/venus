@@ -26689,15 +26689,17 @@ window.DBP={
                     <!-- Mood/Energy quick check-in -->
                     <div class="wln-section-header-row" style="margin-bottom:6px;">
                         <span class="wln-section-header-label"><svg class="icon-svg" aria-hidden="true"><use href="#icon-smile"></use></svg> Cảm giác hiện tại</span>
-                        <span id="wlnMoodLast" style="font-size:0.78rem; color:var(--text-muted);">Chưa log</span>
+                        <span id="wlnMoodLast" style="font-size:0.78rem; color:var(--text-muted); cursor:pointer;" onclick="Wellness.toggleMoodListCollapse()">Chưa log</span>
                     </div>
-                    <div style="display:flex; gap:6px; margin-bottom:14px;">
+                    <input id="wlnMoodNoteInput" type="text" maxlength="80" placeholder="Ghi chú ngắn (tuỳ chọn) rồi bấm mặt cười bên dưới..." style="width:100%; margin-bottom:6px; padding:6px 8px; font-size:0.76rem; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                    <div style="display:flex; gap:6px; margin-bottom:6px;">
                         <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(1)" title="Tệ"><svg class="icon-svg" aria-hidden="true"><use href="#icon-frown"></use></svg></button>
                         <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(2)" title="Không ổn"><svg class="icon-svg" aria-hidden="true"><use href="#icon-meh"></use></svg></button>
                         <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(3)" title="Bình thường"><svg class="icon-svg" aria-hidden="true"><use href="#icon-smile"></use></svg></button>
                         <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(4)" title="Tốt"><svg class="icon-svg" aria-hidden="true"><use href="#icon-laugh"></use></svg></button>
                         <button type="button" class="wln-mood-btn" onclick="Wellness.logMood(5)" title="Tuyệt vời"><svg class="icon-svg" aria-hidden="true"><use href="#icon-party-popper"></use></svg></button>
                     </div>
+                    <div id="wlnMoodLogList" style="display:none; flex-direction:column; gap:4px; margin-bottom:14px;"></div>
 
                     <!-- Quick totals: số liệu + % ngân sách, KHÔNG có nút bấm -->
                     <div id="wlnTotalsRow" style="display:grid; grid-template-columns: repeat(2,1fr); gap:8px; margin-bottom:10px;"></div>
@@ -26800,7 +26802,10 @@ window.DBP={
                         <button type="button" class="wln-food-preset-btn" style="width:100%; text-align:center; background:var(--bg-white); border-style:dashed;" onclick="Wellness.toggleCustomCaffeineForm()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-pencil"></use></svg> Loại khác / nhập tay...</button>
                         <div id="wlnCustomCaffeineForm" style="display:none; margin-top:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
                             <input id="wlnCustomCaffeineName" placeholder="Tên (VD: Cà phê pha máy, Redbull...)" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                            <input id="wlnCustomCaffeineMg" type="number" min="0" step="1" placeholder="Hàm lượng caffeine (mg)" style="width:100%; margin-bottom:8px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onkeydown="if(event.key==='Enter') Wellness.addCustomCaffeine()">
+                            <div style="display:flex; gap:6px; margin-bottom:8px;">
+                                <input id="wlnCustomCaffeineMg" type="number" min="0" step="1" placeholder="Caffeine (mg)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomCaffeineSugar" type="number" min="0" step="1" placeholder="Đường (g)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onkeydown="if(event.key==='Enter') Wellness.addCustomCaffeine()">
+                            </div>
                             <label style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:var(--text-muted); margin-bottom:8px; cursor:pointer;">
                                 <input type="checkbox" id="wlnCustomCaffeineSaveAsPreset"> <svg class="icon-svg" aria-hidden="true"><use href="#icon-star"></use></svg> Lưu làm preset để dùng nhanh lần sau
                             </label>
@@ -26824,12 +26829,12 @@ window.DBP={
                         <div id="wlnCustomFoodForm" style="display:none; margin-top:8px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
                             <input id="wlnCustomName" placeholder="Tên món" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             <div style="display:flex; gap:6px; margin-bottom:6px;">
-                                <input id="wlnCustomCal" type="number" placeholder="Kcal" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                <input id="wlnCustomProtein" type="number" placeholder="Đạm (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomCal" type="number" placeholder="Kcal" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomProtein" type="number" placeholder="Đạm (g)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             </div>
                             <div style="display:flex; gap:6px; margin-bottom:6px;">
-                                <input id="wlnCustomCarbs" type="number" placeholder="Tinh bột (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                <input id="wlnCustomFat" type="number" placeholder="Chất béo (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomCarbs" type="number" placeholder="Tinh bột (g)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                <input id="wlnCustomFat" type="number" placeholder="Chất béo (g)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                             </div>
 
                             <button type="button" class="wln-food-advanced-toggle" id="wlnFoodAdvancedToggle" onclick="Wellness.toggleFoodAdvanced()">
@@ -26837,12 +26842,12 @@ window.DBP={
                             </button>
                             <div id="wlnCustomFoodAdvanced" style="display:none;">
                                 <div style="display:flex; gap:6px; margin-bottom:6px;">
-                                    <input id="wlnCustomSugar" type="number" placeholder="Đường (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                    <input id="wlnCustomFiber" type="number" placeholder="Chất xơ (g)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                    <input id="wlnCustomSugar" type="number" placeholder="Đường (g)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                    <input id="wlnCustomFiber" type="number" placeholder="Chất xơ (g)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                                 </div>
                                 <div style="display:flex; gap:6px; margin-bottom:8px;">
-                                    <input id="wlnCustomNatri" type="number" placeholder="Natri/muối (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                                    <input id="wlnCustomKali" type="number" placeholder="Kali (mg)" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onkeydown="if(event.key==='Enter') Wellness.addCustomFood()">
+                                    <input id="wlnCustomNatri" type="number" placeholder="Natri/muối (mg)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                                    <input id="wlnCustomKali" type="number" placeholder="Kali (mg)" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onkeydown="if(event.key==='Enter') Wellness.addCustomFood()">
                                 </div>
                             </div>
 
@@ -26968,8 +26973,8 @@ window.DBP={
                     <div id="wlnSuppNewForm" style="display:none; margin-bottom:12px; padding:10px; background:var(--bg-light); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
                         <input id="wlnSuppNewName" placeholder="Tên chất (VD: Zinc, Sắt, Vitamin D...)" style="width:100%; margin-bottom:6px; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                         <div style="display:flex; gap:6px; margin-bottom:8px;">
-                            <input id="wlnSuppNewDose" type="number" step="any" placeholder="Hàm lượng" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onkeydown="if(event.key==='Enter') Wellness.saveNewSupp()">
-                            <select id="wlnSuppNewUnit" style="flex:1; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
+                            <input id="wlnSuppNewDose" type="number" step="any" placeholder="Hàm lượng" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);" onkeydown="if(event.key==='Enter') Wellness.saveNewSupp()">
+                            <select id="wlnSuppNewUnit" style="flex:1; min-width:0; padding:7px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
                                 <option value="mg">mg</option>
                                 <option value="mcg">mcg (µg)</option>
                                 <option value="IU">IU</option>
@@ -27399,14 +27404,14 @@ window.DBP={
                                           // Đây là số tham khảo chung, không phải chỉ định y tế — điều chỉnh theo tư vấn bác sĩ.
 
             const CAFFEINE_PRESETS = [
-                { name: 'Cà phê đen', mg: 95, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
-                { name: 'Cà phê sữa', mg: 80, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
-                { name: 'Espresso', mg: 63, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
-                { name: 'Trà', mg: 40, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
-                { name: 'Trà sữa', mg: 30, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
-                { name: 'Nước tăng lực', mg: 80, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' }
+                { name: 'Cà phê đen', mg: 95, sugar: 0, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
+                { name: 'Cà phê sữa', mg: 80, sugar: 14, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
+                { name: 'Espresso', mg: 63, sugar: 0, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
+                { name: 'Trà', mg: 40, sugar: 0, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
+                { name: 'Trà sữa', mg: 30, sugar: 40, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' },
+                { name: 'Nước tăng lực', mg: 80, sugar: 27, emoji: '<svg class="icon-svg" aria-hidden="true"><use href="#icon-coffee"></use></svg>' }
             ];
-            // Số mg là ước tính tham khảo (1 ly/lon tiêu chuẩn), không phải số đo chính xác — sửa trực tiếp nếu cần.
+            // Số mg/g là ước tính tham khảo (1 ly/lon tiêu chuẩn), không phải số đo chính xác — sửa trực tiếp nếu cần.
             const CAFFEINE_DAILY_LIMIT = 400; // mg/day — mức an toàn chung theo FDA cho người lớn khỏe mạnh, không phải chỉ định y tế cá nhân.
             const DEFAULT_FASTING_GOAL_H = 8; // 16:8 -> cửa sổ ăn mục tiêu 8 tiếng
             const DEFAULT_CAFFEINE_CUTOFF_H = 14; // 14:00 — leverage point: tránh caffeine muộn để giữ RHR thấp/HRV cao khi ngủ
@@ -27785,7 +27790,7 @@ window.DBP={
 
             function quickAddCaffeine() {
                 const quick = (data.settings && data.settings.lastCaffeineQuick) || CAFFEINE_PRESETS[0];
-                addCaffeine(quick.mg, quick.name, null);
+                addCaffeine(quick.mg, quick.name, null, quick.sugar);
                 flashChipFeedback('wlnCaffeineChip');
                 const day = getDay(todayKey());
                 const idx = day.caffeine.length - 1;
@@ -27835,12 +27840,24 @@ window.DBP={
             // giờ bấm 1 nút là xong, vẫn tính là "đã log" (khác với việc quên log).
 
             /* ===== MOOD / ENERGY CHECK-IN ===== */
+            // Escape nhỏ gọn cho ghi chú mood (input tự do của người dùng) — tránh chèn HTML lạ vào innerHTML.
+            function wlnEsc(str) {
+                return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            }
+            const MOOD_ICON_ID = { 1: 'icon-frown', 2: 'icon-meh', 3: 'icon-smile', 4: 'icon-laugh', 5: 'icon-party-popper' };
+            const MOOD_LABEL = { 1: 'Tệ', 2: 'Không ổn', 3: 'Bình thường', 4: 'Tốt', 5: 'Tuyệt vời' };
+            let _wlnMoodListCollapsed = true;
+
             function logMood(score) {
                 const day = getDay(todayKey());
                 if (!day.moods) day.moods = [];
-                day.moods.push({ score, t: Date.now() });
+                const noteInput = document.getElementById('wlnMoodNoteInput');
+                const note = noteInput ? noteInput.value.trim().slice(0, 80) : '';
+                day.moods.push({ score, note, t: Date.now() });
+                if (noteInput) noteInput.value = '';
                 save();
                 renderMoodStatus();
+                renderMoodLogList();
             }
             function renderMoodStatus() {
                 const day = getDay(todayKey());
@@ -27849,8 +27866,37 @@ window.DBP={
                 const moods = day.moods || [];
                 if (!moods.length) { el.textContent = 'Chưa log'; return; }
                 const last = moods[moods.length - 1];
-
-                el.textContent = `lúc ${new Date(last.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+                const lastTime = new Date(last.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                el.textContent = `${moods.length} lần · gần nhất ${lastTime} ${_wlnMoodListCollapsed ? '▾' : '▴'}`;
+            }
+            // Ẩn/hiện danh sách các lần mood đã log hôm nay — mặc định thu gọn khi đã có
+            // ≥1 lần (đỡ chiếm chỗ), bấm vào dòng tóm tắt (wlnMoodLast) để mở/đóng.
+            function toggleMoodListCollapse() {
+                _wlnMoodListCollapsed = !_wlnMoodListCollapsed;
+                renderMoodStatus();
+                renderMoodLogList();
+            }
+            function renderMoodLogList() {
+                const day = getDay(todayKey());
+                const list = document.getElementById('wlnMoodLogList');
+                if (!list) return;
+                const moods = day.moods || [];
+                if (!moods.length || _wlnMoodListCollapsed) { list.style.display = 'none'; list.innerHTML = ''; return; }
+                list.style.display = 'flex';
+                list.innerHTML = moods.map((m, i) => `
+                    <div class="wln-log-item">
+                        <span><svg class="icon-svg" aria-hidden="true"><use href="#${MOOD_ICON_ID[m.score] || 'icon-smile'}"></use></svg> ${MOOD_LABEL[m.score] || ''}${m.note ? ` — ${wlnEsc(m.note)}` : ''} <span style="color:var(--text-muted); font-size:0.7rem;">(${new Date(m.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
+                        <button onclick="Wellness.removeMood(${i})">✕</button>
+                    </div>
+                `).join('');
+            }
+            function removeMood(idx) {
+                const day = getDay(todayKey());
+                if (!day.moods || !day.moods[idx]) return;
+                day.moods.splice(idx, 1);
+                save();
+                renderMoodStatus();
+                renderMoodLogList();
             }
 
             /* ===== SLEEP TRACKER ===== */
@@ -27982,13 +28028,13 @@ window.DBP={
             /* ===== CAFFEINE ===== */
             // ts (timestamp) lấy từ ô chọn giờ trong modal — cho phép log trễ hơn lúc uống thật
             // (VD: uống lúc 11h nhưng 16h mới mở máy log) mà vẫn giữ đúng giờ thật cho cảnh báo cutoff.
-            function addCaffeine(mg, name, ts) {
+            function addCaffeine(mg, name, ts, sugar) {
                 const day = getDay(todayKey());
-                day.caffeine.push({ name, mg, t: ts || Date.now() });
+                day.caffeine.push({ name, mg, sugar: sugar || 0, t: ts || Date.now() });
                 // Nhớ lại loại vừa log để nút quick-add (+) trên chip lần sau log đúng loại
                 // này ngay — quick-add "thông minh" theo thói quen thực tế thay vì cố định.
                 if (!data.settings) data.settings = {};
-                data.settings.lastCaffeineQuick = { name, mg };
+                data.settings.lastCaffeineQuick = { name, mg, sugar: sugar || 0 };
                 save();
                 renderLogTab();
                 // ☕ Cảnh báo real-time nếu log sau giờ cutoff đã cài đặt — insight cá nhân
@@ -28022,7 +28068,7 @@ window.DBP={
                 if (!p) return;
                 const ts = readCaffeineTimeInput();
                 if (ts === null) return;
-                addCaffeine(p.mg, p.name, ts);
+                addCaffeine(p.mg, p.name, ts, p.sugar);
             }
             function toggleCustomCaffeineForm() {
                 const form = document.getElementById('wlnCustomCaffeineForm');
@@ -28031,23 +28077,26 @@ window.DBP={
             function addCustomCaffeine() {
                 const name = document.getElementById('wlnCustomCaffeineName').value.trim();
                 const mg = parseFloat(document.getElementById('wlnCustomCaffeineMg').value);
+                const sugar = parseFloat(document.getElementById('wlnCustomCaffeineSugar').value) || 0;
                 if (!name) { skAlert('Nhập tên loại đồ uống trước đã nhé.'); return; }
                 if (!mg || mg <= 0) { skAlert('Nhập hàm lượng caffeine (mg) hợp lệ.'); return; }
                 const ts = readCaffeineTimeInput();
                 if (ts === null) return;
-                addCaffeine(mg, name, ts);
+                addCaffeine(mg, name, ts, sugar);
                 const saveAsPreset = document.getElementById('wlnCustomCaffeineSaveAsPreset');
                 if (saveAsPreset && saveAsPreset.checked) {
                     if (!data.caffeinePresets) data.caffeinePresets = [];
-                    if (!data.caffeinePresets.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-                        data.caffeinePresets.push({ name, mg });
-                    }
+                    const existingIdx = data.caffeinePresets.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+                    const presetData = { name, mg, sugar };
+                    if (existingIdx >= 0) data.caffeinePresets[existingIdx] = presetData;
+                    else data.caffeinePresets.push(presetData);
                     saveAsPreset.checked = false;
                     save();
                     renderCaffeinePresets();
                 }
                 document.getElementById('wlnCustomCaffeineName').value = '';
                 document.getElementById('wlnCustomCaffeineMg').value = '';
+                document.getElementById('wlnCustomCaffeineSugar').value = '';
                 document.getElementById('wlnCustomCaffeineForm').style.display = 'none';
             }
             function removeCaffeine(idx) {
@@ -28060,10 +28109,10 @@ window.DBP={
                 const wrap = document.getElementById('wlnCaffeinePresets');
                 if (!wrap) return;
                 const builtins = CAFFEINE_PRESETS.map((p, i) =>
-                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetCaffeine(${i})">${p.emoji} ${p.name} (${p.mg}mg)</button></span>`
+                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addPresetCaffeine(${i})">${p.emoji} ${p.name} (${p.mg}mg${p.sugar ? `, ${p.sugar}g đường` : ''})</button></span>`
                 );
                 const customs = (data.caffeinePresets || []).map((p, i) =>
-                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addCustomPresetCaffeine(${i})"><svg class="icon-svg" aria-hidden="true"><use href="#icon-star"></use></svg> ${p.name} (${p.mg}mg)</button><button type="button" class="wln-preset-del-btn" onclick="event.stopPropagation();Wellness.removeCaffeinePreset(${i})" title="Xóa preset">✕</button></span>`
+                    `<span class="wln-preset-wrap"><button type="button" class="wln-food-preset-btn" onclick="Wellness.addCustomPresetCaffeine(${i})"><svg class="icon-svg" aria-hidden="true"><use href="#icon-star"></use></svg> ${p.name} (${p.mg}mg${p.sugar ? `, ${p.sugar}g đường` : ''})</button><button type="button" class="wln-preset-del-btn" onclick="event.stopPropagation();Wellness.removeCaffeinePreset(${i})" title="Xóa preset">✕</button></span>`
                 );
                 wrap.innerHTML = builtins.concat(customs).join('');
             }
@@ -28073,7 +28122,7 @@ window.DBP={
                 if (!p) return;
                 const ts = readCaffeineTimeInput();
                 if (ts === null) return;
-                addCaffeine(p.mg, p.name, ts);
+                addCaffeine(p.mg, p.name, ts, p.sugar);
             }
 
             async function removeCaffeinePreset(i) {
@@ -28133,6 +28182,7 @@ window.DBP={
             function renderCaffeineSection() {
                 const day = getDay(todayKey());
                 const total = day.caffeine.reduce((s, c) => s + (c.mg || 0), 0);
+                const totalSugar = day.caffeine.reduce((s, c) => s + (c.sugar || 0), 0);
                 const overLimit = total > CAFFEINE_DAILY_LIMIT;
                 const totalEl = document.getElementById('wlnCaffeineTotal');
                 if (totalEl) {
@@ -28150,7 +28200,7 @@ window.DBP={
                     barEl.style.background = overLimit ? '#e74c3c' : '#d17b96';
                 }
                 const modalTotalEl = document.getElementById('wlnCaffeineModalTotal');
-                if (modalTotalEl) modalTotalEl.textContent = `Hôm nay: ${total}mg / ${CAFFEINE_DAILY_LIMIT}mg`;
+                if (modalTotalEl) modalTotalEl.textContent = `Hôm nay: ${total}mg / ${CAFFEINE_DAILY_LIMIT}mg${totalSugar ? ` · ${totalSugar}g đường` : ''}`;
                 const cutoffHour = data.settings.caffeineCutoffHour;
                 const lateCaffeine = day.caffeine.filter(c => new Date(c.t).getHours() >= cutoffHour);
                 const warnEl = document.getElementById('wlnCaffeineWarning');
@@ -28169,7 +28219,7 @@ window.DBP={
                             const isLate = new Date(c.t).getHours() >= cutoffHour;
                             return `
                             <div class="wln-log-item${isLate ? ' wln-log-item-late' : ''}">
-                                <span>${isLate ? '<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> ' : ''}${c.name} — ${c.mg}mg <span style="color:var(--text-muted); font-size:0.72rem;">(${new Date(c.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
+                                <span>${isLate ? '<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> ' : ''}${c.name} — ${c.mg}mg${c.sugar ? `, ${c.sugar}g đường` : ''} <span style="color:var(--text-muted); font-size:0.72rem;">(${new Date(c.t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})</span></span>
                                 <span style="display:flex; gap:6px;">
                                     <button onclick="Wellness.openEditCaffeineTime(${i})" title="Sửa giờ"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clock"></use></svg></button>
                                     <button onclick="Wellness.removeCaffeine(${i})">✕</button>
@@ -28388,7 +28438,9 @@ window.DBP={
                 const totalProtein = day.foods.reduce((s, f) => s + (f.protein || 0), 0);
                 const totalCarbs = day.foods.reduce((s, f) => s + (f.carbs || 0), 0);
                 const totalFat = day.foods.reduce((s, f) => s + (f.fat || 0), 0);
-                const totalSugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0);
+                // Đường tính GỘP cả món ăn lẫn đồ uống caffeine (trà sữa, cà phê sữa...) —
+                // trước đây chỉ tính từ món ăn nên đồ uống có đường bị bỏ sót khỏi ngân sách.
+                const totalSugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0) + day.caffeine.reduce((s, c) => s + (c.sugar || 0), 0);
                 const totalNatri = day.foods.reduce((s, f) => s + (f.natri || 0), 0);
                 const totalKali = day.foods.reduce((s, f) => s + (f.kali || 0), 0);
                 const row = document.getElementById('wlnTotalsRow');
@@ -28651,7 +28703,7 @@ window.DBP={
                 renderFastingSection();
                 renderWorkoutStatus();
                 renderMoodStatus();
-                renderReminderBanner();
+                renderMoodLogList();
                 reorderLogSections();
                 renderQuickStatusRow();
                 renderStreak();
@@ -28749,7 +28801,7 @@ window.DBP={
                     if (!hasRealData) { dailyCal.push(0); dailySugar.push(0); dailyNatri.push(0); dailyCaffeine.push(0); return; }
                     loggedDays++;
                     const cal = day.foods.reduce((s, f) => s + (f.cal || 0), 0);
-                    const sugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0);
+                    const sugar = day.foods.reduce((s, f) => s + (f.sugar || 0), 0) + (day.caffeine || []).reduce((s, c) => s + (c.sugar || 0), 0);
                     const natri = day.foods.reduce((s, f) => s + (f.natri || 0), 0);
                     const kali = day.foods.reduce((s, f) => s + (f.kali || 0), 0);
                     dailyCal.push(Math.round(cal));
@@ -29129,7 +29181,7 @@ window.DBP={
                 openEditCaffeineTime,
                 addCustomPresetFood, removeFoodPreset, addCustomPresetCaffeine, removeCaffeinePreset,
                 toggleFoodAdvanced, toggleFoodIconPicker, selectFoodIcon,
-                logMood, openSleepModal, closeSleepModal, selectSleepQuality, saveSleepLog,
+                logMood, removeMood, toggleMoodListCollapse, openSleepModal, closeSleepModal, selectSleepQuality, saveSleepLog,
                 exportAllData, importAllData,
                 markMealNow, toggleFastingSettings, setFastingGoal, setCaffeineCutoff,
                 toggleManualMealForm, addManualMeal, openEditFoodTime,
