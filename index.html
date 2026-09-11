@@ -35136,20 +35136,37 @@ window.DBP={
 
         
 
+        // FIX: listener RIÊNG, độc lập hoàn toàn cho việc khôi phục sleep tracker.
+        // Trước đây loadSleepData() bị "kẹp" chung với loadCareer/initChart... —
+        // nếu bất kỳ hàm nào đó lỗi, sleep tracker sẽ không được khôi phục dù dữ
+        // liệu (isSleeping/sleepStartTime) vẫn còn nguyên trong localStorage.
+        // Đặt riêng ra đây để nó LUÔN chạy, bất kể phần nào khác của app có sập.
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                loadSleepData();
+            } catch (e) {
+                console.error('loadSleepData failed:', e);
+            }
+        });
+
         document.addEventListener('DOMContentLoaded', function() {
             const savedCareer = localStorage.getItem('currentCareer');
             const careerToLoad = savedCareer || 'pe';
-            initChart();
-            loadCareer(careerToLoad);
-            updateStats();
-            updateGamificationStats();
-            updateDailyStreak();
-            getRandomMeme();
-            updateDailyStudyDisplay();
+            // FIX: mỗi lệnh init được bọc try/catch riêng — trước đây nếu MỘT
+            // trong các hàm này (vd initChart/loadCareer) lỗi, mọi lệnh phía sau
+            // trong cùng handler (bao gồm loadSleepData()) sẽ bị chặn đứng, không
+            // chạy nữa → sleep tracker không khôi phục được trạng thái "đang ngủ"
+            // sau khi tải lại trang, dù dữ liệu vẫn còn nguyên trong localStorage.
+            try { initChart(); } catch (e) { console.error('initChart failed:', e); }
+            try { loadCareer(careerToLoad); } catch (e) { console.error('loadCareer failed:', e); }
+            try { updateStats(); } catch (e) { console.error('updateStats failed:', e); }
+            try { updateGamificationStats(); } catch (e) { console.error('updateGamificationStats failed:', e); }
+            try { updateDailyStreak(); } catch (e) { console.error('updateDailyStreak failed:', e); }
+            try { getRandomMeme(); } catch (e) { console.error('getRandomMeme failed:', e); }
+            try { updateDailyStudyDisplay(); } catch (e) { console.error('updateDailyStudyDisplay failed:', e); }
 
-            loadSleepData(); 
-            document.querySelector(`.mood-btn[data-mood="${currentMood}"]`).classList.add('active');
-            suggestSkillByMood();
+            document.querySelector(`.mood-btn[data-mood="${currentMood}"]`)?.classList.add('active');
+            try { suggestSkillByMood(); } catch (e) { console.error('suggestSkillByMood failed:', e); }
             document.querySelectorAll('.mood-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('active'));
