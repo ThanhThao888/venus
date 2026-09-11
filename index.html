@@ -130,7 +130,7 @@
             --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
 
             /* Insomnia Pattern Analysis widget tokens (Sakura Mist dark) */
-            --ia-bg: linear-gradient(145deg, #1e141c 0%, #1a1e24 50%, #1c1822 100%);
+            --ia-bg: linear-gradient(145deg, #1e141c 0%, #1f1826 50%, #1c1822 100%);
             --ia-text: #f3e4ec;
             --ia-fg-rgb: 243, 228, 236;
             --ia-line-rgb: 184, 152, 168;
@@ -146,7 +146,7 @@
 
             /* Dashboard theme palette — Sakura Mist (dark) */
             --theme-bg-1: #1e141c;
-            --theme-bg-2: #1a1e24;
+            --theme-bg-2: #1f1826;
             --theme-bg-3: #1c1822;
             --theme-surface: rgba(255, 255, 255, 0.05);
             --theme-border: rgba(240, 168, 196, 0.18);
@@ -14965,7 +14965,7 @@
         body.dark-mode #goalsSection,
         body.dark-mode #goalModal {
             --theme-bg-1: #1e141c;
-            --theme-bg-2: #1a1e24;
+            --theme-bg-2: #1f1826;
             --theme-bg-3: #1c1822;
             --theme-surface: rgba(255,255,255,0.04);
             --theme-border: rgba(210,160,180,0.15);
@@ -42165,6 +42165,31 @@ document.addEventListener('DOMContentLoaded', function() {
         let sleepInterval = null;
         let pendingSleepSession = null; // Session awaiting quick note/quality before being saved (see openQuickSleepNoteModal)
         sleepSessions = JSON.parse(localStorage.getItem('sleepSessions')) || [];
+
+        // FIX: khôi phục phiên ngủ bị dở dang — nếu trang bị đóng/reload giữa lúc
+        // Stop xong nhưng chưa kịp xác nhận modal "Đêm nay thế nào?", bản nháp
+        // (pendingSleepSessionDraft) vẫn còn trong localStorage. Tự lưu nó vào
+        // lịch sử luôn (SOL/quality/notes để mặc định) thay vì để mất trắng.
+        (function recoverPendingSleepDraft() {
+            try {
+                const raw = localStorage.getItem('pendingSleepSessionDraft');
+                if (!raw) return;
+                const draft = JSON.parse(raw);
+                const alreadySaved = sleepSessions.some(s => s.id === draft.id);
+                if (!alreadySaved && draft && draft.start && draft.end) {
+                    sleepSessions.push(draft);
+                    localStorage.setItem('sleepSessions', JSON.stringify(sleepSessions));
+                    setTimeout(() => {
+                        showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Đã khôi phục phiên ngủ bị bỏ dở lần trước (${draft.duration}h) — bạn có thể sửa lại chi tiết trong lịch sử.`, 'info');
+                    }, 800);
+                }
+                localStorage.removeItem('pendingSleepSessionDraft');
+            } catch (e) {
+                console.error('Sleep draft recovery failed:', e);
+                localStorage.removeItem('pendingSleepSessionDraft');
+            }
+        })();
+
         let sleepChart = null;
         let sleepTimelineChart = null;
         let solTrendChart = null;
@@ -43892,6 +43917,12 @@ document.addEventListener('DOMContentLoaded', function() {
             localStorage.removeItem('isSleeping');
             updateSleepUI();
 
+            // FIX: lưu nháp phiên này vào localStorage NGAY, trước khi mở modal.
+            // Trước đây session chỉ nằm trong biến JS (pendingSleepSession) cho tới
+            // khi người dùng bấm Lưu/Bỏ qua — nếu tab bị Safari giải phóng, mất mạng,
+            // hay đóng app giữa chừng thì dữ liệu mất trắng, không có bản sao lưu nào.
+            localStorage.setItem('pendingSleepSessionDraft', JSON.stringify(session));
+
             openQuickSleepNoteModal(session);
         }
 
@@ -43901,6 +43932,7 @@ document.addEventListener('DOMContentLoaded', function() {
         function finalizeSleepSession(session) {
             sleepSessions.push(session);
             saveSleepData();
+            localStorage.removeItem('pendingSleepSessionDraft');
 
             renderSleepHistory();
             renderSleepChart();
@@ -55462,13 +55494,13 @@ const sleepDebtCSS = `
         text-align: center;
         margin-top: 12px;
         padding: 12px;
-        background: rgba(var(--ia-accent-rgb), 0.1);
+        background: rgba(184, 146, 201, 0.12);
         border-radius: 12px;
-        color: #2563eb;
+        color: #9868ae;
         font-weight: 600;
         font-size: 0.85rem;
     }
-    .dark-mode .recovery-summary { color: #93c5fd; }
+    .dark-mode .recovery-summary { color: #d4b3e8; }
 
     /* ── Recommendations ── */
     .recommendation-item {
