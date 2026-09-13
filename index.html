@@ -19091,6 +19091,12 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dlt-card.c-safe    { border-left-color: #10b981; }
 .dlt-card.c-overdue { border-left-color: #b8919f; opacity: .78; }
 .dlt-card.c-done    { border-left-color: #10b981; opacity: .5; }
+/* Fix: cards with reduced opacity (overdue / snoozed / done) each create
+   their own CSS stacking context, which traps their Push/Snooze/Tag popover
+   underneath — the popup renders dim and the next card overlaps and eats
+   the clicks. While a popover inside a card is open, force that card fully
+   opaque and above every sibling so the menu is crisp and clickable. */
+.dlt-card.menu-open { opacity: 1 !important; position: relative; z-index: 60; }
 
 .dlt-days-wrap { text-align: center; flex-shrink: 0; min-width: 42px; }
 .dlt-days {
@@ -21600,6 +21606,17 @@ body.dark-mode .dlt-fg textarea {
     });
   }
 
+  /* Keep each card's "menu-open" flag in sync with whether one of its own
+     popovers (push / snooze / tag) is currently showing — see the
+     .dlt-card.menu-open CSS rule above for why this exists. */
+  function syncCardMenuOpen() {
+    document.querySelectorAll('.dlt-card.menu-open').forEach(c => c.classList.remove('menu-open'));
+    document.querySelectorAll('.dlt-push-menu.show, .dlt-snooze-menu.show, .dlt-tag-menu.show').forEach(m => {
+      const card = m.closest('.dlt-card');
+      if (card) card.classList.add('menu-open');
+    });
+  }
+
   window.DLT = {
     filter(c){ curFilter = c; render(); },
     search(v){ curSearch = v || ''; render(); },
@@ -21995,6 +22012,7 @@ body.dark-mode .dlt-fg textarea {
       const willShow = !menu.classList.contains('show');
       document.querySelectorAll('.dlt-snooze-menu.show').forEach(el => el.classList.remove('show'));
       if (willShow) menu.classList.add('show');
+      syncCardMenuOpen();
     },
 
     snooze(id, days) {
@@ -22053,6 +22071,7 @@ body.dark-mode .dlt-fg textarea {
       const willShow = !menu.classList.contains('show');
       document.querySelectorAll('.dlt-push-menu.show, .dlt-snooze-menu.show').forEach(el => el.classList.remove('show'));
       if (willShow) menu.classList.add('show');
+      syncCardMenuOpen();
     },
 
     pushDeadline(id, days) {
@@ -22166,6 +22185,7 @@ body.dark-mode .dlt-fg textarea {
       document.querySelectorAll('.dlt-tag-menu.show, .dlt-push-menu.show, .dlt-snooze-menu.show').forEach(el => el.classList.remove('show'));
       if (willShow) { menu.classList.add('show'); openTagMenuId = id; const inp = menu.querySelector('input'); if (inp) setTimeout(() => inp.focus(), 50); }
       else openTagMenuId = null;
+      syncCardMenuOpen();
     },
 
     addTag(id, rawValue) {
@@ -22175,6 +22195,7 @@ body.dark-mode .dlt-fg textarea {
       // several tags in a row doesn't require re-clicking the button.
       const menu = document.getElementById('tag-menu-' + id);
       if (menu) { menu.classList.add('show'); const inp = menu.querySelector('input'); if (inp) setTimeout(() => inp.focus(), 50); }
+      syncCardMenuOpen();
     },
 
     removeTag(id, tag) {
@@ -22182,6 +22203,7 @@ body.dark-mode .dlt-fg textarea {
       render();
       const menu = document.getElementById('tag-menu-' + id);
       if (menu) menu.classList.add('show');
+      syncCardMenuOpen();
     }
   };
 
@@ -22208,6 +22230,7 @@ body.dark-mode .dlt-fg textarea {
       document.querySelectorAll('.dlt-tag-menu.show').forEach(el => el.classList.remove('show'));
       openTagMenuId = null;
     }
+    syncCardMenuOpen();
   });
 
   function init() { backfillDoneMeta(); cleanupSnoozes(); render(); checkPopup(); setInterval(() => { tickCountdowns(); render(); }, 60000); }
