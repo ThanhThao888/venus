@@ -26605,10 +26605,10 @@ window.DBP={
                         </label>
                         <select id="sleepCalcSOL" onchange="onSleepCalcSOLChange()"
                             style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
-                            <option value="5"><svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Mệt, gục ngủ ngay (~5 phút)</option>
-                            <option value="15" selected><svg class="icon-svg" aria-hidden="true"><use href="#icon-face-slightly-smiling"></use></svg> Bình thường (~15 phút)</option>
-                            <option value="25"><svg class="icon-svg" aria-hidden="true"><use href="#icon-smartphone"></use></svg> Có dùng laptop/điện thoại trước đó, dễ trằn trọc (~25 phút)</option>
-                            <option value="custom"><svg class="icon-svg" aria-hidden="true"><use href="#icon-pencil"></use></svg> Tự nhập số phút</option>
+                            <option value="5">🌙 Mệt, gục ngủ ngay (~5 phút)</option>
+                            <option value="15" selected>🙂 Bình thường (~15 phút)</option>
+                            <option value="25">📱 Có dùng laptop/điện thoại trước đó, dễ trằn trọc (~25 phút)</option>
+                            <option value="custom">✏️ Tự nhập số phút</option>
                         </select>
                         <input type="number" id="sleepCalcCustomSOL" min="0" max="120" step="1" placeholder="Số phút để vào giấc"
                             style="display:none; width:100%; margin-top:6px; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-white); color:var(--text-dark);">
@@ -26650,7 +26650,7 @@ window.DBP={
                         </div>
                         <div style="font-size:0.72rem; color:var(--text-muted); margin-top:10px; line-height:1.5; border-top:1px dashed var(--theme-border-strong); padding-top:9px;">
                             <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;vertical-align:-1px;"><use href="#icon-triangle-alert"></use></svg>
-                            Lưu ý: đây là nhắc nhở chạy trong tab trình duyệt (không phải thông báo nền hệ thống) — cần giữ tab này mở (có thể ở nền, không cần focus) vào đúng giờ nhắc thì mới nhận được. Đóng tab hoặc tắt hẳn trình duyệt sẽ không nhắc được.
+                            Lưu ý: đây là nhắc nhở chạy trong tab trình duyệt (không phải thông báo nền hệ thống) — cần giữ tab này mở (có thể ở nền, không cần focus) vào đúng giờ nhắc thì mới nhận được. Đóng tab hoặc tắt hẳn trình duyệt sẽ không nhắc được. Khi đến giờ sẽ có kèm 3 tiếng chuông nhẹ và thông báo sẽ ở lại đến khi bạn tự tắt (không tự biến mất sau vài giây).
                         </div>
                     </div>
                 </div>
@@ -43438,6 +43438,49 @@ document.addEventListener('DOMContentLoaded', function() {
         // will look like (in-app toast + system notification if permitted),
         // so the user isn't stuck waiting until the actual bedtime to find
         // out whether it's set up correctly.
+        // Chuông nhắc nhẹ nhàng (3 tiếng "ting" ngân dần) — dùng Web Audio API nên
+        // không cần file mp3 ngoài, phát được ngay cả khi offline. Tự tạo lại
+        // AudioContext nếu cái cũ đã bị trình duyệt đóng (Safari hay làm vậy sau
+        // một lúc không dùng).
+        let sleepReminderAudioCtx = null;
+        function playSleepReminderChime() {
+            try {
+                if (!sleepReminderAudioCtx || sleepReminderAudioCtx.state === 'closed') {
+                    sleepReminderAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const ctx = sleepReminderAudioCtx;
+                if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+                const notes = [659.25, 783.99, 987.77]; // E5 → G5 → B5, chuông nhẹ ngân lên
+                notes.forEach((freq, i) => {
+                    const start = ctx.currentTime + i * 0.22;
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0, start);
+                    gain.gain.linearRampToValueAtTime(0.16, start + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.1);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(start);
+                    osc.stop(start + 1.15);
+                });
+            } catch (e) { /* Web Audio không khả dụng — bỏ qua, vẫn còn toast + system notification */ }
+        }
+
+        // Nội dung nhắc dùng chung cho cả preview lẫn nhắc thật — dài hơn và cụ
+        // thể hơn bản cũ (chỉ có "đến giờ ngủ"): nêu rõ giờ mục tiêu, giờ hiện
+        // tại, và một gợi ý hành động ngay để không chỉ nhắc suông.
+        function buildSleepReminderCopy(timeLabel) {
+            const now = new Date();
+            const nowLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            return {
+                title: 'Đến giờ chuẩn bị đi ngủ',
+                body: `Bây giờ là ${nowLabel}, mục tiêu lên giường là ${timeLabel} (tính từ giờ dậy trung vị 14 đêm gần nhất). Tắt bớt màn hình sáng, để điện thoại xa giường và bắt đầu thói quen thư giãn trước khi ngủ nhé.`,
+                toast: `<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Đến giờ chuẩn bị đi ngủ — mục tiêu ${timeLabel} (đang là ${nowLabel}). Tắt bớt ánh sáng và thư giãn trước khi lên giường nhé.`
+            };
+        }
+
         function testSleepReminder() {
             if ('Notification' in window && Notification.permission === 'default') {
                 Notification.requestPermission().then(() => {
@@ -43448,14 +43491,17 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             const target = computeSmartBedtimeTarget();
             const timeLabel = target ? `${String(target.hh).padStart(2, '0')}:${String(target.mm).padStart(2, '0')}` : '--:--';
+            const copy = buildSleepReminderCopy(timeLabel);
+            playSleepReminderChime();
             if (typeof showNotification === 'function') {
-                showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Xem thử: đến giờ chuẩn bị ngủ (mục tiêu ${timeLabel})`, 'info');
+                showNotification(`${copy.toast} <span style="opacity:.7;">(xem thử)</span>`, 'info', { duration: 15000 });
             }
             if ('Notification' in window && Notification.permission === 'granted') {
                 try {
                     new Notification('Giờ đi ngủ (xem thử)', {
-                        body: `Mục tiêu ${timeLabel} — dựa trên giờ dậy trung vị 14 đêm gần nhất.`,
-                        tag: 'sleep-bedtime-reminder-test'
+                        body: copy.body,
+                        tag: 'sleep-bedtime-reminder-test',
+                        requireInteraction: true
                     });
                 } catch (e) {}
             }
@@ -43489,14 +43535,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
             sleepReminderTimeoutId = setTimeout(() => {
                 const timeLabel = `${String(target.hh).padStart(2, '0')}:${String(target.mm).padStart(2, '0')}`;
+                const copy = buildSleepReminderCopy(timeLabel);
+                playSleepReminderChime();
                 if (typeof showNotification === 'function') {
-                    showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Đến giờ chuẩn bị ngủ (mục tiêu ${timeLabel}) để giữ đúng nhịp thức dậy`, 'info');
+                    showNotification(copy.toast, 'info', { duration: 15000 });
                 }
                 if ('Notification' in window && Notification.permission === 'granted') {
                     try {
                         new Notification('Giờ đi ngủ', {
-                            body: `Mục tiêu ${timeLabel} — dựa trên giờ dậy trung vị 14 đêm gần nhất.`,
-                            tag: 'sleep-bedtime-reminder'
+                            body: copy.body,
+                            tag: 'sleep-bedtime-reminder',
+                            requireInteraction: true
                         });
                     } catch (e) {}
                 }
@@ -43912,7 +43961,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const stats = getRecentRealSOLStats();
             // Cần tối thiểu 3 đêm có dữ liệu SOL thực tế mới đủ tin cậy để gợi ý
             if (stats && stats.count >= 3) {
-                const label = `<svg class="icon-svg" aria-hidden="true"><use href="#icon-brain"></use></svg> Trung bình thực tế của bạn (~${stats.avg} phút, ${stats.count} đêm gần đây)`;
+                const label = `🧠 Trung bình thực tế của bạn (~${stats.avg} phút, ${stats.count} đêm gần đây)`;
                 if (existing) {
                     existing.value = String(stats.avg);
                     existing.textContent = label;
@@ -59765,7 +59814,7 @@ function fcToastContainer() {
     return c;
 }
 
-function showNotification(message, type = 'info') {
+function showNotification(message, type = 'info', opts = {}) {
     const container = fcToastContainer();
 
     // Cap the stack at 3 visible toasts — drop the oldest first.
@@ -59829,7 +59878,7 @@ function showNotification(message, type = 'info') {
         toastEl.style.transform = 'translateY(0) scale(1)';
     });
 
-    const life = setTimeout(() => dismissFcToast(toastEl), 4200);
+    const life = setTimeout(() => dismissFcToast(toastEl), Number(opts.duration) > 0 ? Number(opts.duration) : 4200);
     toastEl._fcLifeTimer = life;
 }
 
