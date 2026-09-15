@@ -13825,19 +13825,31 @@
     /* ── Graph / tree view ── */
     .rdm-graph-wrap { overflow-x: auto; overflow-y: hidden; padding: 6px 2px 10px; -webkit-overflow-scrolling: touch; }
     .rdm-graph-svg { display: block; }
-    .rdm-gnode-rect { stroke-width: 1.5; cursor: pointer; transition: filter 0.15s ease; }
-    .rdm-gnode-rect:hover { filter: brightness(1.08); }
-    .rdm-gnode-text { font-size: 10.5px; font-weight: 700; pointer-events: none; }
-    .rdm-gnode-sub { font-size: 8.5px; font-weight: 600; pointer-events: none; }
-    .rdm-gedge { fill: none; stroke-width: 1.4; opacity: 0.4; transition: opacity 0.15s ease, stroke-width 0.15s ease; }
-    .rdm-gedge-skip { stroke-dasharray: 4 3; }
-    .rdm-gphase-label { font-size: 10.5px; font-weight: 800; text-anchor: middle; }
+    .rdm-gband { pointer-events: none; }
+    .rdm-gnode-rect {
+        stroke-width: 1.5; cursor: pointer;
+        transition: filter 0.18s ease, opacity 0.18s ease;
+        filter: drop-shadow(0 1px 2px rgba(61,40,54,0.10));
+    }
+    .rdm-gnode-rect:hover { filter: drop-shadow(0 3px 7px rgba(61,40,54,0.18)) brightness(1.05); }
+    .rdm-gnode-text { font-size: 10.5px; font-weight: 700; pointer-events: none; letter-spacing: -0.15px; }
+    .rdm-gnode-sub { font-size: 8.5px; font-weight: 600; pointer-events: none; opacity: 0.78; }
+    /* Edges sit deliberately quiet by default — the nodes are the content, the
+       arrows are structure. Hovering a node is what brings its own paths up to
+       full strength (see .rdm-gedge-hi below). */
+    .rdm-gedge {
+        fill: none; stroke-width: 1.5; opacity: 0.32; stroke-linecap: round;
+        transition: opacity 0.18s ease, stroke-width 0.18s ease;
+    }
+    .rdm-gedge-skip { stroke-dasharray: 5 4; opacity: 0.26; }
+    .rdm-gphase-label { font-size: 10.5px; font-weight: 800; text-anchor: middle; letter-spacing: 0.2px; }
     /* ── Graph hover isolation: dim everything not connected to the hovered node ── */
-    .rdm-gnode-rect, .rdm-gnode-text, .rdm-gnode-sub { transition: opacity 0.15s ease; }
-    .rdm-gnode-dim .rdm-gnode-rect, .rdm-gnode-dim .rdm-gnode-text, .rdm-gnode-dim .rdm-gnode-sub { opacity: 0.22; }
-    .rdm-gedge-dim { opacity: 0.06; }
-    .rdm-gedge-hi { opacity: 1; stroke-width: 2.6; }
-    .rdm-gnode-hi .rdm-gnode-rect { stroke-width: 2.75; filter: brightness(1.15); }
+    .rdm-gnode-rect, .rdm-gnode-text, .rdm-gnode-sub { transition: opacity 0.18s ease; }
+    .rdm-gnode-dim .rdm-gnode-rect, .rdm-gnode-dim .rdm-gnode-text, .rdm-gnode-dim .rdm-gnode-sub { opacity: 0.18; }
+    .rdm-gnode-dim .rdm-gnode-rect { filter: none; }
+    .rdm-gedge-dim { opacity: 0.05; }
+    .rdm-gedge-hi { opacity: 0.95; stroke-width: 2.4; stroke-dasharray: none; }
+    .rdm-gnode-hi .rdm-gnode-rect { stroke-width: 2.6; filter: drop-shadow(0 3px 8px rgba(61,40,54,0.20)); }
     .rdm-graph-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.68rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px; }
     .rdm-graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
     .rdm-graph-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
@@ -64524,6 +64536,50 @@ window.fcRenderTagChips = fcRenderTagChips;
                         col.skills.forEach((sk, ri) => posOf.set(sk.id, ri));
                     });
                 }
+
+                // ── Transpose refinement (2nd half of Sugiyama) ──────────────
+                // Barycenter alone still leaves obvious local crossings: two
+                // neighbouring nodes whose edges cross each other purely
+                // because of the order they happen to sit in. This pass walks
+                // every adjacent row pair and swaps them whenever the swap
+                // strictly reduces the number of edge crossings against BOTH
+                // the column to the left and the column to the right. That's
+                // what takes the picture from "plate of spaghetti" to
+                // something you can actually read.
+                const crossingsBetween = (leftCol, rightCol) => {
+                    if (!leftCol || !rightCol) return 0;
+                    const rowInLeft = new Map(leftCol.skills.map((s, i) => [s.id, i]));
+                    const pairs = [];
+                    rightCol.skills.forEach((sk, ri) => {
+                        (sk.prereqs || []).forEach(pid => {
+                            if (rowInLeft.has(pid)) pairs.push([rowInLeft.get(pid), ri]);
+                        });
+                    });
+                    let cross = 0;
+                    for (let a = 0; a < pairs.length; a++) {
+                        for (let b = a + 1; b < pairs.length; b++) {
+                            if ((pairs[a][0] - pairs[b][0]) * (pairs[a][1] - pairs[b][1]) < 0) cross++;
+                        }
+                    }
+                    return cross;
+                };
+                const localCrossings = (ci) =>
+                    crossingsBetween(columns[ci - 1], columns[ci]) + crossingsBetween(columns[ci], columns[ci + 1]);
+
+                for (let pass = 0; pass < 4; pass++) {
+                    let improved = false;
+                    for (let ci = 0; ci < columns.length; ci++) {
+                        const skills = columns[ci].skills;
+                        for (let r = 0; r + 1 < skills.length; r++) {
+                            const before = localCrossings(ci);
+                            [skills[r], skills[r + 1]] = [skills[r + 1], skills[r]];
+                            if (localCrossings(ci) < before) improved = true;
+                            else [skills[r], skills[r + 1]] = [skills[r + 1], skills[r]]; // revert
+                        }
+                    }
+                    if (!improved) break;
+                }
+                columns.forEach(col => col.skills.forEach((sk, ri) => posOf.set(sk.id, ri)));
                 return columns;
             }
 
@@ -64553,7 +64609,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     : '';
 
                 const phaseList = getPhaseList(track, curriculum);
-                const nodeW = 168, nodeH = 50, colGap = 70, rowGap = 14, sidePad = 12;
+                const nodeW = 172, nodeH = 52, colGap = 104, rowGap = 22, sidePad = 16;
                 const colWidth = nodeW + colGap;
 
                 // Build columns in original order first, then re-order rows
@@ -64580,10 +64636,31 @@ window.fcRenderTagChips = fcRenderTagChips;
                         if (colIndexOf.get(sk.id) - colIndexOf.get(pid) > 1) skipEdges.push({ from: pid, to: sk.id });
                     });
                 });
+                // Lane packing: the old code gave every skip edge its own lane,
+                // so a track with a dozen long-range prereqs grew a dozen
+                // stacked dashed lines and pushed the whole grid far down the
+                // canvas. Skip edges whose horizontal spans don't overlap can
+                // safely share one lane — greedy interval packing, first lane
+                // that's free. Usually collapses 10+ lanes down to 2-3.
                 const laneOf = new Map(); // "from|to" -> lane index
-                skipEdges.forEach((e, i) => laneOf.set(e.from + '|' + e.to, i));
-                const skipLaneGap = 9;
-                const topPad = 30 + (skipEdges.length ? skipEdges.length * skipLaneGap + 6 : 0);
+                const laneSpans = [];     // lane index -> array of [xStart, xEnd]
+                const spanOf = e => {
+                    const a = colIndexOf.get(e.from), b = colIndexOf.get(e.to);
+                    return [Math.min(a, b), Math.max(a, b)];
+                };
+                skipEdges
+                    .slice()
+                    .sort((a, b) => spanOf(a)[0] - spanOf(b)[0])
+                    .forEach(e => {
+                        const [s, t] = spanOf(e);
+                        let lane = laneSpans.findIndex(spans => spans.every(([ls, lt]) => t < ls || s > lt));
+                        if (lane === -1) { lane = laneSpans.length; laneSpans.push([]); }
+                        laneSpans[lane].push([s, t]);
+                        laneOf.set(e.from + '|' + e.to, lane);
+                    });
+                const laneCount = laneSpans.length;
+                const skipLaneGap = 11;
+                const topPad = 34 + (laneCount ? laneCount * skipLaneGap + 10 : 0);
 
                 const idToPos = new Map();
                 columns.forEach(col => {
@@ -64597,6 +64674,18 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const svgWidth = sidePad * 2 + columns.length * colWidth - colGap;
                 const svgHeight = topPad + Math.max(1, maxRows) * (nodeH + rowGap) + 6;
 
+                // Edge geometry notes:
+                //  · ARROW_GAP leaves a few px between the arrow tip and the node
+                //    border, so heads sit just off the box instead of stabbing into
+                //    it (the old version ran the path all the way to the edge and
+                //    the triangle overlapped the stroke, which is what made the
+                //    arrows look muddy).
+                //  · Skip-lane routes now use quadratic corner fillets instead of
+                //    hard 90° turns, so long-range prereqs read as smooth pipes.
+                const ARROW_GAP = 5, R = 7;
+                const edgeKind = (skId, pid) =>
+                    completedSet.has(skId) ? 'done' : (satisfiedSet.has(pid) ? 'ready' : 'locked');
+
                 let edgesSvg = '';
                 curriculum.forEach(sk => {
                     const to = idToPos.get(sk.id);
@@ -64604,21 +64693,33 @@ window.fcRenderTagChips = fcRenderTagChips;
                     (sk.prereqs || []).forEach(pid => {
                         const from = idToPos.get(pid);
                         if (!from) return;
-                        const done = completedSet.has(sk.id);
-                        const preDone = satisfiedSet.has(pid);
-                        const stroke = done ? '#d17b96' : (preDone ? '#f59e0b' : '#e8c2cf');
+                        const kind = edgeKind(sk.id, pid);
+                        const stroke = kind === 'done' ? '#d17b96' : (kind === 'ready' ? '#f59e0b' : '#e0bccb');
+                        const marker = `url(#rdmArrow-${track}-${kind})`;
                         const laneKey = pid + '|' + sk.id;
                         if (laneOf.has(laneKey)) {
-                            // Skip edge: route up into a dedicated dashed lane above the
-                            // grid, across, then down — never crosses through other nodes.
-                            const laneY = 22 + laneOf.get(laneKey) * skipLaneGap;
+                            // Skip edge: up out of the source, across a shared dashed
+                            // lane above the grid, then down into the target's top.
+                            const laneY = 24 + laneOf.get(laneKey) * skipLaneGap;
                             const x1 = from.cx, x2 = to.cx;
-                            edgesSvg += `<path class="rdm-gedge rdm-gedge-skip" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="M${x1},${from.y} V${laneY} H${x2} V${to.y}" stroke="${stroke}" marker-end="url(#rdmArrow-${track})"></path>`;
+                            const dir = x2 >= x1 ? 1 : -1;
+                            const r = Math.min(R, Math.abs(x2 - x1) / 2, Math.abs(from.y - laneY) / 2);
+                            const d = `M${x1},${from.y}`
+                                + ` V${laneY + r}`
+                                + ` Q${x1},${laneY} ${x1 + dir * r},${laneY}`
+                                + ` H${x2 - dir * r}`
+                                + ` Q${x2},${laneY} ${x2},${laneY + r}`
+                                + ` V${to.y - ARROW_GAP}`;
+                            edgesSvg += `<path class="rdm-gedge rdm-gedge-skip" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="${d}" stroke="${stroke}" marker-end="${marker}"></path>`;
                         } else {
                             const x1 = from.x + nodeW, y1 = from.cy;
-                            const x2 = to.x, y2 = to.cy;
-                            const mx = (x1 + x2) / 2;
-                            edgesSvg += `<path class="rdm-gedge" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="${stroke}" marker-end="url(#rdmArrow-${track})"></path>`;
+                            const x2 = to.x - ARROW_GAP, y2 = to.cy;
+                            // Flatter control points (0.55 of the span rather than the
+                            // midpoint) give a gentler S-curve that leaves the source
+                            // and enters the target almost horizontally — much calmer
+                            // than the old symmetric bulge when rows are far apart.
+                            const c1 = x1 + (x2 - x1) * 0.55, c2 = x2 - (x2 - x1) * 0.55;
+                            edgesSvg += `<path class="rdm-gedge" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="M${x1},${y1} C${c1},${y1} ${c2},${y2} ${x2},${y2}" stroke="${stroke}" marker-end="${marker}"></path>`;
                         }
                     });
                 });
@@ -64668,13 +64769,36 @@ window.fcRenderTagChips = fcRenderTagChips;
                     });
                 });
 
+                // Soft alternating bands behind each phase column. Grouping the
+                // nodes visually by phase does a lot of the work of making the
+                // graph feel ordered, so the eye reads "five stages" before it
+                // starts tracing individual arrows.
+                const bandsSvg = columns.map((col, ci) => `
+                    <rect class="rdm-gband" x="${col.x - 13}" y="${topPad - 24}"
+                          width="${nodeW + 26}" height="${svgHeight - topPad + 20}" rx="14"
+                          fill="${ci % 2 === 0 ? 'rgba(219,113,175,0.045)' : 'rgba(166,139,149,0.045)'}"></rect>`).join('');
+
+                // One marker per edge state so the arrowhead always matches its
+                // line's colour (previously every head was the same grey, which
+                // is why they read as detached specks). markerUnits is pinned to
+                // userSpaceOnUse so heads keep a constant size instead of
+                // ballooning when an edge thickens on hover, and the notched
+                // tail shape reads much sharper at this scale than a flat triangle.
+                const arrowShape = 'M1,1.2 L8.4,4.8 L1,8.4 Q3,4.8 1,1.2 Z';
+                const markerFor = (suffix, color) => `
+                    <marker id="rdmArrow-${track}-${suffix}" markerUnits="userSpaceOnUse"
+                            markerWidth="9.5" markerHeight="9.6" refX="8.4" refY="4.8" orient="auto">
+                        <path d="${arrowShape}" fill="${color}"></path>
+                    </marker>`;
+
                 const svg = `
                     <svg class="rdm-graph-svg" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
                         <defs>
-                            <marker id="rdmArrow-${track}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                                <path d="M0,0 L8,4 L0,8 z" fill="#a68b95"></path>
-                            </marker>
+                            ${markerFor('done', '#d17b96')}
+                            ${markerFor('ready', '#f59e0b')}
+                            ${markerFor('locked', '#e0bccb')}
                         </defs>
+                        ${bandsSvg}
                         ${edgesSvg}
                         ${nodesSvg}
                     </svg>`;
