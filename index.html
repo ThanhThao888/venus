@@ -13842,11 +13842,13 @@
         transition: opacity 0.18s ease, stroke-width 0.18s ease;
     }
     .rdm-gedge-skip { stroke-dasharray: 5 4; opacity: 0.26; }
+    .rdm-gedge-intra { opacity: 0.3; }
     .rdm-gphase-label { font-size: 10.5px; font-weight: 800; text-anchor: middle; letter-spacing: 0.2px; }
     /* ── Graph hover isolation: dim everything not connected to the hovered node ── */
     .rdm-gnode-rect, .rdm-gnode-text, .rdm-gnode-sub { transition: opacity 0.18s ease; }
-    .rdm-gnode-dim .rdm-gnode-rect, .rdm-gnode-dim .rdm-gnode-text, .rdm-gnode-dim .rdm-gnode-sub { opacity: 0.18; }
-    .rdm-gnode-dim .rdm-gnode-rect { filter: none; }
+    .rdm-gnode-dim .rdm-gnode-rect { opacity: 0.32; filter: none; }
+    .rdm-gnode-dim .rdm-gnode-text { opacity: 0.4; }
+    .rdm-gnode-dim .rdm-gnode-sub { opacity: 0.28; }
     .rdm-gedge-dim { opacity: 0.05; }
     .rdm-gedge-hi { opacity: 0.95; stroke-width: 2.4; stroke-dasharray: none; }
     .rdm-gnode-hi .rdm-gnode-rect { stroke-width: 2.6; filter: drop-shadow(0 3px 8px rgba(61,40,54,0.20)); }
@@ -64609,7 +64611,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     : '';
 
                 const phaseList = getPhaseList(track, curriculum);
-                const nodeW = 172, nodeH = 52, colGap = 104, rowGap = 22, sidePad = 16;
+                const nodeW = 172, nodeH = 52, colGap = 104, rowGap = 22, sidePad = 46;
                 const colWidth = nodeW + colGap;
 
                 // Build columns in original order first, then re-order rows
@@ -64662,6 +64664,28 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const skipLaneGap = 11;
                 const topPad = 34 + (laneCount ? laneCount * skipLaneGap + 10 : 0);
 
+                // ── Same-phase (intra-column) prereqs ────────────────────────
+                // These were the source of the weird backward loops: a prereq
+                // inside the SAME phase got drawn with the generic left-to-right
+                // curve, whose start (right edge of source) sits 170px to the
+                // RIGHT of its end (left edge of target in the same column). The
+                // curve therefore had to swing out of the column and double back.
+                // They now route down a dedicated vertical gutter on the left of
+                // their column, staggered across three offsets so parallel ones
+                // don't sit on top of each other.
+                const intraLaneOf = new Map(); // "from|to" -> { ci, k }
+                const intraPerCol = new Map();
+                curriculum.forEach(sk => {
+                    (sk.prereqs || []).forEach(pid => {
+                        if (!colIndexOf.has(pid) || !colIndexOf.has(sk.id)) return;
+                        if (colIndexOf.get(pid) !== colIndexOf.get(sk.id)) return;
+                        const ci = colIndexOf.get(sk.id);
+                        const k = intraPerCol.get(ci) || 0;
+                        intraPerCol.set(ci, k + 1);
+                        intraLaneOf.set(pid + '|' + sk.id, { ci, k });
+                    });
+                });
+
                 const idToPos = new Map();
                 columns.forEach(col => {
                     maxRows = Math.max(maxRows, col.skills.length);
@@ -64697,7 +64721,24 @@ window.fcRenderTagChips = fcRenderTagChips;
                         const stroke = kind === 'done' ? '#d17b96' : (kind === 'ready' ? '#f59e0b' : '#e0bccb');
                         const marker = `url(#rdmArrow-${track}-${kind})`;
                         const laneKey = pid + '|' + sk.id;
-                        if (laneOf.has(laneKey)) {
+                        if (intraLaneOf.has(laneKey)) {
+                            // Same-column: out of the source's LEFT edge, down (or
+                            // up) a vertical gutter beside the column, then back in
+                            // to the target's left edge. Stays entirely within its
+                            // own column's strip — no more looping across the graph.
+                            const { ci, k } = intraLaneOf.get(laneKey);
+                            const gx = columns[ci].x - (20 + (k % 3) * 7);
+                            const sy = from.cy, ty = to.cy;
+                            const dirY = ty >= sy ? 1 : -1;
+                            const r = Math.max(0, Math.min(R, Math.abs(ty - sy) / 2));
+                            const d = `M${from.x},${sy}`
+                                + ` H${gx + r}`
+                                + ` Q${gx},${sy} ${gx},${sy + dirY * r}`
+                                + ` V${ty - dirY * r}`
+                                + ` Q${gx},${ty} ${gx + r},${ty}`
+                                + ` H${to.x - ARROW_GAP}`;
+                            edgesSvg += `<path class="rdm-gedge rdm-gedge-intra" data-edge="1" data-from="${pid}" data-to="${sk.id}" d="${d}" stroke="${stroke}" marker-end="${marker}"></path>`;
+                        } else if (laneOf.has(laneKey)) {
                             // Skip edge: up out of the source, across a shared dashed
                             // lane above the grid, then down into the target's top.
                             const laneY = 24 + laneOf.get(laneKey) * skipLaneGap;
@@ -64774,8 +64815,8 @@ window.fcRenderTagChips = fcRenderTagChips;
                 // graph feel ordered, so the eye reads "five stages" before it
                 // starts tracing individual arrows.
                 const bandsSvg = columns.map((col, ci) => `
-                    <rect class="rdm-gband" x="${col.x - 13}" y="${topPad - 24}"
-                          width="${nodeW + 26}" height="${svgHeight - topPad + 20}" rx="14"
+                    <rect class="rdm-gband" x="${col.x - 40}" y="${topPad - 24}"
+                          width="${nodeW + 54}" height="${svgHeight - topPad + 20}" rx="14"
                           fill="${ci % 2 === 0 ? 'rgba(219,113,175,0.045)' : 'rgba(166,139,149,0.045)'}"></rect>`).join('');
 
                 // One marker per edge state so the arrowhead always matches its
