@@ -20179,6 +20179,7 @@ body.dark-mode .dlt-fg textarea {
     <div class="dlt-header-btns">
       <button class="dlt-btn dlt-select-toggle-btn" id="dltSelectToggleBtn" onclick="DLT.toggleSelectionMode()"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-square-check"/></svg> <span>Select</span></button>
       <button class="dlt-btn" onclick="DLT.openDigest()" title="Compact summary of what's due this week"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-newspaper"/></svg> <span>Digest</span></button>
+      <button class="dlt-btn" onclick="DLT.copyContextForAI()" title="Copy full deadlines snapshot + AI prompt — ready to paste to an AI advisor"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-clipboard-list"/></svg> <span>Copy</span></button>
       <button class="dlt-btn" onclick="DLT.openModal()">＋ Add</button>
     </div>
   </div>
@@ -21556,6 +21557,113 @@ body.dark-mode .dlt-fg textarea {
     return lines.join('\n');
   }
 
+  /* ─── Copy full Deadlines context + AI prompt ───
+     Powers the header "Copy" button. Same shape as the Goals card's
+     copyGoalsContextForAI(): a full plain-text snapshot (every active
+     deadline — name, source/category, date, days left/overdue, priority
+     — plus overdue/urgent/done stats), followed by a ready-to-paste
+     analyst prompt. Deliberately separate from buildDigestText(), which
+     is scoped to "this week" only and has no prompt attached. */
+  function buildDeadlinesContextText() {
+    const lines = [];
+    const SEP = '═'.repeat(52);
+    const DIV = '─'.repeat(52);
+    const dateStr = new Date().toLocaleDateString('en-GB', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+    });
+
+    lines.push('📌 Deadlines Tracker — AI Context Snapshot');
+    lines.push(`Generated: ${dateStr}`);
+    lines.push(SEP);
+
+    const all = allItems();
+    const active = all.filter(d => !doneIds.includes(d.id) && !isSnoozed(d.id));
+    const snoozed = all.filter(d => !doneIds.includes(d.id) && isSnoozed(d.id));
+    const done = all.filter(d => doneIds.includes(d.id));
+
+    const overdue = active.filter(d => daysLeft(d.date) < 0).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const upcoming = active.filter(d => daysLeft(d.date) >= 0).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    lines.push('');
+    lines.push('📊 STATS');
+    lines.push(DIV);
+    lines.push(`Total active: ${active.length}  ·  Overdue: ${overdue.length}  ·  Urgent (≤3d): ${active.filter(d => daysLeft(d.date) >= 0 && daysLeft(d.date) <= 3).length}  ·  Snoozed: ${snoozed.length}  ·  Done: ${done.length}`);
+
+    const plainPrio = p => (PRIORITY_LABEL[p] || PRIORITY_LABEL.medium).replace(/<[^>]+>\s*/g, '');
+    const plainTag = s => s ? String(s).replace(/<[^>]+>\s*/g, '').trim() : '';
+    const lineFor = d => {
+      const dl = daysLeft(d.date);
+      const dueStr = dl < 0 ? `${Math.abs(dl)}d OVERDUE` : dl === 0 ? 'due today' : `${dl}d left`;
+      const tag = plainTag(d.source) || plainTag(d.category);
+      return `  • ${d.name || 'Untitled'}${tag ? ` [${tag}]` : ''} — ${fmtDate(d.date)} (${dueStr}), ${plainPrio(d.priority)} priority`;
+    };
+
+    if (overdue.length) {
+      lines.push('');
+      lines.push(`🔴 OVERDUE (${overdue.length})`);
+      lines.push(DIV);
+      overdue.forEach(d => lines.push(lineFor(d)));
+    }
+
+    if (upcoming.length) {
+      lines.push('');
+      lines.push(`📅 UPCOMING (${upcoming.length})`);
+      lines.push(DIV);
+      upcoming.forEach(d => lines.push(lineFor(d)));
+    }
+
+    if (!overdue.length && !upcoming.length) {
+      lines.push('');
+      lines.push('  No active deadlines.');
+    }
+
+    if (snoozed.length) {
+      lines.push('');
+      lines.push(`💤 SNOOZED (${snoozed.length})`);
+      lines.push(DIV);
+      snoozed.forEach(d => lines.push(lineFor(d)));
+    }
+
+    // ── SUGGESTED PROMPT ──
+    lines.push('');
+    lines.push(SEP);
+    lines.push('');
+    lines.push('💬 SUGGESTED PROMPT:');
+    lines.push(DIV);
+    lines.push('You are my strategic crisis-management and prioritization analyst,');
+    lines.push('specializing in triage for finance/investment professionals and in');
+    lines.push('sequencing work for people with ADHD (inattentive type — weak task');
+    lines.push('sequencing, weak working memory, easily loses sustained focus).');
+    lines.push('I\'m going to paste my "Deadlines Snapshot" below. It lists every');
+    lines.push('active deadline with its source/category, due date, days left or');
+    lines.push('overdue, and priority. Analyze it and give me:');
+    lines.push('');
+    lines.push('1. Triage: rank the deadlines by real urgency (overdue + high-priority');
+    lines.push('   first), not just by date — flag anything that looks miscategorized');
+    lines.push('   as low priority given how close or overdue it is.');
+    lines.push('2. Pick the 1-2 deadlines to act on TODAY — not a full to-do list, I');
+    lines.push('   lose focus with long lists.');
+    lines.push('3. For each of those, break the next action into small, sequential');
+    lines.push('   sub-steps I can do in single sittings (30-90 min each) — give me');
+    lines.push('   step 1, step 2, step 3, not vague blocks.');
+    lines.push('4. Flag any overdue item that looks abandoned or quietly slipping —');
+    lines.push('   and whether it needs a real push (renegotiate the date) instead of');
+    lines.push('   another snooze.');
+    lines.push('5. If the total load this week looks unrealistic given how many');
+    lines.push('   deadlines are clustered together, say so directly and suggest what');
+    lines.push('   to push, delegate, or drop.');
+    lines.push('6. If priorities between deadlines conflict or are ambiguous, ask me');
+    lines.push('   to choose rather than assuming.');
+    lines.push('');
+    lines.push('Keep the tone direct and efficient — no motivational fluff. Format');
+    lines.push('with clear headers and short bullets so I can scan it fast.');
+    lines.push('Here is my current deadlines snapshot:');
+
+    return lines.join('\n');
+  }
+
+
+
   /* ─── Completed Deadlines Analytics Modal (render) ─── */
   function renderCompletedModal() {
     // This is a dedicated review screen, so it always shows the FULL completion
@@ -22210,6 +22318,32 @@ body.dark-mode .dlt-fg textarea {
     copyDigest() {
       const text = buildDigestText();
       const done = () => { if (typeof showNotification === 'function') showNotification('Weekly digest copied!', 'success'); };
+      const fail = () => { if (typeof showNotification === 'function') showNotification('Could not copy — please copy manually.', 'error'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(() => {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            document.execCommand('copy'); document.body.removeChild(ta);
+            done();
+          } catch (e) { fail(); }
+        });
+      } else {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.focus(); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta);
+          done();
+        } catch (e) { fail(); }
+      }
+    },
+
+    /* ─── Copy full Deadlines snapshot + AI prompt (header "Copy" button) ─── */
+    copyContextForAI() {
+      const text = buildDeadlinesContextText();
+      const done = () => { if (typeof showNotification === 'function') showNotification('Deadlines context copied!', 'success'); };
       const fail = () => { if (typeof showNotification === 'function') showNotification('Could not copy — please copy manually.', 'error'); };
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(() => {
