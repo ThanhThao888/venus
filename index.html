@@ -23621,6 +23621,7 @@ body.dark-mode .dbp-mood-saved{color:#7ecdb4;}
 .dbp-action-btn.gcal-all{background:rgba(66,133,244,0.1);color:#4285f4;border:1.5px solid rgba(66,133,244,0.28);}
 .dbp-action-btn.copy-txt{background:var(--bg-light,#fffbfc);color:var(--text-dark,#4a3240);border:1.5px solid var(--border-color,#f0d7de);}
 .dbp-action-btn.save-pl{background:rgba(219,39,119,0.1);color:#db2777;border:1.5px solid rgba(219,39,119,0.28);}
+.dbp-action-btn.discard-pl{background:rgba(239,68,68,0.08);color:#ef4444;border:1.5px solid rgba(239,68,68,0.25);}
 .dbp-action-btn:hover{filter:brightness(1.07);transform:translateY(-1px);}
 .dbp-action-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;filter:none;}
 
@@ -23737,7 +23738,8 @@ body.dark-mode .dbp-mood-saved{color:#7ecdb4;}
     .dbp-tc-btn { padding: 7px 14px; font-size: 0.75rem; }
     .dbp-mood-btn { padding: 4px 8px; font-size: 0.72rem; }
     .dbp-reflection { min-height: 60px; font-size: 0.8rem; padding: 9px 10px; }
-    .dbp-action-btn { padding: 10px; font-size: 0.78rem; }
+    .dbp-action-row { flex-wrap: wrap; }
+    .dbp-action-btn { padding: 10px; font-size: 0.78rem; flex: 1 1 calc(50% - 4px); }
     .dbp-analytics-row { grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .dbp-analytics-val { font-size: 1rem; }
     .dbp-history-item { padding: 10px 12px; }
@@ -23854,6 +23856,7 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
         <div class="dbp-shortcuts">
             <span><span class="dbp-key">Ctrl+Enter</span> Generate</span>
             <span><span class="dbp-key">Ctrl+Z</span> Undo</span>
+            <span><span class="dbp-key">Ctrl+Shift+Z</span> Redo</span>
             <span><span class="dbp-key">Esc</span> Close</span>
         </div>
     </div>
@@ -23884,7 +23887,7 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
 
             <div class="dbp-budget-wrap">
                 <div class="dbp-budget-meta">
-                    <span class="dbp-budget-label">⏱ Time Budget</span>
+                    <span class="dbp-budget-label" title="Counts selected task minutes only — the generated schedule adds break time on top, so the actual end time will run later than this budget alone suggests.">⏱ Time Budget</span>
                     <span class="dbp-budget-nums" id="dbpBudgetText">0 / 0 min (0%)</span>
                 </div>
                 <div class="dbp-budget-bar"><div class="dbp-budget-fill" id="dbpBudgetFill" style="width:0%"></div></div>
@@ -23895,6 +23898,7 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
                 <span class="dbp-section-label"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Tasks</span>
                 <div class="dbp-section-btns">
                     <button class="dbp-section-btn" id="dbpSortBtn" onclick="DBP.toggleSort()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-arrow-up-down"></use></svg> Priority</button>
+                    <button class="dbp-section-btn" onclick="DBP.repeatLastPlan()" title="Re-check whichever of today's tasks were in your last saved plan"><svg class="icon-svg" aria-hidden="true"><use href="#icon-repeat"></use></svg> Repeat Last</button>
                     <button class="dbp-section-btn" onclick="DBP.selectAll()">All</button>
                     <button class="dbp-section-btn" onclick="DBP.clearAll()">None</button>
                 </div>
@@ -23935,6 +23939,7 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
                 <button class="dbp-action-btn gcal-all" onclick="DBP.addAll()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-calendar"></use></svg> All to GCal</button>
                 <button class="dbp-action-btn copy-txt" onclick="DBP.copyText()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Copy</button>
                 <button class="dbp-action-btn save-pl" onclick="DBP.savePlan()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-save"></use></svg> Save</button>
+                <button class="dbp-action-btn discard-pl" onclick="DBP.discardPlan()" title="Clear this plan without saving it to History"><svg class="icon-svg" aria-hidden="true"><use href="#icon-trash-2"></use></svg> Discard</button>
             </div>
 
         </div>
@@ -24011,7 +24016,7 @@ const STYLES={
 };
 
 /* ─── STATE ─── */
-let _tasks=[], _blocks=[], _timers={}, _manualCount=0, _undoStack=[], _sortByPriority=false;
+let _tasks=[], _blocks=[], _timers={}, _manualCount=0, _undoStack=[], _redoStack=[], _sortByPriority=false;
 
 /* ─── FLOATING TIMER STATE ─── */
 let _activeTimerIdx = null; // index của timer đang chạy/pause
@@ -24147,11 +24152,19 @@ function loadSettings(){
     if(s.style)     gel('dbpStyle').value=s.style;
 }
 
-/* ─── UNDO ─── */
-function pushUndo(){ _undoStack.push(deep(_tasks)); if(_undoStack.length>15)_undoStack.shift(); }
+/* ─── UNDO / REDO ─── */
+function pushUndo(){ _undoStack.push(deep(_tasks)); if(_undoStack.length>15)_undoStack.shift(); _redoStack=[]; }
 function undo(){
     if(!_undoStack.length){ toast('Nothing to undo'); return; }
+    _redoStack.push(deep(_tasks)); if(_redoStack.length>15)_redoStack.shift();
     _tasks=_undoStack.pop(); renderTasks(); toast('↩ Undone');
+}
+// FEATURE: paired Redo (Ctrl+Shift+Z / Ctrl+Y) for the Undo above — previously
+// there was no way to get a change back once you'd undone it.
+function redo(){
+    if(!_redoStack.length){ toast('Nothing to redo'); return; }
+    _undoStack.push(deep(_tasks)); if(_undoStack.length>15)_undoStack.shift();
+    _tasks=_redoStack.pop(); renderTasks(); toast('↪ Redone');
 }
 
 
@@ -24239,15 +24252,26 @@ function tagBadge(tag){
 /* ─── LIBRARY TASKS ─── */
 function getLibraryTasks(styleDef){
     const icons={video:'',book:'',podcast:'',research:'',journal:'',tool:'',data:'',other:''};
+    // BUG FIX: the goals mapper used to fall back to `g.id || Math.random()` when a
+    // goal had no id (note: `||` also misfires for a legit id of 0). Math.random()
+    // generates a brand-new id on every single call to getLibraryTasks — which runs
+    // on every renderTasks() — so any goal lacking a stable id got a *different*
+    // task id each re-render. renderTasks() merges by id to preserve checked state
+    // and custom duration; a churning id meant that goal silently lost its checked
+    // state and any duration edit on the very next redraw (e.g. after dragging any
+    // task, adding a manual task, or toggling sort). Same latent issue for resources
+    // missing r.id, which additionally could collide (`'r_undefined'` for all of
+    // them, clobbering each other in the id map). Fixed by falling back to a
+    // position-based id that's stable across renders instead of a random one.
     const res=(store.get('resourceLibrary',[])||[])
         .filter(r=>r.status==='to-read'||r.status==='reading')
-        .map(r=>({ id:'r_'+r.id, label:r.title,
+        .map((r,idx)=>({ id:'r_'+(r.id!=null?r.id:'i'+idx), label:r.title,
             sub:[r.type,r.category].filter(Boolean).join(' · '), tag:r.category||'',
             def:styleDef, details:r.url||'', priority:normPriority(r.priority),
             isManual:false, checked:false }));
     const goals=(store.get('goals',[])||[])
         .filter(g=>!['completed','archived'].includes((g.status||'').toLowerCase()))
-        .map(g=>({ id:'g_'+(g.id||Math.random()),
+        .map((g,idx)=>({ id:'g_'+(g.id!=null?g.id:'i'+idx),
             label:(g.title||g.name||'Goal'),
             sub:'Goal · '+(g.career||''), tag:g.career||'',
             def:Math.round(styleDef*0.7/5)*5||60,
@@ -24258,7 +24282,13 @@ function getLibraryTasks(styleDef){
 
 /* ─── BUDGET ─── */
 function updateBudget(){
-    const avail=parseFloat(gel('dbpHours').value||0)*60;
+    // BUG FIX: parseFloat on a manually-typed negative/garbage value (the number
+    // input's min="0.5" only stops the spinner arrows, not free typing on most
+    // browsers) could make `avail` negative or NaN. That fed into `avail>0?...:0`
+    // below, which forced the bar to a flat, silent 0% — hiding a real over-budget
+    // situation instead of warning about it.
+    let avail=parseFloat(gel('dbpHours').value||0)*60;
+    if(!isFinite(avail)||avail<0) avail=0;
     let used=0;
     document.querySelectorAll('#dbpTaskList .dbp-task-row').forEach(row=>{
         const cb=row.querySelector('.dbp-task-cb');
@@ -24268,14 +24298,20 @@ function updateBudget(){
         if(!isNaN(idx)&&_tasks[idx]) _tasks[idx].checked=!!chk;
         row.classList.toggle('selected',!!chk);
     });
-    const pct=avail>0?Math.min(120,used/avail*100):0;
+    // BUG FIX: `pct` was clamped to a max of 120 up front, then that same clamped
+    // value was reused for BOTH the bar width and the "(X%)" text. So selecting
+    // 400% worth of tasks over budget displayed "(120%)" — same as being only
+    // slightly over — hiding exactly how overloaded the plan really is. The bar
+    // width still needs its own 0–100 clamp (CSS width can't exceed the track),
+    // but the text now shows the true, uncapped percentage.
+    const rawPct=avail>0?used/avail*100:0;
     const fill=gel('dbpBudgetFill');
-    fill.style.width=Math.min(100,pct)+'%';
-    fill.style.background=pct>100?'linear-gradient(90deg,#ef4444,#f97316)'
-        :pct>85?'linear-gradient(90deg,#f59e0b,#10b981)'
+    fill.style.width=Math.min(100,rawPct)+'%';
+    fill.style.background=rawPct>100?'linear-gradient(90deg,#ef4444,#f97316)'
+        :rawPct>85?'linear-gradient(90deg,#f59e0b,#10b981)'
         :'linear-gradient(90deg,#10b981,#ec4899)';
-    gel('dbpBudgetText').textContent=`${used} / ${Math.round(avail)} min (${Math.round(pct)}%)`;
-    gel('dbpBudgetWarn').style.display=pct>100?'block':'none';
+    gel('dbpBudgetText').textContent=`${used} / ${Math.round(avail)} min (${Math.round(rawPct)}%)`;
+    gel('dbpBudgetWarn').style.display=rawPct>100?'block':'none';
     saveManualTasks();
     saveSettings();
 }
@@ -24285,9 +24321,21 @@ function renderTasks(){
     const styleDef=STYLES[gel('dbpStyle').value||'deep'].workDef;
     const lib=getLibraryTasks(styleDef);
     const byId={}; _tasks.forEach(t=>{byId[t.id]=t;});
+    // BUG FIX: `def` was always carried over from the previous render's task
+    // (`byId[t.id].def`) unconditionally. The Session Style dropdown's
+    // onchange="DBP.refreshTasks()" exists specifically to recompute each
+    // task's default minutes for the new style's session length (90/50/25),
+    // but after the very first render every library task already has a
+    // `byId` entry, so this line always kept the *old* style's default and
+    // never picked up `t.def` (the freshly recomputed value) — switching
+    // styles silently stopped updating durations. Now a task's duration is
+    // only preserved across renders if the user actually edited it by hand
+    // (tracked via the `customDur` flag set in durChange); otherwise it
+    // always tracks the current style's default.
     const merged=lib.map(t=>({...t,
-        checked: byId[t.id]?byId[t.id].checked:false,
-        def:     byId[t.id]?byId[t.id].def:t.def
+        checked:   byId[t.id]?byId[t.id].checked:false,
+        def:       (byId[t.id]&&byId[t.id].customDur)?byId[t.id].def:t.def,
+        customDur: byId[t.id]?!!byId[t.id].customDur:false
     }));
     _tasks = loadOrder([...merged, ..._tasks.filter(t=>t.isManual)]);
     saveManualTasks();
@@ -24352,7 +24400,13 @@ function duplicateTask(idx){
 /* ─── CB / DUR CHANGE ─── */
 function cbChange(cb){
     const idx=parseInt(cb.dataset.idx);
-    if(!isNaN(idx)&&_tasks[idx]) _tasks[idx].checked=cb.checked;
+    // Undo coverage: checking/unchecking tasks used to bypass pushUndo() entirely,
+    // so Ctrl+Z (advertised right in the header shortcuts) could never revert a
+    // misclick here even though it reverts add/remove/duplicate/reorder.
+    if(!isNaN(idx)&&_tasks[idx]){
+        pushUndo();
+        _tasks[idx].checked=cb.checked;
+    }
     cb.closest('.dbp-task-row').classList.toggle('selected',cb.checked);
     updateBudget();
 }
@@ -24364,7 +24418,13 @@ function durChange(inp,idx){
         toast('Duration must be at least 5 min — reverted', 2800, 'warn');
         return;
     }
-    if(!isNaN(idx)&&_tasks[idx]) _tasks[idx].def=parseInt(inp.value);
+    if(!isNaN(idx)&&_tasks[idx]){
+        pushUndo(); // same undo-coverage fix as cbChange, above
+        _tasks[idx].def=parseInt(inp.value);
+        // Remember this was a deliberate hand-edit, not the style's auto default —
+        // see the renderTasks() fix above for why this flag matters.
+        _tasks[idx].customDur=true;
+    }
     updateBudget();
 }
 
@@ -24396,8 +24456,11 @@ function dd(e,i){
 }
 
 /* ─── SELECT / CLEAR ─── */
-function selectAll(){ _tasks.forEach(t=>t.checked=true); document.querySelectorAll('#dbpTaskList .dbp-task-cb').forEach(cb=>{cb.checked=true;cb.closest('.dbp-task-row').classList.add('selected');}); updateBudget(); }
-function clearAll(){  _tasks.forEach(t=>t.checked=false); document.querySelectorAll('#dbpTaskList .dbp-task-cb').forEach(cb=>{cb.checked=false;cb.closest('.dbp-task-row').classList.remove('selected');}); updateBudget(); }
+// Undo coverage, same reasoning as cbChange: "None" is one misclick away from
+// wiping every selection in the list with no way back. Push undo first so
+// Ctrl+Z (or a future "Undo" button) can restore it in one step.
+function selectAll(){ pushUndo(); _tasks.forEach(t=>t.checked=true); document.querySelectorAll('#dbpTaskList .dbp-task-cb').forEach(cb=>{cb.checked=true;cb.closest('.dbp-task-row').classList.add('selected');}); updateBudget(); }
+function clearAll(){  pushUndo(); _tasks.forEach(t=>t.checked=false); document.querySelectorAll('#dbpTaskList .dbp-task-cb').forEach(cb=>{cb.checked=false;cb.closest('.dbp-task-row').classList.remove('selected');}); updateBudget(); }
 
 /* ─── SORT ─── */
 function toggleSort(){
@@ -24562,8 +24625,18 @@ function renderSchedule(blocks){
         ${blocks.map((b,i)=>renderBlock(b,i)).join('')}
         <div class="dbp-reflection-wrap">
             <label><svg class="icon-svg" aria-hidden="true"><use href="#icon-file-text"></use></svg> Session Reflection (optional)</label>
-            <textarea class="dbp-reflection" id="dbpReflection" placeholder="What did you accomplish? Any blockers? What to improve tomorrow…"></textarea>
+            <textarea class="dbp-reflection" id="dbpReflection" placeholder="What did you accomplish? Any blockers? What to improve tomorrow…" oninput="DBP.saveReflectionDraft(this.value)"></textarea>
         </div>`;
+
+    // FEATURE: the reflection textarea above is rebuilt from scratch (via innerHTML)
+    // on every renderSchedule() call — which happens whenever the modal is reopened
+    // with an existing plan, not just when a plan is freshly generated. Without this,
+    // anything typed into the reflection box was silently wiped the moment you closed
+    // and reopened the modal, before ever hitting "Save". Restore whatever was last
+    // auto-saved so in-progress notes survive a close/reopen.
+    const reflDraft = store.get('dbpReflectionDraft','');
+    const reflEl = gel('dbpReflection');
+    if(reflEl && reflDraft) reflEl.value = reflDraft;
 
     gel('dbpActionRow').style.display='flex';
     gel('dbpSchedule').scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -24655,7 +24728,19 @@ function markDone(i){
     if(!_blocks[i])return;
     _blocks[i].done=!_blocks[i].done;
     if(_blocks[i].done && _blocks[i].actualStart && _blocks[i].actualDur==null){
-        _blocks[i].actualDur = Math.max(1, Math.round((Date.now()-_blocks[i].actualStart)/60000));
+        // BUG FIX: this used to be Date.now()-actualStart, i.e. pure wall-clock time
+        // since the timer was first started. Any pause (coffee break, interruption)
+        // inflated the "actual" duration by the whole paused stretch, so a session
+        // you paused for 20min looked 20min "over" even if you focused exactly on
+        // time. `t.total - t.remaining` only advances while the timer is actually
+        // running (remaining is untouched while paused), so it reflects true active
+        // focus time instead. Falls back to wall-clock only if no timer was ever
+        // started for this block (shouldn't normally happen since actualStart is
+        // only set inside startTimer).
+        const t = _timers[i];
+        _blocks[i].actualDur = t
+            ? Math.max(1, Math.round((t.total - t.remaining)/60))
+            : Math.max(1, Math.round((Date.now()-_blocks[i].actualStart)/60000));
     } else if(!_blocks[i].done){
         _blocks[i].actualDur = null; // undo → clear so it can be re-timed
     }
@@ -24942,6 +25027,7 @@ function savePlan(){
     store.set('dbpStreakLog',streakLog.slice(0,400)); // ~13 months of daily entries
     // Xóa temp storage vì đã vào history rồi
     try{ localStorage.removeItem('dbpCurrentBlocks'); localStorage.removeItem('dbpCurrentStyle'); }catch(_){}
+    try{ localStorage.removeItem('dbpReflectionDraft'); }catch(_){} // saved into history now, drop the draft
     // FIX: nếu đang có timer chạy cho plan này thì phải dừng nó lại,
     // nếu không interval cũ vẫn chạy ngầm dù _blocks đã bị xóa
     if(_activeTimerIdx !== null){ floatStop(); }
@@ -24949,6 +25035,56 @@ function savePlan(){
     _blocks=[]; _timers={};
     stopLiveHighlight();
     toast('Plan saved!');
+}
+
+/* ─── DISCARD PLAN ───
+   FEATURE: previously the only ways to get rid of today's plan were "Save" (which
+   files it into History whether you want that or not) or generating a brand-new
+   plan (which only asks for confirmation, it doesn't let you just walk away). This
+   gives an explicit, honest "throw it away" action. */
+async function discardPlan(){
+    if(!_blocks.length){ toast('No plan to discard'); return; }
+    const hasProgress=_blocks.some(b=>b.done||b.actualStart);
+    if(hasProgress && !(await skConfirm("This discards today's plan without saving it — completed blocks and timer progress will be lost. Continue?", {title:'Discard Plan?', danger:true, okText:'Discard'}))){
+        return;
+    }
+    if(_activeTimerIdx !== null){ floatStop(); }
+    Object.values(_timers).forEach(t=>{ if(t&&t.interval) clearInterval(t.interval); });
+    _blocks=[]; _timers={};
+    stopLiveHighlight();
+    try{
+        localStorage.removeItem('dbpCurrentBlocks');
+        localStorage.removeItem('dbpCurrentStyle');
+        localStorage.removeItem('dbpReflectionDraft');
+    }catch(_){}
+    gel('dbpSchedule').innerHTML='';
+    gel('dbpActionRow').style.display='none';
+    toast('Plan discarded');
+}
+
+/* ─── REFLECTION DRAFT PERSISTENCE ─── */
+function saveReflectionDraft(val){ store.set('dbpReflectionDraft', val); }
+
+/* ─── REPEAT LAST PLAN ───
+   FEATURE: quick-fill today's checkboxes with whichever tasks are still in the
+   current list and were also part of your most recently saved plan — handy for
+   recurring routines instead of re-checking the same items every morning.
+   Matches by task name (history only stores names, not ids) and strips the
+   "(cont.)"/"(copy)" suffixes this module adds so a split/duplicated task still
+   matches its original label. */
+function repeatLastPlan(){
+    const hist=store.get('dbpHistory',[]);
+    if(!hist.length){ toast('No saved plan yet to repeat'); return; }
+    const clean=n=>String(n||'').replace(/\s*\(cont\.\)\s*$/,'').replace(/\s*\(copy\)\s*$/,'').trim();
+    const names=new Set(hist[0].tasks.map(clean));
+    if(!names.size){ toast('Last saved plan had no tasks'); return; }
+    pushUndo();
+    let matched=0;
+    _tasks.forEach(t=>{ if(names.has(clean(t.label))){ t.checked=true; matched++; } });
+    renderTasks();
+    toast(matched
+        ? `Selected ${matched} task${matched>1?'s':''} from your last plan`
+        : "None of last plan's tasks are in today's list", matched?3000:3600, matched?'':'warn');
 }
 
 /* ─── STREAK (consecutive days with a saved plan) ─── */
@@ -25058,7 +25194,7 @@ function open(){
     if(_activeTimerIdx === null && !_blocks.length){
         gel('dbpSchedule').innerHTML='';
         gel('dbpActionRow').style.display='none';
-        _blocks=[]; _timers={}; _undoStack=[];
+        _blocks=[]; _timers={}; _undoStack=[]; _redoStack=[];
     }
     loadSettings();
     loadManualTasks();
@@ -25091,6 +25227,10 @@ window.addEventListener('beforeunload', e=>{
 document.addEventListener('keydown',e=>{
     const isOpen=gel('dbpModal').classList.contains('open');
     if(e.key==='Escape'&&isOpen){ close(); return; }
+    // Redo check must come before the plain-Z undo check below, since Ctrl+Shift+Z
+    // still matches `e.key==='z'` — without this ordering Shift+Ctrl+Z would just
+    // trigger undo again instead of redo.
+    if(isOpen&&(e.ctrlKey||e.metaKey)&&((e.key==='z'&&e.shiftKey)||e.key==='y')){ e.preventDefault(); redo(); return; }
     if(isOpen&&(e.ctrlKey||e.metaKey)&&e.key==='z'){ e.preventDefault(); undo(); return; }
     if(isOpen&&(e.ctrlKey||e.metaKey)&&e.key==='Enter'){ e.preventDefault(); generate(); }
 });
@@ -25102,10 +25242,11 @@ gel('dbpModal').addEventListener('click',e=>{ if(e.target===gel('dbpModal'))clos
 window.DBP={
     open,close, saveSettings, updateBudget, refreshTasks:renderTasks,
     selectAll,clearAll,toggleSort, addManual,removeManual, duplicateTask,
-    cbChange,durChange, generate, addAll,copyText,savePlan,
+    cbChange,durChange, generate, addAll,copyText,savePlan,discardPlan,
     toggleTimer,startTimer,pauseTimer,resetTimer, markDone, saveMood,
     switchTab,loadHist,delHist,
     floatPauseResume,floatStop, toggleNotifPermission,
+    undo, redo, repeatLastPlan, saveReflectionDraft,
     _ds:ds,_do:dov,_dd:dd,_de:de
 };
 
