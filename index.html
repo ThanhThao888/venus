@@ -29881,7 +29881,7 @@ window.DBP={
                             title="Reset manual completions for this track"><svg class="icon-svg" aria-hidden="true"><use href="#icon-rotate-ccw"></use></svg> Reset</button>
                         <button class="rdm-reset-btn"
                             onclick="StrategicRoadmap.copyProgress()"
-                            title="Copy a text summary of your progress across all tracks"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Share</button>
+                            title="Copy the full analyst prompt (template + your live progress summary) — ready to paste to an AI advisor"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Share</button>
                     </div>
                     <!-- Roadmap progress now lives in localStorage and is backed up/restored
                          from the single "Data Management" Export/Import (sidebar), which does
@@ -42137,22 +42137,40 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push(`Total study hours (all tracks): ${totalHoursAll.toFixed(1)}h`);
 
             // ── SUGGESTED PROMPT ──
+            // Full standalone analyst prompt (role framing + data schema +
+            // numbered asks + sequencing/tone rules) so this card's Share
+            // works on its own, independent of the Strategic Roadmap prompt.
             lines.push('');
             lines.push(SEP);
             lines.push('');
             lines.push('💬 SUGGESTED PROMPT:');
             lines.push(DIV);
-            lines.push('"Based on my goals snapshot above, please:');
-            lines.push(' 1) Flag which active goals are most at risk given their deadline and');
-            lines.push('    current pace (hours logged so far vs. hours still needed).');
-            lines.push(' 2) Suggest a realistic weekly hours allocation across tracks for the');
-            lines.push('    next 30 days that prioritizes at-risk goals without abandoning the rest.');
-            lines.push(' 3) Suggest 3–5 specific, measurable sub-goals or milestones for the next');
-            lines.push('    30 days that would move the needle on my biggest gaps.');
-            lines.push(' 4) Note any goal or track I am neglecting entirely (0 or near-0 hours)');
-            lines.push('    relative to its target and deadline.');
-            lines.push(' 5) If any goals look unrealistic given the deadline and my current pace,');
-            lines.push('    say so directly and suggest a revised target or deadline."');
+            lines.push('You are my strategic goal-execution analyst, specializing in');
+            lines.push('finance/investment careers and in sequencing work for people with');
+            lines.push('ADHD (inattentive type — weak task sequencing, weak working memory,');
+            lines.push('easily loses sustained focus on multi-step work).');
+            lines.push('I\'m going to paste my "Goals — Snapshot" below. It lists study hours');
+            lines.push('by track, and per goal: track, deadline, target, current progress,');
+            lines.push('and type. Analyze it and give me:');
+            lines.push('');
+            lines.push('1. Flag which active goals are most at risk given their deadline and');
+            lines.push('   current pace (hours logged so far vs. hours still needed).');
+            lines.push('2. Pick the 1-2 highest-risk or highest-priority goals to focus on for');
+            lines.push('   the next 30 days — not a full allocation across every track, I lose');
+            lines.push('   focus with long lists.');
+            lines.push('3. For each prioritized goal, break the next milestone into small,');
+            lines.push('   sequential sub-steps I can do in single sittings (30-90 min each) —');
+            lines.push('   give me step 1, step 2, step 3, not vague blocks.');
+            lines.push('4. Note any goal or track I am neglecting entirely (0 or near-0 hours)');
+            lines.push('   relative to its target and deadline.');
+            lines.push('5. If any goal\'s deadline is unrealistic given current pace, say so');
+            lines.push('   directly and suggest a revised target or deadline.');
+            lines.push('6. If priorities across goals conflict or are ambiguous, ask me to');
+            lines.push('   choose rather than assuming.');
+            lines.push('');
+            lines.push('Keep the tone direct and efficient — no motivational fluff. Format');
+            lines.push('with clear headers and short bullets so I can scan it fast.');
+            lines.push('Here is my current goals snapshot:');
 
             const fullText = lines.join('\n');
 
@@ -65434,6 +65452,29 @@ window.fcRenderTagChips = fcRenderTagChips;
                 return text;
             }
 
+            // ── SHARE PROGRESS — full analyst prompt (template + live summary) ──
+            // Wraps buildProgressSummaryText()'s live numbers inside the fixed
+            // "strategic career-development analyst" prompt template, so the
+            // Share button copies something that's ready to paste straight into
+            // a chat with an AI advisor — no manual assembly needed.
+            const ANALYST_PROMPT_TEMPLATE = `You are my strategic career-development analyst, specializing in finance/investment career paths and in designing execution systems for people with ADHD (inattentive type — weak task sequencing, weak working memory, easily loses sustained focus on multi-step work).
+I'm going to paste my "Strategic Roadmap — Progress Summary" below. It lists, per track: % complete, skills done/total, estimated weeks remaining at my target hours/week, hours logged this week vs. target, the next unlocked skill, any skipped skills, and idle-time warnings.
+Analyze it and give me:
+
+1. Diagnosis (3-5 bullets max) — Where is momentum strong vs. stalling? Any track quietly going idle? Is my weekly hour target realistic given what I've actually logged? Am I spreading effort too thin across tracks, or too narrow?
+2. This week's plan — Pick 1-2 tracks to prioritize (not all of them — I lose focus if the list is long). For each, give me the next unlocked skill broken into small, sequential sub-steps I can do in single sittings (30-90 min each), not vague blocks. Assume I need the sequencing done FOR me — don't just say "study X," tell me step 1, step 2, step 3.
+3. This month's goal — One concrete, measurable target per active track (e.g. "finish skill X and start Y by [date]"), tied to the pace already shown in the data, not wishful thinking.
+4. Risk flags — Call out anything that could derail me: tracks with no recent activity, unrealistic pacing, or skills stacking up that need review before I forget them.
+5. One question back to me — if something in the data is ambiguous (e.g. conflicting priorities across tracks), ask me to choose rather than assuming.
+
+Keep the tone direct and efficient — no generic motivational fluff. I'd rather have a tight, executable plan than an inspiring one. Format with clear headers and short bullets so I can scan it fast.
+Here is my current progress summary:
+`;
+
+            function buildFullAnalystPrompt(hpw) {
+                return ANALYST_PROMPT_TEMPLATE + buildProgressSummaryText(hpw);
+            }
+
             // Roadmap progress (roadmapCompleted_*, roadmapSkipped_*, roadmapLastActivity_*,
             // pinned tracks, hours log) all lives in localStorage, which means it's already
             // picked up automatically by the single full-data Export/Import in
@@ -66023,14 +66064,16 @@ window.fcRenderTagChips = fcRenderTagChips;
                 checkIdleNudge() {
                     maybeShowIdleNudge();
                 },
-                // 📋 Copy a plain-text progress summary across ALL tracks to the
-                // clipboard — for pasting to an advisor/mentor or saving to a log.
+                // 📋 Copy the full analyst prompt (fixed template + live progress
+                // summary across ALL tracks, with the current hrs/week baked in
+                // via the summary's per-track pacing math) to the clipboard —
+                // ready to paste straight into a chat with an AI advisor.
                 copyProgress() {
                     const hpw = parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
-                    const text = buildProgressSummaryText(hpw);
+                    const text = buildFullAnalystPrompt(hpw);
                     const ok = () => {
                         if (typeof showNotification === 'function')
-                            showNotification('Progress summary copied to clipboard!', 'success');
+                            showNotification('Analyst prompt copied to clipboard!', 'success');
                     };
                     const fail = () => {
                         if (typeof showNotification === 'function')
