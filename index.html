@@ -13714,10 +13714,19 @@
         color: #fff; position: relative; overflow: hidden;
         box-shadow: 0 8px 22px rgba(168,88,112,0.35), inset 0 1px 0 rgba(255,255,255,0.18);
     }
+    /* Dark mode: same card, but noticeably darker + less saturated so it
+       doesn't glow like a light source in a dark room / at night. */
+    .dark-mode .rdm-focus-card {
+        background: linear-gradient(150deg, #5a3644 0%, #4a2c38 45%, #3a232c 100%);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
     .rdm-focus-card::before {
         content: ''; position: absolute; top: -40%; right: -18%; width: 65%; height: 140%;
         background: radial-gradient(circle, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0) 68%);
         pointer-events: none;
+    }
+    .dark-mode .rdm-focus-card::before {
+        background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 68%);
     }
     .rdm-focus-label {
         font-size: 0.68rem; font-weight: 800; letter-spacing: 0.8px;
@@ -13778,6 +13787,18 @@
         height: 100%; border-radius: 4px; transition: width 0.45s cubic-bezier(.3,.9,.4,1);
         background-image: linear-gradient(90deg, rgba(255,255,255,0.35), rgba(255,255,255,0)) !important;
         background-blend-mode: overlay;
+    }
+    /* Phase colors (blue/green/amber/red) are set inline per-phase in JS —
+       fine and cheerful in light mode, where each phase keeps its own hue.
+       In dark mode we drop the rainbow entirely and use one flat Sakura
+       Mist wine-pink for every phase instead (same tone as .badge-chip
+       elsewhere in dark mode) — simpler, on-theme, and no per-phase filter
+       math needed. background-color (not the shorthand) so it layers under
+       the existing shimmer/overlay background-image, which stays as-is. */
+    .dark-mode .rdm-phase-label,
+    .dark-mode .rdm-phase-reason,
+    .dark-mode .rdm-phase-progress-fill {
+        background-color: #6b4258 !important;
     }
     .rdm-phase-progress-label { font-size: 0.67rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; font-weight: 600; }
     .rdm-phase-skip-btn {
@@ -13888,6 +13909,9 @@
         transform: translateX(-120%);
         animation: rdmHrsShimmer 2.4s ease-in-out infinite;
     }
+    .dark-mode .rdm-hrs-progress-fill::after {
+        background: linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.22) 42%, transparent 62%);
+    }
     @keyframes rdmHrsShimmer { 0% { transform: translateX(-120%); } 55%,100% { transform: translateX(220%); } }
     .rdm-hrs-progress-threshold {
         position: absolute; top: -2px; bottom: -2px; width: 2px; z-index: 1;
@@ -13914,32 +13938,49 @@
     .rdm-check-btn.rdm-check-hrs { border-color: #d17b96; color: #d17b96; font-size: 0.68rem; }
     .rdm-check-btn.rdm-check-hrs:hover { background: rgba(219,113,175,0.12); border-color: #d17b96; color: #d17b96; }
 
-    /* ── Focus card "gold frame" — the whole card border fills up like a
+    /* ── Focus card "pearl frame" — the whole card border fills up like a
        clock face as logged hours climb toward the target. Deliberately
        used ONLY on the Focus card (the one thing that's always on screen
        and always matters most) rather than on every skill node — wrapping
        every row in the list with its own glowing ring would turn a
        scannable list into visual noise. Regular skill nodes instead rely
-       on the shimmering linear bar above, which stays calm in a long list. ── */
+       on the shimmering linear bar above, which stays calm in a long list.
+       Uses a pearl-white ring instead of gold so it reads as a premium
+       accent on the pink card rather than a clashing yellow outline. ── */
     .rdm-focus-frame {
         --fp: 0;
         position: relative; padding: 3px; border-radius: 20px;
         background: conic-gradient(from -90deg,
-            #ffe17a calc(var(--fp) * 1%),
-            rgba(255,255,255,0.18) calc(var(--fp) * 1%) 100%);
+            #fbbf24 calc(var(--fp) * 1%),
+            rgba(255,255,255,0.16) calc(var(--fp) * 1%) 100%);
         box-shadow: 0 8px 24px rgba(168,88,112,0.32);
         animation: rdmFrameGlow 2.6s ease-in-out infinite;
     }
     .rdm-focus-frame .rdm-focus-card { box-shadow: none; margin-bottom: 0; }
     .rdm-focus-frame-pct {
         position: absolute; top: -9px; right: 14px; z-index: 2;
-        background: #ffd76a; color: #5b3a00; font-size: 0.62rem; font-weight: 800;
+        background: #fbbf24; color: #78350f; font-size: 0.62rem; font-weight: 800;
         padding: 2px 8px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
         letter-spacing: 0.2px;
     }
     @keyframes rdmFrameGlow {
         0%, 100% { filter: brightness(1) saturate(1); }
-        50% { filter: brightness(1.15) saturate(1.2); }
+        50% { filter: brightness(1.12) saturate(1.15); }
+    }
+    /* Dark mode: a muted, muddier gold instead of the vivid #fbbf24 ring,
+       dark instead of light text on the badge, and NO pulsing brightness
+       animation — a bright shape quietly breathing lighter/darker is
+       exactly the kind of glare you don't want in a dark room at night. */
+    .dark-mode .rdm-focus-frame {
+        background: conic-gradient(from -90deg,
+            #a9791f calc(var(--fp) * 1%),
+            rgba(255,255,255,0.08) calc(var(--fp) * 1%) 100%);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+        animation: none;
+    }
+    .dark-mode .rdm-focus-frame-pct {
+        background: #a9791f; color: #fde9c4;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.35);
     }
 
     /* ── View toggle (List / Graph) + Compare toggle ── */
@@ -14006,6 +14047,32 @@
     .rdm-graph-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.68rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px; }
     .rdm-graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
     .rdm-graph-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+    /* Graph-view node colors (Ready / Done / Skipped / Locked), as CSS vars
+       instead of hardcoded in the JS template string — SVG fill/stroke
+       attributes accept var() same as any CSS value, so dark mode can swap
+       in its own pairing without touching the render code.
+       Root = light mode, unchanged from before. The old dark-mode bug: the
+       JS always used a dark text color meant to sit on a near-white card
+       (e.g. "ready" text #92400e, a dark amber-brown) over a translucent
+       tint of the SAME hue. On the light page background that reads as
+       dark-on-light — fine. On the dark page background the translucent
+       fill barely lifts off the page, so it's dark-amber text on a
+       dark-amber-ish patch: exactly the muddy, low-contrast, "locked"-
+       looking mess in the screenshots. Dark mode below just swaps in a
+       light/bright text color for each state instead, sized to a dark card. */
+    :root {
+        --rdm-gnode-ready-fill: rgba(245,158,11,0.14);   --rdm-gnode-ready-stroke: #f59e0b;   --rdm-gnode-ready-text: #92400e;
+        --rdm-gnode-done-fill: rgba(219,113,175,0.16);   --rdm-gnode-done-stroke: #d17b96;    --rdm-gnode-done-text: #9d2867;
+        --rdm-gnode-skipped-fill: rgba(179,140,157,0.12);--rdm-gnode-skipped-stroke: #a68b95; --rdm-gnode-skipped-text: #a68b95;
+        --rdm-gnode-locked-fill: rgba(179,140,157,0.16); --rdm-gnode-locked-stroke: #a68b95;  --rdm-gnode-locked-text: #8a6d78;
+    }
+    .dark-mode {
+        --rdm-gnode-ready-fill: rgba(245,158,11,0.16);    --rdm-gnode-ready-stroke: #f5a623;   --rdm-gnode-ready-text: #fbbf24;
+        --rdm-gnode-done-fill: rgba(233,150,190,0.16);    --rdm-gnode-done-stroke: #e996ba;    --rdm-gnode-done-text: #f9a8d4;
+        --rdm-gnode-skipped-fill: rgba(154,127,140,0.14); --rdm-gnode-skipped-stroke: #8a7080; --rdm-gnode-skipped-text: #b898a8;
+        --rdm-gnode-locked-fill: rgba(58,37,48,0.6);      --rdm-gnode-locked-stroke: #6b5560;  --rdm-gnode-locked-text: #9a7f8c;
+    }
 
     /* ── Compare view ── */
     .rdm-compare-grid { display: flex; gap: 10px; align-items: stretch; }
@@ -64975,10 +65042,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                         const skipped = !done && skippedSet.has(sk.id);
                         const locked = !done && !skipped && isLocked(sk, satisfiedSet);
                         let fill, stroke, textColor;
-                        if (done)        { fill = 'rgba(219,113,175,0.16)'; stroke = '#d17b96'; textColor = '#9d2867'; }
-                        else if (skipped){ fill = 'rgba(179,140,157,0.12)'; stroke = '#a68b95'; textColor = '#a68b95'; }
-                        else if (locked) { fill = 'rgba(179,140,157,0.16)'; stroke = '#a68b95'; textColor = '#8a6d78'; }
-                        else             { fill = 'rgba(245,158,11,0.14)';  stroke = '#f59e0b'; textColor = '#92400e'; }
+                        if (done)        { fill = 'var(--rdm-gnode-done-fill)';    stroke = 'var(--rdm-gnode-done-stroke)';    textColor = 'var(--rdm-gnode-done-text)'; }
+                        else if (skipped){ fill = 'var(--rdm-gnode-skipped-fill)'; stroke = 'var(--rdm-gnode-skipped-stroke)'; textColor = 'var(--rdm-gnode-skipped-text)'; }
+                        else if (locked) { fill = 'var(--rdm-gnode-locked-fill)';  stroke = 'var(--rdm-gnode-locked-stroke)';  textColor = 'var(--rdm-gnode-locked-text)'; }
+                        else             { fill = 'var(--rdm-gnode-ready-fill)';   stroke = 'var(--rdm-gnode-ready-stroke)';   textColor = 'var(--rdm-gnode-ready-text)'; }
                         const icon = done ? '✓ ' : (skipped ? '⏭ ' : (locked ? '🔒 ' : ''));
                         const dashAttr = skipped ? ' stroke-dasharray="4 3"' : '';
                         const shortName = sk.name.split(' (')[0];
