@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <title> Finance Career Skills Tracker </title>
@@ -8780,7 +8780,6 @@
         FLASHCARD SYSTEM
         ================================================================= */
 
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700;900&display=swap');
 
         /* ===== ROOT VARIABLES ===== */
         :root {
@@ -11144,7 +11143,6 @@
 
 
 /* ====== INSOMNIA ANALYSIS CSS  ====== */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
 
 .insomnia-analysis {
     background: var(--ia-bg);
@@ -12207,10 +12205,45 @@
     }
     /* END SESSION NOTES */
 
-    /* ── Focus Timer ─────────────────────────────────────── */
+    /* ══════════════════════════════════════════════════════════════
+       FOCUS TIMER — redesigned layout/màu theo ảnh tham khảo
+       Không dùng ảnh/hoa trang trí — chỉ giữ lại tông màu (hồng đào ấm
+       trên nền kem-hồng) và bố cục 2 cột: khối đồng hồ lớn bên trái,
+       khối "hôm nay" (streak / mục tiêu) bên phải, giống dashboard
+       tham khảo. Toàn bộ id/class cũ được giữ nguyên để JS không vỡ.
+       Token cục bộ vẫn suy ra từ --primary/--theme-accent-* của theme
+       đang chọn (light/dark) nên card luôn ăn khớp theme hiện có.
+       ══════════════════════════════════════════════════════════════ */
+
     .focus-timer-card {
-        padding: 20px 20px 22px;
+        --ft-accent: var(--primary);
+        --ft-accent-deep: var(--theme-accent-deep, var(--primary));
+        --ft-accent-soft: rgba(var(--primary-rgb), 0.10);
+        --ft-accent-soft-hover: rgba(var(--primary-rgb), 0.18);
+        --ft-accent-border: rgba(var(--primary-rgb), 0.24);
+        --ft-break: color-mix(in srgb, var(--primary) 60%, white 40%);
+        --ft-break-deep: color-mix(in srgb, var(--primary) 80%, white 20%);
+        --ft-warm: #b45309;
+        --ft-warm-soft: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(249,115,22,0.10));
+        --ft-warm-border: rgba(251,146,60,0.35);
+        --ft-danger: #ef4444;
+        --ft-on-accent: #fff;
+
+        position: relative;
+        padding: 22px 22px 20px;
+        background: linear-gradient(150deg, var(--bg-white) 0%, var(--ft-accent-soft) 100%);
+        border: 1px solid var(--ft-accent-border);
+        border-radius: 22px;
+        box-shadow: var(--shadow-md);
+        transition: box-shadow 0.3s;
     }
+    .dark-mode .focus-timer-card {
+        --ft-warm: #fcd34d;
+        --ft-on-accent: #2a1522;
+    }
+    .focus-timer-card .sidebar-title { color: var(--ft-accent-deep); }
+
+    /* ── 1. Header row ───────────────────────────────────── */
     .ft-header {
         display: flex;
         align-items: center;
@@ -12226,46 +12259,139 @@
     }
     .ft-ext-link:hover { opacity: 1; }
 
-    /* Streak display */
-    .ft-streak {
+    /* ── 2-col layout: đồng hồ lớn bên trái, panel "hôm nay"
+           bên phải — giống bố cục 2 cột của ảnh tham khảo ───── */
+    .ft-columns {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 20px;
+        align-items: stretch;
+    }
+    @media (max-width: 480px) {
+        .ft-columns { grid-template-columns: 1fr; }
+    }
+    .ft-col-timer {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        order: 1; /* đồng hồ lớn bên trái, giống ảnh tham khảo */
+    }
+    .ft-col-side {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        background: var(--bg-white);
+        border: 1px solid var(--ft-accent-border);
+        border-radius: 16px;
+        order: 2; /* panel streak/goal bên phải, thu gọn hơn */
+        justify-content: flex-start;
+    }
+    /* Đẩy nhãn mục tiêu hiện tại + bộ đếm chu kỳ xuống sát đáy panel,
+       để cột phải không bị trống rỗng một khoảng lớn phía dưới khi
+       cột trái (đồng hồ) cao hơn — vẫn giữ nguyên id để JS không đổi. */
+    .ft-col-side #ftCurrentGoalLabel,
+    .ft-col-side #ftCycleCounter {
+        margin-top: auto;
+    }
+    .ft-col-side #ftCycleCounter:not(:empty) {
+        padding-top: 10px;
+        border-top: 1px dashed var(--ft-accent-border);
+    }
+    .ft-col-side #ftCurrentGoalLabel + #ftCycleCounter {
+        margin-top: 0;
+    }
+
+    /* ── 2. Stats row: streak / today (+ trend) / total focus ─── */
+    .ft-stats-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .ft-stat-chip {
+        flex: 1 1 28%;
+        min-width: 68px;
+        text-align: center;
+        background: var(--ft-accent-soft);
+        border: 1px solid transparent;
+        border-radius: 12px;
+        padding: 8px 4px 7px;
+        transition: all 0.2s;
+    }
+    .ft-stat-chip-icon {
+        width: 20px;
+        height: 20px;
+        margin: 0 auto 3px;
+        border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 6px;
-        font-size: 0.8rem;
+        color: var(--ft-warm);
+        background: var(--ft-warm-soft);
+    }
+    .ft-stat-chip-icon.total { color: #db2777; background: rgba(219,113,175,0.16); }
+    .dark-mode .ft-stat-chip-icon.total { color: #f9a8d4; background: rgba(244,114,182,0.16); }
+    .ft-stat-chip-value {
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: -0.2px;
+        color: var(--text-dark);
+        line-height: 1.1;
+    }
+    .ft-stat-chip-value-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+    }
+    .ft-stat-chip-label {
+        font-size: 0.58rem;
         font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
         color: var(--text-muted);
-        background: var(--bg-light);
-        border: 1px solid transparent;
-        border-radius: 20px;
-        padding: 7px 12px;
-        margin-bottom: 14px;
-        min-height: 15px;
-        transition: all 0.2s;
+        margin-top: 2px;
     }
-    .ft-streak .ft-streak-fire { font-size: 1.05rem; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.08)); }
-    .ft-streak.has-streak {
-        color: #b45309;
-        background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(249,115,22,0.10));
-        border-color: rgba(251,146,60,0.35);
+    .ft-stat-chip-sub {
+        font-size: 0.6rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        opacity: 0.8;
+        min-height: 12px;
+        margin-top: 1px;
     }
-    .dark-mode .ft-streak.has-streak {
-        color: #fcd34d;
-        background: linear-gradient(135deg, rgba(251,191,36,0.16), rgba(249,115,22,0.10));
-        border-color: rgba(251,191,36,0.3);
+    #ftStatStreakChip.has-streak {
+        background: var(--ft-warm-soft);
+        border-color: var(--ft-warm-border);
     }
-    .ft-streak .ft-streak-best { opacity: 0.75; font-weight: 600; margin-left: 2px; }
+    #ftStatStreakChip.has-streak .ft-stat-chip-value { color: var(--ft-warm); }
 
-    /* Daily / weekly focus goal */
+    /* Trend badge: green when improving vs yesterday, red when down,
+       grey/neutral when flat or no prior-day data to compare against. */
+    .ft-trend-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        font-size: 0.6rem;
+        font-weight: 700;
+        margin-top: 2px;
+        min-height: 13px;
+    }
+    .ft-trend-badge svg { width: 0.8em; height: 0.8em; flex-shrink: 0; }
+    .ft-trend-badge.up { color: #16a34a; }
+    .dark-mode .ft-trend-badge.up { color: #4ade80; }
+    .ft-trend-badge.down { color: #dc2626; }
+    .dark-mode .ft-trend-badge.down { color: #f87171; }
+    .ft-trend-badge.flat { color: var(--text-muted); opacity: 0.75; }
+
+    /* ── 3. Daily / weekly focus goal ────────────────────── */
     .ft-goal-progress {
-        background: var(--bg-white);
-        border: 1px solid rgba(219,113,175,0.18);
+        background: var(--ft-accent-soft);
+        border: 1px solid var(--ft-accent-border);
         border-radius: 12px;
         padding: 12px 14px;
-        margin-bottom: 14px;
-        box-shadow: 0 1px 4px rgba(219,39,119,0.05);
     }
-    .dark-mode .ft-goal-progress { background: rgba(255,255,255,0.03); border-color: rgba(244,114,182,0.16); }
     .ft-goal-progress-head {
         display: flex;
         align-items: center;
@@ -12288,16 +12414,16 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(219,113,175,0.10);
+        background: var(--ft-accent-soft-hover);
         border: none;
         border-radius: 50%;
         cursor: pointer;
         font-size: 0.78rem;
-        opacity: 0.75;
+        color: var(--ft-accent-deep);
+        opacity: 0.85;
         transition: all 0.15s;
     }
-    .dark-mode .ft-goal-edit-btn { background: rgba(244,114,182,0.10); }
-    .ft-goal-edit-btn:hover { opacity: 1; background: rgba(219,113,175,0.2); transform: scale(1.06); }
+    .ft-goal-edit-btn:hover { opacity: 1; transform: scale(1.06); }
     .ft-goal-progress-bar {
         width: 100%;
         height: 6px;
@@ -12310,23 +12436,22 @@
         height: 100%;
         width: 0%;
         border-radius: 4px;
-        background: var(--primary);
+        background: var(--ft-accent);
         transition: width 0.4s ease, background 0.3s ease;
     }
-    .ft-goal-progress-fill.goal-met { background: #db2777; }
+    .ft-goal-progress-fill.goal-met { background: var(--ft-accent-deep); }
     .ft-goal-week-label {
         font-size: 0.74rem;
         font-weight: 600;
         color: var(--text-muted);
         margin-top: 8px;
         padding-top: 8px;
-        border-top: 1px dashed rgba(219,113,175,0.22);
+        border-top: 1px dashed var(--ft-accent-border);
         min-height: 12px;
         display: flex;
         align-items: center;
         gap: 6px;
     }
-    .dark-mode .ft-goal-week-label { border-top-color: rgba(244,114,182,0.18); }
     .ft-goal-week-label:not(:empty)::before { content: '📅'; font-size: 0.8rem; }
     .ft-goal-week-label:empty { margin-top: 0; padding-top: 0; border-top: none; }
     .ft-goal-editor-row {
@@ -12351,7 +12476,7 @@
         font-size: 0.82rem;
         text-align: center;
     }
-    .ft-goal-editor-row input:focus { outline: none; border-color: var(--primary); }
+    .ft-goal-editor-row input:focus { outline: none; border-color: var(--ft-accent); }
     .ft-goal-editor-actions { display: flex; gap: 8px; margin-top: 2px; }
     .ft-goal-save-btn, .ft-goal-cancel-btn {
         flex: 1;
@@ -12362,17 +12487,32 @@
         cursor: pointer;
         transition: all 0.15s;
     }
-    .ft-goal-save-btn { border: none; background: var(--primary); color: #fff; }
-    .ft-goal-save-btn:hover { background: var(--theme-accent-deep, var(--primary)); }
+    .ft-goal-save-btn { border: none; background: linear-gradient(135deg, var(--ft-accent), var(--ft-accent-deep)); color: var(--ft-on-accent); }
+    .ft-goal-save-btn:hover { filter: brightness(1.08); }
     .ft-goal-cancel-btn { border: 1.5px solid var(--border-color); background: transparent; color: var(--text-muted); }
     .ft-goal-cancel-btn:hover { border-color: var(--text-muted); color: var(--text-dark); }
 
-    /* Ring */
+    /* ── 4. Pomodoro mode badge (Focus / Break) ──────────── */
+    .ft-mode-badge {
+        display: block;
+        text-align: center;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ft-accent-deep);
+        margin-bottom: 12px;
+        transition: color 0.3s;
+    }
+    .ft-mode-badge.break { color: var(--ft-break-deep); }
+
+    /* ── 5. Timer ring — điểm nhìn trung tâm, to hơn bản cũ
+           để làm hero của khối bên trái, giống ảnh tham khảo ── */
     .ft-ring-wrap {
         position: relative;
-        width: 160px;
-        height: 160px;
-        margin: 0 auto 18px;
+        width: 200px;
+        height: 200px;
+        margin: 0 auto 20px;
     }
     .ft-ring {
         width: 100%;
@@ -12381,13 +12521,13 @@
     }
     .ft-ring-bg {
         fill: none;
-        stroke: var(--border-color);
-        stroke-width: 8;
+        stroke: var(--ft-accent-border);
+        stroke-width: 7;
     }
     .ft-ring-progress {
         fill: none;
-        stroke: var(--primary);
-        stroke-width: 8;
+        stroke: var(--ft-accent);
+        stroke-width: 7;
         stroke-linecap: round;
         transition: stroke-dashoffset 1s linear, stroke 0.5s ease;
     }
@@ -12398,10 +12538,10 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 3px;
+        gap: 4px;
     }
     .ft-time {
-        font-size: 2.2rem;
+        font-size: 2.5rem;
         font-weight: 700;
         color: var(--text-dark);
         letter-spacing: -1.5px;
@@ -12411,7 +12551,7 @@
         transition: color 0.3s;
         user-select: none;
     }
-    .ft-time:hover { color: var(--primary); }
+    .ft-time:hover { color: var(--ft-accent); }
     .ft-status {
         font-size: 0.68rem;
         font-weight: 700;
@@ -12420,22 +12560,46 @@
         color: var(--text-muted);
         transition: color 0.3s;
     }
-    .ft-status.running { color: var(--primary); }
-    .ft-status.done    { color: #db2777; }
-    .ft-status.urgent  { color: #ef4444; }
+    .ft-status.running { color: var(--ft-accent); }
+    .ft-status.running.on-break { color: var(--ft-break-deep); }
+    .ft-status.done    { color: var(--ft-accent-deep); }
+    .ft-status.urgent  { color: var(--ft-danger); }
 
-    /* Duration presets — unified segmented control (was 4 separate floating pills) */
+    /* Ring state animations */
+    @keyframes ftPulse {
+        0%,100% { filter: drop-shadow(0 0 0px rgba(var(--primary-rgb),0)); }
+        50%      { filter: drop-shadow(0 0 10px rgba(var(--primary-rgb),0.5)); }
+    }
+    @keyframes ftDoneFlash {
+        0%,100% { filter: drop-shadow(0 0 0px rgba(var(--primary-rgb),0)); }
+        50%      { filter: drop-shadow(0 0 14px rgba(var(--primary-rgb),0.6)); }
+    }
+    @keyframes ftUrgent {
+        0%,100% { filter: drop-shadow(0 0 0px rgba(239,68,68,0)); }
+        50%      { filter: drop-shadow(0 0 10px rgba(239,68,68,0.65)); }
+    }
+    .ft-ring-wrap.running .ft-ring { animation: ftPulse 2.5s ease-in-out infinite; }
+    .ft-ring-wrap.done    .ft-ring-progress { stroke: var(--ft-accent-deep); }
+    .ft-ring-wrap.done    .ft-ring { animation: ftDoneFlash 0.9s ease 4; }
+    .ft-ring-wrap.urgent  .ft-ring-progress { stroke: var(--ft-danger); }
+    .ft-ring-wrap.urgent  .ft-ring { animation: ftUrgent 0.75s ease-in-out infinite; }
+    .ft-ring-wrap.break-mode .ft-ring-progress { stroke: var(--ft-break-deep); }
+    .ft-ring-wrap.break-mode.running .ft-ring { filter: drop-shadow(0 0 8px rgba(var(--primary-rgb),0.35)); }
+
+    /* ── 6. Duration presets — hàng pill kiểu "dropdown chip"
+           giống 2 ô chọn thời lượng trong ảnh tham khảo ─────── */
     .ft-presets {
         display: flex;
         gap: 2px;
         justify-content: center;
-        background: rgba(219,113,175,0.08);
-        border: 1px solid rgba(219,113,175,0.22);
+        background: var(--ft-accent-soft);
+        border: 1px solid var(--ft-accent-border);
         border-radius: 14px;
         padding: 3px;
         margin-bottom: 10px;
+        width: 100%;
+        max-width: 340px;
     }
-    .dark-mode .ft-presets { background: rgba(244,114,182,0.07); border-color: rgba(244,114,182,0.2); }
     .ft-preset {
         flex: 1;
         padding: 9px 0;
@@ -12443,37 +12607,35 @@
         border-radius: 11px;
         border: none;
         background: transparent;
-        color: #9d2867;
+        color: var(--ft-accent-deep);
         font-size: 0.78rem;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.15s;
     }
-    .dark-mode .ft-preset { color: #f9a8d4; }
-    .ft-preset:hover { background: rgba(219,113,175,0.16); }
-    .dark-mode .ft-preset:hover { background: rgba(244,114,182,0.14); }
+    .ft-preset:hover { background: var(--ft-accent-soft-hover); }
     .ft-preset.active {
-        background: linear-gradient(135deg, #db2777, #9d2867);
-        color: #fff;
-        box-shadow: 0 2px 6px rgba(219,39,119,0.3);
+        background: linear-gradient(135deg, var(--ft-accent), var(--ft-accent-deep));
+        color: var(--ft-on-accent);
+        box-shadow: 0 2px 6px rgba(var(--primary-rgb),0.3);
     }
-    .dark-mode .ft-preset.active {
-        background: linear-gradient(135deg, #f472b6, #f9a8d4);
-        color: #2a1522;
-    }
+    .ft-break-preset:disabled, .ft-preset:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* Custom duration — input + compact icon-confirm, styled as one unit */
+    /* ── 7. Custom duration — input + confirm as one unit ── */
     .ft-custom-wrap {
         display: flex;
         align-items: center;
         justify-content: center;
         gap: 7px;
-        margin-bottom: 16px;
+        margin-bottom: 14px;
+        width: 100%;
+        max-width: 340px;
     }
     .ft-custom-input {
-        width: 108px;
+        flex: 1;
+        min-width: 0;
         padding: 7px 12px;
-        border: 1.5px solid rgba(219,113,175,0.28);
+        border: 1.5px solid var(--ft-accent-border);
         border-radius: 20px;
         background: var(--bg-light);
         color: var(--text-dark);
@@ -12483,12 +12645,10 @@
         transition: border-color 0.2s;
         -moz-appearance: textfield;
     }
-    .dark-mode .ft-custom-input { border-color: rgba(244,114,182,0.25); }
     .ft-custom-input::placeholder { color: var(--text-muted); font-weight: 500; }
     .ft-custom-input::-webkit-outer-spin-button,
     .ft-custom-input::-webkit-inner-spin-button { -webkit-appearance: none; }
-    .ft-custom-input:focus { outline: none; border-color: #db2777; }
-    .dark-mode .ft-custom-input:focus { border-color: #f9a8d4; }
+    .ft-custom-input:focus { outline: none; border-color: var(--ft-accent); }
     .ft-custom-label {
         font-size: 0.78rem;
         color: var(--text-muted);
@@ -12503,28 +12663,69 @@
         justify-content: center;
         border: none;
         border-radius: 50%;
-        background: rgba(219,113,175,0.14);
-        color: #9d2867;
+        background: var(--ft-accent-soft-hover);
+        color: var(--ft-accent-deep);
         font-size: 0.85rem;
         cursor: pointer;
         transition: all 0.15s;
     }
-    .dark-mode .ft-custom-set { background: rgba(244,114,182,0.14); color: #f9a8d4; }
     .ft-custom-set:hover {
-        background: linear-gradient(135deg, #db2777, #9d2867);
-        color: #fff;
-    }
-    .dark-mode .ft-custom-set:hover {
-        background: linear-gradient(135deg, #f472b6, #f9a8d4);
-        color: #2a1522;
+        background: linear-gradient(135deg, var(--ft-accent), var(--ft-accent-deep));
+        color: var(--ft-on-accent);
     }
 
-    /* Control buttons row */
+    /* ── 8. Break length (Pomodoro) ──────────────────────── */
+    .ft-break-settings {
+        width: 100%;
+        max-width: 340px;
+        margin: 2px 0 16px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--ft-accent-border);
+    }
+    .ft-break-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+    .ft-break-presets {
+        display: flex;
+        flex: 1;
+        gap: 2px;
+        background: var(--ft-accent-soft);
+        border: 1px solid var(--ft-accent-border);
+        border-radius: 14px;
+        padding: 3px;
+    }
+    .ft-break-preset {
+        flex: 1;
+        padding: 6px 13px;
+        border-radius: 11px;
+        border: none;
+        background: transparent;
+        color: var(--ft-break-deep);
+        font-size: 0.72rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .ft-break-preset:hover { background: var(--ft-accent-soft-hover); }
+    .ft-break-preset.active {
+        background: linear-gradient(135deg, var(--ft-break), var(--ft-break-deep));
+        color: var(--ft-on-accent);
+        box-shadow: 0 2px 6px rgba(var(--primary-rgb),0.25);
+    }
+
+    /* ── 9. Main controls — Reset · Start/Pause · Switch ───
+           Nút Start to, bo tròn hết cỡ, gradient hồng-đào,
+           chiếm phần lớn chiều rộng như trong ảnh tham khảo ── */
     .ft-controls {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 14px;
+        gap: 12px;
+        width: 100%;
+        max-width: 340px;
     }
     .ft-btn {
         border: none;
@@ -12538,22 +12739,23 @@
         -webkit-tap-highlight-color: transparent;
     }
     .ft-btn-primary {
-        background: var(--primary);
-        color: #fff;
+        flex: 1;
+        background: linear-gradient(135deg, var(--ft-accent), var(--ft-accent-deep));
+        color: var(--ft-on-accent);
         border-radius: 50px;
-        padding: 13px 30px;
-        font-size: 0.95rem;
-        box-shadow: 0 4px 16px rgba(var(--primary-rgb),0.35);
-        min-width: 120px;
+        padding: 14px 24px;
+        font-size: 0.98rem;
+        box-shadow: 0 6px 18px rgba(var(--primary-rgb),0.35);
+        min-width: 0;
     }
     .ft-btn-primary:hover {
-        background: var(--theme-accent-deep, var(--primary));
+        filter: brightness(1.08);
         transform: translateY(-2px);
-        box-shadow: 0 6px 22px rgba(var(--primary-rgb),0.48);
+        box-shadow: 0 8px 24px rgba(var(--primary-rgb),0.48);
     }
     .ft-btn-primary:active { transform: scale(0.97); }
     .ft-btn-primary.pausing {
-        background: linear-gradient(135deg, #ef4444, #dc2626);
+        background: linear-gradient(135deg, var(--ft-danger), #dc2626);
         box-shadow: 0 4px 16px rgba(239,68,68,0.35);
     }
     .ft-btn-primary.pausing:hover {
@@ -12561,8 +12763,9 @@
         transform: translateY(-2px);
     }
     .ft-btn-reset {
-        width: 44px;
-        height: 44px;
+        width: 46px;
+        height: 46px;
+        flex-shrink: 0;
         border-radius: 50%;
         border: 1.5px solid var(--border-color);
         background: var(--bg-white);
@@ -12571,125 +12774,135 @@
         transition: all 0.18s;
     }
     .ft-btn-reset:hover {
-        border-color: var(--primary);
-        color: var(--primary);
-        background: rgba(59,130,246,0.06);
+        border-color: var(--ft-accent);
+        color: var(--ft-accent-deep);
+        background: var(--ft-accent-soft);
         transform: scale(1.08) rotate(-20deg);
     }
+    #ftSwitchBtn {
+        width: 46px;
+        height: 46px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        border: 1.5px solid var(--border-color);
+        background: var(--bg-white);
+        color: var(--text-muted);
+    }
+    #ftSwitchBtn:hover {
+        border-color: var(--ft-accent);
+        color: var(--ft-accent-deep);
+        background: var(--ft-accent-soft);
+    }
 
-    /* One-click "never mind the break" — only shown while ftMode === 'break' */
+    /* ── 10. "Skip break" shortcut ────────────────────────── */
     .ft-skip-break-btn {
-        display: block;
-        width: 100%;
-        margin-top: 10px;
-        padding: 9px 14px;
-        border: 1.5px dashed var(--primary);
-        border-radius: 10px;
-        background: rgba(219,39,119,0.06);
-        color: var(--primary);
-        font-size: 0.8rem;
-        font-weight: 700;
-        cursor: pointer;
         display: flex;
+        width: 100%;
+        max-width: 340px;
         align-items: center;
         justify-content: center;
         gap: 6px;
+        margin-top: 12px;
+        padding: 9px 14px;
+        border: 1.5px dashed var(--ft-break-deep);
+        border-radius: 10px;
+        background: var(--ft-accent-soft);
+        color: var(--ft-break-deep);
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
         transition: all 0.18s ease;
     }
     .ft-skip-break-btn:hover {
-        background: rgba(219,39,119,0.12);
+        background: var(--ft-accent-soft-hover);
         border-style: solid;
         transform: translateY(-1px);
     }
-    .dark-mode .ft-skip-break-btn {
-        background: rgba(244,114,182,0.1);
-    }
 
-    /* Ring animations */
-    @keyframes ftPulse {
-        0%,100% { filter: drop-shadow(0 0 0px rgba(219,39,119,0)); }
-        50%      { filter: drop-shadow(0 0 10px rgba(219,39,119,0.5)); }
-    }
-    @keyframes ftDoneFlash {
-        0%,100% { filter: drop-shadow(0 0 0px rgba(219,39,119,0)); }
-        50%      { filter: drop-shadow(0 0 14px rgba(219,39,119,0.6)); }
-    }
-    @keyframes ftUrgent {
-        0%,100% { filter: drop-shadow(0 0 0px rgba(239,68,68,0)); }
-        50%      { filter: drop-shadow(0 0 10px rgba(239,68,68,0.65)); }
-    }
-    .ft-ring-wrap.running .ft-ring { animation: ftPulse 2.5s ease-in-out infinite; }
-    .ft-ring-wrap.done    .ft-ring-progress { stroke: #db2777; }
-    .ft-ring-wrap.done    .ft-ring { animation: ftDoneFlash 0.9s ease 4; }
-    .ft-ring-wrap.urgent  .ft-ring-progress { stroke: #ef4444; }
-    .ft-ring-wrap.urgent  .ft-ring { animation: ftUrgent 0.75s ease-in-out infinite; }
-
-    .dark-mode .ft-btn-reset {
-        background: var(--bg-white);
-        border-color: var(--border-color);
-    }
-    .dark-mode .ft-btn-primary { box-shadow: 0 4px 14px rgba(var(--primary-rgb), 0.35); }
-
-    /* ── Pomodoro cycle: mode badge, break presets ── */
-    .ft-mode-badge {
-        display: block;
+    /* ── 11. Footer meta (current goal label, cycle counter) */
+    .ft-cycle-counter {
         text-align: center;
         font-size: 0.72rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--primary);
-        margin-bottom: 8px;
-        transition: color 0.3s;
+        color: var(--text-muted);
+        margin-top: 10px;
     }
-    .ft-mode-badge.break { color: #f472b6; }
 
-    .ft-ring-wrap.break-mode .ft-ring-progress { stroke: #f472b6; }
-    .ft-ring-wrap.break-mode.running .ft-ring { filter: drop-shadow(0 0 8px rgba(244,114,182,0.35)); }
-    .ft-status.running.on-break { color: #f472b6; }
-
-    .ft-break-settings {
-        margin: 2px 0 14px;
-        padding-top: 10px;
-        border-top: 1px dashed rgba(219,113,175,0.25);
+    /* ── 11b. Inline "Focused minutes by goal" mini-chart — fills the
+       empty space at the bottom of the side panel when the timer ring
+       column is taller. Pink/Sakura-Mist themed, light + dark aware. ── */
+    .ft-col-side #ftGoalMinutesBox { margin-top: 10px; }
+    .ft-inline-chart {
+        background: linear-gradient(150deg, #fdf5f9 0%, #fdf1f7 55%, #faf1ff 100%);
+        border: 1px solid rgba(219, 113, 175, 0.18);
+        border-radius: 14px;
+        padding: 10px 10px 6px;
     }
-    .dark-mode .ft-break-settings { border-top-color: rgba(244,114,182,0.2); }
-    .ft-break-row {
+    .dark-mode .ft-inline-chart {
+        background: linear-gradient(150deg, #241823 0%, #2d1c2b 55%, #221722 100%);
+        border-color: rgba(244, 114, 182, 0.18);
+    }
+    .ft-inline-chart-head {
         display: flex;
         align-items: center;
-        justify-content: center;
-        gap: 8px;
+        justify-content: space-between;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 2px;
     }
-    .ft-break-presets {
+    .ft-inline-chart-title {
         display: flex;
-        gap: 2px;
-        background: rgba(219,113,175,0.08);
-        border: 1px solid rgba(219,113,175,0.22);
-        border-radius: 14px;
-        padding: 3px;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        color: var(--text-dark);
     }
-    .dark-mode .ft-break-presets { background: rgba(244,114,182,0.07); border-color: rgba(244,114,182,0.2); }
-    .ft-break-preset {
-        padding: 6px 13px;
-        border-radius: 11px;
+    .dark-mode .ft-inline-chart-title { color: #f5c2dd; }
+    .ft-range-tabs {
+        display: flex;
+        gap: 3px;
+        background: rgba(219, 113, 175, 0.10);
+        border-radius: 20px;
+        padding: 2px;
+    }
+    .dark-mode .ft-range-tabs { background: rgba(244, 114, 182, 0.12); }
+    .ft-range-tab {
         border: none;
         background: transparent;
-        color: #9d2867;
-        font-size: 0.72rem;
-        font-weight: 600;
+        color: var(--text-muted);
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        padding: 3px 8px;
+        border-radius: 16px;
         cursor: pointer;
-        transition: all 0.15s;
+        transition: all 0.2s;
     }
-    .dark-mode .ft-break-preset { color: #f9a8d4; }
-    .ft-break-preset:hover { background: rgba(219,113,175,0.16); }
-    .dark-mode .ft-break-preset:hover { background: rgba(244,114,182,0.14); }
-    .ft-break-preset.active {
-        background: linear-gradient(135deg, #f472b6, #db2777);
+    .ft-range-tab:hover { color: #db2777; }
+    .dark-mode .ft-range-tab:hover { color: #f9a8d4; }
+    .ft-range-tab.active {
+        background: #db2777;
         color: #fff;
-        box-shadow: 0 2px 6px rgba(219,39,119,0.25);
     }
-    .ft-break-preset:disabled, .ft-preset:disabled { opacity: 0.5; cursor: not-allowed; }
+    .dark-mode .ft-range-tab.active { background: #f472b6; color: #2a1520; }
+    .ft-inline-chart-note {
+        font-size: 0.66rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+        min-height: 13px;
+    }
+    .ft-inline-chart-note strong { color: #db2777; }
+    .dark-mode .ft-inline-chart-note strong { color: #f9a8d4; }
+    .ft-inline-chart-empty {
+        text-align: center;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        padding: 20px 6px;
+        line-height: 1.4;
+    }
 
+    /* ── 12. Autostart toggle ─────────────────────────────── */
     .ft-autostart-toggle {
         display: flex;
         align-items: center;
@@ -12700,91 +12913,7 @@
         cursor: pointer;
         user-select: none;
     }
-    .ft-autostart-toggle input { accent-color: var(--primary); width: 14px; height: 14px; cursor: pointer; }
-
-    .ft-cycle-counter {
-        text-align: center;
-        font-size: 0.72rem;
-        color: var(--text-muted);
-        margin-top: 8px;
-    }
-
-    /* ── Focus Timer — SAKURA MIST outer wrapper (đồng bộ với Launchpad / Session Notes) ── */
-    .focus-timer-card {
-        background: linear-gradient(135deg, #fdf5f9 0%, #fdf1f7 50%, #f9a8d422 100%) !important;
-        border: 1px solid rgba(219,113,175,0.28) !important;
-        border-radius: 18px !important;
-        box-shadow: 0 4px 24px rgba(219,39,119,0.10), var(--shadow-md) !important;
-        backdrop-filter: none !important;
-        position: relative;
-        overflow: hidden;
-        transition: all 0.3s;
-    }
-    .focus-timer-card::before {
-        content: '⏱️';
-        position: absolute;
-        right: -10px; top: -10px;
-        font-size: 5rem;
-        opacity: 0.06;
-        pointer-events: none;
-        transform: rotate(20deg);
-    }
-    .dark-mode .focus-timer-card {
-        background: linear-gradient(135deg, #241823 0%, #2d1c2b 60%, #221722 100%) !important;
-        border-color: rgba(244,114,182,0.28) !important;
-        box-shadow: 0 4px 24px rgba(244,114,182,0.10), var(--shadow-md) !important;
-    }
-    .focus-timer-card .sidebar-title { color: #9d2867; }
-    .dark-mode .focus-timer-card .sidebar-title { color: #f9a8d4; }
-
-    /* Ring + streak badge — đổi từ --primary sang tông hồng đậm của theme này */
-    .focus-timer-card .ft-ring-bg { stroke: rgba(219,113,175,0.28); }
-    .focus-timer-card .ft-ring-progress { stroke: #db2777; }
-    .dark-mode .focus-timer-card .ft-ring-progress { stroke: #f9a8d4; }
-    .focus-timer-card .ft-streak:not(.has-streak) { background: rgba(219,113,175,0.10) !important; }
-    .dark-mode .focus-timer-card .ft-streak:not(.has-streak) { background: rgba(244,114,182,0.08) !important; }
-
-    /* Nút Start/Reset — card con nổi trên nền pastel */
-    .focus-timer-card .ft-btn-reset {
-        background: #ffffff !important;
-        border-color: rgba(219,113,175,0.28) !important;
-    }
-    .dark-mode .focus-timer-card .ft-btn-reset {
-        background: #2a1f2c !important;
-        border-color: rgba(244,114,182,0.25) !important;
-    }
-    .focus-timer-card .ft-btn-primary {
-        background: linear-gradient(135deg, #db2777, #9d2867) !important;
-        box-shadow: 0 2px 8px rgba(219,39,119,0.3) !important;
-    }
-    .focus-timer-card .ft-btn-primary:hover {
-        background: linear-gradient(135deg, #9d2867, #db2777) !important;
-        box-shadow: 0 4px 14px rgba(219,39,119,0.4) !important;
-    }
-    .dark-mode .focus-timer-card .ft-btn-primary {
-        background: linear-gradient(135deg, #f472b6, #f9a8d4) !important;
-        color: #2a1522 !important;
-        box-shadow: 0 2px 8px rgba(244,114,182,0.3) !important;
-    }
-    .dark-mode .focus-timer-card .ft-btn-primary:hover {
-        background: linear-gradient(135deg, #f9a8d4, #f472b6) !important;
-        box-shadow: 0 4px 14px rgba(244,114,182,0.4) !important;
-    }
-    /* Pomodoro cycle — break mode stays in the pink family (soft rose)
-       so it reads distinctly from the deep-rose "focus" ring without introducing another color. */
-    .focus-timer-card .ft-mode-badge { color: #9d2867; }
-    .dark-mode .focus-timer-card .ft-mode-badge { color: #f9a8d4; }
-    .focus-timer-card .ft-goal-progress { background: rgba(219,113,175,0.07) !important; }
-    .dark-mode .focus-timer-card .ft-goal-progress { background: rgba(244,114,182,0.06) !important; }
-    .focus-timer-card .ft-goal-progress-fill { background: #db2777; }
-    .dark-mode .focus-timer-card .ft-goal-progress-fill { background: #f9a8d4; }
-    .focus-timer-card .ft-goal-save-btn {
-        background: linear-gradient(135deg, #db2777, #9d2867) !important;
-    }
-    .dark-mode .focus-timer-card .ft-goal-save-btn {
-        background: linear-gradient(135deg, #f472b6, #f9a8d4) !important;
-        color: #2a1522 !important;
-    }
+    .ft-autostart-toggle input { accent-color: var(--ft-accent); width: 14px; height: 14px; cursor: pointer; }
     /* ── End Focus Timer ─────────────────────────────────── */
 
     /* ── Focus Fragmentation (7 days) — SAKURA MIST outer wrapper
@@ -20040,6 +20169,21 @@ body.dark-mode .dlt-timeline-wrap {
   border-color: transparent !important;
   box-shadow: 0 4px 14px rgba(219, 39, 119, 0.35) !important;
 }
+/* Dark mode: Select / Digest / Copy / Add pills — swap the white plate for
+   the Sakura Mist dark surface (deep plum) so nothing bright sits on the
+   dark card; hover keeps the same pink→lavender gradient logic as light
+   mode but tuned to the dark palette's own accent + deep tones. */
+body.dark-mode #dlTracker .dlt-btn {
+  background: rgba(240, 168, 196, 0.08) !important;
+  color: var(--theme-accent, #f0a8c4) !important;
+  border: 1.5px solid rgba(240, 168, 196, 0.35) !important;
+}
+body.dark-mode #dlTracker .dlt-btn:hover {
+  background: linear-gradient(135deg, #f0a8c4, #d4b3e8) !important;
+  color: #1e141c !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 14px rgba(240, 168, 196, 0.28) !important;
+}
 /* Icons pink by default, switching to white on the pink/gold hover gradient */
 #dlTracker .dlt-header h3 .dlt-icon,
 #dlTracker .dlt-btn .dlt-icon,
@@ -20048,6 +20192,14 @@ body.dark-mode .dlt-timeline-wrap {
 }
 #dlTracker .dlt-btn:hover .dlt-icon {
   color: #fff;
+}
+body.dark-mode #dlTracker .dlt-header h3 .dlt-icon,
+body.dark-mode #dlTracker .dlt-btn .dlt-icon,
+body.dark-mode #dlTracker .dlt-timeline-title .dlt-icon {
+  color: var(--theme-accent, #f0a8c4);
+}
+body.dark-mode #dlTracker .dlt-btn:hover .dlt-icon {
+  color: #1e141c;
 }
 .dlt-modal-save {
   background: linear-gradient(135deg, #db2777, #f6ad55) !important;
@@ -25924,6 +26076,9 @@ window.DBP={
                       <symbol id="ft-icon-shuffle" viewBox="0 0 24 24"><path d="m18 14 4 4-4 4" /> <path d="m18 2 4 4-4 4" /> <path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22" /> <path d="M2 6h1.972a4 4 0 0 1 3.6 2.2" /> <path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45" /></symbol>
                       <symbol id="ft-icon-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5" /></symbol>
                       <symbol id="ft-icon-party-popper" viewBox="0 0 24 24"><path d="M5.8 11.3 2 22l10.7-3.79" /> <path d="M4 3h.01" /> <path d="M22 8h.01" /> <path d="M15 2h.01" /> <path d="M22 20h.01" /> <path d="m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10" /> <path d="m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17" /> <path d="m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7" /> <path d="M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z" /></symbol>
+                      <symbol id="ft-icon-trend-up" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17" /> <path d="M16 7h6v6" /></symbol>
+                      <symbol id="ft-icon-trend-down" viewBox="0 0 24 24"><path d="M22 17 13.5 8.5 8.5 13.5 2 7" /> <path d="M16 17h6v-6" /></symbol>
+                      <symbol id="ft-icon-trend-flat" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
                     </svg>
 
                     <div class="sidebar-card focus-timer-card">
@@ -25935,116 +26090,167 @@ window.DBP={
                             </div>
                         </div>
                         <div id="ftBody">
+                        <div class="ft-columns">
 
-                        <div id="ftStreakDisplay" class="ft-streak" title="Consecutive days with at least 1 completed Focus Timer session">
-                            <!-- filled by renderFocusStreak() -->
-                        </div>
+                            <!-- ═══ Cột phải trước trong DOM (giữ thứ tự cũ cho JS
+                                 querySelector không phụ thuộc thứ tự) nhưng đặt
+                                 order để hiển thị bên phải như ảnh tham khảo ═══ -->
+                            <div class="ft-col-side">
+                                <!-- Consolidated stats: current streak, today's focus (with
+                                     red/green trend vs yesterday), and all-time total focus. -->
+                                <div class="ft-stats-row" id="ftStatsRow">
+                                    <div class="ft-stat-chip" id="ftStatStreakChip" title="Consecutive days with at least 1 completed Focus Timer session">
+                                        <div class="ft-stat-chip-icon streak"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;"><use href="#ft-icon-flame"/></svg></div>
+                                        <div class="ft-stat-chip-value" id="ftStatStreakValue">0</div>
+                                        <div class="ft-stat-chip-label">Day streak</div>
+                                        <div class="ft-stat-chip-sub" id="ftStatStreakBest"></div>
+                                    </div>
+                                    <div class="ft-stat-chip" id="ftStatTodayChip" title="Focused minutes today, compared with yesterday">
+                                        <div class="ft-stat-chip-value-row">
+                                            <span class="ft-stat-chip-value" id="ftStatTodayValue">0m</span>
+                                        </div>
+                                        <div class="ft-stat-chip-label">Today</div>
+                                        <div class="ft-trend-badge" id="ftStatTodayTrend"></div>
+                                    </div>
+                                    <div class="ft-stat-chip" id="ftStatTotalChip" title="Total focused time, all time">
+                                        <div class="ft-stat-chip-icon total"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;"><use href="#ft-icon-hourglass"/></svg></div>
+                                        <div class="ft-stat-chip-value" id="ftStatTotalValue">0m</div>
+                                        <div class="ft-stat-chip-label">Total focus</div>
+                                    </div>
+                                </div>
 
-                        <!-- Daily / weekly focus goal -->
-                        <div class="ft-goal-progress" id="ftGoalProgressWrap">
-                            <div id="ftGoalProgressView">
-                                <div class="ft-goal-progress-head">
-                                    <span id="ftGoalProgressLabel"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.1em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:5px;"><use href="#ft-icon-hourglass"/></svg>Set a daily focus goal</span>
-                                    <button class="ft-goal-edit-btn" onclick="ftShowGoalEditor()" title="Set daily/weekly focus goal" aria-label="Set daily or weekly focus goal"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-pencil"/></svg></button>
+                                <!-- Daily / weekly focus goal -->
+                                <div class="ft-goal-progress" id="ftGoalProgressWrap">
+                                    <div id="ftGoalProgressView">
+                                        <div class="ft-goal-progress-head">
+                                            <span id="ftGoalProgressLabel"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.1em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:5px;"><use href="#ft-icon-hourglass"/></svg>Set a daily focus goal</span>
+                                            <button class="ft-goal-edit-btn" onclick="ftShowGoalEditor()" title="Set daily/weekly focus goal" aria-label="Set daily or weekly focus goal"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-pencil"/></svg></button>
+                                        </div>
+                                        <div class="ft-goal-progress-bar" id="ftGoalProgressBarWrap" style="display:none;">
+                                            <div class="ft-goal-progress-fill" id="ftGoalProgressFill"></div>
+                                        </div>
+                                        <div class="ft-goal-week-label" id="ftGoalWeekLabel"></div>
+                                    </div>
+                                    <div class="ft-goal-editor" id="ftGoalEditor" style="display:none;">
+                                        <div class="ft-goal-editor-row">
+                                            <label for="ftGoalDailyInput">Daily (min)</label>
+                                            <input type="number" id="ftGoalDailyInput" min="0" max="1440" placeholder="e.g. 120">
+                                        </div>
+                                        <div class="ft-goal-editor-row">
+                                            <label for="ftGoalWeeklyInput">Weekly (min)</label>
+                                            <input type="number" id="ftGoalWeeklyInput" min="0" max="10080" placeholder="e.g. 600">
+                                        </div>
+                                        <div class="ft-goal-editor-actions">
+                                            <button class="ft-goal-save-btn" onclick="ftSaveGoals()">Save</button>
+                                            <button class="ft-goal-cancel-btn" onclick="ftHideGoalEditor()">Cancel</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="ft-goal-progress-bar" id="ftGoalProgressBarWrap" style="display:none;">
-                                    <div class="ft-goal-progress-fill" id="ftGoalProgressFill"></div>
+
+                                <!-- Goal lock: must pick one goal before Start is allowed -->
+                                <div class="focus-lock-banner" id="ftLockBanner"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-focus"/></svg> Focus session active</div>
+                                <div class="ft-goal-select-wrap">
+                                    <select id="ftGoalSelect" class="ft-goal-select"
+                                        style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);font-size:0.85rem;">
+                                        <option value="">Pick ONE goal before you start…</option>
+                                    </select>
+                                    <div id="ftGoalHint" style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;display:none;">
+                                        Pick a single goal — this is a single-tasking session.
+                                    </div>
                                 </div>
-                                <div class="ft-goal-week-label" id="ftGoalWeekLabel"></div>
+
+                                <div id="ftCurrentGoalLabel" style="text-align:center;font-size:0.75rem;color:var(--text-muted);display:none;"></div>
+                                <div id="ftCycleCounter" class="ft-cycle-counter" style="margin-top:0;"></div>
+
+                                <!-- Focused minutes by goal — inline overview so the side
+                                     panel isn't empty when the timer ring column is taller.
+                                     Range is adjustable (1/7/30/90 days), unlike the fixed
+                                     7-day chart in the Focus Fragmentation card below. -->
+                                <div class="ft-inline-chart" id="ftGoalMinutesBox">
+                                    <div class="ft-inline-chart-head">
+                                        <span class="ft-inline-chart-title"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;"><use href="#ft-icon-hourglass"/></svg>Focused minutes by goal</span>
+                                        <div class="ft-range-tabs" id="ftGoalMinutesRangeTabs">
+                                            <button type="button" class="ft-range-tab" data-days="1" onclick="ftSetGoalMinutesRange(1)">1D</button>
+                                            <button type="button" class="ft-range-tab active" data-days="7" onclick="ftSetGoalMinutesRange(7)">7D</button>
+                                            <button type="button" class="ft-range-tab" data-days="30" onclick="ftSetGoalMinutesRange(30)">30D</button>
+                                            <button type="button" class="ft-range-tab" data-days="90" onclick="ftSetGoalMinutesRange(90)">90D</button>
+                                        </div>
+                                    </div>
+                                    <div class="ft-inline-chart-note" id="ftGoalMinutesNote"></div>
+                                    <div style="position:relative;height:140px;" id="ftGoalMinutesCanvasWrap">
+                                        <canvas id="ftGoalMinutesChart"></canvas>
+                                    </div>
+                                    <div class="ft-inline-chart-empty" id="ftGoalMinutesEmpty" style="display:none;">No sessions logged in this period yet.</div>
+                                </div>
                             </div>
-                            <div class="ft-goal-editor" id="ftGoalEditor" style="display:none;">
-                                <div class="ft-goal-editor-row">
-                                    <label for="ftGoalDailyInput">Daily (min)</label>
-                                    <input type="number" id="ftGoalDailyInput" min="0" max="1440" placeholder="e.g. 120">
+
+                            <div class="ft-col-timer">
+                                <!-- Pomodoro cycle mode badge -->
+                                <div id="ftModeBadge" class="ft-mode-badge"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-focus"/></svg> Focus session</div>
+
+                                <!-- Timer Ring + Display -->
+                                <div class="ft-ring-wrap">
+                                    <svg class="ft-ring" viewBox="0 0 120 120">
+                                        <circle class="ft-ring-bg" cx="60" cy="60" r="52"/>
+                                        <circle class="ft-ring-progress" id="ftRingProgress" cx="60" cy="60" r="52"
+                                            stroke-dasharray="326.7" stroke-dashoffset="0"/>
+                                    </svg>
+                                    <div class="ft-ring-inner">
+                                        <div id="timerDisplay" class="ft-time" title="Double-click to set custom time">25:00</div>
+                                        <div id="ftStatusLabel" class="ft-status">Ready</div>
+                                    </div>
                                 </div>
-                                <div class="ft-goal-editor-row">
-                                    <label for="ftGoalWeeklyInput">Weekly (min)</label>
-                                    <input type="number" id="ftGoalWeeklyInput" min="0" max="10080" placeholder="e.g. 600">
+
+                                <!-- Duration presets -->
+                                <div class="ft-presets">
+                                    <button class="ft-preset active" onclick="ftSetDuration(25, this)">25m</button>
+                                    <button class="ft-preset" onclick="ftSetDuration(45, this)">45m</button>
+                                    <button class="ft-preset" onclick="ftSetDuration(60, this)">60m</button>
+                                    <button class="ft-preset" onclick="ftSetDuration(90, this)">90m</button>
                                 </div>
-                                <div class="ft-goal-editor-actions">
-                                    <button class="ft-goal-save-btn" onclick="ftSaveGoals()">Save</button>
-                                    <button class="ft-goal-cancel-btn" onclick="ftHideGoalEditor()">Cancel</button>
+
+                                <!-- Custom duration -->
+                                <div class="ft-custom-wrap">
+                                    <input class="ft-custom-input" type="number" id="ftCustomMin" min="1" max="180" placeholder="Custom min" onkeydown="if(event.key==='Enter'){ftSetCustomDuration();this.blur();}" />
+                                    <button class="ft-custom-set" onclick="ftSetCustomDuration()" title="Set custom duration" aria-label="Set custom duration"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.9em;height:0.9em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-check"/></svg></button>
                                 </div>
-                            </div>
-                        </div>
 
-                        <!-- Goal lock: must pick one goal before Start is allowed -->
-                        <div class="focus-lock-banner" id="ftLockBanner"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-focus"/></svg> Focus session active</div>
-                        <div class="ft-goal-select-wrap" style="margin-bottom:10px;">
-                            <select id="ftGoalSelect" class="ft-goal-select"
-                                style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);font-size:0.85rem;">
-                                <option value="">Pick ONE goal before you start…</option>
-                            </select>
-                            <div id="ftGoalHint" style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;display:none;">
-                                Pick a single goal — this is a single-tasking session.
-                            </div>
-                        </div>
-
-                        <!-- Pomodoro cycle mode badge -->
-                        <div id="ftModeBadge" class="ft-mode-badge"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-focus"/></svg> Focus session</div>
-
-                        <!-- Timer Ring + Display -->
-                        <div class="ft-ring-wrap">
-                            <svg class="ft-ring" viewBox="0 0 120 120">
-                                <circle class="ft-ring-bg" cx="60" cy="60" r="52"/>
-                                <circle class="ft-ring-progress" id="ftRingProgress" cx="60" cy="60" r="52"
-                                    stroke-dasharray="326.7" stroke-dashoffset="0"/>
-                            </svg>
-                            <div class="ft-ring-inner">
-                                <div id="timerDisplay" class="ft-time" title="Double-click to set custom time">25:00</div>
-                                <div id="ftStatusLabel" class="ft-status">Ready</div>
-                            </div>
-                        </div>
-
-                        <!-- Duration presets -->
-                        <div class="ft-presets">
-                            <button class="ft-preset active" onclick="ftSetDuration(25, this)">25m</button>
-                            <button class="ft-preset" onclick="ftSetDuration(45, this)">45m</button>
-                            <button class="ft-preset" onclick="ftSetDuration(60, this)">60m</button>
-                            <button class="ft-preset" onclick="ftSetDuration(90, this)">90m</button>
-                        </div>
-
-                        <!-- Custom duration -->
-                        <div class="ft-custom-wrap">
-                            <input class="ft-custom-input" type="number" id="ftCustomMin" min="1" max="180" placeholder="Custom min" onkeydown="if(event.key==='Enter'){ftSetCustomDuration();this.blur();}" />
-                            <button class="ft-custom-set" onclick="ftSetCustomDuration()" title="Set custom duration" aria-label="Set custom duration"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.9em;height:0.9em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-check"/></svg></button>
-                        </div>
-
-                        <!-- Pomodoro: break length -->
-                        <div class="ft-break-settings">
-                            <div class="ft-break-row">
-                                <span class="ft-custom-label" title="Break duration"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-coffee"/></svg></span>
-                                <div class="ft-break-presets">
-                                    <button class="ft-break-preset active" onclick="ftSetBreakDuration(5, this)">5m</button>
-                                    <button class="ft-break-preset" onclick="ftSetBreakDuration(10, this)">10m</button>
-                                    <button class="ft-break-preset" onclick="ftSetBreakDuration(15, this)">15m</button>
+                                <!-- Pomodoro: break length -->
+                                <div class="ft-break-settings">
+                                    <div class="ft-break-row">
+                                        <span class="ft-custom-label" title="Break duration"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-coffee"/></svg></span>
+                                        <div class="ft-break-presets">
+                                            <button class="ft-break-preset active" onclick="ftSetBreakDuration(5, this)">5m</button>
+                                            <button class="ft-break-preset" onclick="ftSetBreakDuration(10, this)">10m</button>
+                                            <button class="ft-break-preset" onclick="ftSetBreakDuration(15, this)">15m</button>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
 
-                        <!-- Main control buttons -->
-                        <div class="ft-controls">
-                            <button class="ft-btn ft-btn-reset" onclick="focusResetTimer()" title="Reset">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.75"/></svg>
-                            </button>
-                            <button class="ft-btn ft-btn-primary" id="ftMainBtn" onclick="ftToggleTimer()">
-                                <svg id="ftPlayIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                <svg id="ftPauseIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                                <span id="ftBtnLabel">Start</span>
-                            </button>
-                            <button class="ft-btn" id="ftSwitchBtn" onclick="switchFocusGoal()" title="Switch goal mid-session (this gets logged)" aria-label="Switch goal mid-session" style="display:none;">
-                                <span style="font-size:15px;"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-shuffle"/></svg></span>
-                            </button>
-                        </div>
-                        <!-- Only visible during a break: bail out of it in one click and drop
-                             straight into a fresh Focus session, instead of having to guess
-                             that the Reset button also happens to do this. -->
-                        <button class="ft-skip-break-btn" id="ftSkipBreakBtn" onclick="ftSkipBreak()" style="display:none;" title="Skip the break and start focusing now">
-                            <svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.95em;height:0.95em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;"><use href="#ft-icon-focus"/></svg>
-                            Skip break, start focusing
-                        </button>
-                        <div id="ftCurrentGoalLabel" style="text-align:center;font-size:0.75rem;color:var(--text-muted);margin-top:6px;display:none;"></div>
-                        <div id="ftCycleCounter" class="ft-cycle-counter"></div>
+                                <!-- Main control buttons -->
+                                <div class="ft-controls">
+                                    <button class="ft-btn ft-btn-reset" onclick="focusResetTimer()" title="Reset">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.75"/></svg>
+                                    </button>
+                                    <button class="ft-btn ft-btn-primary" id="ftMainBtn" onclick="ftToggleTimer()">
+                                        <svg id="ftPlayIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                        <svg id="ftPauseIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                                        <span id="ftBtnLabel">Start</span>
+                                    </button>
+                                    <button class="ft-btn" id="ftSwitchBtn" onclick="switchFocusGoal()" title="Switch goal mid-session (this gets logged)" aria-label="Switch goal mid-session" style="display:none;">
+                                        <span style="font-size:15px;"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-shuffle"/></svg></span>
+                                    </button>
+                                </div>
+                                <!-- Only visible during a break: bail out of it in one click and drop
+                                     straight into a fresh Focus session, instead of having to guess
+                                     that the Reset button also happens to do this. -->
+                                <button class="ft-skip-break-btn" id="ftSkipBreakBtn" onclick="ftSkipBreak()" style="display:none;" title="Skip the break and start focusing now">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.95em;height:0.95em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;"><use href="#ft-icon-focus"/></svg>
+                                    Skip break, start focusing
+                                </button>
+                            </div>
+
+                        </div><!-- end .ft-columns -->
                         </div><!-- end #ftBody -->
                     </div>
 
@@ -26174,7 +26380,7 @@ window.DBP={
                         .fsm-step{display:none;}
                         .fsm-step.active{display:block;}
 
-                        .focus-lock-banner{display:none;text-align:center;font-size:0.72rem;font-weight:700;color:#fff;background:linear-gradient(90deg,#db2777,#9d2867);border-radius:8px;padding:6px 10px;margin-bottom:10px;letter-spacing:.3px;}
+                        .focus-lock-banner{display:none;text-align:center;font-size:0.72rem;font-weight:700;color:#fff;background:linear-gradient(90deg,var(--primary),var(--theme-accent-deep,var(--primary)));border-radius:8px;padding:6px 10px;margin-bottom:10px;letter-spacing:.3px;}
                         body.focus-session-active .focus-lock-banner{display:block;}
                     </style>
                     <div class="fsm-overlay" id="fsmOverlay">
@@ -37680,6 +37886,7 @@ window.DBP={
             localStorage.setItem('darkMode', isDark);
             updateDarkModeIcon(isDark);
             updateChartColors();
+            if (typeof renderFtGoalMinutesChart === 'function') renderFtGoalMinutesChart();
             if (sleepChart) {
                 const textColor = isDark ? '#c895a8' : '#a3808f';
                 const gridColor = isDark ? 'rgba(240,168,196,0.14)' : 'rgba(209,123,150,0.12)';
@@ -39315,17 +39522,52 @@ window.DBP={
         }
 
         function renderFocusStreak() {
-            const el = document.getElementById('ftStreakDisplay');
-            if (!el) return;
+            // Streak chip
+            const streakChip = document.getElementById('ftStatStreakChip');
+            const streakValueEl = document.getElementById('ftStatStreakValue');
+            const streakBestEl = document.getElementById('ftStatStreakBest');
             const { current, best } = computeFocusStreak();
-            if (current <= 0) {
-                el.classList.remove('has-streak');
-                el.innerHTML = `<span style="opacity:.75">No streak yet — complete 1 session today to get started <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-flame"/></svg></span>`;
-                return;
+            if (streakChip) streakChip.classList.toggle('has-streak', current > 0);
+            if (streakValueEl) streakValueEl.textContent = String(current);
+            if (streakBestEl) streakBestEl.textContent = (best > current) ? `Best ${best}` : (current > 0 ? 'Personal best!' : '');
+
+            // Today / total focus + trend vs yesterday
+            const logs = getFocusSessionLogs();
+            const dayMs = 86400000;
+            const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+            const todayStartMs = todayStart.getTime();
+            const yestStartMs = todayStartMs - dayMs;
+
+            let todayMin = 0, yesterdayMin = 0, totalMin = 0;
+            logs.forEach(l => {
+                const mins = (l.actualSec || 0) / 60;
+                totalMin += mins;
+                if (l.start >= todayStartMs) todayMin += mins;
+                else if (l.start >= yestStartMs && l.start < todayStartMs) yesterdayMin += mins;
+            });
+
+            const todayValueEl = document.getElementById('ftStatTodayValue');
+            const totalValueEl = document.getElementById('ftStatTotalValue');
+            if (todayValueEl) todayValueEl.textContent = ffFormatMinutes(todayMin);
+            if (totalValueEl) totalValueEl.textContent = ffFormatMinutes(totalMin);
+
+            const trendEl = document.getElementById('ftStatTodayTrend');
+            if (trendEl) {
+                const diff = Math.round(todayMin - yesterdayMin);
+                if (yesterdayMin <= 0 && todayMin <= 0) {
+                    trendEl.className = 'ft-trend-badge flat';
+                    trendEl.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ft-icon-trend-flat"/></svg> No data yet`;
+                } else if (diff > 0) {
+                    trendEl.className = 'ft-trend-badge up';
+                    trendEl.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ft-icon-trend-up"/></svg> +${diff}m vs yesterday`;
+                } else if (diff < 0) {
+                    trendEl.className = 'ft-trend-badge down';
+                    trendEl.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ft-icon-trend-down"/></svg> ${diff}m vs yesterday`;
+                } else {
+                    trendEl.className = 'ft-trend-badge flat';
+                    trendEl.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ft-icon-trend-flat"/></svg> Same as yesterday`;
+                }
             }
-            el.classList.add('has-streak');
-            el.innerHTML = `<span class="ft-streak-fire"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-flame"/></svg></span> ${current}-day streak` +
-                (best > current ? `<span class="ft-streak-best">· Best: ${best}</span>` : '');
         }
 
         function populateFtGoalSelect() {
@@ -39350,6 +39592,10 @@ window.DBP={
         document.addEventListener('DOMContentLoaded', () => {
             populateFtGoalSelect();
             renderFocusFragmentationChart();
+            document.querySelectorAll('#ftGoalMinutesRangeTabs .ft-range-tab').forEach(b => {
+                b.classList.toggle('active', parseInt(b.dataset.days, 10) === ftGoalMinutesRangeDays);
+            });
+            renderFtGoalMinutesChart();
             renderFocusStreak();
             renderFtCycleCounter();
             renderFtGoalProgress();
@@ -39416,6 +39662,7 @@ window.DBP={
             focusOpenLogId = null;
             localStorage.removeItem('focusOpenLogId');
             renderFocusFragmentationChart();
+            renderFtGoalMinutesChart();
             renderFocusStreak();
             renderFtCycleCounter();
             renderFtGoalProgress();
@@ -39493,6 +39740,7 @@ window.DBP={
             openFocusSessionLog(focusCurrentGoal, prevGoal);
             updateFtGoalLockUI();
             renderFocusFragmentationChart();
+            renderFtGoalMinutesChart();
 
             document.getElementById('fsmOverlay').classList.remove('open');
         }
@@ -39780,6 +40028,143 @@ window.DBP={
             }
         }
 
+        // ── Inline "Focused minutes by goal" chart (Focus Timer side panel) ──
+        // Same underlying data as the Focus Fragmentation card's goal-minutes
+        // chart, but with a switchable range (1/7/30/90 days) instead of a
+        // fixed 7-day window, and rendered into the timer's own canvas.
+        let ftGoalMinutesRangeDays = parseInt(localStorage.getItem('ftGoalMinutesRangeDays')) || 7;
+
+        function ftSetGoalMinutesRange(days) {
+            ftGoalMinutesRangeDays = days;
+            localStorage.setItem('ftGoalMinutesRangeDays', String(days));
+            document.querySelectorAll('#ftGoalMinutesRangeTabs .ft-range-tab').forEach(b => {
+                b.classList.toggle('active', parseInt(b.dataset.days, 10) === days);
+            });
+            renderFtGoalMinutesChart();
+        }
+
+        function ftGoalMinutesRangeLabel(days) {
+            if (days === 1) return 'today';
+            if (days === 7) return 'last 7 days';
+            if (days === 30) return 'last 30 days';
+            if (days === 90) return 'last 90 days';
+            return `last ${days} days`;
+        }
+
+        function renderFtGoalMinutesChart() {
+            const canvasEl = document.getElementById('ftGoalMinutesChart');
+            const emptyEl = document.getElementById('ftGoalMinutesEmpty');
+            const wrapEl = document.getElementById('ftGoalMinutesCanvasWrap');
+            const noteEl = document.getElementById('ftGoalMinutesNote');
+            if (!canvasEl) return;
+
+            const days = ftGoalMinutesRangeDays;
+            const logs = getFocusSessionLogs();
+            const now = Date.now();
+            const rangeStart = days === 1
+                ? new Date(new Date().setHours(0, 0, 0, 0)).getTime()
+                : now - days * 24 * 60 * 60 * 1000;
+            const inRange = logs.filter(l => l.start >= rangeStart);
+
+            const minutesByGoal = {};
+            FOCUS_CAREER_LIST.forEach(c => minutesByGoal[c] = 0);
+            inRange.forEach(l => {
+                if (!minutesByGoal.hasOwnProperty(l.goal)) minutesByGoal[l.goal] = 0;
+                minutesByGoal[l.goal] += (l.actualSec || 0) / 60;
+            });
+            const goalKeys = Object.keys(minutesByGoal)
+                .filter(k => minutesByGoal[k] > 0)
+                .sort((a, b) => minutesByGoal[b] - minutesByGoal[a]);
+            const goalLabels = goalKeys.map(k => getCareerDisplayName(k));
+            const goalMinutesRaw = goalKeys.map(k => minutesByGoal[k]);
+            const goalMinutes = goalMinutesRaw.map(m => Math.round(m));
+            const totalFocusedMinutes = goalMinutesRaw.reduce((a, b) => a + b, 0);
+
+            const goalColorVars = {
+                pe: '--pe-color', ib: '--ib-color', hf: '--hf-color', sc: '--sc-color',
+                fintech: '--fintech-color', english: '--english-color', chinese: '--chinese-color', german: '--german-color',
+                tools: '--tools-color', cfa1: '--cfa1-color', acca: '--acca-color', china: '--china-color', quant: '--quant-color',
+                reading: '--reading-color'
+            };
+            const rootStyles = getComputedStyle(document.documentElement);
+            const goalColors = goalKeys.map(k => rootStyles.getPropertyValue(goalColorVars[k] || '--primary').trim() || '#db2777');
+
+            const hasData = goalKeys.length > 0;
+            if (wrapEl) wrapEl.style.display = hasData ? 'block' : 'none';
+            if (emptyEl) emptyEl.style.display = hasData ? 'none' : 'block';
+
+            if (noteEl) {
+                noteEl.innerHTML = hasData
+                    ? `<strong>${ffFormatMinutes(totalFocusedMinutes)}</strong> focused · ${ftGoalMinutesRangeLabel(days)}`
+                    : `No focused minutes · ${ftGoalMinutesRangeLabel(days)}`;
+            }
+
+            if (window.__ftGoalMinutesChart) { window.__ftGoalMinutesChart.destroy(); window.__ftGoalMinutesChart = null; }
+            if (!hasData || !window.Chart) return;
+
+            const isDark = document.body.classList.contains('dark-mode');
+            const chartTextColor = isDark ? '#b898a8' : '#9a7686';
+            const chartGridColor = isDark ? 'rgba(240,168,196,0.10)' : 'rgba(219,113,175,0.12)';
+
+            const barValueLabelPlugin = {
+                id: 'ftGoalMinutesBarValueLabels',
+                afterDatasetsDraw(chart) {
+                    const { ctx } = chart;
+                    const meta = chart.getDatasetMeta(0);
+                    const data = chart.data.datasets[0].data;
+                    ctx.save();
+                    ctx.fillStyle = chartTextColor;
+                    ctx.font = "600 10px 'Segoe UI', sans-serif";
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'middle';
+                    meta.data.forEach((bar, i) => {
+                        const val = data[i];
+                        if (!val) return;
+                        ctx.fillText(ffFormatMinutes(val), bar.x + 6, bar.y);
+                    });
+                    ctx.restore();
+                }
+            };
+
+            const ctx = canvasEl.getContext('2d');
+            const goalGradients = goalColors.map(color => {
+                const g = ctx.createLinearGradient(0, 0, 220, 0);
+                g.addColorStop(0, color + (isDark ? 'aa' : '99'));
+                g.addColorStop(1, color);
+                return g;
+            });
+
+            window.__ftGoalMinutesChart = new Chart(canvasEl, {
+                type: 'bar',
+                data: {
+                    labels: goalLabels,
+                    datasets: [{
+                        label: 'Actual focused minutes',
+                        data: goalMinutes,
+                        backgroundColor: goalGradients,
+                        borderRadius: 8,
+                        borderSkipped: false,
+                        maxBarThickness: 18
+                    }]
+                },
+                plugins: [barValueLabelPlugin],
+                options: {
+                    indexAxis: 'y',
+                    responsive: true, maintainAspectRatio: false,
+                    layout: { padding: { right: 34 } },
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: false },
+                        tooltip: { callbacks: { label: (c) => ffFormatMinutes(c.parsed.x) } }
+                    },
+                    scales: {
+                        x: { beginAtZero: true, ticks: { color: chartTextColor, font: { size: 10 } }, grid: { color: chartGridColor }, border: { display: false } },
+                        y: { ticks: { color: chartTextColor, font: { size: 10 } }, grid: { display: false }, border: { display: false } }
+                    }
+                }
+            });
+        }
+
         // ── Focus History Modal: xem / xoá từng phiên đã log ────────────
         const FHM_ICON_SVG = (id) => `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.1em;stroke:currentColor;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:3px;"><use href="#${id}"/></svg>`;
         const FHM_OUTCOME_LABEL = {
@@ -39854,6 +40239,7 @@ window.DBP={
             saveFocusSessionLogs(logs);
             renderFhmList();
             renderFocusFragmentationChart();
+            renderFtGoalMinutesChart();
             renderFocusStreak();
             renderFtCycleCounter();
             renderFtGoalProgress();
@@ -39865,6 +40251,7 @@ window.DBP={
             saveFocusSessionLogs([]);
             renderFhmList();
             renderFocusFragmentationChart();
+            renderFtGoalMinutesChart();
             renderFocusStreak();
             renderFtCycleCounter();
             renderFtGoalProgress();
