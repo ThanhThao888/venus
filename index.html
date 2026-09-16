@@ -23881,6 +23881,46 @@ body.dark-mode .dbp-field input, body.dark-mode .dbp-field select {
     background:transparent;color:var(--text-dark);font-size:0.78rem;flex-shrink:0;max-width:104px;}
 body.dark-mode .dbp-manual-tag-select{background:var(--bg-light);border-color:var(--border-color);color:var(--text-dark);}
 
+/* ─── SOURCE TOGGLES (Goals / Resource Library / High priority) ─── */
+.dbp-source-row{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 10px;}
+.dbp-source-toggle{display:inline-flex;align-items:center;gap:5px;font-size:0.72rem;font-weight:700;
+    padding:5px 10px 5px 8px;border-radius:999px;border:1.5px solid var(--border-color);
+    color:var(--text-muted,#b8919f);cursor:pointer;user-select:none;transition:all .18s;}
+.dbp-source-toggle svg{width:0.85em;height:0.85em;}
+.dbp-source-toggle input{margin:0;accent-color:#db2777;}
+.dbp-source-toggle.active,.dbp-source-toggle:has(input:checked){background:#db27771a;border-color:#db2777;color:#9d2867;}
+.dbp-source-toggle.prio.active,.dbp-source-toggle.prio:has(input:checked){background:#f59e0b1a;border-color:#f59e0b;color:#b45309;}
+body.dark-mode .dbp-source-toggle{color:var(--text-muted,#b8919f);}
+body.dark-mode .dbp-source-toggle.active,body.dark-mode .dbp-source-toggle:has(input:checked){color:#f472b6;}
+@media (max-width:640px){ .dbp-source-toggle{font-size:0.68rem;padding:5px 9px 5px 7px;} }
+
+/* ─── TASK DETAIL SHEET (tap a task to see what it actually is) ─── */
+#dbpDetailOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2200;
+    align-items:flex-end;justify-content:center;padding:0;backdrop-filter:blur(3px);}
+#dbpDetailOverlay.show{display:flex;}
+#dbpDetailSheet{background:var(--bg-white,#fff);color:var(--text-dark,#4a3240);width:100%;max-width:520px;
+    border-radius:20px 20px 0 0;padding:18px 20px calc(20px + env(safe-area-inset-bottom));
+    box-shadow:0 -12px 40px rgba(0,0,0,0.3);max-height:80vh;overflow-y:auto;
+    font-family:'Segoe UI',system-ui,sans-serif;}
+body.dark-mode #dbpDetailSheet{background:var(--bg-white,#3a2530);color:var(--text-dark,#f0e0e6);}
+@media (min-width:641px){
+    #dbpDetailOverlay{align-items:center;}
+    #dbpDetailSheet{border-radius:16px;}
+}
+.dbp-detail-head{display:flex;justify-content:flex-end;margin-bottom:2px;}
+.dbp-detail-close{background:none;border:none;font-size:1.3rem;line-height:1;color:var(--text-muted,#b8919f);
+    cursor:pointer;padding:2px 6px;}
+.dbp-detail-title{font-size:1.05rem;font-weight:800;margin-bottom:4px;line-height:1.35;}
+.dbp-detail-sub{font-size:0.8rem;color:var(--text-muted,#b8919f);margin-bottom:10px;}
+.dbp-detail-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.dbp-detail-chip{display:inline-flex;align-items:center;font-size:0.68rem;font-weight:700;
+    padding:3px 10px;border-radius:999px;background:var(--bg-light);border:1px solid var(--border-color);}
+.dbp-detail-desc{font-size:0.85rem;line-height:1.55;white-space:pre-wrap;margin-bottom:4px;}
+.dbp-detail-link{display:inline-flex;align-items:center;gap:6px;font-size:0.85rem;font-weight:700;
+    color:#db2777;text-decoration:none;margin-top:4px;}
+.dbp-detail-link:hover{text-decoration:underline;}
+.dbp-task-info{cursor:pointer;}
+
 /* Per-category time totals shown after a plan is generated */
 .dbp-cat-breakdown{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 10px;}
 .dbp-cat-chip{display:inline-flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;
@@ -23903,6 +23943,25 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
 
 <!-- ── TOAST ── -->
 <div id="dbpToast"></div>
+
+<!-- ── TASK DETAIL SHEET ── -->
+<!-- FEATURE: on narrow screens the task name in the list is ellipsis-truncated
+     and the row gives no way to see the full title, source, or description.
+     Tapping a task's info area opens this sheet with everything spelled out. -->
+<div id="dbpDetailOverlay" onclick="if(event.target===this)DBP.closeDetail()">
+    <div id="dbpDetailSheet" role="dialog" aria-modal="true" aria-labelledby="dbpDetailTitle">
+        <div class="dbp-detail-head">
+            <button class="dbp-detail-close" onclick="DBP.closeDetail()" aria-label="Close">×</button>
+        </div>
+        <div class="dbp-detail-title" id="dbpDetailTitle"></div>
+        <div class="dbp-detail-sub" id="dbpDetailSub"></div>
+        <div class="dbp-detail-meta" id="dbpDetailMeta"></div>
+        <div class="dbp-detail-desc" id="dbpDetailDesc"></div>
+        <a class="dbp-detail-link" id="dbpDetailLink" href="#" target="_blank" rel="noopener" style="display:none;">
+            <svg class="icon-svg" aria-hidden="true"><use href="#icon-arrow-up-right"></use></svg> Open resource link
+        </a>
+    </div>
+</div>
 
 <!-- ── FLOATING TIMER ── -->
 <div id="dbpFloatTimer">
@@ -23994,6 +24053,14 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
                     <button class="dbp-section-btn" onclick="DBP.selectAll()">All</button>
                     <button class="dbp-section-btn" onclick="DBP.clearAll()">None</button>
                 </div>
+            </div>
+            <!-- FEATURE (source toggle): lets each source that feeds the pool below be
+                 switched off, plus a quick "high priority only" narrow — the fix for
+                 the list growing unbounded as the Resource Library and Goals fill up. -->
+            <div class="dbp-source-row" id="dbpSourceRow">
+                <label class="dbp-source-toggle active" id="dbpSrcGoalsLbl"><input type="checkbox" id="dbpSrcGoals" checked onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-target"></use></svg> Goals</label>
+                <label class="dbp-source-toggle active" id="dbpSrcResourcesLbl"><input type="checkbox" id="dbpSrcResources" checked onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-book-open"></use></svg> Resource Library</label>
+                <label class="dbp-source-toggle prio" id="dbpSrcHighOnlyLbl"><input type="checkbox" id="dbpSrcHighOnly" onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> High priority only</label>
             </div>
             <!-- FEATURE: the task list is every unread resource + every active goal,
                  which grows without bound — with 40+ items you had to scroll and
@@ -24260,7 +24327,12 @@ function saveSettings(){
     store.set('dbpSettings',{
         startTime: gel('dbpStartTime').value,
         hours:     gel('dbpHours').value,
-        style:     gel('dbpStyle').value
+        style:     gel('dbpStyle').value,
+        // FEATURE (source toggle persistence): remember which sources feed the
+        // pool so it doesn't reset to "everything on" every time the modal reopens.
+        srcGoals:     gel('dbpSrcGoals')    ? gel('dbpSrcGoals').checked    : true,
+        srcResources: gel('dbpSrcResources')? gel('dbpSrcResources').checked: true,
+        srcHighOnly:  gel('dbpSrcHighOnly') ? gel('dbpSrcHighOnly').checked : false
     });
 }
 function loadSettings(){
@@ -24268,6 +24340,26 @@ function loadSettings(){
     if(s.startTime) gel('dbpStartTime').value=s.startTime;
     if(s.hours)     gel('dbpHours').value=s.hours;
     if(s.style)     gel('dbpStyle').value=s.style;
+    if(gel('dbpSrcGoals'))     gel('dbpSrcGoals').checked     = s.srcGoals     !== false;
+    if(gel('dbpSrcResources')) gel('dbpSrcResources').checked = s.srcResources !== false;
+    if(gel('dbpSrcHighOnly'))  gel('dbpSrcHighOnly').checked  = !!s.srcHighOnly;
+    syncSourceToggleUI();
+}
+// Keeps the pill's visual "active" state in sync with its checkbox — used both
+// on load and whenever a checkbox changes, so the highlight works even in
+// browsers without :has() support.
+function syncSourceToggleUI(){
+    [['dbpSrcGoals','dbpSrcGoalsLbl'],['dbpSrcResources','dbpSrcResourcesLbl'],['dbpSrcHighOnly','dbpSrcHighOnlyLbl']]
+        .forEach(([cbId,lblId])=>{
+            const cb=gel(cbId), lbl=gel(lblId);
+            if(cb&&lbl) lbl.classList.toggle('active',cb.checked);
+        });
+}
+function toggleSourceUI(cb){
+    const lbl=cb.closest('.dbp-source-toggle');
+    if(lbl) lbl.classList.toggle('active',cb.checked);
+    renderTasks();
+    saveSettings();
 }
 
 /* ─── UNDO / REDO ─── */
@@ -24381,20 +24473,32 @@ function getLibraryTasks(styleDef){
     // missing r.id, which additionally could collide (`'r_undefined'` for all of
     // them, clobbering each other in the id map). Fixed by falling back to a
     // position-based id that's stable across renders instead of a random one.
-    const res=(store.get('resourceLibrary',[])||[])
+    // FEATURE (source toggle): the pool used to be every unread/reading resource
+    // PLUS every active goal, unconditionally — with a large Resource Library
+    // saved up, the Daily Plan list became huge and hard to scan (especially on
+    // iPhone, where the task name is already truncated). These two checkboxes
+    // let each source be switched off entirely, and a third narrows to
+    // high-priority-only items across whichever sources are still on.
+    const srcGoals   = gel('dbpSrcGoals')     ? gel('dbpSrcGoals').checked     : true;
+    const srcRes     = gel('dbpSrcResources') ? gel('dbpSrcResources').checked : true;
+    const highOnly   = gel('dbpSrcHighOnly')  ? gel('dbpSrcHighOnly').checked  : false;
+
+    const res=!srcRes ? [] : (store.get('resourceLibrary',[])||[])
         .filter(r=>r.status==='to-read'||r.status==='reading')
+        .filter(r=>!highOnly||normPriority(r.priority)==='high')
         .map((r,idx)=>({ id:'r_'+(r.id!=null?r.id:'i'+idx), label:r.title,
             sub:[r.type,r.category].filter(Boolean).join(' · '), tag:r.category||'',
             def:styleDef, details:r.url||'', priority:normPriority(r.priority),
-            isManual:false, checked:false }));
-    const goals=(store.get('goals',[])||[])
+            source:'Resource Library', isManual:false, checked:false }));
+    const goals=!srcGoals ? [] : (store.get('goals',[])||[])
         .filter(g=>!['completed','archived'].includes((g.status||'').toLowerCase()))
+        .filter(g=>!highOnly||normPriority(g.priority)==='high')
         .map((g,idx)=>({ id:'g_'+(g.id!=null?g.id:'i'+idx),
             label:(g.title||g.name||'Goal'),
             sub:'Goal · '+(g.career||''), tag:g.career||'',
             def:Math.round(styleDef*0.7/5)*5||60,
             details:g.description||'', priority:normPriority(g.priority),
-            isManual:false, checked:false }));
+            source:'Goal', isManual:false, checked:false }));
     return [...res,...goals];
 }
 
@@ -24472,8 +24576,13 @@ function renderTasks(){
 
     const list=gel('dbpTaskList');
     if(!_tasks.length){
+        const srcOff = gel('dbpSrcGoals') && gel('dbpSrcResources')
+            && !gel('dbpSrcGoals').checked && !gel('dbpSrcResources').checked;
+        const emptyMsg = srcOff
+            ? 'Goals and Resource Library are both switched off above.<br>Turn one back on, or quick-add a task below.'
+            : 'No active resources or goals found.<br>Add to Resource Library / Goals, or quick-add below.';
         list.innerHTML=`<div class="dbp-empty"><div class="dbp-empty-icon"><svg class="icon-svg" aria-hidden="true"><use href="#icon-inbox"></use></svg></div>
-            <div class="dbp-empty-text">No active resources or goals found.<br>Add to Resource Library / Goals, or quick-add below.</div></div>`;
+            <div class="dbp-empty-text">${emptyMsg}</div></div>`;
         return;
     }
     // FEATURE (filter): rows are addressed by their index into `_tasks` — drag/drop,
@@ -24497,7 +24606,9 @@ function renderTasks(){
                 data-label="${encodeURIComponent(t.label||'')}"
                 data-tag="${encodeURIComponent(t.tag||'')}"
                 onchange="DBP.cbChange(this)">
-            <div class="dbp-task-info">
+            <div class="dbp-task-info" onclick="DBP.showDetail(${i})" role="button" tabindex="0"
+                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();DBP.showDetail(${i});}"
+                title="${escHtml(t.label)}${t.sub?' — '+escHtml(t.sub):''}">
                 <div class="dbp-task-name">${t.label}</div>
                 ${t.sub?`<div class="dbp-task-sub">${t.sub}</div>`:''}
                 ${tagBadge(t.tag)}
@@ -24518,6 +24629,34 @@ function renderTasks(){
     const si=gel('dbpSearch'); if(si && si.value!==(_filter||'')) si.value=_filter||'';
     updateBudget();
 }
+
+/* ─── TASK DETAIL SHEET ─── */
+// Shows everything the truncated list row can't: full title, source (Goal /
+// Resource Library / manual), category tag, priority, planned minutes, and
+// whatever description or link the source item carries.
+function showDetail(idx){
+    const t=_tasks[idx]; if(!t) return;
+    const srcLabel = t.source || (t.isManual ? 'Manual task' : (String(t.id).startsWith('g_') ? 'Goal' : 'Resource Library'));
+    gel('dbpDetailTitle').textContent = t.label||'(untitled)';
+    gel('dbpDetailSub').textContent   = t.sub||'';
+    gel('dbpDetailSub').style.display = t.sub ? 'block' : 'none';
+    const chips=[srcLabel, `${(t.priority||'mid')} priority`, `${t.def||0} min`];
+    if(t.tag) chips.push(tagLabel(t.tag));
+    gel('dbpDetailMeta').innerHTML = chips.map(c=>`<span class="dbp-detail-chip">${escHtml(c)}</span>`).join('');
+    const isUrl = /^https?:\/\//i.test(t.details||'');
+    const descEl=gel('dbpDetailDesc'), linkEl=gel('dbpDetailLink');
+    if(isUrl){
+        descEl.style.display='none';
+        linkEl.style.display='inline-flex';
+        linkEl.href=t.details;
+    } else {
+        linkEl.style.display='none';
+        descEl.textContent = t.details||'No description saved for this item.';
+        descEl.style.display='block';
+    }
+    gel('dbpDetailOverlay').classList.add('show');
+}
+function closeDetail(){ gel('dbpDetailOverlay').classList.remove('show'); }
 
 /* ─── DUPLICATE TASK ─── */
 function duplicateTask(idx){
@@ -25535,6 +25674,7 @@ window.addEventListener('beforeunload', e=>{
 /* ─── KEYBOARD SHORTCUTS ─── */
 document.addEventListener('keydown',e=>{
     const isOpen=gel('dbpModal').classList.contains('open');
+    if(e.key==='Escape'&&gel('dbpDetailOverlay').classList.contains('show')){ closeDetail(); return; }
     if(e.key==='Escape'&&isOpen){ close(); return; }
     // Redo check must come before the plain-Z undo check below, since Ctrl+Shift+Z
     // still matches `e.key==='z'` — without this ordering Shift+Ctrl+Z would just
@@ -25573,6 +25713,7 @@ window.DBP={
     floatPauseResume,floatStop, toggleNotifPermission,
     undo, redo, repeatLastPlan, saveReflectionDraft, setFilter, clearFilter,
     saveTemplate, applyTemplate, deleteTemplate,
+    showDetail, closeDetail, toggleSourceUI,
     _ds:ds,_do:dov,_dd:dd,_de:de
 };
 
