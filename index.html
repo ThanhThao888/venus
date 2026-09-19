@@ -42900,6 +42900,52 @@ window.DBP={
             return 'active';
         }
 
+        // ── Proactive deadline reminder ───────────────────────────
+        // Before this, a due-soon/overdue goal only showed a passive badge
+        // on its card — you'd only see it if you scrolled to that goal.
+        // This surfaces it once, as a toast, the first time the app is
+        // opened each (Vietnam) calendar day, across ALL careers — not just
+        // whichever career tab happens to be open.
+        function checkGoalDeadlineReminders() {
+            if (typeof goals === 'undefined' || !Array.isArray(goals) || !goals.length) return;
+            const todayKey = (typeof getVietnamDateStr === 'function') ? getVietnamDateStr() : new Date().toISOString().slice(0, 10);
+            if (localStorage.getItem('goalReminderShownDate') === todayKey) return;
+
+            const overdue = [];
+            const soon = [];
+            goals.forEach(g => {
+                if (!g.deadline) return;
+                calculateGoalProgress(g); // ensure status reflects latest study/skill hours, not stale data
+                const status = getGoalStatus(g);
+                if (status === 'overdue') overdue.push(g);
+                else if (status === 'soon') soon.push(g);
+            });
+            saveGoals(); // persist any currentProgress refreshed above
+
+            localStorage.setItem('goalReminderShownDate', todayKey);
+            if (!overdue.length && !soon.length) return;
+
+            let message;
+            if (overdue.length && soon.length) {
+                message = `⏰ ${overdue.length} goal${overdue.length > 1 ? 's' : ''} overdue, ${soon.length} due soon — check your Goals.`;
+            } else if (overdue.length) {
+                message = `⚠️ ${overdue.length} goal${overdue.length > 1 ? 's' : ''} overdue — check your Goals.`;
+            } else {
+                message = `⏰ ${soon.length} goal${soon.length > 1 ? 's' : ''} due soon — check your Goals.`;
+            }
+            if (typeof showNotification === 'function') {
+                showNotification(message, overdue.length ? 'error' : 'info', { duration: 8000 });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Delayed so it doesn't collide with other startup toasts
+            // (backup status, achievement pop-ups, etc.) firing at the same time.
+            setTimeout(() => {
+                if (typeof checkGoalDeadlineReminders === 'function') checkGoalDeadlineReminders();
+            }, 1800);
+        });
+
         // Clear any leftover validation state (error banner + red-bordered cards)
         function resetGoalFormValidationState() {
             const errorBanner = document.getElementById('goalFormError');
@@ -43172,12 +43218,87 @@ window.DBP={
             showDeleteConfirmModal(goalId, goal.title);
         }
 
+        // ── Undo-able delete ───────────────────────────────────────
+        // Deleting used to be instant and permanent (just a confirm modal).
+        // Now the goal is held for a few seconds so an accidental delete —
+        // especially of a goal something else is chained from — can be
+        // reversed with one click instead of being re-created by hand.
+        let _lastDeletedGoal = null;      // { goal, index }
+        let _lastDeletedGoalTimer = null;
+
         function executeDeleteGoal(goalId) {
+            const index = goals.findIndex(g => g.id === goalId);
+            if (index === -1) return;
+            const removedGoal = goals[index];
             goals = goals.filter(g => g.id !== goalId);
             saveGoals();
             renderGoals();
             updateGoalProgressChart();
-            showNotification('🗑️ Goal deleted', 'info');
+            showUndoDeleteToast(removedGoal, index);
+        }
+
+        function showUndoDeleteToast(goal, index) {
+            _lastDeletedGoal = { goal, index };
+            clearTimeout(_lastDeletedGoalTimer);
+
+            const existing = document.getElementById('fc-undo-toast');
+            if (existing) existing.remove();
+            if (typeof fcToastContainer !== 'function') return;
+            const container = fcToastContainer();
+
+            const toastEl = document.createElement('div');
+            toastEl.id = 'fc-undo-toast';
+            toastEl.className = 'fc-toast';
+            toastEl.style.cssText = [
+                'display:flex;align-items:center;gap:11px;pointer-events:auto',
+                'width:100%;box-sizing:border-box',
+                'padding:13px 14px;border-radius:14px',
+                'background:#ffffff;color:#4a3240',
+                'box-shadow:0 12px 32px -8px rgba(61,40,54,0.22),0 2px 8px rgba(61,40,54,0.07)',
+                'border:1px solid rgba(61,40,54,0.06)',
+                'font-size:0.9rem;font-weight:500;line-height:1.42',
+                'opacity:0;transform:translateY(10px) scale(0.97)',
+                'transition:opacity 0.3s ease,transform 0.3s ease'
+            ].join(';');
+            toastEl.innerHTML = `
+                <span style="flex:1;">🗑️ Deleted "${escapeHtml(goal.title)}"</span>
+                <button type="button" id="fc-undo-btn" style="flex:0 0 auto;padding:7px 14px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">Undo</button>
+            `;
+            container.appendChild(toastEl);
+            requestAnimationFrame(() => {
+                toastEl.style.opacity = '1';
+                toastEl.style.transform = 'translateY(0) scale(1)';
+            });
+
+            toastEl.querySelector('#fc-undo-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                undoDeleteGoal();
+                toastEl.remove();
+            });
+
+            _lastDeletedGoalTimer = setTimeout(() => {
+                _lastDeletedGoal = null;
+                if (toastEl.parentNode) {
+                    toastEl.style.opacity = '0';
+                    toastEl.style.transform = 'translateY(10px) scale(0.97)';
+                    setTimeout(() => toastEl.remove(), 300);
+                }
+            }, 6000);
+        }
+
+        function undoDeleteGoal() {
+            if (!_lastDeletedGoal) return;
+            const { goal, index } = _lastDeletedGoal;
+            const insertAt = Math.min(index, goals.length);
+            goals.splice(insertAt, 0, goal);
+            _lastDeletedGoal = null;
+            clearTimeout(_lastDeletedGoalTimer);
+            saveGoals();
+            renderGoals();
+            updateGoalProgressChart();
+            if (typeof showNotification === 'function') {
+                showNotification(`Restored "${goal.title}"`, 'success');
+            }
         }
 
 
@@ -43946,6 +44067,95 @@ window.DBP={
             return { prevGoal, marginalTarget, days, perDay, perWeek: perDay * 7 };
         }
 
+        // ── Sub-goals / checklist ──────────────────────────────────
+        // A big goal (e.g. "50h of study hours") often hides several
+        // concrete steps ("read book X", "finish course Y"). This is a
+        // simple per-goal checklist, independent of currentProgress —
+        // ticking a step never changes auto-synced hours, it's just a
+        // breakdown of what "doing this goal" actually looks like.
+        function generateSubtaskId() {
+            return 'st_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        }
+
+        function addGoalSubtask(goalId, text) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal) return;
+            const clean = String(text || '').trim().slice(0, 200);
+            if (!clean) return;
+            if (!Array.isArray(goal.subtasks)) goal.subtasks = [];
+            if (goal.subtasks.length >= 30) {
+                if (typeof showNotification === 'function') showNotification('Max 30 steps per goal — consider splitting this into another goal.', 'error');
+                return;
+            }
+            goal.subtasks.push({ id: generateSubtaskId(), text: clean, done: false });
+            saveGoals();
+            renderGoals();
+            // Re-focus the same goal's input so adding several steps in a
+            // row doesn't require re-clicking into the field every time.
+            requestAnimationFrame(() => {
+                const input = document.getElementById(`subtaskInput-${goalId}`);
+                if (input) input.focus();
+            });
+        }
+
+        function addGoalSubtaskFromInput(goalId) {
+            const input = document.getElementById(`subtaskInput-${goalId}`);
+            if (!input) return;
+            addGoalSubtask(goalId, input.value);
+            input.value = '';
+        }
+
+        function toggleGoalSubtask(goalId, subtaskId) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal || !Array.isArray(goal.subtasks)) return;
+            const sub = goal.subtasks.find(s => s.id === subtaskId);
+            if (!sub) return;
+            sub.done = !sub.done;
+            saveGoals();
+            renderGoals();
+        }
+
+        function deleteGoalSubtask(goalId, subtaskId) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal || !Array.isArray(goal.subtasks)) return;
+            goal.subtasks = goal.subtasks.filter(s => s.id !== subtaskId);
+            saveGoals();
+            renderGoals();
+        }
+
+        function renderGoalSubtasksSection(goal) {
+            const subtasks = Array.isArray(goal.subtasks) ? goal.subtasks : [];
+            const doneCount = subtasks.filter(s => s.done).length;
+            const rows = subtasks.map(s => `
+                <label style="display:flex; align-items:center; gap:8px; padding:5px 0; cursor:pointer; font-size:0.87rem; color:var(--text-dark);">
+                    <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleGoalSubtask('${goal.id}','${s.id}')" style="flex:0 0 auto; width:15px; height:15px; cursor:pointer;">
+                    <span style="flex:1; ${s.done ? 'text-decoration:line-through; opacity:0.55;' : ''}">${escapeHtml(s.text)}</span>
+                    <button type="button" onclick="event.preventDefault(); deleteGoalSubtask('${goal.id}','${s.id}')" title="Remove step"
+                        style="flex:0 0 auto; background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.9rem; padding:2px 4px; line-height:1;">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </label>
+            `).join('');
+
+            return `
+                <div class="goal-subtasks" style="margin:12px 0; padding:12px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-light);">
+                    <div style="font-size:0.82rem; font-weight:600; color:var(--text-muted); margin-bottom:${subtasks.length ? '6px' : '8px'}; display:flex; align-items:center; gap:6px;">
+                        <i class="fa-solid fa-list-check"></i> Steps${subtasks.length ? ` (${doneCount}/${subtasks.length})` : ''}
+                    </div>
+                    ${rows}
+                    <div style="display:flex; gap:6px; margin-top:${subtasks.length ? '8px' : '0'};">
+                        <input type="text" id="subtaskInput-${goal.id}" placeholder="Add a step..." maxlength="200"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault(); addGoalSubtaskFromInput('${goal.id}');}"
+                            style="flex:1; min-width:0; padding:7px 10px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-white); color:var(--text-dark); font-size:0.85rem;">
+                        <button type="button" onclick="addGoalSubtaskFromInput('${goal.id}')"
+                            style="flex:0 0 auto; padding:7px 12px; border:none; border-radius:8px; background:var(--primary); color:#fff; cursor:pointer; font-size:0.85rem;">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
         // Render Individual Goal Card with Enhanced Visuals
         function renderGoalCard(goal, status, progressPercent, forecast) {
 
@@ -44005,6 +44215,11 @@ window.DBP={
                                 <span class="goal-priority-dot"></span> ${priorityLabels[priority]}
                             </div>
                             ${renderGoalStreakBadge(goal)}
+                            ${(goal.type === 'study_hours' || goal.type === 'skill_mastery') && goal.manuallyUpdated ? `
+                                <span class="goal-streak-badge cold" title="Progress was set manually and won't update from your study hours until you resume auto-sync.">
+                                    <i class="fa-solid fa-lock"></i> Manual — not auto-syncing
+                                </span>
+                            ` : ''}
                         </div>
                         <span class="goal-status-badge ${status}">${config.badge}</span>
                     </div>
@@ -44060,6 +44275,8 @@ window.DBP={
                     <!-- "Why" note — the reminder of why this goal matters -->
                     ${goal.why ? `<div class="goal-why-note"><i class="fa-solid fa-comment"></i> ${escapeHtml(goal.why)}</div>` : ''}
 
+                    ${renderGoalSubtasksSection(goal)}
+
                     <!-- Actions -->
                     <div class="goal-actions">
                         ${renderGoalActionButtons(goal, status)}
@@ -44086,6 +44303,17 @@ window.DBP={
                 buttons += `
                     <button onclick="openUpdateCustomGoalModal('${goal.id}')" class="goal-action-btn primary">
                         <i class="fa-solid fa-pen"></i> Update Progress
+                    </button>
+                `;
+            }
+
+            // ✅ Resume Auto-sync — only shows once a study_hours/skill_mastery
+            // goal has been manually overridden, which otherwise silently stops
+            // it from ever picking up new study hours again.
+            if ((goal.type === 'study_hours' || goal.type === 'skill_mastery') && goal.manuallyUpdated) {
+                buttons += `
+                    <button onclick="resetManualUpdateFlag('${goal.id}')" class="goal-action-btn primary" title="This goal was manually overridden, so it stopped auto-updating from your study hours. Click to resume auto-sync.">
+                        <i class="fa-solid fa-rotate"></i> Resume Auto-sync
                     </button>
                 `;
             }
@@ -45060,6 +45288,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (goal) {
                 goal.manuallyUpdated = false;
                 saveGoals();
+                renderGoals();
+                updateGoalProgressChart();
+                if (typeof showNotification === 'function') {
+                    showNotification(`"${goal.title}" is auto-syncing again.`, 'success');
+                }
             }
         }
 
@@ -59465,6 +59698,11 @@ function saveDailyStudyData() {
         window.toggleCompletedGoals          = toggleCompletedGoals;
         window.applySuggestionToGoal         = applySuggestionToGoal;
         window.selectGoalType                = selectGoalType;
+        window.resetManualUpdateFlag         = resetManualUpdateFlag;
+        window.addGoalSubtask                = addGoalSubtask;
+        window.addGoalSubtaskFromInput       = addGoalSubtaskFromInput;
+        window.toggleGoalSubtask             = toggleGoalSubtask;
+        window.deleteGoalSubtask             = deleteGoalSubtask;
 
 
 // ===================================================================
