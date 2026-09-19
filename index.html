@@ -3424,6 +3424,58 @@
             border-color: rgba(219, 113, 175, 0.5);
         }
 
+        /* ── Quick "push deadline forward" control for overdue goals ──
+           An overdue goal that just sits red in the list is easy to avoid
+           opening. This lets you move the deadline (or lock in a new one)
+           in one tap instead of going through the full Edit modal. */
+        .goal-push-wrap { position: relative; display: inline-flex; }
+        .goal-action-btn.push {
+            background: rgba(231, 76, 60, 0.05);
+            color: #e74c3c;
+            border-color: rgba(231, 76, 60, 0.35);
+        }
+        .goal-action-btn.push:hover {
+            background: rgba(231, 76, 60, 0.12);
+            color: #e74c3c;
+            border-color: #e74c3c;
+        }
+        .goal-push-menu {
+            display: none; position: absolute; left: 0; top: calc(100% + 6px);
+            background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 10px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.12); z-index: 30; flex-direction: column;
+            min-width: 150px; overflow: hidden;
+        }
+        .goal-push-menu.show { display: flex; }
+        .goal-push-menu button {
+            background: none; border: none; padding: 9px 14px; text-align: left; font-size: 0.8rem;
+            color: var(--text-dark); cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .goal-push-menu button:hover { background: rgba(231, 76, 60, 0.08); }
+        .goal-push-custom {
+            border-top: 1px solid var(--border-color); padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 4px;
+        }
+        .goal-push-custom label {
+            font-size: 0.68rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+        }
+        .goal-push-custom input[type="date"] {
+            font-size: 0.78rem; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border-color);
+            background: var(--bg-white); color: var(--text-dark);
+        }
+        .dark-mode .goal-action-btn.push {
+            background: rgba(231, 76, 60, 0.15);
+            color: #ff8a80;
+            border-color: rgba(231, 76, 60, 0.4);
+        }
+        .dark-mode .goal-push-menu {
+            background: #7a5065; border-color: #9a7686;
+        }
+        .dark-mode .goal-push-menu button { color: #faf3f6; }
+        .dark-mode .goal-push-menu button:hover { background: rgba(255,255,255,0.1); }
+        .dark-mode .goal-push-custom input[type="date"] {
+            background: #6a4257; border-color: #9a7686; color: #faf3f6;
+        }
+
         .goal-item::before {
             content: '';
             position: absolute;
@@ -16760,6 +16812,161 @@
             color: #fff;
         }
         body.dark-mode #goalsSection .goal-steps.is-complete .goal-steps-count { color: #12352b; }
+        /* "Track progress from steps" toggle — sits between the Steps
+           head and the progress bar, only rendered for custom goals. */
+        #goalsSection .goal-steps-track-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: -2px 0 10px;
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: var(--theme-text-muted);
+            cursor: pointer;
+            user-select: none;
+        }
+        #goalsSection .goal-steps-track-row:hover { color: var(--theme-accent-deep); }
+        #goalsSection .goal-steps-track-check {
+            width: 15px;
+            height: 15px;
+            accent-color: var(--theme-accent-3);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        /* ── "Today's Focus" strip — top 1–3 goals to open right now,
+           each with its first unchecked Step. Sits above the Active
+           Goals list, independent of whatever sort/filter is applied. ── */
+        #goalsSection .goals-focus-strip {
+            margin-bottom: 20px;
+            padding: 14px 16px 16px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(219, 39, 119, 0.07));
+            border: 1px solid var(--theme-border-strong);
+        }
+        body.dark-mode #goalsSection .goals-focus-strip {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(219, 113, 175, 0.08));
+        }
+        #goalsSection .goals-focus-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            margin: 0 0 12px;
+            padding: 0;
+            border: none;
+            background: none;
+            font: inherit;
+            cursor: pointer;
+            text-align: left;
+            color: #b45309;
+            font-size: 1rem;
+            font-weight: 800;
+        }
+        body.dark-mode #goalsSection .goals-focus-header { color: #fbbf24; }
+        #goalsSection .goals-focus-header .goals-focus-title-text { white-space: nowrap; }
+        #goalsSection .goals-focus-header .goals-focus-sub {
+            font-weight: 500;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #goalsSection .goals-focus-header .goals-focus-chevron {
+            margin-left: auto;
+            font-size: 0.85rem;
+            opacity: 0.7;
+            transition: transform 0.2s;
+        }
+        #goalsSection .goals-focus-list {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            scroll-snap-type: x proximity;
+        }
+        #goalsSection .goals-focus-list::-webkit-scrollbar { height: 6px; }
+        #goalsSection .goals-focus-list::-webkit-scrollbar-thumb {
+            background: rgba(180, 83, 9, 0.3); border-radius: 999px;
+        }
+        #goalsSection .goals-focus-card {
+            position: relative;
+            flex: 1 1 220px;
+            min-width: 200px;
+            max-width: 280px;
+            scroll-snap-align: start;
+            background: var(--bg-white);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 12px 14px 12px 18px;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+        #goalsSection .goals-focus-card::before {
+            content: '';
+            position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+            border-radius: 14px 0 0 14px;
+            background: linear-gradient(180deg, #f59e0b, #db2777);
+        }
+        #goalsSection .goals-focus-card:hover,
+        #goalsSection .goals-focus-card:focus-visible {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.10);
+            border-color: #f59e0b;
+            outline: none;
+        }
+        body.dark-mode #goalsSection .goals-focus-card {
+            background: #7a5065; border-color: #9a7686;
+        }
+        #goalsSection .goals-focus-rank {
+            position: absolute; top: 10px; right: 10px;
+            width: 18px; height: 18px; border-radius: 50%;
+            background: rgba(180, 83, 9, 0.14); color: #b45309;
+            font-size: 0.68rem; font-weight: 800;
+            display: flex; align-items: center; justify-content: center;
+        }
+        body.dark-mode #goalsSection .goals-focus-rank { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+        #goalsSection .goals-focus-title {
+            font-size: 0.88rem; font-weight: 700; color: var(--text-dark);
+            margin: 0 22px 8px 0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        body.dark-mode #goalsSection .goals-focus-title { color: #faf3f6; }
+        #goalsSection .goals-focus-meta-row {
+            display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+        }
+        #goalsSection .goals-focus-pct { font-size: 0.82rem; font-weight: 800; color: var(--theme-accent-deep); }
+        #goalsSection .goals-focus-badge {
+            padding: 1px 8px; border-radius: 999px;
+            font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.2px;
+        }
+        #goalsSection .goals-focus-badge.urgent { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+        #goalsSection .goals-focus-badge.soon   { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+        #goalsSection .goals-focus-badge.ahead  { background: rgba(16, 185, 129, 0.12); color: #059669; }
+        #goalsSection .goals-focus-badge.ok     { background: rgba(107, 114, 128, 0.12); color: var(--text-muted); }
+        #goalsSection .goals-focus-bar {
+            height: 4px; border-radius: 999px; margin-bottom: 9px;
+            background: rgba(180, 83, 9, 0.14); overflow: hidden;
+        }
+        #goalsSection .goals-focus-bar-fill {
+            height: 100%; border-radius: inherit;
+            background: linear-gradient(90deg, #f59e0b, #db2777);
+        }
+        #goalsSection .goals-focus-next {
+            display: flex; align-items: flex-start; gap: 6px;
+            font-size: 0.78rem; color: var(--text-dark);
+            background: rgba(180, 83, 9, 0.08);
+            border-radius: 8px; padding: 6px 8px;
+        }
+        body.dark-mode #goalsSection .goals-focus-next { color: #faf3f6; background: rgba(251, 191, 36, 0.1); }
+        #goalsSection .goals-focus-next i { margin-top: 2px; color: #b45309; flex-shrink: 0; }
+        body.dark-mode #goalsSection .goals-focus-next i { color: #fbbf24; }
+        #goalsSection .goals-focus-next.is-empty { font-style: italic; opacity: 0.85; }
+
+        @media (max-width: 600px) {
+            #goalsSection .goals-focus-card { min-width: 74vw; }
+        }
         #goalsSection .goal-steps-bar {
             height: 5px;
             margin-bottom: 8px;
@@ -43231,7 +43438,17 @@ window.DBP={
             if (!goal.streak) goal.streak = { count: 0, best: 0, lastDate: null, lastProgress: 0 };
             if (!Array.isArray(goal.milestonesHit)) goal.milestonesHit = [];
 
-            const progress = goal.currentProgress || 0;
+            // Step-tracked custom goals derive both the raw progress number
+            // (for streak "did something today" detection) and the percent
+            // (for milestones) from the Steps checklist instead of
+            // currentProgress/target, same source getGoalProgressPercent()
+            // uses — so streaks/milestones never disagree with the % shown.
+            const stepsTracked = goal.type === 'custom' && goal.trackFromSteps;
+            const subtasks = stepsTracked ? (Array.isArray(goal.subtasks) ? goal.subtasks : []) : null;
+            const progress = stepsTracked ? subtasks.filter(s => s.done).length : (goal.currentProgress || 0);
+            const percent = stepsTracked
+                ? (subtasks.length ? Math.min(100, (progress / subtasks.length) * 100) : 0)
+                : (goal.target > 0 ? Math.min(100, (progress / goal.target) * 100) : 0);
             const prevProgress = goal.streak.lastProgress || 0;
             let changed = false;
 
@@ -43261,7 +43478,6 @@ window.DBP={
             }
 
             // Milestone celebrations at 25 / 50 / 75 / 100%
-            const percent = goal.target > 0 ? Math.min(100, (progress / goal.target) * 100) : 0;
             [25, 50, 75, 100].forEach(mark => {
                 if (percent >= mark && !goal.milestonesHit.includes(mark)) {
                     goal.milestonesHit.push(mark);
@@ -43272,6 +43488,7 @@ window.DBP={
 
             if (changed) saveGoals();
         }
+
 
         function celebrateGoalMilestone(goal, mark) {
             const messages = {
@@ -43316,8 +43533,15 @@ window.DBP={
 
         function getGoalStatus(goal) {
             const now = getVietnamNow();
-            // ✅ Completion check FIRST — a finished goal is never overdue
-            if (goal.currentProgress >= goal.target) return 'completed';
+            // ✅ Completion check FIRST — a finished goal is never overdue.
+            // A step-tracked custom goal is "done" when every step is
+            // checked off, not when currentProgress happens to reach the
+            // (now largely decorative) numeric target field.
+            const isStepsTracked = goal.type === 'custom' && goal.trackFromSteps;
+            const isComplete = isStepsTracked
+                ? Array.isArray(goal.subtasks) && goal.subtasks.length > 0 && goal.subtasks.every(s => s.done)
+                : goal.currentProgress >= goal.target;
+            if (isComplete) return 'completed';
             if (goal.deadline) {
                 // Deadline is a calendar date; it expires at 23:59:59 Vietnam time on that day
                 const deadline = getVietnamDeadlineEnd(goal.deadline);
@@ -43328,6 +43552,7 @@ window.DBP={
             }
             return 'active';
         }
+
 
         // ── Proactive deadline reminder ───────────────────────────
         // Before this, a due-soon/overdue goal only showed a passive badge
@@ -44373,6 +44598,95 @@ window.DBP={
         // ═══════════ END GOAL LIST — SORT & FILTER ═══════════
 
 
+        // ═══════════ "TODAY'S FOCUS" STRIP ═══════════
+        // A tiny "where do I even start" widget: the 1–3 goals most worth
+        // opening right now (most behind pace, then highest priority),
+        // each paired with its first unchecked Step. Independent of the
+        // toolbar's sort/filter/search — it always reflects what actually
+        // matters, even while you're filtered down to something else.
+        const GOALS_FOCUS_COLLAPSE_KEY = 'goalsFocusCollapsed';
+
+        function isGoalsFocusCollapsed() {
+            try { return localStorage.getItem(GOALS_FOCUS_COLLAPSE_KEY) === '1'; }
+            catch (e) { return false; }
+        }
+
+        function toggleGoalsFocusCollapse() {
+            try {
+                localStorage.setItem(GOALS_FOCUS_COLLAPSE_KEY, isGoalsFocusCollapsed() ? '0' : '1');
+            } catch (e) { /* storage blocked → just re-render with default state */ }
+            renderGoals();
+        }
+
+        // The single most useful line to show under a focus card: the
+        // first Step not yet checked off. No steps at all → a nudge to
+        // add some, rather than leaving the card looking empty.
+        function firstIncompleteGoalStep(goal) {
+            const subtasks = Array.isArray(goal.subtasks) ? goal.subtasks : [];
+            const next = subtasks.find(s => !s.done);
+            if (next) return { text: next.text, hasSteps: true };
+            if (subtasks.length) return { text: 'All steps checked — update progress or add more', hasSteps: true };
+            return { text: 'No steps yet — break this down in Edit', hasSteps: false };
+        }
+
+        // Why THIS goal made the cut, in one short badge — most urgent
+        // reason wins, matching the 'pace' sort's own priority order.
+        function goalFocusReason(goal, status, paceInfo) {
+            if (status === 'overdue') return { text: 'Overdue', cls: 'urgent' };
+            if (paceInfo && paceInfo.gap >= 5) return { text: 'Behind pace', cls: 'urgent' };
+            if (status === 'soon') return { text: 'Due soon', cls: 'soon' };
+            if ((goal.priority || 'medium') === 'high') return { text: 'High priority', cls: 'soon' };
+            if (paceInfo && paceInfo.gap <= -5) return { text: 'Ahead of pace', cls: 'ahead' };
+            return { text: 'On track', cls: 'ok' };
+        }
+
+        function renderTodaysFocusStrip(focusGoals, statusMap, pctMap, paceMap) {
+            if (!focusGoals.length) return '';
+            const collapsed = isGoalsFocusCollapsed();
+            const typeIcons = {
+                study_hours: '<i class="fa-solid fa-book"></i>',
+                skill_mastery: '<i class="fa-solid fa-bullseye"></i>',
+                custom: '<i class="fa-solid fa-square-check"></i>'
+            };
+
+            const cards = focusGoals.map((goal, i) => {
+                const status = statusMap.get(goal.id);
+                const pct = Math.round(pctMap.get(goal.id) ?? 0);
+                const paceInfo = paceMap.get(goal.id);
+                const reason = goalFocusReason(goal, status, paceInfo);
+                const step = firstIncompleteGoalStep(goal);
+                return `
+                    <div class="goals-focus-card" onclick="DLT.navigate('g_${goal.id}')" role="button" tabindex="0"
+                         onkeydown="if(event.key==='Enter'){DLT.navigate('g_${goal.id}');}" title="Jump to this goal">
+                        <span class="goals-focus-rank">${i + 1}</span>
+                        <div class="goals-focus-title">${typeIcons[goal.type] || ''} ${escapeHtml(goal.title)}</div>
+                        <div class="goals-focus-meta-row">
+                            <span class="goals-focus-pct">${pct}%</span>
+                            <span class="goals-focus-badge ${reason.cls}">${reason.text}</span>
+                        </div>
+                        <div class="goals-focus-bar"><div class="goals-focus-bar-fill" style="width:${Math.min(100, pct)}%;"></div></div>
+                        <div class="goals-focus-next${step.hasSteps ? '' : ' is-empty'}">
+                            <i class="fa-solid ${step.hasSteps ? 'fa-circle-play' : 'fa-lightbulb'}"></i>
+                            <span>${escapeHtml(step.text)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="goals-focus-strip">
+                    <button type="button" class="goals-focus-header" onclick="toggleGoalsFocusCollapse()" aria-expanded="${!collapsed}">
+                        <i class="fa-solid fa-sun"></i>
+                        <span class="goals-focus-title-text">Today's Focus</span>
+                        <span class="goals-focus-sub">Top ${focusGoals.length} to start with</span>
+                        <i class="fa-solid fa-chevron-${collapsed ? 'down' : 'up'} goals-focus-chevron"></i>
+                    </button>
+                    ${collapsed ? '' : `<div class="goals-focus-list">${cards}</div>`}
+                </div>
+            `;
+        }
+        // ═══════════ END "TODAY'S FOCUS" STRIP ═══════════
+
         function renderGoals() {
             const container = document.getElementById('goalsContainer');
             const careerTitleEl = document.getElementById('goalsCareerTitle');
@@ -44406,6 +44720,16 @@ window.DBP={
             const activeGoals = visibleGoals.filter(g => statusMap.get(g.id) !== 'completed');
             const completedGoals = visibleGoals.filter(g => statusMap.get(g.id) === 'completed');
 
+            // Today's Focus candidates: every non-completed goal in this
+            // career (ignores the toolbar's own filter/search/sort), most
+            // behind pace first, then highest priority — same ordering as
+            // the "Pace" sort mode, just capped to the top 3.
+            const focusGoals = careerGoals
+                .filter(g => statusMap.get(g.id) !== 'completed')
+                .sort((a, b) => compareGoalsForView(a, b, 'pace', pctMap, paceMap))
+                .slice(0, 3);
+            const focusStripHtml = renderTodaysFocusStrip(focusGoals, statusMap, pctMap, paceMap);
+
             // Default sort ('smart') = the original one: priority High → Low,
             // then nearest deadline. Completed goals keep their order unless
             // the user picked another sort.
@@ -44418,7 +44742,7 @@ window.DBP={
 
             // Goals exist, but the current filters hide all of them
             if (careerGoals.length > 0 && visibleGoals.length === 0) {
-                container.innerHTML = `
+                container.innerHTML = focusStripHtml + `
                     <div style="text-align: center; padding: 36px 20px; color: var(--text-muted);">
                         <i class="fa-solid fa-magnifying-glass" style="font-size: 2.6rem; margin-bottom: 12px; opacity: 0.5;"></i>
                         <p style="margin: 0 0 16px 0; font-size: 0.95rem;">No goals match these filters.</p>
@@ -44451,7 +44775,7 @@ window.DBP={
                 return;
             }
             
-            let html = '';
+            let html = focusStripHtml;
             
             // ✅ ACTIVE GOALS SECTION (Always Expanded)
             if (activeGoals.length > 0) {
@@ -44814,6 +45138,29 @@ window.DBP={
             renderGoals();
         }
 
+        // Custom goals only: flips whether this goal's % comes from the
+        // Steps checklist (doneCount/totalCount) instead of manual updates
+        // via the "Update Progress" button. Fixes custom goals showing a
+        // stale/misleading % while their steps are mostly done — a goal
+        // with 4/5 steps checked used to still say 0% if progress was
+        // never manually touched.
+        function toggleGoalStepsTracking(goalId) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal || goal.type !== 'custom') return;
+            goal.trackFromSteps = !goal.trackFromSteps;
+            calculateGoalProgress(goal); // sync currentProgress immediately, before the next render
+            saveGoals();
+            renderGoals();
+            if (typeof showNotification === 'function') {
+                showNotification(
+                    goal.trackFromSteps
+                        ? '📋 Progress will now track from Steps.'
+                        : 'Progress is manual again — use "Update Progress" to change it.',
+                    'info'
+                );
+            }
+        }
+
         function renderGoalSubtasksSection(goal) {
             const subtasks = Array.isArray(goal.subtasks) ? goal.subtasks : [];
             const total = subtasks.length;
@@ -44831,12 +45178,23 @@ window.DBP={
                 </label>
             `).join('');
 
+            // Only custom goals get this toggle — study_hours/skill_mastery
+            // already auto-sync their % from logged hours, so "Steps" there
+            // stays a plain checklist with no effect on progress.
+            const trackToggle = goal.type === 'custom' ? `
+                <label class="goal-steps-track-row" title="When on, this goal's % is calculated from how many steps below are checked off, instead of the Update Progress button.">
+                    <input type="checkbox" class="goal-steps-track-check" ${goal.trackFromSteps ? 'checked' : ''} onchange="toggleGoalStepsTracking('${goal.id}')">
+                    <span>Track progress from steps</span>
+                </label>
+            ` : '';
+
             return `
                 <div class="goal-subtasks goal-steps${allDone ? ' is-complete' : ''}">
                     <div class="goal-steps-head">
                         <i class="fa-solid fa-list-check"></i> Steps
                         ${total ? `<span class="goal-steps-count">${allDone ? '<i class="fa-solid fa-check"></i> ' : ''}${doneCount}/${total}</span>` : ''}
                     </div>
+                    ${trackToggle}
                     ${total ? `<div class="goal-steps-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div class="goal-steps-bar-fill" style="width:${pct}%;"></div></div>` : ''}
                     ${rows}
                     <div class="goal-step-add">
@@ -44894,6 +45252,14 @@ window.DBP={
             const unit = goal.type === 'custom' ? (goal.customUnit || 'items') : 'hours';
             const chainStage = getGoalChainStage(goal);
             const typeLabelPlain = `${getGoalTypeDisplayName(goal.type)}${goal.skillName ? ' • ' + goal.skillName : ''}`;
+
+            // Step-tracked custom goals: the numeric target/unit stop being
+            // the source of truth for the progress row — show step counts
+            // instead so the row always matches the % right next to it.
+            const stepsTracked = goal.type === 'custom' && goal.trackFromSteps;
+            const cardSubtasks = Array.isArray(goal.subtasks) ? goal.subtasks : [];
+            const cardStepsDone = cardSubtasks.filter(s => s.done).length;
+            const cardStepsTotal = cardSubtasks.length;
             
             return `
                 <div class="goal-item" data-id="${goal.id}" style="border-left-color: ${config.borderColor};">
@@ -44914,13 +45280,18 @@ window.DBP={
                                     <i class="fa-solid fa-lock"></i> Manual — not auto-syncing
                                 </span>
                             ` : ''}
+                            ${stepsTracked ? `
+                                <span class="goal-streak-badge cold" title="This goal's % comes from the Steps checklist below, not the Update Progress button.">
+                                    <i class="fa-solid fa-list-check"></i> Tracking from Steps
+                                </span>
+                            ` : ''}
                         </div>
                         <span class="goal-status-badge ${status}">${config.badge}</span>
                     </div>
                     
                     <!-- Progress Bar -->
                     <div class="goal-progress-row">
-                        <span>${goal.currentProgress.toFixed(1)} / ${goal.target} ${goal.type === 'custom' ? escapeHtml(goal.customUnit || 'items') : 'hours'}</span>
+                        <span>${stepsTracked ? `${cardStepsDone} / ${cardStepsTotal} steps done` : `${goal.currentProgress.toFixed(1)} / ${goal.target} ${goal.type === 'custom' ? escapeHtml(goal.customUnit || 'items') : 'hours'}`}</span>
                         <span class="goal-progress-percent" style="color: ${config.color};">${progressPercent.toFixed(0)}%</span>
                     </div>
                     <div class="goal-progress-container">
@@ -44929,6 +45300,7 @@ window.DBP={
                     ${renderGoalMilestoneTrack(goal, progressPercent)}
 
                     <!-- Chain stage pace — only for goals with a valid "Continues
+
                          From" link. Shows the real per-day intensity for THIS
                          stage's window, not a blended average since day one. -->
                     ${chainStage && status !== 'completed' ? `
@@ -44991,9 +45363,34 @@ window.DBP={
 
         function renderGoalActionButtons(goal, status) {
             let buttons = '';
-            
-            // ✅ Update Progress (ONLY for custom goals)
-            if (goal.type === 'custom') {
+
+            // ⏩ Push deadline — only for overdue goals. Lets you move the
+            // due date forward (or lock in a real one) in a single tap
+            // instead of always having to open the full Edit modal.
+            if (status === 'overdue') {
+                buttons += `
+                    <div class="goal-push-wrap">
+                        <button type="button" onclick="event.stopPropagation(); toggleGoalPushMenu('${goal.id}')" class="goal-action-btn push" title="Push this goal's deadline forward">
+                            <i class="fa-solid fa-forward"></i> Push deadline
+                        </button>
+                        <div class="goal-push-menu" id="goal-push-menu-${goal.id}" onclick="event.stopPropagation()">
+                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 1)"><i class="fa-solid fa-forward"></i> +1 day</button>
+                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 3)"><i class="fa-solid fa-forward"></i> +3 days</button>
+                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 7)"><i class="fa-solid fa-forward"></i> +1 week</button>
+                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 30)"><i class="fa-solid fa-forward"></i> +1 month</button>
+                            <div class="goal-push-custom">
+                                <label>Custom date</label>
+                                <input type="date" min="${getVietnamDateStr()}" onchange="pushGoalDeadlineTo('${goal.id}', this.value)" />
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // ✅ Update Progress (ONLY for custom goals, and only while
+            // progress isn't being auto-derived from Steps — otherwise a
+            // manual edit here would just get overwritten on next render)
+            if (goal.type === 'custom' && !goal.trackFromSteps) {
                 buttons += `
                     <button onclick="openUpdateCustomGoalModal('${goal.id}')" class="goal-action-btn primary">
                         <i class="fa-solid fa-pen"></i> Update Progress
@@ -45038,6 +45435,71 @@ window.DBP={
             
             return buttons;
         }
+
+        /* ── Push Deadline (overdue goals) ──────────────────────────
+           Actually rewrites goal.deadline, rather than just muting the
+           red styling — the point is to get an overdue goal out of the
+           red in one tap, either by giving it breathing room or by
+           locking in a specific new date. */
+
+        // When a goal is overdue, "+N days" should count from TODAY
+        // (Vietnam time), not from the old already-past deadline —
+        // otherwise +3 days on something 20 days overdue would still
+        // leave it 17 days overdue, which defeats the point.
+        function goalPushBaseDateStr(goal) {
+            const todayStr = getVietnamDateStr();
+            return (goal.deadline && goal.deadline > todayStr) ? goal.deadline : todayStr;
+        }
+
+        // Adds N days to a "YYYY-MM-DD" string using local calendar fields
+        // (not Date#toISOString, which converts to UTC and can silently
+        // shift the day for timezones ahead of UTC, like Vietnam).
+        function addDaysToDateStr(dateStr, days) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const dt = new Date(y, m - 1, d);
+            dt.setDate(dt.getDate() + Number(days));
+            const yyyy = dt.getFullYear();
+            const mm = String(dt.getMonth() + 1).padStart(2, '0');
+            const dd = String(dt.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        function toggleGoalPushMenu(goalId) {
+            const menu = document.getElementById('goal-push-menu-' + goalId);
+            if (!menu) return;
+            const willShow = !menu.classList.contains('show');
+            document.querySelectorAll('.goal-push-menu.show').forEach(el => el.classList.remove('show'));
+            if (willShow) menu.classList.add('show');
+        }
+
+        function _applyGoalDeadlinePush(goalId, newDate) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal) return;
+            goal.deadline = newDate;
+            saveGoals();
+            renderGoals();
+            if (typeof showNotification === 'function') showNotification(`Deadline pushed to ${formatDate(newDate)}`, 'success');
+        }
+
+        function pushGoalDeadline(goalId, days) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal) return;
+            const base = goalPushBaseDateStr(goal);
+            const newDate = addDaysToDateStr(base, days);
+            _applyGoalDeadlinePush(goalId, newDate);
+        }
+
+        function pushGoalDeadlineTo(goalId, dateStr) {
+            if (!dateStr) return;
+            _applyGoalDeadlinePush(goalId, dateStr);
+        }
+
+        // Close any open push menu when clicking outside of it.
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.goal-push-wrap')) {
+                document.querySelectorAll('.goal-push-menu.show').forEach(el => el.classList.remove('show'));
+            }
+        });
 
 
 
@@ -46513,6 +46975,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
         function calculateGoalProgress(goal) {
+            // Step-tracked custom goals: progress IS the Steps checklist —
+            // this is the one place that writes goal.currentProgress for
+            // them, so every other reader (status, streaks, gamification,
+            // the DLT "still due?" scan) sees the same number.
+            if (goal.type === 'custom' && goal.trackFromSteps) {
+                const subtasks = Array.isArray(goal.subtasks) ? goal.subtasks : [];
+                goal.currentProgress = subtasks.filter(s => s.done).length;
+                return goal.currentProgress;
+            }
             if (goal.manuallyUpdated) {
                 return Math.min(goal.target, Math.max(0, goal.currentProgress || 0));
             }
@@ -46721,6 +47192,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
         function getGoalProgressPercent(goal) {
+            // Step-tracked custom goals: % = steps done / total steps,
+            // completely independent of the (now decorative) numeric
+            // target field — a goal with 4/5 steps checked shows 80%,
+            // not whatever currentProgress/target happens to work out to.
+            if (goal.type === 'custom' && goal.trackFromSteps) {
+                const subtasks = Array.isArray(goal.subtasks) ? goal.subtasks : [];
+                const total = subtasks.length;
+                if (!total) return 0;
+                const done = calculateGoalProgress(goal); // keeps currentProgress in sync too
+                return Math.min(100, (done / total) * 100);
+            }
             const progress = calculateGoalProgress(goal);
             return goal.target > 0 ? Math.min(100, (progress / goal.target) * 100) : 0;
         }
