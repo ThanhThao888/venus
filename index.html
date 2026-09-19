@@ -12343,6 +12343,12 @@
 .recommendation.high     { border-left-color: #f39c12; }
 .recommendation.medium   { border-left-color: #b892c9; }
 
+/* Từng nằm nhầm (không scope) trong CSS của máy tính nợ ngủ cũ; các module khác đang dùng ké
+   nên giữ lại để giao diện của chúng không đổi. */
+.recommendations-section { margin-top: 20px; }
+.rec-title { font-weight: 700; color: var(--ia-text); font-size: 0.88rem; }
+.pattern-alert { padding: 12px 14px; border-radius: 12px; margin-bottom: 18px; border-left: 3px solid; background: rgba(var(--ia-line-rgb), 0.05); }
+
 .rec-icon {
     font-size: 1.25rem;
     flex-shrink: 0;
@@ -28884,18 +28890,6 @@ window.DBP={
                 <div id="sleepStatsRow" style="flex:1; min-width:220px; display:grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap:8px;"></div>
             </div>
 
-            <!-- Sleep Debt Trend (#5) — nợ ngủ rolling-7-ngày vẽ theo thời gian, để thấy
-                 xu hướng tăng/giảm thay vì chỉ đọc 1 con số snapshot ở ô "Nợ ngủ (7đ)". -->
-            <div id="sleepDebtTrendWrap" style="display:none; margin: 4px 0 14px; padding:10px 10px 6px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
-                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
-                    <span style="font-size:0.78rem; font-weight:600; color:var(--text-muted);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-flame"></use></svg> Xu hướng nợ ngủ (rolling 7 ngày)</span>
-                    <span id="sleepDebtTrendDelta" style="font-size:0.75rem; font-weight:600;"></span>
-                </div>
-                <div style="height:64px;">
-                    <canvas id="sleepDebtTrendChart"></canvas>
-                </div>
-            </div>
-
             <div class="sleep-section-header" onclick="toggleSleepSetup()">
                 <span><svg class="icon-svg" aria-hidden="true"><use href="#icon-wrench"></use></svg> Thiết lập &amp; nhắc nhở</span>
                 <span id="sleepSetupChevron" class="sleep-chevron">▾</span>
@@ -28953,9 +28947,6 @@ window.DBP={
 
                     <div id="sleepCalcResults"></div>
 
-                    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:10px; line-height:1.55; border-top:1px dashed var(--border-color); padding-top:8px;">
-                        <svg class="icon-svg" aria-hidden="true"><use href="#icon-lightbulb"></use></svg> <b>Mẹo:</b> khi trằn trọc, đừng mở điện thoại lên để chỉnh lại báo thức — ánh sáng xanh ức chế melatonin thêm, khiến bạn càng khó vào giấc hơn. Hãy chọn sẵn phương án phù hợp với "kiểu vào giấc" tối nay ở trên, đặt báo thức một lần rồi úp điện thoại xuống/để xa giường.
-                    </div>
                 </div>
             </div>
 
@@ -29020,7 +29011,17 @@ window.DBP={
                 <div id="sleepBriefCopyMsg" style="display:none; font-size:0.72rem; color:#10b981; margin-top:6px;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Đã copy vào clipboard!</div>
             </div>
 
-                <!-- Cognitive Readiness Advisor — não hôm nay đang ở mức nào, nên học/làm gì,
+                <!-- Nợ ngủ — sổ nợ 14 đêm (Sleep Debt Engine). Cùng 1 công thức với ô "Nợ ngủ" phía trên,
+                 Morning Brief, Cognitive Readiness, Insight Banner và nút Copy for AI. -->
+            <div id="sleepDebtCard" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-hourglass"></use></svg> Nợ ngủ</span>
+                    <span id="sleepDebtBadge" style="font-size:0.78rem; font-weight:700; padding:2px 10px; border-radius:10px; display:none;"></span>
+                </div>
+                <div id="sleepDebtCardBody"></div>
+            </div>
+
+                <!-- Cognitive Readiness — não hôm nay đang ở mức nào,
                  kèm chế độ riêng cho ngày làm ca đêm (#40 Energy-aware task routing) -->
             <div id="cogReadinessWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -32782,7 +32783,7 @@ window.DBP={
                 <div class="correlation-filter-tabs" id="sleepMetricTabs" style="margin-bottom:8px;">
                     <button class="corr-filter-btn active" onclick="setSleepMetricXAxis('hours')" data-metric="hours" title="Số giờ ngủ đêm hôm trước">Hours</button>
                     <button class="corr-filter-btn"        onclick="setSleepMetricXAxis('se')"    data-metric="se"    title="Sleep Efficiency — TST/TIB × 100">SE</button>
-                    <button class="corr-filter-btn"        onclick="setSleepMetricXAxis('debt')"  data-metric="debt"  title="Nợ ngủ cộng dồn 7 ngày gần nhất">Nợ ngủ</button>
+                    <button class="corr-filter-btn"        onclick="setSleepMetricXAxis('debt')"  data-metric="debt"  title="Sổ nợ ngủ 14 đêm gần nhất (thiếu thì cộng, ngủ dư thì trả dần)">Nợ ngủ</button>
                     <button class="corr-filter-btn"        onclick="setSleepMetricXAxis('reg')"   data-metric="reg"   title="Độ lệch chuẩn giờ ngủ/dậy trong 7 đêm gần nhất">Đều đặn</button>
                 </div>
                 <div id="sleepStudyChartHost">
@@ -39322,10 +39323,7 @@ window.DBP={
                 solTrendChart.options.scales.y.grid.color = isDark ? 'rgba(184, 145, 159,0.1)' : 'rgba(184, 145, 159,0.15)';
                 solTrendChart.update();
             }
-            if (sleepDebtTrendChart) {
-                sleepDebtTrendChart.options.scales.y.grid.color = isDark ? 'rgba(184, 145, 159,0.1)' : 'rgba(184, 145, 159,0.15)';
-                sleepDebtTrendChart.update();
-            }
+            if (sleepDebtChart && typeof renderSleepDebtCard === 'function') renderSleepDebtCard();
             if (dailyStudyChart) {
                 const textColor = isDark ? '#e6a8c9' : '#b1568a';
                 dailyStudyChart.options.scales.y.ticks.color = textColor;
@@ -45291,7 +45289,39 @@ document.addEventListener('DOMContentLoaded', function() {
         let sleepChart = null;
         let sleepTimelineChart = null;
         let solTrendChart = null;
-        let sleepDebtTrendChart = null;
+        let sleepDebtChart = null;
+
+        // Cấu hình Sleep Debt Engine (xem computeSleepDebt) — chỉnh ở đây nếu muốn đổi cách tính.
+        const SLEEP_DEBT_CFG = {
+            windowNights: 14,      // sổ nợ chỉ nhìn 14 đêm gần nhất
+            maxCreditPerNight: 2,  // 1 đêm ngủ dư trả tối đa 2h nợ
+            minLoggedNights: 3,    // ít hơn thì không đủ dữ liệu để kết luận
+            tolerance: 0.25,       // đêm được coi là "đạt" nếu ≥ mục tiêu − 15 phút (cùng vòng mục tiêu/chuỗi)
+            longNightHours: 14,    // đêm >14h thường là quên bấm Stop
+            trendNights: 7,        // so nợ hiện tại với nợ sau đêm cách đây 7 ngày
+            trendFlatBand: 0.5     // chênh <0.5h coi như không đổi
+        };
+        // Cấn trừ nap vào nợ ngủ. Đây là tham số thiết kế (ước lượng), không phải "chuẩn y khoa" — chỉnh ở đây.
+        // Nap được quy đổi: phút nợ được trả = f(thời lượng nap) × β(giờ kể từ lúc dậy), rồi cộng các nap trong
+        // ngày và chặn ở dailyCapMin.
+        const SLEEP_NAP_CFG = {
+            dailyCapMin: 60,        // 1 ngày nap tối đa trả 60 phút nợ, dù nap nhiều hay ít
+            attachWithinHours: 20,  // nap gắn với đêm ngủ chính liền trước nếu cách ≤20h; xa hơn = có đêm chưa log ở giữa → bỏ qua
+            // f: phút nap → phút nợ được trả (đã gồm hiệu quả theo giai đoạn ngủ). Nội suy tuyến tính nên liên tục
+            // và không giảm (nap dài hơn không bao giờ trả được ít hơn nap ngắn hơn):
+            //  <5p chưa vào giấc thật · 10–25p N1/N2 ít quán tính · 25–45p dễ tỉnh giữa N3 nên dốc thấp ·
+            //  45–90p đủ 1 chu kỳ NREM–REM nên dốc cao · >90p cắt ngọn (giá trị biên ≈ 0).
+            durationCurve: [[0, 0], [5, 0], [10, 5], [25, 17.5], [45, 22.5], [90, 60]],
+            // β: hệ số theo GIỜ KỂ TỪ LÚC DẬY (áp lực ngủ tích luỹ từ lúc thức, nên đúng cả với người dậy muộn/làm ca):
+            //  <3.5h sau khi dậy chưa đủ áp lực ngủ · 5–8.5h khung tốt · muộn dần thì ăn vào giấc ngủ đêm.
+            timingCurve: [[3.5, 0.2], [5, 1], [8.5, 1], [9.5, 0.6], [10.5, 0.6], [11.5, 0.2]]
+        };
+        const SLEEP_DEBT_LEVELS = [
+            { max: 2,        key: 'ok',     label: 'Ổn',   color: '#10b981' },
+            { max: 5,        key: 'mild',   label: 'Nhẹ',  color: '#f59e0b' },
+            { max: 10,       key: 'medium', label: 'Vừa',  color: '#f97316' },
+            { max: Infinity, key: 'high',   label: 'Nặng', color: '#ef4444' }
+        ];
 
         // ✅ Mục tiêu giờ ngủ (mặc định 8h, lưu riêng cho từng user trong localStorage)
         const SLEEP_GOAL_KEY = 'sleepGoalHours';
@@ -45458,7 +45488,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return `<div style="display:flex;gap:6px;flex-wrap:wrap;">${chips.join('')}</div>`;
         }
 
-        // ===== Morning Sleep Brief — 4 dòng: TST, SE, debt, regularity + 1 insight + 1 khuyến nghị =====
+        // ===== Morning Sleep Brief — 4 dòng: TST, SE, debt, regularity + 1 insight =====
         // ⚠️ Toàn bộ hàm dưới đây CHỈ dùng new Date()/getHours()/getMinutes()/setHours()
         // (giờ LOCAL của máy, tức giờ VN) — KHÔNG dùng toISOString()/getUTCHours(), vì
         // đó chính là bug múi giờ đã từng gặp (UTC lệch 7h so với giờ VN).
@@ -45475,15 +45505,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const se = computeSleepEfficiency(last);
             const reg = computeSleepRegularity(7);
 
-            const byDate = {};
-            sorted.forEach(s => {
-                const dateStr = toLocalDateStr(new Date(s.start));
-                if (!byDate[dateStr]) byDate[dateStr] = 0;
-                byDate[dateStr] += s.duration;
-            });
-            const dailyTotals = Object.values(byDate);
-            const last7 = dailyTotals.slice(-7);
-            const debt7 = last7.reduce((sum, d) => sum + Math.max(0, goal - d), 0);
+            // Nợ ngủ lấy từ Sleep Debt Engine (sổ 14 đêm) — cùng số với card Nợ ngủ bên dưới
+            const debtInfo = computeSleepDebt();
+            const debtOk = debtInfo.ok;
+            const debt7 = debtOk ? debtInfo.debt : 0;
 
             // So sánh với mục tiêu đã lưu từ Calculator (#14) — chỉ hiện nếu mục tiêu đó
             // thuộc về "tối hôm qua" (cùng eveningDateKeyForBedtime với session gần nhất).
@@ -45508,23 +45533,15 @@ document.addEventListener('DOMContentLoaded', function() {
             else if (last.auto_tags?.lateMeal) insight = '<svg class="icon-svg" aria-hidden="true"><use href="#icon-utensils"></use></svg> Đêm qua ăn trễ (<3h trước khi ngủ) — có thể ảnh hưởng chất lượng giấc ngủ.';
             else if (last.tags?.alcohol) insight = '<svg class="icon-svg" aria-hidden="true"><use href="#icon-beer"></use></svg> Đêm qua có alcohol — REM thường bị ức chế những đêm như vậy.';
             else if (se !== null && se < 85) insight = `<svg class="icon-svg" aria-hidden="true"><use href="#icon-trending-down"></use></svg> SE đêm qua chỉ ${se.toFixed(0)}% — giấc ngủ có dấu hiệu phân mảnh (nhiều lần tỉnh/SOL dài).`;
-            else if (debt7 > 5) insight = `<svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> Nợ ngủ 7 ngày đang ở mức ${debt7.toFixed(1)}h — khá cao.`;
+            else if (debtOk && debt7 > 5) insight = `<svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> Nợ ngủ đang ở mức ${debt7.toFixed(1)}h — khá cao.`;
             else if (reg && reg.score > 60) insight = `<svg class="icon-svg" aria-hidden="true"><use href="#icon-shuffle"></use></svg> Giờ ngủ/dậy đang lệch ±${Math.round(reg.score)} phút trong 7 đêm — dấu hiệu social jetlag.`;
             else insight = '<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Không có tín hiệu bất thường nào nổi bật từ 7 đêm gần nhất.';
 
-            // 1 khuyến nghị duy nhất, ưu tiên hành động cụ thể nhất có thể làm ngay tối nay
-            let recommendation;
-            if (debt7 > 3) recommendation = `Tối nay thử lên giường sớm hơn ~${Math.min(60, Math.round(debt7 / 3 * 20))} phút để bắt đầu trả nợ ngủ.`;
-            else if (reg && reg.score > 30) recommendation = 'Cố định giờ dậy ngày mai trong khoảng ±30 phút so với hôm nay, kể cả cuối tuần.';
-            else if (se !== null && se < 90) recommendation = 'Tối nay tránh màn hình 60 phút trước giờ ngủ mục tiêu để giảm SOL.';
-            else recommendation = 'Duy trì nhịp hiện tại — đây là vùng vàng, đừng phá vỡ tính đều đặn.';
-
             body.innerHTML = `
                 <div><svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> <b>${last.duration}h</b> đêm qua ${se !== null ? `· SE <b>${se.toFixed(0)}%</b>` : ''}</div>
-                <div><svg class="icon-svg" aria-hidden="true"><use href="#icon-trending-down"></use></svg> Nợ ngủ 7đ: <b>${debt7.toFixed(1)}h</b> ${reg ? `· Đều đặn: <b>±${Math.round(reg.score)}p</b>` : ''}</div>
+                <div><svg class="icon-svg" aria-hidden="true"><use href="#icon-trending-down"></use></svg> Nợ ngủ: <b>${debtOk ? debt7.toFixed(1) + 'h' : '—'}</b> ${reg ? `· Đều đặn: <b>±${Math.round(reg.score)}p</b>` : ''}</div>
                 ${targetCompareHtml}
                 <div style="margin-top:4px;">${insight}</div>
-                <div style="margin-top:2px; color:var(--primary); font-weight:600;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-arrow-right"></use></svg> ${recommendation}</div>
             `;
             wrap.style.display = 'block';
         }
@@ -45566,12 +45583,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const byDate = {};
             sorted.forEach(s => {
-                const dateStr = toLocalDateStr(new Date(s.start));
+                const dateStr = getSleepWakeDateLocal(s); // đêm gán theo ngày thức dậy
                 byDate[dateStr] = (byDate[dateStr] || 0) + s.duration;
             });
-            const dailyTotals = Object.values(byDate);
-            const last7 = dailyTotals.slice(-7);
-            const debt7 = last7.reduce((sum, d) => sum + Math.max(0, goal - d), 0);
+            // Nợ ngủ hiển thị lấy từ Sleep Debt Engine (sổ 14 đêm); điểm bên dưới vẫn dùng
+            // trung bình có trọng số gần (debtWeighted) vì đo "sleep pressure cấp tính".
+            const debtInfo = computeSleepDebt();
+            const debt7 = debtInfo.ok ? debtInfo.debt : 0;
 
             // Nợ ngủ trọng số gần: đêm qua trọng số cao nhất, giảm dần ~35%/ngày lùi về quá
             // khứ. Ngày không có log bị bỏ qua (thiếu dữ liệu ≠ không ngủ), không tính là 0h.
@@ -45584,11 +45602,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 wNum += Math.max(0, goal - byDate[key]) * w;
                 wDen += w;
             }
-            const debtWeighted = wDen > 0 ? wNum / wDen : debt7 / 7;
+            const debtWeighted = wDen > 0 ? wNum / wDen : debt7 / SLEEP_DEBT_CFG.windowNights;
 
-            // Phân mảnh hôm nay: đếm số session bắt đầu trong ngày hôm nay theo lịch
+            // Phân mảnh: đếm số đợt ngủ kết thúc trong ngày hôm nay (= các đợt của giấc ngủ vừa dậy)
             const todayStr = toLocalDateStr(now);
-            const fragmentCount = sorted.filter(s => toLocalDateStr(new Date(s.start)) === todayStr).length;
+            const fragmentCount = sorted.filter(s => getSleepWakeDateLocal(s) === todayStr).length;
 
             const recentWithSOL = sorted.filter(s => typeof s.sol === 'number' && !isNaN(s.sol)).slice(-3);
             const seValues = recentWithSOL.map(computeSleepEfficiency).filter(v => v !== null);
@@ -45601,7 +45619,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (debtWeighted > 0) {
                 score -= Math.min(35, debtWeighted * 9);
-                if (debt7 > 3) factors.push(`Nợ ngủ 7 ngày đang ở mức ${debt7.toFixed(1)}h (đêm gần nhất ảnh hưởng tới điểm hôm nay nhiều hơn các đêm trước đó)`);
+                if (debt7 > 3) factors.push(`Nợ ngủ đang ở mức ${debt7.toFixed(1)}h trên sổ ${SLEEP_DEBT_CFG.windowNights} đêm (đêm gần nhất ảnh hưởng tới điểm hôm nay nhiều hơn các đêm trước đó)`);
             }
             // Phân mảnh & SE thấp thường phản ánh CÙNG một đêm ngủ rời rạc — giới hạn tổng
             // điểm trừ ở 32 (thay vì cộng dồn tới 45 như bản cũ) để tránh phóng đại mức độ.
@@ -45692,30 +45710,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const label = score >= 75 ? '🟢 Cao' : score >= 50 ? '🟡 Trung bình' : score >= 25 ? '🟠 Thấp' : '🔴 Rất thấp';
             const color = score >= 75 ? '#10b981' : score >= 50 ? '#f59e0b' : score >= 25 ? '#f97316' : '#ef4444';
 
-            let advice;
-            if (inertia) {
-                advice = 'Đừng vội đánh giá độ tỉnh táo hôm nay qua cảm giác lúc này — làm việc nhẹ (vệ sinh cá nhân, ăn sáng, đọc lướt) trong 30-45 phút đầu, rồi đánh giá lại trước khi quyết định lịch làm việc nặng.';
-            } else if (fragmentCount >= 2) {
-                advice = 'Ngủ rời rạc hôm nay khiến trí nhớ làm việc (working memory) yếu hơn bình thường dù không buồn ngủ rõ rệt. Né việc cần giữ nhiều thông tin cùng lúc (viết luận văn, phân tích phức tạp) — ưu tiên task đã quen tay, checklist, đọc lướt tài liệu. Nếu bắt buộc làm việc khó, chia đoạn 25 phút, nghỉ 5 phút giữa các đoạn.';
-            } else if (circadianNote && hourInWindow(nowH, troughStart, troughEnd)) {
-                advice = 'Nếu không bắt buộc, tránh học nội dung mới hoặc ra quyết định quan trọng lúc này — để dành cho task đơn giản, lặp lại.';
-            } else if (score >= 75) {
-                advice = 'Khung tốt cho việc cần tư duy sâu — làm phần khó nhất của luận văn/task trước, để việc lặt vặt lại sau.';
-            } else if (circadianNote) {
-                advice = 'Việc nhẹ, đọc tài liệu phù hợp hơn deep work trong khung giờ này.';
-            } else if (debt7 > 3) {
-                advice = 'Nợ ngủ đang tích luỹ — dồn việc quan trọng nhất vào 1–2 khung còn tỉnh táo nhất hôm nay, đừng dàn trải; tối nay ưu tiên trả nợ ngủ.';
-            } else {
-                advice = 'Mức ổn định — làm việc theo kế hoạch bình thường, nhưng vẫn nên xen kẽ task nặng/nhẹ để tránh mệt dồn.';
-            }
-
             const confidence = sorted.length < 5
                 ? 'Sơ bộ — dưới 5 phiên ngủ đã log, độ chính xác còn hạn chế'
                 : missingRecent > 0
                     ? `Thiếu log ${missingRecent}/3 ngày gần nhất — điểm có thể chưa phản ánh đúng nợ ngủ hiện tại`
                     : null;
 
-            return { score, label, color, factors, advice, circadianNote, debt7, debtWeighted, fragmentCount, avgSE, reg, inertia, confidence, avgWakeHour };
+            return { score, label, color, factors, circadianNote, debt7, debtWeighted, fragmentCount, avgSE, reg, inertia, confidence, avgWakeHour };
         }
 
         function renderCognitiveReadiness() {
@@ -45737,7 +45738,6 @@ document.addEventListener('DOMContentLoaded', function() {
             body.innerHTML = `
                 ${info.circadianNote ? `<div>🕐 ${info.circadianNote}</div>` : ''}
                 ${factorsHtml}
-                <div style="margin-top:6px; color:var(--primary); font-weight:600;">👉 ${info.advice}</div>
                 ${info.confidence ? `<div style="margin-top:6px; font-size:0.72rem; color:var(--text-muted); font-style:italic;">ℹ️ ${info.confidence}</div>` : ''}
             `;
             wrap.style.display = 'block';
@@ -45768,7 +45768,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (rated.length < 4) return null; // quá ít để chia nhóm có ý nghĩa
 
             const { hoursByDate, seByDate } = buildSleepByWakeDay();
-            const goal = getSleepGoal();
+            const debtByDate = computeSleepDebtAsOfMap(); // nợ ngủ (Sleep Debt Engine) tại ngày thức dậy
 
             const paired = rated.map(l => {
                 // log.id = Date.now() lúc log session → dùng trực tiếp thay vì parse
@@ -45778,7 +45778,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (hours === undefined) return null;
                 const seArr = seByDate[dateKey];
                 const se = seArr && seArr.length ? seArr.reduce((a, b) => a + b, 0) / seArr.length : null;
-                return { energy: l.energy, focus: l.focus, stress: l.stress, hours, se, debt: Math.max(0, goal - hours) };
+                const debt = typeof debtByDate[dateKey] === 'number' ? debtByDate[dateKey] : null; // null = chưa đủ đêm log để tính nợ
+                return { energy: l.energy, focus: l.focus, stress: l.stress, hours, se, debt };
             }).filter(Boolean);
 
             if (paired.length < 4) return null;
@@ -45788,9 +45789,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
             };
 
-            // Nhóm theo nợ ngủ — luôn tính được vì mọi phiên ngủ đều có duration
-            const goodDebt = paired.filter(p => p.debt <= 0.5);
-            const poorDebt = paired.filter(p => p.debt >= 2);
+            // Nhóm theo nợ ngủ (mức "Ổn" ≤2h vs từ mức "Vừa" >5h theo Sleep Debt Engine)
+            const withDebt = paired.filter(p => p.debt !== null);
+            const goodDebt = withDebt.filter(p => p.debt <= 2);
+            const poorDebt = withDebt.filter(p => p.debt > 5);
             const debtCompare = (goodDebt.length >= 2 && poorDebt.length >= 2) ? {
                 nGood: goodDebt.length, nPoor: poorDebt.length,
                 energy: { good: avg(goodDebt, 'energy'), poor: avg(poorDebt, 'energy') },
@@ -45839,8 +45841,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!info || info.candidates.length === 0) { wrap.style.display = 'none'; return; }
 
             const top = info.candidates[0];
-            const goodDesc = top.source === 'debt' ? 'nợ ngủ ≤0.5h' : 'SE ≥85%';
-            const poorDesc = top.source === 'debt' ? 'nợ ngủ ≥2h' : 'SE <75%';
+            const goodDesc = top.source === 'debt' ? 'nợ ngủ ≤2h' : 'SE ≥85%';
+            const poorDesc = top.source === 'debt' ? 'nợ ngủ >5h' : 'SE <75%';
             const confidence = top.n >= 7 ? 'hiệu ứng khá rõ' : `n=${top.n}/nhóm — dữ liệu còn ít, chưa kết luận chắc`;
 
             let direction;
@@ -45949,6 +45951,28 @@ document.addEventListener('DOMContentLoaded', function() {
             lines.push(`Sleep goal: ${goal}h/night`);
             lines.push(`Regularity Index (7 nights, max SD of bed/wake time): ${reg ? Math.round(reg.score) + ' min (lower = more consistent)' : 'not enough data yet'}`);
 
+            // ── SLEEP DEBT — cùng số với card "Nợ ngủ" trong app (Sleep Debt Engine) ──
+            const debtInfo = computeSleepDebt();
+            lines.push('');
+            if (debtInfo.ok) {
+                const sgn = v => (v < 0 ? '-' : '+') + Math.abs(v).toFixed(1);
+                lines.push(`Sleep debt (${debtInfo.expected}-night ledger vs ${debtInfo.goal}h goal): ${debtInfo.debt.toFixed(1)}h — level: ${debtInfo.level.label} (≈ ${debtInfo.equivNights.toFixed(1)} full nights)`);
+                if (debtInfo.delta !== null) lines.push(`  Change over the last ${SLEEP_DEBT_CFG.trendNights} nights: ${sgn(debtInfo.delta)}h (${debtInfo.trend === 'up' ? 'rising' : debtInfo.trend === 'down' ? 'falling' : 'about flat'})`);
+                lines.push(`  Avg actual sleep: ${debtInfo.avgHours.toFixed(1)}h/night (${sgn(debtInfo.avgGap)}h vs goal); short nights: ${debtInfo.shortNights}/${debtInfo.logged}; current run of short nights: ${debtInfo.shortStreak}`);
+                if (debtInfo.worst) lines.push(`  Shortest night: ${sleepDateLabelDM(debtInfo.worst.date)} (${debtInfo.worst.hours.toFixed(1)}h)`);
+                lines.push(`  Data coverage: ${debtInfo.logged}/${debtInfo.expected} nights logged; last log ${sleepDateLabelDM(debtInfo.lastDate)}${debtInfo.missing > 0 ? ' — unlogged nights are skipped, so real debt may be higher' : ''}`);
+                lines.push(`  Method: nights assigned by wake-up date (Vietnam time); actual sleep = time asleep minus mid-night awake minutes (main sleep only — naps never count as night sleep); shortfall adds to debt, surplus repays it (max ${SLEEP_DEBT_CFG.maxCreditPerNight}h credited per night), debt never below 0. Naps repay debt only partially: credit = piecewise-linear f(nap minutes; ~0 under 5 min, ~17 min at 25 min, ~60 min at 90 min) × time-since-waking factor (1.0 at 5–8.5h after waking, down to 0.2 when very early or late), summed per day and capped at ${SLEEP_NAP_CFG.dailyCapMin} min/day.`);
+                if (debtInfo.napCount > 0) lines.push(`  Nap credit in window: ${debtInfo.napCount} naps (${Math.round(debtInfo.napMinutesTotal)} min total) repaid ${Math.round(debtInfo.napCreditMin)} min of debt`);
+                lines.push('  Debt after each night (oldest → newest, by wake-up date):');
+                debtInfo.series.forEach(p => {
+                    lines.push(p.logged
+                        ? `    ${sleepDateLabelDM(p.date)}: slept ${p.hours.toFixed(1)}h (${sgn(p.gap)}h)${p.naps.length ? `, naps ${p.naps.map(n => `${Math.round(n.minutes)}m@${fmtVNTimeHM(n.start)}→${n.creditMin.toFixed(0)}m`).join('+')}${p.napDiscardedMin > 0.5 ? ' (daily cap hit)' : ''}` : ''} → debt ${p.debtAfter.toFixed(1)}h`
+                        : `    ${sleepDateLabelDM(p.date)}: not logged`);
+                });
+            } else {
+                lines.push(`Sleep debt: not enough data yet (${debtInfo.logged} logged nights in the last ${SLEEP_DEBT_CFG.windowNights} days, need ${debtInfo.needed}).`);
+            }
+
             // ── INSOMNIA PATTERN ANALYSIS ──
             // Reuses the app's own analyzeInsomniaPatterns() engine (same numbers
             // shown in the Insomnia Pattern Analysis card) so the AI gets the
@@ -45975,7 +45999,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (insomnia.insomniaSeverity) {
                     const sev = insomnia.insomniaSeverity;
                     lines.push(`Severity: ${sev.severityLevel} (score ${sev.severityScore}/100) — ${sev.interpretation}`);
-                    lines.push(`  Suggested action (from app): ${sev.suggestedAction}`);
                 }
 
                 if (insomnia.cognitiveEfficiency) {
@@ -45986,17 +46009,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
 
-                if (insomnia.recoveryPatterns && !insomnia.recoveryPatterns.insufficientData) {
-                    const rec = insomnia.recoveryPatterns;
-                    lines.push(`Cumulative sleep debt: ${rec.cumulativeDebt}h (avg ${rec.averageSleepDebt}h/day)`);
-                }
-
-                if (insomnia.recommendations && insomnia.recommendations.length > 0) {
-                    lines.push('  Top app-generated recommendations:');
-                    insomnia.recommendations.slice(0, 3).forEach(r => {
-                        lines.push(`   - [${r.priority}] ${stripEmoji(r.action)} — ${r.rationale}`);
-                    });
-                }
             }
 
             // ── RECENT SLEEP SESSIONS ──
@@ -46304,14 +46316,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Nội dung nhắc dùng chung cho cả preview lẫn nhắc thật — dài hơn và cụ
         // thể hơn bản cũ (chỉ có "đến giờ ngủ"): nêu rõ giờ mục tiêu, giờ hiện
-        // tại, và một gợi ý hành động ngay để không chỉ nhắc suông.
+        // tại — chỉ nêu số liệu, không kèm lời khuyên.
         function buildSleepReminderCopy(timeLabel) {
             const now = new Date();
             const nowLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
             return {
                 title: 'Đến giờ chuẩn bị đi ngủ',
-                body: `Bây giờ là ${nowLabel}, mục tiêu lên giường là ${timeLabel} (tính từ giờ dậy trung vị 14 đêm gần nhất). Tắt bớt màn hình sáng, để điện thoại xa giường và bắt đầu thói quen thư giãn trước khi ngủ nhé.`,
-                toast: `<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Đến giờ chuẩn bị đi ngủ — mục tiêu ${timeLabel} (đang là ${nowLabel}). Tắt bớt ánh sáng và thư giãn trước khi lên giường nhé.`
+                body: `Bây giờ là ${nowLabel}, mục tiêu lên giường là ${timeLabel} (tính từ giờ dậy trung vị 14 đêm gần nhất).`,
+                toast: `<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Đến giờ chuẩn bị đi ngủ — mục tiêu ${timeLabel} (đang là ${nowLabel}).`
             };
         }
 
@@ -46407,119 +46419,460 @@ document.addEventListener('DOMContentLoaded', function() {
         // ===== Mini biểu đồ xu hướng SOL theo thời gian =====
         // Vẽ đường SOL (phút vào giấc) của tối đa 14 đêm gần nhất có dữ liệu thực tế,
         // kèm % thay đổi giữa nửa đầu và nửa sau của chuỗi để thấy nhanh xu hướng tăng/giảm.
-        // ===== Sleep Debt Trend (#5) — nợ ngủ rolling-7-ngày vẽ theo thời gian =====
-        // "Nợ ngủ (7đ)" ở ô stat chỉ là 1 snapshot tại thời điểm hiện tại. Chart này tính
-        // LẠI đúng công thức đó (rolling 7-ngày, chỉ tính phần thiếu so với mục tiêu,
-        // không cộng dư) nhưng cho MỖI ngày trong N ngày gần nhất — y hệt cách
-        // calculateSleepMetricStudyCorrelation() đã làm cho biến 'debt' ở phần Correlation,
-        // chỉ khác là dùng bucket theo giờ VN (getDailySleepTotalsVN) cho nhất quán với
-        // Insight Banner/Heatmap/Goal Ring đã thêm trước đó, thay vì hoursByDate theo giờ máy.
-        function computeRollingSleepDebtSeries(days = 14) {
-            const goal = getSleepGoal();
-            const daily = getDailySleepTotalsVN();
-            const startIdx = Math.max(0, daily.length - days);
-            const series = [];
-            for (let i = startIdx; i < daily.length; i++) {
-                const windowArr = daily.slice(Math.max(0, i - 6), i + 1); // rolling 7 ngày kết thúc tại ngày i
-                const debt = windowArr.reduce((sum, d) => sum + Math.max(0, goal - d.duration), 0);
-                series.push({ date: daily[i].date, debt });
-            }
-            return series;
+        // ===== SLEEP DEBT ENGINE — nguồn duy nhất cho mọi con số "nợ ngủ" trong Sleep Tracker =====
+        // Thay thế máy tính nợ ngủ cũ. Khác biệt cốt lõi:
+        //  1) Đêm ngủ được gán theo NGÀY THỨC DẬY (giờ VN). Gom theo ngày bắt đầu ngủ như trước sẽ dồn
+        //     2 đêm vào 1 ngày khi hôm nay bạn ngủ sau 0h còn tối hôm sau lại ngủ trước 0h — nguồn gốc
+        //     của kiểu "ngủ 17.4h/ngày" và các đêm thiếu/dư ảo.
+        //  2) Giờ ngủ thực = duration (đã trừ SOL) − số phút thức giữa đêm. Chỉ giấc ngủ chính mới vào
+        //     "giờ ngủ đêm" (SE, TB/đêm, chuỗi… đều không đụng tới nap). Nap đi riêng: chỉ TRẢ MỘT PHẦN nợ
+        //     qua SLEEP_NAP_CFG (chiết khấu theo thời lượng + giờ nap, có trần/ngày), không bao giờ cộng 1:1.
+        //  3) Sổ nợ chạy tuần tự trên 14 đêm gần nhất: thiếu → cộng vào nợ; dư → trả nợ nhưng chỉ tối đa
+        //     maxCreditPerNight/đêm (1 đêm ngủ 12h không xoá được nợ cả tuần); nợ không xuống dưới 0
+        //     (không "gửi trước" giấc ngủ). Bỏ lãi kép 2%/ngày và hiệu suất trả nợ 70% của bản cũ —
+        //     cả hai đều là hệ số tự đặt, không có cơ sở sinh lý.
+        //  4) Mục tiêu lấy từ getSleepGoal() (bản cũ cứng 7.5h nên lệch với mọi chỉ số khác).
+        //  5) Đêm chưa log = "không biết", KHÔNG tính là ngủ 0h. Chỉ báo thiếu log để biết số này có thể
+        //     thấp hơn thực tế.
+        // Đây là ước tính từ dữ liệu bạn log, không phải chẩn đoán y tế.
+
+        function sleepDateToDayNum(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return Math.round(Date.UTC(y, m - 1, d) / 86400000);
         }
 
-        function renderSleepDebtTrendChart() {
-            const wrap = document.getElementById('sleepDebtTrendWrap');
-            const ctx = document.getElementById('sleepDebtTrendChart');
-            const deltaEl = document.getElementById('sleepDebtTrendDelta');
-            if (!wrap || !ctx) return;
+        // dayNum là số ngày lịch thuần (không phải timestamp) nên dùng UTC ở đây an toàn —
+        // bug lệch múi giờ chỉ xảy ra khi đổi 1 timestamp thật sang chuỗi ngày.
+        function sleepDayNumToDateStr(dayNum) {
+            return new Date(dayNum * 86400000).toISOString().slice(0, 10);
+        }
 
-            const series = computeRollingSleepDebtSeries(14); // tối đa 14 ngày gần nhất, đồng bộ độ dài với SOL trend
+        function sleepDateLabelDM(dateStr) {
+            const [, m, d] = dateStr.split('-');
+            return `${d}/${m}`;
+        }
 
-            // Cần tối thiểu 3 điểm mới đủ để vẽ xu hướng có ý nghĩa (giống ngưỡng SOL trend)
-            if (series.length < 3) {
-                wrap.style.display = 'none';
-                if (sleepDebtTrendChart) { sleepDebtTrendChart.destroy(); sleepDebtTrendChart = null; }
-                return;
-            }
-            wrap.style.display = 'block';
+        function sleepDebtLevel(debt) {
+            return SLEEP_DEBT_LEVELS.find(l => debt <= l.max) || SLEEP_DEBT_LEVELS[SLEEP_DEBT_LEVELS.length - 1];
+        }
 
-            const labels = series.map(p => {
-                const [, m, d] = p.date.split('-');
-                return `${d}/${m}`;
-            });
-            const debtValues = series.map(p => p.debt);
-
-            // So sánh trung bình nửa sau vs nửa đầu chuỗi để hiện mũi tên xu hướng — cùng
-            // cách SOL trend đang làm. Với nợ ngủ: TĂNG là xấu (đỏ), GIẢM là tốt (xanh) —
-            // ngược hướng ý nghĩa với SOL nhưng cùng logic màu (tăng=đỏ, giảm=xanh).
-            const mid = Math.floor(series.length / 2);
-            const avgFirst = avgOf(debtValues.slice(0, mid));
-            const avgSecond = avgOf(debtValues.slice(mid));
-            const diff = avgSecond - avgFirst;
-
-            if (deltaEl) {
-                if (Math.abs(diff) < 0.5) {
-                    deltaEl.textContent = '→ Ổn định';
-                    deltaEl.style.color = 'var(--text-muted)';
-                } else if (diff > 0) {
-                    deltaEl.textContent = `↑ +${diff.toFixed(1)}h`;
-                    deltaEl.style.color = '#ef4444';
-                } else {
-                    deltaEl.textContent = `↓ ${diff.toFixed(1)}h`;
-                    deltaEl.style.color = '#10b981';
+        // Nội suy tuyến tính trên các mốc [x, y] đã sắp xếp; ngoài đầu/cuối thì giữ nguyên giá trị biên.
+        function interpolateCurve(points, x) {
+            if (x <= points[0][0]) return points[0][1];
+            for (let i = 1; i < points.length; i++) {
+                const [x1, y1] = points[i];
+                if (x <= x1) {
+                    const [x0, y0] = points[i - 1];
+                    return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
                 }
             }
+            return points[points.length - 1][1];
+        }
 
+        // napSessions khai báo bằng let ở phía dưới file → bọc try/catch để không dính TDZ nếu gọi quá sớm.
+        function getSleepNapsSafe() {
+            try { return Array.isArray(napSessions) ? napSessions : []; } catch (e) { return []; }
+        }
+
+        function fmtVNTimeHM(ts) {
+            const p = getVNDateTimeParts(ts);
+            return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+        }
+
+        function computeNapCredit(napMinutes, hoursAfterWake) {
+            const base = interpolateCurve(SLEEP_NAP_CFG.durationCurve, napMinutes);
+            const beta = interpolateCurve(SLEEP_NAP_CFG.timingCurve, hoursAfterWake);
+            return { base, beta, credit: base * beta };
+        }
+
+        function getSleepSessionEndTs(s) {
+            if (typeof s.end === 'number' && !isNaN(s.end)) return s.end;
+            if (typeof s.start === 'number' && typeof s.duration === 'number') return s.start + s.duration * 3600000;
+            return null;
+        }
+
+        // Gom các phiên ngủ thành "đêm" theo ngày thức dậy (giờ VN). Nhiều phiên cùng ngày thức dậy
+        // (ngủ đa pha) được cộng lại thành 1 đêm.
+        function buildSleepNightsByWakeDate(sessions) {
+            const map = new Map();
+            (sessions || []).forEach(s => {
+                if (!s || typeof s.duration !== 'number' || isNaN(s.duration) || s.duration <= 0) return;
+                const endTs = getSleepSessionEndTs(s);
+                if (endTs === null) return;
+                const date = vnDateStrFromTs(endTs);
+                const awakeMin = (typeof s.awakenings_min === 'number' && !isNaN(s.awakenings_min)) ? Math.max(0, s.awakenings_min) : 0;
+                let n = map.get(date);
+                if (!n) {
+                    n = { date, dayNum: sleepDateToDayNum(date), hours: 0, awakeMin: 0, sessions: 0,
+                          startTs: typeof s.start === 'number' ? s.start : null, endTs };
+                    map.set(date, n);
+                }
+                n.hours += Math.max(0, s.duration - awakeMin / 60);
+                n.awakeMin += awakeMin;
+                n.sessions += 1;
+                if (typeof s.start === 'number' && (n.startTs === null || s.start < n.startTs)) n.startTs = s.start;
+                if (endTs > n.endTs) n.endTs = endTs;
+            });
+            return [...map.values()].sort((a, b) => a.dayNum - b.dayNum);
+        }
+
+        // Gắn mỗi nap vào "ngày thức" của đêm ngủ chính kết thúc gần nhất TRƯỚC nap (nên nap 0h30 sáng của người
+        // thức khuya vẫn thuộc ngày hôm trước). Giờ kể từ lúc dậy lấy từ chính đêm đó. Nap không có đêm liền
+        // trước (≤ attachWithinHours) bị bỏ qua vì đêm ở giữa chưa log = không biết. Ghi kết quả vào từng night.
+        function attachNapsToNights(nights, naps) {
+            const cfg = SLEEP_NAP_CFG;
+            const unattached = [];
+            nights.forEach(n => { n.naps = []; n.napMinutes = 0; n.napRawCreditMin = 0; n.napCreditMin = 0; n.napDiscardedMin = 0; });
+            (naps || []).forEach(nap => {
+                if (!nap || typeof nap.start !== 'number' || isNaN(nap.start)) return;
+                const minutes = typeof nap.durationMin === 'number' ? nap.durationMin
+                    : (typeof nap.end === 'number' ? (nap.end - nap.start) / 60000 : NaN);
+                if (!(minutes > 0)) return;
+                let anchor = null;
+                for (const n of nights) {
+                    if (n.endTs <= nap.start && (anchor === null || n.endTs > anchor.endTs)) anchor = n;
+                }
+                const hoursAfterWake = anchor ? (nap.start - anchor.endTs) / 3600000 : null;
+                if (!anchor || hoursAfterWake > cfg.attachWithinHours) { unattached.push({ start: nap.start, minutes }); return; }
+                const r = computeNapCredit(minutes, hoursAfterWake);
+                anchor.naps.push({ start: nap.start, minutes, hoursAfterWake, base: r.base, beta: r.beta, creditMin: r.credit });
+                anchor.napMinutes += minutes;
+                anchor.napRawCreditMin += r.credit;
+            });
+            nights.forEach(n => {
+                n.napCreditMin = Math.min(cfg.dailyCapMin, n.napRawCreditMin);
+                n.napDiscardedMin = n.napRawCreditMin - n.napCreditMin;
+                n.naps.sort((a, b) => a.start - b.start);
+            });
+            return { unattached };
+        }
+
+        // Ngày thức dậy của 1 phiên ngủ — quy ước GÁN ĐÊM duy nhất của cả app (thay cho ngày bắt đầu ngủ,
+        // vốn dồn 2 đêm vào 1 ngày khi hôm nay ngủ sau 0h còn tối mai lại ngủ trước 0h).
+        //  - VN: dùng cho phần Sleep Tracker (heatmap, vòng mục tiêu, insight, nợ ngủ) — đồng bộ múi giờ VN.
+        //  - Local: dùng ở các module ghép với dữ liệu học tập, vốn khoá theo toLocalDateStr().
+        function getSleepWakeDateVN(s) {
+            const ts = getSleepSessionEndTs(s);
+            return vnDateStrFromTs(ts !== null ? ts : s.start);
+        }
+        function getSleepWakeDateLocal(s) {
+            const ts = getSleepSessionEndTs(s);
+            return toLocalDateStr(new Date(ts !== null ? ts : s.start));
+        }
+
+        // Chạy sổ nợ tuần tự từ spanStart → lastDay (dayNum). Trả { debt, series }.
+        function runSleepDebtLedger(byDay, spanStart, lastDay, goal) {
+            const cfg = SLEEP_DEBT_CFG;
+            let debt = 0;
+            const series = [];
+            for (let day = spanStart; day <= lastDay; day++) {
+                const n = byDay.get(day);
+                const debtBefore = debt;
+                if (!n) {
+                    series.push({ dayNum: day, date: sleepDayNumToDateStr(day), logged: false, debtBefore, debtAfter: debt });
+                    continue;
+                }
+                const gap = n.hours - goal;            // đêm: âm = thiếu, dương = dư (KHÔNG gồm nap)
+                const napCreditH = (n.napCreditMin || 0) / 60; // phút nợ nap trả được trong ngày, đã chiết khấu + chặn trần
+                const netGap = gap + napCreditH;
+                if (netGap < 0) debt += -netGap;
+                else debt = Math.max(0, debt - Math.min(netGap, cfg.maxCreditPerNight));
+                series.push({
+                    dayNum: day, date: sleepDayNumToDateStr(day), logged: true,
+                    hours: n.hours, gap, napCreditH, netGap, debtBefore, debtAfter: debt,
+                    awakeMin: n.awakeMin, sessions: n.sessions, startTs: n.startTs, endTs: n.endTs,
+                    naps: n.naps || [], napMinutes: n.napMinutes || 0, napDiscardedMin: n.napDiscardedMin || 0,
+                    long: n.hours > cfg.longNightHours
+                });
+            }
+            return { debt, series };
+        }
+
+        // Nợ ngủ "tại thời điểm" mỗi đêm có log: { 'YYYY-MM-DD' (ngày thức dậy): nợ (h) } — dùng cho các phân tích
+        // tương quan cần 1 giá trị/ngày. Mỗi ngày chạy sổ riêng trên 14 đêm kết thúc ở ngày đó, nên ngày cuối
+        // luôn khớp đúng computeSleepDebt().debt. Ngày có <minLoggedNights đêm log trong cửa sổ thì bỏ qua.
+        function computeSleepDebtAsOfMap(opts = {}) {
+            const cfg = SLEEP_DEBT_CFG;
+            const goal = typeof opts.goal === 'number' ? opts.goal : getSleepGoal();
+            const nights = buildSleepNightsByWakeDate(opts.sessions || sleepSessions);
+            attachNapsToNights(nights, opts.naps || getSleepNapsSafe());
+            const byDay = new Map(nights.map(n => [n.dayNum, n]));
+            const map = {};
+            nights.forEach(n => {
+                const spanStart = n.dayNum - (cfg.windowNights - 1);
+                let cnt = 0;
+                for (let d = spanStart; d <= n.dayNum; d++) if (byDay.has(d)) cnt++;
+                if (cnt < cfg.minLoggedNights) return;
+                map[n.date] = runSleepDebtLedger(byDay, spanStart, n.dayNum, goal).debt;
+            });
+            return map;
+        }
+
+        // opts: { goal, sessions, naps, today } — chỉ để test; bình thường gọi không tham số.
+        function computeSleepDebt(opts = {}) {
+            const cfg = SLEEP_DEBT_CFG;
+            const goal = typeof opts.goal === 'number' ? opts.goal : getSleepGoal();
+            const nights = buildSleepNightsByWakeDate(opts.sessions || sleepSessions);
+            if (nights.length === 0) return { ok: false, reason: 'empty', logged: 0, needed: cfg.minLoggedNights, goal };
+            const napInfo = attachNapsToNights(nights, opts.naps || getSleepNapsSafe());
+
+            const firstDay = nights[0].dayNum;
+            const lastDay = nights[nights.length - 1].dayNum;
+            const spanStart = Math.max(firstDay, lastDay - (cfg.windowNights - 1));
+            const expected = lastDay - spanStart + 1;
+            const byDay = new Map(nights.filter(n => n.dayNum >= spanStart).map(n => [n.dayNum, n]));
+            const logged = byDay.size;
+            if (logged < cfg.minLoggedNights) {
+                return { ok: false, reason: 'insufficient', logged, needed: cfg.minLoggedNights, goal, lastDate: sleepDayNumToDateStr(lastDay) };
+            }
+
+            const { debt, series } = runSleepDebtLedger(byDay, spanStart, lastDay, goal);
+
+            const loggedPts = series.filter(p => p.logged);
+            const shortLimit = goal - cfg.tolerance; // cùng ngưỡng "đạt mục tiêu" của vòng mục tiêu/chuỗi
+            const avgHours = loggedPts.reduce((s, p) => s + p.hours, 0) / loggedPts.length;
+            const shortNights = loggedPts.filter(p => p.hours < shortLimit).length;
+            const worst = loggedPts.reduce((w, p) => (!w || p.hours < w.hours) ? p : w, null);
+
+            // Chuỗi đêm thiếu liên tiếp tính từ đêm gần nhất; ngày chưa log làm đứt chuỗi (không biết ≠ thiếu)
+            let shortStreak = 0;
+            for (let i = series.length - 1; i >= 0; i--) {
+                const p = series[i];
+                if (!p.logged || p.hours >= shortLimit) break;
+                shortStreak++;
+            }
+
+            // Xu hướng: nợ hiện tại so với nợ sau đêm cách đây 7 ngày (cùng 1 sổ nên so sánh được)
+            let delta = null;
+            const refDay = lastDay - cfg.trendNights;
+            const refPt = series.find(p => p.dayNum === refDay);
+            if (refPt && loggedPts.filter(p => p.dayNum <= refDay).length >= cfg.minLoggedNights) {
+                delta = debt - refPt.debtAfter;
+            }
+            const trend = delta === null ? null : delta >= cfg.trendFlatBand ? 'up' : delta <= -cfg.trendFlatBand ? 'down' : 'flat';
+
+            // Tổng hợp nap trong cửa sổ (chỉ các nap đã gắn vào đêm có log)
+            const napPts = loggedPts.filter(p => p.naps.length > 0);
+            const napCreditMin = napPts.reduce((s, p) => s + p.napCreditH * 60, 0);
+            const napCount = napPts.reduce((s, p) => s + p.naps.length, 0);
+            const napMinutesTotal = napPts.reduce((s, p) => s + p.napMinutes, 0);
+            const napsUnattached = napInfo.unattached.filter(nap => sleepDateToDayNum(vnDateStrFromTs(nap.start)) >= spanStart).length;
+
+            const todayNum = sleepDateToDayNum(opts.today || getVietnamDateStr());
+            return {
+                ok: true, goal, debt, level: sleepDebtLevel(debt), equivNights: debt / goal,
+                windowNights: cfg.windowNights, expected, logged, missing: expected - logged,
+                lastDate: sleepDayNumToDateStr(lastDay), staleDays: Math.max(0, todayNum - lastDay),
+                avgHours, avgGap: avgHours - goal, shortNights, worst, shortStreak,
+                delta, trend, longNights: loggedPts.filter(p => p.long).length,
+                napCreditMin, napCount, napMinutesTotal, napsUnattached, series
+            };
+        }
+
+        // Card "Nợ ngủ" trong mục Insight & phân tích. Chỉ hiển thị số liệu đã tính — không có lời khuyên/kế
+        // hoạch cứng; việc đó dành cho nút Copy for AI (kèm sổ nợ chi tiết).
+        function renderSleepDebtCard() {
+            const wrap = document.getElementById('sleepDebtCard');
+            const body = document.getElementById('sleepDebtCardBody');
+            const badge = document.getElementById('sleepDebtBadge');
+            if (!wrap || !body || !badge) return;
+
+            const wasMethodOpen = !!wrap.querySelector('details[data-debt-method]')?.open;
+            if (sleepDebtChart) { sleepDebtChart.destroy(); sleepDebtChart = null; }
+
+            if (sleepSessions.length === 0) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+
+            const d = computeSleepDebt();
+            if (!d.ok) {
+                badge.style.display = 'none';
+                body.innerHTML = `<div style="font-size:0.8rem; color:var(--text-muted); line-height:1.55;">Cần ít nhất ${d.needed} đêm có log trong ${SLEEP_DEBT_CFG.windowNights} ngày gần nhất để tính nợ ngủ — hiện có ${d.logged}.</div>`;
+                return;
+            }
+
+            const lvl = d.level;
+            badge.style.display = '';
+            badge.textContent = lvl.label;
+            badge.style.background = `${lvl.color}22`;
+            badge.style.color = lvl.color;
+
+            const icon = (id, cls = '') => `<svg class="icon-svg ${cls}" aria-hidden="true"><use href="#${id}"></use></svg>`;
+
+            // Chip xu hướng 7 đêm
+            let deltaHtml = '';
+            if (d.delta !== null) {
+                const up = d.trend === 'up', down = d.trend === 'down';
+                const c = up ? '#ef4444' : down ? '#10b981' : 'var(--text-muted)';
+                const ic = up ? 'icon-trending-up' : down ? 'icon-trending-down' : 'icon-arrow-right';
+                const txt = up ? `Tăng ${d.delta.toFixed(1)}h` : down ? `Giảm ${Math.abs(d.delta).toFixed(1)}h` : 'Gần như không đổi';
+                deltaHtml = `<div style="display:inline-flex; align-items:center; gap:5px; font-size:0.76rem; font-weight:700; color:${c}; padding:4px 10px; border-radius:10px; background:color-mix(in srgb, ${c} 12%, transparent);">
+                    ${icon(ic, 'icon-inherit')} ${txt} <span style="font-weight:500; color:var(--text-muted);">trong 7 đêm qua</span></div>`;
+            }
+
+            // Thang mức nợ 4 đoạn (Ổn / Nhẹ / Vừa / Nặng) — thanh luôn lấp đầy đến đúng vị trí hiện tại
+            const bands = [
+                { lo: 0,  hi: 2,  c: SLEEP_DEBT_LEVELS[0].color },
+                { lo: 2,  hi: 5,  c: SLEEP_DEBT_LEVELS[1].color },
+                { lo: 5,  hi: 10, c: SLEEP_DEBT_LEVELS[2].color },
+                { lo: 10, hi: 20, c: SLEEP_DEBT_LEVELS[3].color }
+            ];
+            const segs = bands.map(b => {
+                const f = Math.max(0, Math.min(1, (d.debt - b.lo) / (b.hi - b.lo))) * 100;
+                return `<div style="flex:1; position:relative; background:color-mix(in srgb, ${b.c} 20%, transparent);"><div style="position:absolute; top:0; bottom:0; left:0; width:${f}%; background:${b.c};"></div></div>`;
+            }).join('');
+            const tickStyle = 'position:absolute; top:0; font-size:0.64rem; color:var(--text-muted);';
+            const scaleHtml = `
+                <div style="display:flex; gap:2px; height:8px; border-radius:999px; overflow:hidden; margin-top:12px;" role="img" aria-label="Mức nợ ngủ ${lvl.label}">${segs}</div>
+                <div style="position:relative; height:14px; margin-top:3px;">
+                    <span style="${tickStyle} left:0;">0</span>
+                    <span style="${tickStyle} left:25%; transform:translateX(-50%);">2h</span>
+                    <span style="${tickStyle} left:50%; transform:translateX(-50%);">5h</span>
+                    <span style="${tickStyle} left:75%; transform:translateX(-50%);">10h</span>
+                    <span style="${tickStyle} right:0;">20h+</span>
+                </div>`;
+
+            // Ô số liệu — dùng lại đúng component .sleep-stat-box của hàng thống kê phía trên
+            const tile = (iconId, color, value, label, title) => `
+                <div class="sleep-stat-box" style="--ss-c:${color};" title="${title}">
+                    <span class="sleep-stat-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${iconId}"/></svg></span>
+                    <span class="sleep-stat-text"><span class="sleep-stat-value">${value}</span><span class="sleep-stat-label">${label}</span></span>
+                </div>`;
+            const avgColor = d.avgHours >= d.goal - SLEEP_DEBT_CFG.tolerance ? '#10b981' : d.avgHours >= d.goal - 1.5 ? '#f59e0b' : '#ef4444';
+            const shortRatio = d.shortNights / d.logged;
+            const shortColor = shortRatio <= 0.25 ? '#10b981' : shortRatio <= 0.5 ? '#f59e0b' : '#ef4444';
+            const worstGap = d.worst ? d.worst.gap : 0;
+            const worstColor = worstGap >= -SLEEP_DEBT_CFG.tolerance ? '#10b981' : worstGap >= -2 ? '#f59e0b' : '#ef4444';
+            const streakColor = d.shortStreak === 0 ? '#10b981' : d.shortStreak <= 2 ? '#f59e0b' : '#ef4444';
+            const napTile = d.napCount > 0
+                ? tile('icon-sun', '#f59e0b', `${Math.round(d.napCreditMin)}p`, `Nap trả nợ · ${d.napCount} lần`,
+                    `${d.napCount} nap (${Math.round(d.napMinutesTotal)} phút) trả được ${Math.round(d.napCreditMin)} phút nợ sau khi chiết khấu theo thời lượng và giờ nap`)
+                : '';
+            const tilesHtml = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(132px, 1fr)); gap:8px; margin-top:12px;">
+                ${tile('icon-moon', avgColor, `${d.avgHours.toFixed(1)}h`, 'TB / đêm', `Giờ ngủ thực trung bình ${d.logged} đêm có log (mục tiêu ${d.goal}h, chênh ${d.avgGap >= 0 ? '+' : '−'}${Math.abs(d.avgGap).toFixed(1)}h)`)}
+                ${tile('icon-bed', shortColor, `${d.shortNights}/${d.logged}`, 'Đêm thiếu giờ', `Số đêm ngủ ít hơn mục tiêu quá ${SLEEP_DEBT_CFG.tolerance * 60} phút`)}
+                ${tile('icon-triangle-alert', worstColor, d.worst ? `${d.worst.hours.toFixed(1)}h` : '—', d.worst ? `Ngắn nhất · ${sleepDateLabelDM(d.worst.date)}` : 'Ngắn nhất', 'Đêm ngủ ít nhất trong sổ (ngày thức dậy)')}
+                ${tile('icon-flame', streakColor, d.shortStreak, 'Đêm thiếu liên tiếp', 'Số đêm thiếu giờ liên tiếp tính đến đêm gần nhất')}
+                ${napTile}
+            </div>`;
+
+            // Ghi chú độ tin cậy dữ liệu
+            const notes = [];
+            if (d.missing > 0) notes.push(`Thiếu log ${d.missing}/${d.expected} đêm — đêm chưa log không được tính, nợ thực có thể cao hơn.`);
+            if (d.staleDays >= 2) notes.push(`Log gần nhất là ngày ${sleepDateLabelDM(d.lastDate)} (${d.staleDays} ngày trước) — số liệu tính đến hôm đó.`);
+            if (d.napsUnattached > 0) notes.push(`Có ${d.napsUnattached} nap chưa được tính vì không có đêm ngủ chính đã log ngay trước đó (trong ${SLEEP_NAP_CFG.attachWithinHours}h).`);
+            if (d.longNights > 0) notes.push(`Có ${d.longNights} đêm dài hơn ${SLEEP_DEBT_CFG.longNightHours}h — có thể do quên bấm Stop nên số nợ có thể lệch.`);
+            // Minh bạch cách nap được quy đổi: từng nap → hiệu quả theo thời lượng × hệ số giờ nap = phút nợ được trả
+            const wasNapOpen = !!wrap.querySelector('details[data-debt-naps]')?.open;
+            const napRows = [];
+            d.series.filter(p => p.logged).forEach(p => p.naps.forEach(nap => napRows.push({ p, nap })));
+            const napDetailsHtml = napRows.length === 0 ? '' : `
+                <details data-debt-naps style="margin-top:10px; font-size:0.72rem; color:var(--text-muted); line-height:1.55;"${wasNapOpen ? ' open' : ''}>
+                    <summary style="cursor:pointer; font-weight:600;">Nap đã tính (${napRows.length})</summary>
+                    <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
+                        ${napRows.slice(-10).reverse().map(({ p, nap }) => `<div>${sleepDateLabelDM(vnDateStrFromTs(nap.start))} ${fmtVNTimeHM(nap.start)} · nap ${Math.round(nap.minutes)}p, sau dậy ${nap.hoursAfterWake.toFixed(1)}h → <b style="color:var(--text-dark);">trả ${nap.creditMin.toFixed(0)}p</b> <span style="opacity:.8;">(${nap.base.toFixed(0)}p × ${nap.beta.toFixed(2)}${p.napDiscardedMin > 0.5 ? ', ngày chạm trần' : ''})</span></div>`).join('')}
+                        ${d.series.some(p => p.logged && p.napDiscardedMin > 0.5) ? `<div>Ngày chạm trần ${SLEEP_NAP_CFG.dailyCapMin}p: phần vượt bị bỏ.</div>` : ''}
+                    </div>
+                </details>`;
+
+            const notesHtml = notes.map(t => `<div style="display:flex; gap:6px; align-items:flex-start; font-size:0.72rem; color:var(--text-muted); line-height:1.5; margin-top:6px;">${icon('icon-triangle-alert', 'icon-warning')}<span>${t}</span></div>`).join('');
+
+            body.innerHTML = `
+                <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                    <div>
+                        <div style="display:flex; align-items:baseline; gap:5px;">
+                            <span style="font-size:2rem; font-weight:800; line-height:1; color:${lvl.color};">${d.debt.toFixed(1)}</span>
+                            <span style="font-size:0.95rem; font-weight:700; color:${lvl.color};">giờ</span>
+                        </div>
+                        <div style="font-size:0.74rem; color:var(--text-muted); margin-top:5px;">${d.equivNights < 0.05 ? 'Không có nợ tích luỹ' : `≈ ${d.equivNights.toFixed(1)} đêm ngủ đủ mục tiêu`} · mục tiêu ${d.goal}h/đêm</div>
+                    </div>
+                    ${deltaHtml}
+                </div>
+                ${scaleHtml}
+                ${tilesHtml}
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin:14px 0 4px;">
+                    <span style="font-size:0.74rem; font-weight:600; color:var(--text-muted);">Sổ nợ ${d.expected} đêm gần nhất</span>
+                    <span style="font-size:0.68rem; color:var(--text-muted); display:flex; flex-wrap:wrap; gap:4px 10px;">
+                        <span><i style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#ef4444; margin-right:4px;"></i>Thiếu, nợ tăng</span>
+                        <span><i style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#10b981; margin-right:4px;"></i>Ngủ dư, trả nợ</span>
+                    </span>
+                </div>
+                <div style="height:150px;"><canvas id="sleepDebtChart"></canvas></div>
+                <div style="font-size:0.68rem; color:var(--text-muted); margin-top:3px;">Mỗi cột là mức nợ thay đổi sau 1 đêm; đêm gán theo ngày thức dậy. Chạm vào cột để xem chi tiết.</div>
+                ${notesHtml}
+                ${napDetailsHtml}
+                <details data-debt-method style="margin-top:10px; font-size:0.72rem; color:var(--text-muted); line-height:1.55;"${wasMethodOpen ? ' open' : ''}>
+                    <summary style="cursor:pointer; font-weight:600;">Cách tính</summary>
+                    <ul style="margin:6px 0 0; padding-left:16px;">
+                        <li>Mỗi đêm so với mục tiêu ${d.goal}h: thiếu bao nhiêu thì cộng bấy nhiêu vào nợ.</li>
+                        <li>Đêm ngủ dư trả nợ, tối đa ${SLEEP_DEBT_CFG.maxCreditPerNight}h mỗi đêm; nợ không xuống dưới 0.</li>
+                        <li>Chỉ nhìn ${SLEEP_DEBT_CFG.windowNights} đêm gần nhất; giờ ngủ thực đã trừ thời gian thức giữa đêm.</li>
+                        <li>Nap chỉ trả một phần nợ, không cộng vào giờ ngủ đêm: nap dưới 5 phút không tính, khoảng 90 phút là mức cao nhất, giờ nap quá sớm hoặc quá muộn so với lúc thức dậy bị chiết khấu, tối đa ${SLEEP_NAP_CFG.dailyCapMin} phút nợ mỗi ngày.</li>
+                        <li>Đêm chưa log bị bỏ qua thay vì tính là 0h. Đây là ước tính từ dữ liệu bạn log, không phải chẩn đoán y tế.</li>
+                    </ul>
+                </details>`;
+
+            // Waterfall: mỗi cột nổi từ mức nợ trước đêm đến mức nợ sau đêm; chấm = nợ sau đêm, tô theo mức
             const isDark = document.body.classList.contains('dark-mode');
-            const lineColor = '#f59e0b';
-            // Tô màu từng điểm theo đúng 3 mốc màu đã dùng cho ô stat "Nợ ngủ (7đ)"
-            // (debtColor trong renderSleepStats) — để nhìn quen mắt, không tạo thang màu mới.
-            function pointColorForDebt(d) {
-                if (d <= 1) return '#10b981';
-                if (d <= 5) return '#f59e0b';
-                return '#ef4444';
-            }
+            const textColor = isDark ? '#c895a8' : '#a3808f';
+            const gridColor = isDark ? 'rgba(240,168,196,0.14)' : 'rgba(209,123,150,0.12)';
+            const maxDebt = Math.max(...d.series.map(p => Math.max(p.debtBefore, p.debtAfter)));
+            const minus = v => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(1);
 
-            if (sleepDebtTrendChart) {
-                sleepDebtTrendChart.destroy();
-            }
-
-            sleepDebtTrendChart = new Chart(ctx, {
-                type: 'line',
+            sleepDebtChart = new Chart(document.getElementById('sleepDebtChart'), {
                 data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Nợ ngủ (7đ rolling)',
-                        data: debtValues,
-                        borderColor: lineColor,
-                        backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                        borderWidth: 2,
-                        pointRadius: 2.5,
-                        pointBackgroundColor: debtValues.map(pointColorForDebt),
-                        tension: 0.3,
-                        fill: true
-                    }]
+                    labels: d.series.map(p => sleepDateLabelDM(p.date)),
+                    datasets: [
+                        {
+                            type: 'bar', order: 2,
+                            data: d.series.map(p => p.logged ? [Math.min(p.debtBefore, p.debtAfter), Math.max(p.debtBefore, p.debtAfter)] : null),
+                            backgroundColor: d.series.map(p => p.logged && p.debtAfter < p.debtBefore ? 'rgba(16,185,129,0.8)' : 'rgba(239,68,68,0.8)'),
+                            borderRadius: 3, borderSkipped: false, categoryPercentage: 0.9, barPercentage: 0.75
+                        },
+                        {
+                            type: 'line', order: 1,
+                            data: d.series.map(p => p.logged ? p.debtAfter : null),
+                            borderColor: isDark ? 'rgba(200,149,168,0.85)' : 'rgba(163,128,143,0.85)',
+                            borderWidth: 1.5, tension: 0, spanGaps: true,
+                            pointRadius: 3, pointBorderWidth: 0,
+                            pointBackgroundColor: d.series.map(p => sleepDebtLevel(p.debtAfter).color)
+                        }
+                    ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
                     plugins: {
                         legend: { display: false },
                         tooltip: {
+                            filter: item => item.datasetIndex === 1,
                             callbacks: {
-                                label: (context) => `Nợ ngủ 7 ngày: ${context.parsed.y.toFixed(1)}h`
+                                title: items => `Thức dậy ${sleepDateLabelDM(d.series[items[0].dataIndex].date)}`,
+                                label: item => {
+                                    const p = d.series[item.dataIndex];
+                                    if (!p || !p.logged) return '';
+                                    const change = p.debtAfter - p.debtBefore;
+                                    const lines = [
+                                        `Ngủ thực ${p.hours.toFixed(1)}h (${minus(p.gap)}h so với mục tiêu)`,
+                                        Math.abs(change) < 0.005 ? 'Nợ không đổi' : change > 0 ? `Nợ tăng ${change.toFixed(1)}h` : `Trả được ${Math.abs(change).toFixed(1)}h nợ`,
+                                        `Nợ sau đêm này: ${p.debtAfter.toFixed(1)}h`
+                                    ];
+                                    p.naps.forEach(nap => lines.push(`Nap ${Math.round(nap.minutes)}p lúc ${fmtVNTimeHM(nap.start)}: trả ${nap.creditMin.toFixed(0)}p nợ (hệ số giờ nap ×${nap.beta.toFixed(2)})`));
+                                    if (p.napDiscardedMin > 0.5) lines.push(`Chạm trần nap ${SLEEP_NAP_CFG.dailyCapMin}p/ngày, bỏ ${Math.round(p.napDiscardedMin)}p`);
+                                    if (p.awakeMin > 0) lines.push(`Đã trừ ${Math.round(p.awakeMin)} phút thức giữa đêm`);
+                                    if (p.sessions > 1) lines.push(`Gộp ${p.sessions} lần ngủ`);
+                                    if (p.long) lines.push(`Dài hơn ${SLEEP_DEBT_CFG.longNightHours}h — kiểm tra lại log`);
+                                    return lines;
+                                }
                             }
                         }
                     },
                     scales: {
-                        x: {
-                            ticks: { color: '#b8919f', font: { size: 9 }, maxRotation: 0 },
-                            grid: { display: false }
-                        },
+                        x: { ticks: { color: textColor, font: { size: 9 }, maxRotation: 0, autoSkip: true }, grid: { display: false } },
                         y: {
                             beginAtZero: true,
-                            ticks: { color: '#b8919f', font: { size: 9 } },
-                            grid: { color: isDark ? 'rgba(184, 145, 159,0.1)' : 'rgba(184, 145, 159,0.15)' }
+                            suggestedMax: Math.max(4, Math.ceil(maxDebt) + 1),
+                            ticks: { color: textColor, font: { size: 9 }, maxTicksLimit: 5, callback: v => `${v}h` },
+                            grid: { color: gridColor }
                         }
                     }
                 }
@@ -46669,7 +47022,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            textEl.innerHTML = `⚠️ <strong>SOL của bạn đang tăng</strong> — trung bình ${Math.round(cmp.avgLast)} phút để vào giấc trong ${cmp.lastCount} đêm gần nhất, so với ${Math.round(cmp.avgPrev)} phút ở ${cmp.prevCount} đêm trước đó (tăng ${Math.round(cmp.pctChange)}%). Có thể do dùng màn hình trước giờ ngủ nhiều hơn — cân nhắc giảm ánh sáng xanh 30–60 phút trước giờ lên giường.`;
+            textEl.innerHTML = `⚠️ <strong>SOL của bạn đang tăng</strong> — trung bình ${Math.round(cmp.avgLast)} phút để vào giấc trong ${cmp.lastCount} đêm gần nhất, so với ${Math.round(cmp.avgPrev)} phút ở ${cmp.prevCount} đêm trước đó (tăng ${Math.round(cmp.pctChange)}%).`;
             banner.dataset.signature = signature;
             banner.style.display = 'block';
         }
@@ -46914,14 +47267,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     const availH = (availMin / 60).toFixed(1);
                     if (fullCycles === 0) {
                         urgentHtml = `<div style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.4); border-radius:10px; padding:12px; margin-bottom:14px; font-size:0.82rem; line-height:1.5;">
-                            <svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> <b>Bây giờ là ${fmt(now)}</b>, chỉ còn <b>${availH}h</b> nữa tới giờ dậy bạn chọn — không đủ cho 1 chu kỳ ngủ trọn (90 phút). Nếu ngủ lúc này, giấc ngủ dễ bị cắt giữa chu kỳ sâu, dậy sẽ mệt hơn là <b>thức luôn</b>.<br>
+                            <svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> <b>Bây giờ là ${fmt(now)}</b>, chỉ còn <b>${availH}h</b> nữa tới giờ dậy bạn chọn — không đủ cho 1 chu kỳ ngủ trọn (90 phút).<br>
                             Bảng bên dưới chỉ tính lùi từ giờ dậy — dùng để lên kế hoạch cho <b>đêm sau</b>, không áp dụng cho đêm nay nữa.
                         </div>`;
                     } else {
                         const sleepH = (fullCycles * 90 / 60).toFixed(1);
                         const wakeIfSleepNow = new Date(now.getTime() + (fullCycles * 90 + solMinutes) * 60000);
                         urgentHtml = `<div style="background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); border-radius:10px; padding:12px; margin-bottom:14px; font-size:0.82rem; line-height:1.5;">
-                            ⏰ <b>Bây giờ là ${fmt(now)}</b>, chỉ còn ${availH}h tới giờ dậy đã chọn. Nếu ngủ <b>NGAY bây giờ</b>, bạn chỉ kịp <b>${fullCycles} chu kỳ trọn (${sleepH}h)</b> — ít hơn mức khuyến nghị (5–6 chu kỳ). Để dậy đúng lúc hết chu kỳ (đỡ mệt), đặt báo thức lúc khoảng <b>${fmt(wakeIfSleepNow)}</b> thay vì đúng ${fmt(target)}.<br>
+                            ⏰ <b>Bây giờ là ${fmt(now)}</b>, chỉ còn ${availH}h tới giờ dậy đã chọn. Nếu ngủ <b>NGAY bây giờ</b>, bạn chỉ kịp <b>${fullCycles} chu kỳ trọn (${sleepH}h)</b> — chu kỳ cuối kết thúc lúc khoảng <b>${fmt(wakeIfSleepNow)}</b> (giờ dậy bạn chọn là ${fmt(target)}).<br>
                             Bảng bên dưới tính lùi từ giờ dậy bạn chọn — chỉ có ý nghĩa nếu dùng để lên kế hoạch cho <b>đêm sau</b>.
                         </div>`;
                     }
@@ -48088,7 +48441,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             let allSessions = getSortedSleepSessions().reverse(); // newest first, luôn đúng thứ tự
             if (sleepHistoryDateFilter) {
-                allSessions = allSessions.filter(s => typeof s.start === 'number' && vnDateStrFromTs(s.start) === sleepHistoryDateFilter);
+                allSessions = allSessions.filter(s => typeof s.start === 'number' && getSleepWakeDateVN(s) === sleepHistoryDateFilter);
             }
             if (searchTerm) {
                 allSessions = allSessions.filter(s => (s.notes || '').toLowerCase().includes(searchTerm));
@@ -48235,9 +48588,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         function saveSleepData() {
             safeSetLocalStorage('sleepSessions', JSON.stringify(sleepSessions));
-            // Giữ đồng bộ với window.sleepSessions để Sleep Debt Card (module riêng) luôn thấy dữ liệu mới nhất
+            // Giữ đồng bộ với window.sleepSessions cho các module phân tích khác đọc qua window.*
             window.sleepSessions = sleepSessions;
-            if (typeof refreshSleepDebtCard === 'function') refreshSleepDebtCard();
         }
 
         // Số đêm hiển thị trên Sleep Chart — mặc định 7, người dùng có thể chọn 14/30 để
@@ -48293,7 +48645,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // làm, để nhất quán và không bị lệch nếu người dùng có ngày quên log.
         function avgOf(arr) { return arr.reduce((a, b) => a + b, 0) / arr.length; }
 
-        // Gom theo ngày (giờ VN) — tái dùng bucket đã xây cho Sleep Heatmap để khỏi lặp
+        // Gom theo ngày thức dậy (giờ VN) — tái dùng bucket đã xây cho Sleep Heatmap để khỏi lặp
         // logic gom nhóm, và đảm bảo mọi nơi tính "theo ngày" đều thống nhất 1 múi giờ VN.
         function getDailySleepTotalsVN() {
             const buckets = buildSleepHeatmapBuckets();
@@ -48324,13 +48676,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return { avgLast, avgPrev, diff: avgLast - avgPrev, lastCount: last7.length, prevCount: prev7.length, lastDate: last7[last7.length - 1].date };
         }
 
-        function getSleepDebt7VN(goal) {
-            const last7 = getDailySleepTotalsVN().slice(-7);
-            if (last7.length < 3) return null;
-            const debt = last7.reduce((sum, d) => sum + Math.max(0, goal - d.duration), 0);
-            return { debt, nights: last7.length, lastDate: last7[last7.length - 1].date };
-        }
-
         const INSIGHT_TONE_STYLE = {
             caution: { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.4)' },
             positive: { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.4)' },
@@ -48350,16 +48695,17 @@ document.addEventListener('DOMContentLoaded', function() {
         function computeSleepInsight() {
             const goal = getSleepGoal();
             const durTrend = getSleepDurationTrendVN();
-            const debt = getSleepDebt7VN(goal);
+            const debtInfo = computeSleepDebt();
+            const debt = (debtInfo.ok && debtInfo.debt > 5) ? debtInfo : null; // chỉ nhắc khi nợ từ mức vừa trở lên
 
             if (durTrend && Math.abs(durTrend.diff) >= 0.3) {
                 const more = durTrend.diff > 0;
                 const closerToGoal = Math.abs(durTrend.avgLast - goal) < Math.abs(durTrend.avgPrev - goal);
                 let tone = closerToGoal ? 'positive' : 'caution';
                 let text = `Tuần này bạn ngủ trung bình <strong>${more ? 'nhiều hơn' : 'ít hơn'} ${Math.abs(durTrend.diff).toFixed(1)} giờ</strong> so với tuần trước (${durTrend.avgPrev.toFixed(1)}h → ${durTrend.avgLast.toFixed(1)}h), mục tiêu hiện tại là ${goal}h.`;
-                if (debt && debt.debt > 5) {
+                if (debt) {
                     tone = 'caution';
-                    text += ` Đang nợ ngủ ${debt.debt.toFixed(1)}h trong ${debt.nights} đêm gần nhất.`;
+                    text += ` Nợ ngủ hiện là ${debt.debt.toFixed(1)}h (sổ ${debt.expected} đêm gần nhất).`;
                 }
                 return { tone, icon: more ? 'icon-trending-up' : 'icon-trending-down', signature: `dur:${durTrend.lastDate}`, text };
             }
@@ -48382,16 +48728,16 @@ document.addEventListener('DOMContentLoaded', function() {
             if (streak >= 5) {
                 return {
                     tone: 'positive', icon: 'icon-flame', signature: `streak:${dailyForStreak[dailyForStreak.length - 1]?.date}:${streak}`,
-                    text: `Bạn đang đạt mục tiêu <strong>${streak} đêm liên tiếp</strong> — cứ giữ đều giờ giấc như vậy nhé.`
+                    text: `Bạn đang đạt mục tiêu <strong>${streak} đêm liên tiếp</strong>.`
                 };
             }
 
             // Nợ ngủ "mãn tính" — nặng nhưng không phải do 1 thay đổi rõ rệt tuần này
             // (nếu là thay đổi rõ rệt thì đã được nêu ở nhánh duration phía trên rồi).
-            if (debt && debt.debt > 5) {
+            if (debt) {
                 return {
                     tone: 'caution', icon: 'icon-flame', signature: `debt:${debt.lastDate}`,
-                    text: `Bạn đang nợ ngủ <strong>${debt.debt.toFixed(1)}h</strong> trong ${debt.nights} đêm gần nhất — thử lên giường sớm hơn vài chục phút vài đêm liền để trả dần.`
+                    text: `Nợ ngủ hiện là <strong>${debt.debt.toFixed(1)}h</strong> (mức ${debt.level.label.toLowerCase()}) trên sổ ${debt.expected} đêm gần nhất, không có thay đổi lớn nào trong tuần này để giải thích.`
                 };
             }
 
@@ -48731,7 +49077,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // hơi (vd "cứ cuối tháng là ngủ tệ hẳn") thì lưới ô vuông đậm-nhạt gói gọn 3 tháng
         // trong một khoảng nhỏ, không cần kéo dài trục X như bar chart.
         //
-        // Mỗi ô = 1 ngày (bucket theo ngày bắt đầu ngủ, tính theo giờ VN). Độ đậm = điểm
+        // Mỗi ô = 1 ngày (bucket theo ngày THỨC DẬY, tính theo giờ VN — cùng quy ước với Sleep Debt Engine). Độ đậm = điểm
         // tổng hợp giữa "ngủ có sát mục tiêu không" (duration) và "chất lượng tự chấm"
         // (quality, nếu có) — không phải chỉ số giờ đơn thuần, vì 10h ngủ (dư quá nhiều)
         // không nên đậm hơn 8h ngủ đúng mục tiêu.
@@ -48747,7 +49093,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const map = {};
             sleepSessions.forEach(s => {
                 if (typeof s.start !== 'number' || typeof s.duration !== 'number') return;
-                const key = vnDateStrFromTs(s.start);
+                const key = getSleepWakeDateVN(s); // đêm gán theo ngày thức dậy
                 if (!map[key]) map[key] = { duration: 0, qualities: [], sessions: [] };
                 map[key].duration += s.duration;
                 if (s.quality) map[key].qualities.push(s.quality);
@@ -49091,15 +49437,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 row.innerHTML = [
                     sleepTile('moon', MUTED, '—', 'Trung bình'),
                     sleepTile('flame', MUTED, '—', 'Chuỗi đủ giấc'),
-                    sleepTile('hourglass', MUTED, '—', 'Nợ ngủ (7đ)'),
+                    sleepTile('hourglass', MUTED, '—', 'Nợ ngủ (14đ)'),
                     sleepTile('zap', MUTED, '—', 'SE (7đ)'),
                     sleepTile('activity', MUTED, '—', 'Đều đặn (7đ)'),
                     sleepTile('anchor', MUTED, '—', 'Anchor streak')
                 ].join('');
                 const wrap = document.getElementById('solTrendWrap');
                 if (wrap) wrap.style.display = 'none';
-                const debtTrendWrap = document.getElementById('sleepDebtTrendWrap');
-                if (debtTrendWrap) debtTrendWrap.style.display = 'none';
+                renderSleepDebtCard(); // ẩn card nợ ngủ khi chưa có dữ liệu
                 const alertBanner = document.getElementById('solAlertBanner');
                 if (alertBanner) alertBanner.style.display = 'none';
                 const noteCorrWrap = document.getElementById('solNoteCorrelationWrap');
@@ -49117,9 +49462,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Gom theo NGÀY trước khi tính — nếu không, ai ngủ nhiều pha/ngày sẽ bị
             // "TB 7 đêm" tính nhầm trên <7 ngày thực tế, streak bị gãy giữa chừng dù
             // tổng ngày đó đã đủ giấc, và nợ ngủ bị cộng dồn trùng nhiều lần trong 1 ngày.
+            // Ngày = ngày THỨC DẬY (giờ VN): gom theo ngày bắt đầu sẽ dồn 2 đêm vào 1 ngày khi
+            // bạn ngủ sau 0h hôm nay rồi lại ngủ trước 0h hôm sau.
             const byDate = {};
             sorted.forEach(s => {
-                const dateStr = toLocalDateStr(new Date(s.start));
+                const dateStr = getSleepWakeDateVN(s);
                 if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, duration: 0 };
                 byDate[dateStr].duration += s.duration;
             });
@@ -49134,12 +49481,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 else break;
             }
 
-            // Nợ ngủ: tổng số giờ thiếu so với mục tiêu trong 7 ngày gần nhất (chỉ tính phần thiếu, không cộng dư)
-            const debt = last7.reduce((sum, d) => sum + Math.max(0, goal - d.duration), 0);
+            // Nợ ngủ: lấy từ Sleep Debt Engine (sổ 14 đêm, gán theo ngày thức dậy) — 1 con số chung cho cả app
+            const debtInfo = computeSleepDebt();
 
             const avgColor = avg7 >= goal - 0.25 ? '#10b981' : avg7 >= goal - 1.5 ? '#f59e0b' : '#ef4444';
             const streakColor = streak >= 3 ? '#10b981' : streak > 0 ? 'var(--primary)' : 'var(--text-muted)';
-            const debtColor = debt <= 1 ? '#10b981' : debt <= 5 ? '#f59e0b' : '#ef4444';
 
             // Sleep Efficiency: trung bình các đêm gần nhất có đủ dữ liệu SOL (tối đa 7 đêm gần nhất có SOL)
             const sessionsWithSOL = getSortedSleepSessions().filter(s => typeof s.sol === 'number' && !isNaN(s.sol)).slice(-7);
@@ -49176,14 +49522,16 @@ document.addEventListener('DOMContentLoaded', function() {
             row.innerHTML = [
                 sleepTile('moon', avgColor, `${avg7.toFixed(1)}h`, `TB ${last7.length} đêm`),
                 sleepTile('flame', streakColor === 'var(--primary)' ? '#ec4899' : streakColor, streak, 'Chuỗi đủ giấc'),
-                sleepTile('hourglass', debtColor, `${debt.toFixed(1)}h`, 'Nợ ngủ (7đ)'),
+                debtInfo.ok
+                    ? sleepTile('hourglass', debtInfo.level.color, `${debtInfo.debt.toFixed(1)}h`, `Nợ ngủ (${debtInfo.windowNights}đ)`, 'Sổ nợ 14 đêm gần nhất: thiếu thì cộng, ngủ dư thì trả dần')
+                    : sleepTile('hourglass', MUTED, '—', 'Nợ ngủ (cần ≥3đ)'),
                 seBox,
                 regBox,
                 anchorBox
             ].join('');
 
             renderSolTrendChart();
-            renderSleepDebtTrendChart();
+            renderSleepDebtCard();
             renderSolAlert();
             renderSolNoteCorrelation();
             renderSleepBrief();
@@ -49208,11 +49556,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateSleepUI();
             }
             
+            loadNapData(); // trước renderSleepStats: nợ ngủ có cấn trừ nap
             renderSleepHistory();
             renderSleepChart();
             renderSleepStats();
 
-            loadNapData();
             renderNapWidget();
 
             applySleepSectionCollapseState();
@@ -49259,11 +49607,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // ===== NAP TRACKER =====
         // Naps live in their OWN localStorage key/array, completely separate from
-        // sleepSessions. This is deliberate: dozens of functions elsewhere (sleep
-        // debt, SE, regularity, optimal window, sleep-study correlation, anomaly
-        // detection...) assume every entry in sleepSessions is a main night of
-        // sleep. Mixing naps in would silently skew every one of those. Naps get
-        // their own lightweight log + today's total instead.
+        // sleepSessions. This is deliberate: dozens of functions elsewhere (SE,
+        // regularity, optimal window, sleep-study correlation, anomaly detection...)
+        // assume every entry in sleepSessions is a main night of sleep. Mixing naps
+        // in would silently skew every one of those. The ONLY place naps feed back is
+        // the Sleep Debt Engine (computeSleepDebt), which credits them as a partial,
+        // discounted repayment — never as night sleep.
         let napSessions = [];
 
         function loadNapData() {
@@ -49416,6 +49765,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 saveNapData();
                 renderNapWidget();
+                renderSleepStats(); // nap trả một phần nợ ngủ → cập nhật số nợ ngay
                 closeNapModal();
                 showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-sun"></use></svg> Đã lưu nap ${formatNapDuration(durationMin)}.`, 'success');
             });
@@ -49430,6 +49780,7 @@ document.addEventListener('DOMContentLoaded', function() {
             napSessions = napSessions.filter(n => n.id !== id);
             saveNapData();
             renderNapWidget();
+            renderSleepStats(); // cập nhật số nợ ngủ sau khi xoá nap
         }
 
 
@@ -49938,12 +50289,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // (không đổi hành vi cũ / không đụng calculateSleepStudyCorrelation() gốc, vì hàm
         // đó còn được renderCorrelationInsights() và detectInvertedURelationship() dùng —
         // U-curve đó được tính riêng cho SỐ GIỜ NGỦ, không áp dụng cho SE/nợ ngủ/đều đặn).
-        // Chọn thêm SE / Nợ ngủ (7đ rolling) / Đều đặn (7đ rolling) — vì chất lượng kiến
+        // Chọn thêm SE / Nợ ngủ (sổ 14 đêm) / Đều đặn (7đ rolling) — vì chất lượng kiến
         // trúc giấc ngủ mới là biến xử lý thông tin thật sự, không phải số giờ nằm giường.
         const SLEEP_METRIC_DEFS = {
             hours: { label: 'Sleep Hours', unit: 'h' },
             se:    { label: 'Sleep Efficiency', unit: '%' },
-            debt:  { label: 'Nợ ngủ (7đ)', unit: 'h' },
+            debt:  { label: 'Nợ ngủ (14đ)', unit: 'h' },
             reg:   { label: 'Đều đặn (7đ)', unit: 'p' },
         };
         let sleepMetricXAxis = 'hours';
@@ -49993,14 +50344,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (arr && arr.length) metricByDate[k] = arr.reduce((a, b) => a + b, 0) / arr.length;
                 });
             } else if (metric === 'debt') {
-                // Nợ ngủ cộng dồn 7 ngày, tính riêng cho từng ngày có dữ liệu giờ ngủ
-                // (không lọc theo cutoffDate ở bước này — cửa sổ rolling cần dữ liệu trước
-                // cutoff để chính xác ở các ngày đầu khoảng lọc).
-                const allDates = Object.keys(hoursByDate).sort();
-                allDates.forEach((dateKey, idx) => {
-                    const windowDates = allDates.slice(Math.max(0, idx - 6), idx + 1);
-                    metricByDate[dateKey] = windowDates.reduce((sum, d) => sum + Math.max(0, goal - (hoursByDate[d] || 0)), 0);
-                });
+                // Nợ ngủ theo Sleep Debt Engine (sổ 14 đêm, ngủ dư trả dần), tính tại từng ngày thức dậy
+                // (không lọc theo cutoffDate ở bước này — sổ cần dữ liệu trước cutoff để đúng ở các
+                // ngày đầu khoảng lọc).
+                Object.assign(metricByDate, computeSleepDebtAsOfMap({ goal }));
             } else if (metric === 'reg') {
                 Object.keys(hoursByDate).forEach(dateKey => {
                     const score = computeRollingRegularityAsOf(sorted, new Date(dateKey), 7);
@@ -55516,7 +55863,6 @@ function analyzeInsomniaPatterns() {
         analysis.insomniaPenalty = calculateInsomniaPenalty(analysis);
         analysis.cognitiveEfficiency = calculateCognitiveEfficiency(analysis);
         analysis.insomniaSeverity = calculateInsomniaSeverity(analysis);
-        analysis.recommendations = generateInsomniaRecommendations(analysis);
         
         return analysis;
         
@@ -55632,7 +55978,7 @@ function analyzeSleepFragmentation() {
     // 2.5h each looks like "2.5h avg sleep" per session even though the day totals 7.5h).
     const byDate = {};
     sorted.forEach(s => {
-        const dateStr = toLocalDateStr(new Date(s.start));
+        const dateStr = getSleepWakeDateLocal(s); // đêm gán theo ngày thức dậy
         if (!byDate[dateStr]) byDate[dateStr] = 0;
         byDate[dateStr] += s.duration;
     });
@@ -55710,16 +56056,20 @@ function analyzeRecoveryPatterns() {
     if (sleepSessions.length < 7) return { insufficientData: true };
     
     const sorted = [...sleepSessions].sort((a, b) => a.start - b.start);
-    const idealSleep = 7.5;
-    let cumulativeDebt = 0;
+    const idealSleep = getSleepGoal(); // mục tiêu bạn đặt, không còn cứng 7.5h
+    // Nợ tích luỹ lấy từ Sleep Debt Engine (sổ 14 đêm, ngủ dư trả dần) — cùng số với card "Nợ ngủ".
+    // Bản cũ cộng dồn toàn bộ lịch sử và không bao giờ trừ, nên gần như luôn vượt ngưỡng cảnh báo.
+    const debtInfo = computeSleepDebt();
+    const cumulativeDebt = debtInfo.ok ? debtInfo.debt : 0;
+    let totalDeficit = 0;
     const recoveryCycles = [];
     const debtPatterns = [];
     
-    // Gom theo ngày trước khi so với mục tiêu — tránh phạt trùng khi ngủ đa pha
-    // (polyphasic), giống logic đã sửa ở calculateSleepDebtWithInterest.
+    // Gom theo ngày thức dậy trước khi so với mục tiêu — tránh phạt trùng khi ngủ đa pha
+    // (polyphasic) và không dồn 2 đêm vào 1 ngày.
     const byDate = {};
     sorted.forEach(session => {
-        const dateStr = toLocalDateStr(new Date(session.start));
+        const dateStr = getSleepWakeDateLocal(session);
         if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, duration: 0 };
         byDate[dateStr].duration += session.duration;
     });
@@ -55727,7 +56077,7 @@ function analyzeRecoveryPatterns() {
     
     for (let i = 0; i < dailyTotals.length; i++) {
         const deficit = idealSleep - dailyTotals[i].duration;
-        if (deficit > 0) cumulativeDebt += deficit;
+        if (deficit > 0) totalDeficit += deficit;
         
         if (i < dailyTotals.length - 2 && deficit > 0) {
             const next = dailyTotals[i + 1];
@@ -55747,18 +56097,17 @@ function analyzeRecoveryPatterns() {
         });
     }
     
-    const totalDebt = debtPatterns.reduce((sum, p) => sum + p.deficit, 0);
     const recoveryEfficiency = recoveryCycles.length > 0 ? 
         recoveryCycles.reduce((sum, r) => sum + r.recoveryHours, 0) / 
         recoveryCycles.reduce((sum, r) => sum + r.deficitHours, 0) : 0;
     
     return {
         hasRecoveryPatterns: recoveryCycles.length > 0,
-        averageSleepDebt: parseFloat((totalDebt / dailyTotals.length).toFixed(1)),
+        averageSleepDebt: parseFloat((totalDeficit / dailyTotals.length).toFixed(1)), // thiếu TB mỗi đêm (toàn lịch sử)
         cumulativeDebt: parseFloat(cumulativeDebt.toFixed(1)),
         recoveryEfficiency: parseFloat(recoveryEfficiency.toFixed(2)),
         recoveryCycles: recoveryCycles.slice(0, 3),
-        debtAccumulationRate: parseFloat((cumulativeDebt / dailyTotals.length).toFixed(2))
+        debtAccumulationRate: parseFloat((cumulativeDebt / SLEEP_DEBT_CFG.windowNights).toFixed(2))
     };
 }
 
@@ -55926,217 +56275,19 @@ function calculateInsomniaSeverity(analysis) {
                          severityScore >= 30 ? 'mild' : 'subclinical';
     
     const interpretations = {
-        'severe': 'Significant impact on daily functioning. Professional consultation recommended.',
-        'moderate_severe': 'Noticeable impact on energy and mood. Behavioral interventions needed.',
+        'severe': 'Significant impact on daily functioning.',
+        'moderate_severe': 'Noticeable impact on energy and mood.',
         'moderate': 'Regular sleep difficulties affecting quality of life.',
         'mild': 'Occasional sleep problems with minimal functional impact.',
         'subclinical': 'Minor sleep variations within normal range.'
-    };
-    
-    const actions = {
-        'severe': 'Consult sleep specialist + implement CBT-I',
-        'moderate_severe': 'Sleep restriction therapy + strict sleep hygiene',
-        'moderate': 'Sleep schedule consolidation + relaxation techniques',
-        'mild': 'Sleep hygiene improvement + stress management',
-        'subclinical': 'Monitor patterns + maintain healthy habits'
     };
     
     return {
         severityScore: Math.min(100, severityScore),
         severityLevel: severityLevel,
         contributingFactors: factors,
-        interpretation: interpretations[severityLevel] || 'Unable to determine severity.',
-        suggestedAction: actions[severityLevel] || 'Continue tracking and maintain consistency'
+        interpretation: interpretations[severityLevel] || 'Unable to determine severity.'
     };
-}
-
-// 9. Generate Recommendations
-function generateInsomniaRecommendations(analysis) {
-    const recommendations = [];
-    const riskLevel = analysis.insomniaRisk;
-    const penalty = analysis.insomniaPenalty;
-    const efficiency = analysis.cognitiveEfficiency;
-    
-    // Emergency: All-nighter detected
-    if (riskLevel === 'extreme' || riskLevel === 'critical') {
-
-        recommendations.push({
-            priority: 'critical',
-            action: '🚨 RESET CIRCADIAN RHYTHM WITH SUNLIGHT',
-            rationale: 'Awake >24h disrupts circadian rhythm. Get 30min natural light AS SOON AS you wake up today.',
-            urgency: 'immediate'
-        });
-        
-        recommendations.push({
-            priority: 'critical',
-            action: '🛌 COMPENSATORY SLEEP & NO CAFFEINE',
-            rationale: 'Brain needs 48h to recover from all-nighter. Take 1-2 short naps (20min) but avoid >6h daytime sleep.',
-            urgency: 'immediate'
-        });
-    }
-
-    // Penalty-based recommendations
-    if (penalty?.reasons?.length > 0) {
-        penalty.reasons.forEach(reason => {
-            if (reason.type === 'daytime_sleep') {
-                recommendations.push({
-                    priority: 'high',
-                    action: '☀️ RESTRICT DAYTIME SLEEP TO <1H',
-                    rationale: `${reason.hours}h of daytime sleep disrupts night sleep drive. Limit naps to 20-30min before 3pm.`,
-                    urgency: 'today'
-                });
-            }
-            
-            if (reason.type === 'all_nighter') {
-                recommendations.push({
-                    priority: 'high',
-                    action: '⏰ SET ALARM FOR BEDTIME 10PM TONIGHT',
-                    rationale: `Awake ${reason.awakeHours}h requires immediate recovery. Sleep at least 7h tonight.`,
-                    urgency: 'immediate'
-                });
-            }
-            
-            if (reason.type === 'irregular_schedule') {
-                recommendations.push({
-                    priority: 'medium',
-                    action: '📅 FIXED BEDTIME WITHIN 30-MIN WINDOW',
-                    rationale: `Bedtime varies ${reason.stdDev}h daily. Pick bedtime and stick to it ±30min for 7 days.`,
-                    urgency: 'this_week'
-                });
-            }
-        });
-    }
-
-    // Cognitive efficiency recommendations
-    if (efficiency?.efficiencyLevel === 'severe_impairment') {
-        recommendations.push({
-            priority: 'critical',
-            action: '💤 PRIORITIZE SLEEP OVER STUDYING TODAY',
-            rationale: `Learning efficiency at ${efficiency.efficiencyPercentage}%. Sleep 7-8h tonight to restore brain function.`,
-            urgency: 'immediate'
-        });
-    }
-
-    if (efficiency?.studyROI?.wastePercentage > 50) {
-        recommendations.push({
-            priority: 'high',
-            action: '🎯 STUDY IN 90-MIN FOCUS BLOCKS WITH BREAKS',
-            rationale: `${efficiency.studyROI.wastePercentage}% of study time wasted. Use Pomodoro technique (25min study, 5min break).`,
-            urgency: 'today'
-        });
-    }
-
-    // Sleep type specific recommendations
-    const insomniaType = analysis.insomniaType;
-    if (insomniaType?.primaryType === 'sleep_onset') {
-        recommendations.push({
-            priority: 'medium',
-            action: '📵 NO SCREENS 1H BEFORE BED',
-            rationale: `Difficulty falling asleep reported ${insomniaType.percentages.sleepOnset}% of nights. Blue light suppresses melatonin.`,
-            urgency: 'this_week'
-        });
-    }
-
-    if (insomniaType?.primaryType === 'maintenance') {
-        recommendations.push({
-            priority: 'medium',
-            action: '🚰 REDUCE FLUIDS 2H BEFORE BED',
-            rationale: `Frequent awakenings ${insomniaType.percentages.maintenance}% of nights. Avoid caffeine/alcohol 6h before bed.`,
-            urgency: 'this_week'
-        });
-    }
-
-    // Early awakening: dậy quá sớm (3h-6h sáng) và ngủ chưa đủ tổng thời lượng —
-    // trước đây classifyInsomniaType() đã phân loại được nhóm này nhưng chưa có
-    // khuyến nghị riêng, người dùng chỉ nhận được lời khuyên chung chung không đúng trọng tâm.
-    if (insomniaType?.primaryType === 'early_awakening') {
-        recommendations.push({
-            priority: 'medium',
-            action: '🌤️ HẠN CHẾ ÁNH SÁNG MẠNH SÁNG SỚM, TĂNG ÁNH SÁNG BUỔI TỐI',
-            rationale: `Thức dậy quá sớm (3h-6h sáng) ${insomniaType.percentages.earlyAwakening}% số đêm ghi nhận. Dậy sớm lặp lại thường liên quan đến nhịp sinh học bị đẩy lệch sớm — thử tăng ánh sáng vào buổi tối và tránh ánh sáng mạnh ngay khi thức giấc sớm để không củng cố thói quen dậy sớm này.`,
-            urgency: 'this_week'
-        });
-    }
-
-    // Non-restorative: ngủ đủ giờ (7-10h) nhưng tự đánh giá chất lượng thấp — vấn đề
-    // nằm ở CHẤT LƯỢNG giấc ngủ, không phải thời lượng, nên khuyến nghị cần khác hẳn
-    // nhóm sleep_onset/maintenance (vốn tập trung vào thời lượng/số lần thức giấc).
-    if (insomniaType?.primaryType === 'non_restorative') {
-        recommendations.push({
-            priority: 'medium',
-            action: '🩺 KIỂM TRA CHẤT LƯỢNG GIẤC NGỦ, KHÔNG CHỈ THỜI LƯỢNG',
-            rationale: `Ngủ đủ 7-10h nhưng vẫn tự đánh giá chất lượng kém ${insomniaType.percentages.nonRestorative}% số đêm. Đây thường là dấu hiệu của gián đoạn giấc ngủ sâu (vd ngưng thở khi ngủ, đau mãn tính, stress) chứ không phải thiếu giờ ngủ — nếu tình trạng kéo dài, nên ghi thêm SOL/số lần thức giấc mỗi đêm và cân nhắc tham khảo bác sĩ chuyên khoa giấc ngủ.`,
-            urgency: 'this_week'
-        });
-    }
-
-    // Circadian phase-shift recommendations (e.g. daytime/reversed sleep schedule)
-    const circadian = analysis.circadianDisruption;
-    if (circadian?.phaseShift === 'daytime_sleeper') {
-        recommendations.push({
-            priority: 'high',
-            action: '🔄 SHIFT SLEEP WINDOW GRADUALLY, NOT ALL AT ONCE',
-            rationale: `${circadian.daytimeSleepPercentage}% of your recorded sleep falls in daylight hours (6am-6pm) — your body clock looks inverted or "free-running." The circadian clock only re-entrains about 1h per day, so move bedtime/wake time 15-30min earlier every 2-3 days rather than forcing an overnight switch.`,
-            urgency: 'this_week'
-        });
-        recommendations.push({
-            priority: 'medium',
-            action: '🌞 ANCHOR WITH LIGHT: BRIGHT ON WAKING, DIM BEFORE BED',
-            rationale: 'Get bright light (ideally sunlight) within 30min of your target wake time every day, and dim lights/screens 2h before your target bedtime. Light exposure timing is the strongest input your circadian clock responds to — stronger than willpower or caffeine timing.',
-            urgency: 'this_week'
-        });
-    }
-
-    if (circadian?.socialJetlag >= 2) {
-        recommendations.push({
-            priority: 'medium',
-            action: '⚖️ CLOSE THE WEEKDAY–WEEKEND BEDTIME GAP',
-            rationale: `Your bedtime shifts by roughly ${circadian.socialJetlag}h between weekdays and weekends ("social jetlag"). Each shift re-triggers a mini jet-lag effect on your circadian clock. Try keeping wake time within about 1h across all 7 days, even if you allow bedtime itself to vary slightly.`,
-            urgency: 'this_week'
-        });
-    }
-
-    // Fragmented / nap-based debt repayment pattern
-    const recovery = analysis.recoveryPatterns;
-    if (recovery && !recovery.insufficientData) {
-        if (recovery.cumulativeDebt > 8 && analysis.sleepFragmentation?.isFragmented) {
-            recommendations.push({
-                priority: 'high',
-                action: '🧩 CONSOLIDATE INTO ONE LONGER SLEEP BLOCK',
-                rationale: `You're repaying roughly ${recovery.cumulativeDebt}h of accumulated sleep debt mostly through short, split sessions rather than one continuous block. Deep (slow-wave) and REM sleep — the stages responsible for physical recovery and memory consolidation — occur in ~90min cycles late in a sleep episode and are disproportionately lost when sleep is chopped up. One 7-9h block repays debt far more effectively than several short naps adding up to the same hours.`,
-                urgency: 'this_week'
-            });
-        }
-        if (recovery.hasRecoveryPatterns && recovery.recoveryEfficiency > 0 && recovery.recoveryEfficiency < 0.5) {
-            recommendations.push({
-                priority: 'medium',
-                action: '📉 CATCH-UP SLEEP ISN\'T FULLY REPAYING YOUR DEBT',
-                rationale: `Only about ${Math.round(recovery.recoveryEfficiency * 100)}% of your sleep debt is being recovered by your current catch-up sessions. Large one-off "recovery sleeps" can themselves disrupt circadian timing. A more effective approach is smaller, consistent nightly increases (30-60min extra per night) sustained over several days.`,
-                urgency: 'this_week'
-            });
-        }
-    }
-
-    // Add general recommendations if less than 3 specific ones
-    if (recommendations.length < 3) {
-        recommendations.push({
-            priority: 'medium',
-            action: '🌙 CREATE BEDTIME RITUAL',
-            rationale: 'Consistent pre-sleep routine signals brain to wind down. Try: 1) Warm shower 2) Light reading 3) 5-min breathing',
-            urgency: 'this_week'
-        });
-        
-        recommendations.push({
-            priority: 'medium',
-            action: '🌡️ OPTIMIZE SLEEP ENVIRONMENT',
-            rationale: 'Ideal: 18-20°C, pitch dark, white noise. Use eye mask and earplugs if needed.',
-            urgency: 'this_week'
-        });
-    }
-
-    // Sort by priority (critical → high → medium)
-    const priorityOrder = { critical: 0, high: 1, medium: 2 };
-    return recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 }
 
 // 10. NEW FEATURE: Analyze recent sleep trend (last 7 sessions vs previous 7)
@@ -56148,7 +56299,7 @@ function analyzeSleepTrend() {
     // pha ngắn sẽ kéo "trung bình mỗi session" xuống dù tổng giờ ngủ ngày đó ổn.
     const byDate = {};
     sorted.forEach(s => {
-        const dateStr = toLocalDateStr(new Date(s.start));
+        const dateStr = getSleepWakeDateLocal(s); // đêm gán theo ngày thức dậy
         if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, duration: 0 };
         byDate[dateStr].duration += s.duration;
     });
@@ -56281,22 +56432,6 @@ function renderInsomniaAnalysis() {
                 </div>
             </div>
 
-            ${(severity.severityLevel === 'severe' || penalty.totalPenalty > 60) ? `
-            <div class="emergency-notice">
-                <div class="emergency-icon">🚨</div>
-                <div class="emergency-content">
-                    <h4>MEDICAL CONSULTATION RECOMMENDED</h4>
-                    <p>Sleep patterns indicate significant disruption requiring professional attention:</p>
-                    <ol>
-                        <li><strong>Sleep specialist consultation</strong> — chronic insomnia affects long-term health</li>
-                        <li><strong>CBT-I (Cognitive Behavioral Therapy for Insomnia)</strong> — gold standard treatment</li>
-                        <li><strong>Rule out underlying conditions</strong> — sleep apnea, thyroid, anxiety</li>
-                    </ol>
-                    <p class="warning">⚠️ Untreated, this may contribute to: cognitive decline, mood disruption, immune suppression, weight dysregulation.</p>
-                </div>
-            </div>
-            ` : ''}
-
             <button type="button" id="insomniaDetailsToggleBtn" onclick="toggleInsomniaExtraDetails()"
                 class="insomnia-details-toggle-btn">
                 ${insomniaDetailsExpanded ? '▲ Thu gọn' : '▼ Xem phân tích chi tiết'}
@@ -56391,27 +56526,6 @@ function renderInsomniaAnalysis() {
         `;
     }
     
-    // Show recommendations
-    if (analysis.recommendations && analysis.recommendations.length > 0) {
-        html += `
-            <div class="insomnia-recommendations">
-                <h4>🎯 Recommended Actions</h4>
-                    ${analysis.recommendations.map(rec => `
-                    <div class="recommendation ${rec.priority}">
-                        <div class="rec-icon">${rec.action.split(' ')[0]}</div>
-                        <div class="rec-content">
-                            <strong>${rec.action.replace(/^[^\s]+\s/, '')}</strong>
-                            <p>${rec.rationale}</p>
-                            <span class="urgency-tag ${rec.urgency.replace(/\s/g, '_')}">
-                                ${rec.urgency.replace(/_/g,' ').toUpperCase()}
-                            </span>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    }
-    
     html += `</div>`; // đóng #insomniaExtraDetails
     html += `</div></div>`;
     container.innerHTML = html;
@@ -56487,8 +56601,7 @@ function getInsomniaReport() {
             cognitiveEfficiency: analysis.cognitiveEfficiency?.efficiencyPercentage || 0,
             primaryIssue: analysis.insomniaType?.primaryType || 'unknown'
         },
-        detailedAnalysis: analysis,
-        recommendations: analysis.recommendations || []
+        detailedAnalysis: analysis
     };
 }
 
@@ -57450,10 +57563,8 @@ function getLast7DaysData(sleepSessions, studyData) {
         const dateStr = toLocalDateStr(date);
         
         // Find sleep for this day
-        const daySleep = sleepSessions.filter(s => {
-            const sleepDate = toLocalDateStr(new Date(s.start));
-            return sleepDate === dateStr;
-        });
+        // Giấc ngủ của ngày này = đêm kết thúc vào ngày này (ghép với giờ học cùng ngày, như buildSleepByWakeDay)
+        const daySleep = sleepSessions.filter(s => getSleepWakeDateLocal(s) === dateStr);
         
         const totalSleep = daySleep.reduce((sum, s) => sum + s.duration, 0);
         const studyHours = parseFloat(studyData[dateStr] || 0);
@@ -57843,10 +57954,7 @@ function analyzeWeeklyPatterns(studyData = {}, sleepData = []) {
             const studyHours = parseFloat(studyData[dateStr] || 0);
             
             // Lấy giờ ngủ
-            const daySleep = sleepData.filter(s => {
-                const sleepDate = toLocalDateStr(new Date(s.start));
-                return sleepDate === dateStr;
-            });
+            const daySleep = sleepData.filter(s => getSleepWakeDateLocal(s) === dateStr);
             const sleepHours = daySleep.reduce((sum, s) => sum + s.duration, 0);
             
             // Phân loại ngày trong tuần (0=CN, 1=T2, ..., 6=T7)
@@ -57969,1188 +58077,6 @@ function generateWeeklyRecommendations(pattern, weekdayAvg, weekendAvg) {
 }
 
 
-// ====== SLEEP DEBT CALCULATOR WITH COMPOUND INTEREST ======
-
-// 1. Main Sleep Debt Calculator
-function calculateSleepDebtWithInterest(sleepSessions = []) {
-    try {
-        if (!sleepSessions || sleepSessions.length < 2) {
-            return {
-                error: true,
-                message: 'Cần ít nhất 2 lượt ngủ để tính nợ ngủ',
-                totalDebt: 0,
-                debug: {
-                    sessions: sleepSessions?.length || 0,
-                    reason: 'insufficient_data'
-                }
-            };
-        }
-        
-        const sorted = [...sleepSessions].sort((a, b) => a.start - b.start);
-        
-        console.log('✅ Processing sessions:', sorted.length);
-        console.log('Date range:', 
-            new Date(sorted[0].start).toLocaleDateString(), 
-            '→', 
-            new Date(sorted[sorted.length-1].start).toLocaleDateString()
-        );
-        
-        const IDEAL_SLEEP = 7.5; // hours
-        const INTEREST_RATE = 0.02; // 2% daily compound 
-        const REPAYMENT_EFFICIENCY = 0.7; // Only 70% of extra sleep pays debt        
-        let cumulativeDebt = 0;
-        const debtHistory = [];
-        let consecutiveDeficit = 0;
-        let consecutiveSurplus = 0;
-        let maxConsecDeficit = 0;
-        let maxConsecSurplus = 0;
-        
-        // Gom các session theo NGÀY trước khi so với mục tiêu — hỗ trợ ngủ đa pha
-        // (polyphasic). Nếu tính riêng từng session, ai ngủ 2-3 giấc/ngày sẽ luôn bị
-        // tính "thiếu" nhiều lần dù tổng giờ ngủ trong ngày đã đủ.
-        const byDate = {};
-        sorted.forEach(session => {
-            const dateStr = toLocalDateStr(new Date(session.start));
-            if (!byDate[dateStr]) {
-                byDate[dateStr] = { date: dateStr, duration: 0, sessionCount: 0 };
-            }
-            byDate[dateStr].duration += session.duration;
-            byDate[dateStr].sessionCount += 1;
-        });
-        const dailyTotals = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-
-        dailyTotals.forEach(day => {
-            const deficit = IDEAL_SLEEP - day.duration;
-            const dateStr = day.date;
-            
-            if (deficit > 0) {
-                // Accumulate debt with compound interest
-                cumulativeDebt = (cumulativeDebt * (1 + INTEREST_RATE)) + deficit;
-                consecutiveDeficit++;
-                maxConsecDeficit = Math.max(maxConsecDeficit, consecutiveDeficit);
-                consecutiveSurplus = 0;
-                
-                debtHistory.push({
-                    date: dateStr,
-                    type: 'deficit',
-                    hours: parseFloat(deficit.toFixed(1)),
-                    debt: parseFloat(cumulativeDebt.toFixed(1)),
-                    interest: parseFloat((cumulativeDebt * INTEREST_RATE).toFixed(1)),
-                    sessionDuration: parseFloat(day.duration.toFixed(1)),
-                    sessionCount: day.sessionCount
-                });
-                
-                console.log(`📉 ${dateStr}: Slept ${day.duration.toFixed(1)}h across ${day.sessionCount} session(s) → Deficit ${deficit.toFixed(1)}h → Total debt: ${cumulativeDebt.toFixed(1)}h`);
-                
-            } else {
-                // Repay debt (but not 100% efficient)
-                const surplus = -deficit;
-                const repayment = surplus * REPAYMENT_EFFICIENCY;
-                cumulativeDebt = Math.max(0, cumulativeDebt - repayment);
-                consecutiveSurplus++;
-                maxConsecSurplus = Math.max(maxConsecSurplus, consecutiveSurplus);
-                consecutiveDeficit = 0;
-                
-                debtHistory.push({
-                    date: dateStr,
-                    type: 'surplus',
-                    hours: parseFloat(surplus.toFixed(1)),
-                    repayment: parseFloat(repayment.toFixed(1)),
-                    debt: parseFloat(cumulativeDebt.toFixed(1)),
-                    sessionDuration: parseFloat(day.duration.toFixed(1)),
-                    sessionCount: day.sessionCount
-                });
-                
-                console.log(`📈 ${dateStr}: Slept ${day.duration.toFixed(1)}h across ${day.sessionCount} session(s) → Surplus ${surplus.toFixed(1)}h → Repaid ${repayment.toFixed(1)}h → Debt: ${cumulativeDebt.toFixed(1)}h`);
-            }
-        });
-        
-        // Calculate metrics
-        const totalDeficit = debtHistory
-            .filter(d => d.type === 'deficit')
-            .reduce((sum, d) => sum + d.hours, 0);
-        
-        const totalSurplus = debtHistory
-            .filter(d => d.type === 'surplus')
-            .reduce((sum, d) => sum + d.hours, 0);
-        
-        const deficitDays = debtHistory.filter(d => d.type === 'deficit').length;
-        const surplusDays = debtHistory.filter(d => d.type === 'surplus').length;
-        
-        const avgDeficit = deficitDays > 0 ? totalDeficit / deficitDays : 0;
-        const avgSurplus = surplusDays > 0 ? totalSurplus / surplusDays : 0;
-        
-        const totalSleepHours = sorted.reduce((sum, s) => sum + s.duration, 0);
-        const avgSleepPerNight = dailyTotals.length > 0 ? totalSleepHours / dailyTotals.length : 0;
-        
-        // Generate recovery plan
-        const recoveryPlan = generateDebtRecoveryPlan(cumulativeDebt);
-        
-        // Determine severity
-        const severity = cumulativeDebt >= 30 ? 'critical' :
-                        cumulativeDebt >= 20 ? 'severe' :
-                        cumulativeDebt >= 10 ? 'high' :
-                        cumulativeDebt >= 5 ? 'moderate' : 'low';
-        
-        console.log('✅ Final debt:', cumulativeDebt.toFixed(1), 'hours');
-        console.log('Severity:', severity);
-        
-        return {
-            error: false,
-            totalDebt: parseFloat(cumulativeDebt.toFixed(1)),
-            severity: severity,
-            metrics: {
-                totalDeficitHours: parseFloat(totalDeficit.toFixed(1)),
-                totalSurplusHours: parseFloat(totalSurplus.toFixed(1)),
-                avgDeficitPerNight: parseFloat(avgDeficit.toFixed(1)),
-                avgSurplusPerNight: parseFloat(avgSurplus.toFixed(1)),
-                deficitDays: deficitDays,
-                surplusDays: surplusDays,
-                avgSleepPerNight: parseFloat(avgSleepPerNight.toFixed(1)),
-                sessionsTracked: sorted.length,
-                daysTracked: dailyTotals.length
-            },
-            patterns: {
-                longestDeficitStreak: maxConsecDeficit,
-                longestSurplusStreak: maxConsecSurplus,
-                currentDeficitStreak: consecutiveDeficit,
-                currentSurplusStreak: consecutiveSurplus,
-                debtAccelerating: isDebtAccelerating(debtHistory),
-                debtDecreasing: isDebtDecreasing(debtHistory)
-            },
-            debtHistory: debtHistory, // All history now
-            recoveryPlan: recoveryPlan,
-            warnings: generateDebtWarnings(cumulativeDebt, debtHistory),
-            recommendations: generateDebtRecommendations(cumulativeDebt, severity),
-            debug: {
-                sessionsProcessed: sorted.length,
-                dateRange: {
-                    start: new Date(sorted[0].start).toLocaleDateString(),
-                    end: new Date(sorted[sorted.length-1].start).toLocaleDateString()
-                }
-            }
-        };
-        
-    } catch (error) {
-        console.error('❌ Sleep debt calculation error:', error);
-        return {
-            error: true,
-            message: error.message,
-            totalDebt: 0,
-            stack: error.stack
-        };
-    }
-}
-
-// 2. Generate Recovery Plan
-function generateDebtRecoveryPlan(totalDebt) {
-    if (totalDebt < 5) {
-        return {
-            phase: 'bảo trì',
-            duration: 'liên tục',
-            targetSleep: '7.5h mỗi đêm',
-            expectedRecovery: 'Duy trì mức ngủ lành mạnh hiện tại',
-            actions: [
-                'Duy trì đều đặn 7.5h ngủ mỗi đêm',
-                'Không cần ngủ bù',
-                'Tập trung vào chất lượng giấc ngủ'
-            ]
-        };
-    }
-    
-    if (totalDebt < 15) {
-        const daysNeeded = Math.ceil(totalDebt / 1.05); // 1.5h extra × 70% efficiency = 1.05h/day effective
-        return {
-            phase: 'phục hồi vừa phải',
-            duration: `${daysNeeded} ngày`,
-            targetSleep: '9h mỗi đêm',
-            expectedRecovery: `Giảm 60% nợ ngủ trong ${daysNeeded} ngày`,
-            actions: [
-                `Ngủ 9h mỗi đêm trong ${daysNeeded} ngày`,
-                'Đi ngủ sớm hơn 30 phút',
-                'Ngủ trưa 20 phút lúc 14h nếu cần',
-                'Tuyệt đối tránh thức trắng đêm'
-            ],
-            dailyReduction: '~1.5h nợ ngủ mỗi đêm',
-            weeklyGoal: 'Giảm nợ ngủ xuống dưới 5h vào cuối tuần'
-        };
-    }
-    
-    // Severe debt (>15h)
-    const phase1Days = 3;
-    const phase2Days = 7;
-    const phase3Days = 14;
-    
-    return {
-        phase: 'phục hồi khẩn cấp',
-        totalDuration: `${phase1Days + phase2Days + phase3Days} ngày`,
-        phases: [
-            {
-                name: 'Giai đoạn 1: Phục hồi khẩn cấp',
-                duration: `${phase1Days} ngày`,
-                targetSleep: '10h mỗi đêm',
-                actions: [
-                    '🚨 Dọn lịch trống — ưu tiên giấc ngủ',
-                    `Ngủ 10h liên tục trong ${phase1Days} đêm`,
-                    'Tắm nắng 30 phút lúc 8h sáng',
-                    'Không dùng caffeine sau 12h trưa',
-                    'Ngủ trưa nhanh 20 phút lúc 14h',
-                    'Không dùng màn hình 2h trước khi ngủ'
-                ],
-                expectedReduction: `~${(phase1Days * 1.8).toFixed(1)}h nợ ngủ`
-            },
-            {
-                name: 'Giai đoạn 2: Ổn định',
-                duration: `${phase2Days} ngày`,
-                targetSleep: '8.5h mỗi đêm',
-                actions: [
-                    'Ngủ đều đặn 8.5h',
-                    'Giờ ngủ cố định ±15 phút',
-                    'Theo dõi chất lượng giấc ngủ hàng ngày',
-                    'Tiếp tục tắm nắng buổi sáng',
-                    'Vận động nhẹ (đi bộ 20 phút)'
-                ],
-                expectedReduction: `~${(phase2Days * 1.2).toFixed(1)}h nợ ngủ`
-            },
-            {
-                name: 'Giai đoạn 3: Duy trì',
-                duration: `${phase3Days} ngày`,
-                targetSleep: '7.5-8h mỗi đêm',
-                actions: [
-                    'Duy trì 7.5-8h giấc ngủ',
-                    'Giữ đều đặn cả cuối tuần (không ngủ bù)',
-                    'Đánh giá giấc ngủ hàng tháng',
-                    'Thiết lập thói quen trước khi ngủ'
-                ],
-                expectedReduction: 'Xóa hết nợ ngủ còn lại'
-            }
-        ],
-        criticalWarning: '⚠️ Nợ ngủ >15h cần can thiệp ngay lập tức. Nên tham khảo ý kiến bác sĩ chuyên khoa giấc ngủ.',
-        estimatedFullRecovery: `${phase1Days + phase2Days + phase3Days} ngày nếu tuân thủ nghiêm ngặt`
-    };
-}
-
-// 3. Check if debt is accelerating
-function isDebtAccelerating(debtHistory) {
-    if (debtHistory.length < 4) return false;
-    
-    const recent = debtHistory.slice(-2);
-    const older = debtHistory.slice(-4, -2);
-    
-    if (older.length < 2) return false;
-    
-    const recentAvg = recent.reduce((sum, d) => sum + d.debt, 0) / recent.length;
-    const olderAvg = older.reduce((sum, d) => sum + d.debt, 0) / older.length;
-    
-    return recentAvg > olderAvg * 1.2; 
-}
-
-// 4. Check if debt is decreasing
-function isDebtDecreasing(debtHistory) {
-    if (debtHistory.length < 4) return false;
-    
-    const recent = debtHistory.slice(-2);
-    const older = debtHistory.slice(-4, -2);
-    
-    if (older.length < 2) return false;
-    
-    const recentAvg = recent.reduce((sum, d) => sum + d.debt, 0) / recent.length;
-    const olderAvg = older.reduce((sum, d) => sum + d.debt, 0) / older.length;
-    
-    return recentAvg < olderAvg * 0.8; 
-}
-
-// 5. Generate Warnings
-function generateDebtWarnings(totalDebt, debtHistory) {
-    const warnings = [];
-    
-    if (totalDebt >= 30) {
-        warnings.push({
-            level: 'critical',
-            icon: '🚨',
-            message: 'NỢ NGỦ NGHIÊM TRỌNG: Khả năng nhận thức của bạn bị suy giảm nặng',
-            impact: 'Tương đương mức say rượu vượt ngưỡng pháp lý (nồng độ cồn 0.08%)',
-            action: 'Gặp bác sĩ chuyên khoa giấc ngủ ngay lập tức'
-        });
-    }
-    
-    if (totalDebt >= 20) {
-        warnings.push({
-            level: 'severe',
-            icon: '⚠️',
-            message: 'NỢ NGỦ NẶNG: Rủi ro sức khỏe tăng đáng kể',
-            impact: 'Suy giảm trí nhớ, hệ miễn dịch yếu đi, tăng nguy cơ tai nạn',
-            action: 'Bắt đầu kế hoạch phục hồi khẩn cấp ngay hôm nay'
-        });
-    }
-    
-    if (isDebtAccelerating(debtHistory)) {
-        warnings.push({
-            level: 'high',
-            icon: '📈',
-            message: 'NỢ NGỦ ĐANG TĂNG NHANH: Xu hướng gần đây xấu đi',
-            impact: 'Nợ ngủ đang tăng — không thể duy trì lâu dài',
-            action: 'Cắt vòng lặp này ngay trước khi trở thành mãn tính'
-        });
-    }
-    
-    if (totalDebt >= 10 && totalDebt < 20) {
-        warnings.push({
-            level: 'moderate',
-            icon: '⚡',
-            message: 'NỢ NGỦ MỨC TRUNG BÌNH: Hiệu suất bị ảnh hưởng rõ rệt',
-            impact: 'Giảm 30-40% hiệu quả học tập',
-            action: 'Triển khai kế hoạch phục hồi trong vòng 48 giờ'
-        });
-    }
-    
-    return warnings;
-}
-
-// 6. Generate Recommendations
-function generateDebtRecommendations(totalDebt, severity) {
-    const recs = [];
-    
-    if (severity === 'critical' || severity === 'severe') {
-        recs.push({
-            priority: 'P0',
-            timeframe: 'Ngay lập tức (hôm nay)',
-            action: 'DỌN TRỐNG LỊCH TỐI NAY',
-            rationale: `Nợ ngủ ${totalDebt}h = suy giảm nhận thức nghiêm trọng`,
-            steps: [
-                'Hủy các việc không cần thiết tối nay',
-                'Đặt báo thức đi ngủ lúc 22h',
-                'Mục tiêu ngủ 10h tối nay',
-                'Không có ngoại lệ'
-            ],
-            expectedImpact: 'Giảm ~2h nợ ngủ, cải thiện 15% khả năng hoạt động'
-        });
-        
-        recs.push({
-            priority: 'P0',
-            timeframe: '3 ngày tới',
-            action: 'CHẾ ĐỘ PHỤC HỒI KHẨN CẤP',
-            rationale: 'Nợ ngủ ở mức nguy hiểm — cần can thiệp mạnh',
-            steps: [
-                'Ngủ 9-10h trong 3 đêm tới',
-                'Ngủ trưa 20 phút mỗi ngày lúc 14h',
-                'Tắm nắng buổi sáng 30 phút',
-                'Không dùng caffeine sau buổi trưa'
-            ],
-            expectedImpact: 'Giảm 40-50% nợ ngủ'
-        });
-    }
-    
-    if (severity === 'high' || severity === 'moderate') {
-        recs.push({
-            priority: 'P1',
-            timeframe: '7 ngày tới',
-            action: 'PHỤC HỒI CÓ KẾ HOẠCH',
-            rationale: `Nợ ngủ ${totalDebt}h đang ảnh hưởng đến hiệu suất`,
-            steps: [
-                'Ngủ 8.5h mỗi đêm trong tuần này',
-                'Giờ ngủ cố định (±15 phút)',
-                'Theo dõi tiến độ hàng ngày',
-                'Tránh ngủ bù quá nhiều vào cuối tuần'
-            ],
-            expectedImpact: 'Giảm 60-70% nợ ngủ'
-        });
-    }
-    
-    recs.push({
-        priority: 'P2',
-        timeframe: 'Liên tục',
-        action: 'NGĂN NGỪA NỢ NGỦ TÁI PHÁT',
-        rationale: 'Chấm dứt vòng lặp nợ ngủ vĩnh viễn',
-        steps: [
-            'Đặt giờ ngủ cố định (không thương lượng)',
-            'Đánh giá giấc ngủ hàng tuần',
-            'Cảnh báo ngưỡng nợ ngủ (<5h)',
-            'Xem lại tính đều đặn hàng tháng'
-        ],
-        expectedImpact: 'Duy trì nợ ngủ dưới 5h lâu dài'
-    });
-    
-    return recs;
-}
-
-// ====== CSS FOR SLEEP DEBT CARD ======
-const sleepDebtCSS = `
-<style id="sleep-debt-css">
-    /* ── Card shell (shares the same theme tokens as Insomnia Pattern Analysis
-       so both "sleep science" widgets read as one visual family) ── */
-    .debt-card {
-        background: var(--ia-bg);
-        border-radius: 16px;
-        padding: 20px 22px;
-        margin: 20px 0;
-        box-shadow: var(--ia-shadow);
-        color: var(--ia-text);
-        border: 1px solid rgba(var(--ia-line-rgb), 0.08);
-        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        transition: background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
-    }
-
-    .debt-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 18px;
-        flex-wrap: wrap;
-        gap: 14px;
-        padding-bottom: 14px;
-        border-bottom: 1px solid rgba(var(--ia-line-rgb), 0.1);
-    }
-
-    .debt-header h4 {
-        margin: 0;
-        font-size: 1.15rem;
-        font-weight: 700;
-        color: var(--ia-text);
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .debt-header-controls {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    #sleepDebtCollapseIcon {
-        color: rgba(var(--ia-fg-rgb), 0.6);
-        border-radius: 50%;
-        width: 26px;
-        height: 26px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.2s ease, transform 0.25s ease;
-    }
-    #sleepDebtCollapseIcon:hover { background: rgba(var(--ia-line-rgb), 0.12); }
-
-    /* ── Severity pill (scoped as debt-severity-badge so it never collides
-       with the Insomnia widget's own .severity-badge system) ── */
-    .debt-severity-badge {
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-size: 0.76rem;
-        font-weight: 700;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-        border: 1.5px solid;
-        white-space: nowrap;
-    }
-    .debt-severity-badge.critical { background: rgba(220,38,38,0.14); color: #dc2626; border-color: rgba(220,38,38,0.45); }
-    .debt-severity-badge.severe   { background: rgba(234,88,12,0.14); color: #ea580c; border-color: rgba(234,88,12,0.45); }
-    .debt-severity-badge.high     { background: rgba(245,158,11,0.14); color: #d97706; border-color: rgba(245,158,11,0.45); }
-    .debt-severity-badge.moderate { background: rgba(234,179,8,0.14); color: #ca8a04; border-color: rgba(234,179,8,0.45); }
-    .debt-severity-badge.low      { background: rgba(16,185,129,0.14); color: #059669; border-color: rgba(16,185,129,0.45); }
-    .dark-mode .debt-severity-badge.high     { color: #f59e0b; }
-    .dark-mode .debt-severity-badge.moderate { color: #eab308; }
-    .dark-mode .debt-severity-badge.low      { color: #10b981; }
-
-    /* ── Hero debt total ── */
-    .debt-main-display {
-        text-align: center;
-        padding: 26px 20px;
-        border-radius: 14px;
-        margin-bottom: 18px;
-        border: 1px solid;
-        background: rgba(var(--ia-line-rgb), 0.05);
-    }
-
-    .debt-label {
-        font-size: 0.78rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: rgba(var(--ia-fg-rgb), 0.6);
-        margin-bottom: 6px;
-    }
-
-    .debt-value {
-        font-size: clamp(2.4rem, 8vw, 3.4rem);
-        font-weight: 800;
-        margin: 8px 0;
-        letter-spacing: -0.02em;
-        line-height: 1;
-    }
-
-    .debt-sublabel {
-        font-size: 0.85rem;
-        color: rgba(var(--ia-fg-rgb), 0.65);
-        margin-top: 10px;
-    }
-
-    /* ── Metrics grid ── */
-    .metrics-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 10px;
-        margin-bottom: 18px;
-    }
-
-    .debt-metric-card {
-        background: rgba(var(--ia-line-rgb), 0.05);
-        padding: 12px 14px;
-        border-radius: 12px;
-        border: 1px solid rgba(var(--ia-line-rgb), 0.09);
-        border-top: 3px solid transparent;
-        transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
-        min-width: 0;
-    }
-    .debt-metric-card:hover {
-        transform: translateY(-2px);
-        background: rgba(var(--ia-line-rgb), 0.09);
-    }
-
-    .debt-metric-card.deficit    { border-top-color: #ef4444; }
-    .debt-metric-card.surplus    { border-top-color: #10b981; }
-    .debt-metric-card.interest   { border-top-color: #f59e0b; }
-    .debt-metric-card.efficiency { border-top-color: #b892c9; }
-
-    .debt-metric-label {
-        font-size: 0.68rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-        color: rgba(var(--ia-fg-rgb), 0.6);
-        margin-bottom: 5px;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-    }
-
-    .debt-metric-value {
-        font-size: clamp(1.05rem, 4vw, 1.35rem);
-        font-weight: 800;
-        margin-bottom: 3px;
-        line-height: 1.1;
-    }
-
-    .debt-metric-subvalue {
-        font-size: 0.72rem;
-        color: rgba(var(--ia-fg-rgb), 0.55);
-        line-height: 1.35;
-    }
-
-    /* ── Trend alert ── */
-    .pattern-alert {
-        padding: 12px 14px;
-        border-radius: 12px;
-        margin-bottom: 18px;
-        border-left: 3px solid;
-        background: rgba(var(--ia-line-rgb), 0.05);
-    }
-    .pattern-alert.accelerating { border-left-color: #ef4444; }
-    .pattern-alert.decreasing   { border-left-color: #10b981; }
-
-    .pattern-alert-title {
-        font-weight: 700;
-        font-size: 0.85rem;
-        margin-bottom: 6px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .pattern-alert-message {
-        font-size: 0.82rem;
-        line-height: 1.45;
-        color: rgba(var(--ia-fg-rgb), 0.8);
-    }
-
-    /* ── Section headers (scoped) ── */
-    .warnings-section, .recovery-section, .recommendations-section, .history-section {
-        margin-top: 20px;
-    }
-
-    .debt-section-title {
-        font-weight: 700;
-        color: var(--ia-text);
-        margin-bottom: 10px;
-        font-size: 0.92rem;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    /* ── Warnings ── */
-    .warning-item {
-        background: rgba(239, 68, 68, 0.08);
-        padding: 12px 14px;
-        border-radius: 12px;
-        margin-bottom: 10px;
-        border-left: 3px solid #ef4444;
-    }
-
-    .warning-header {
-        font-weight: 700;
-        color: #ef4444;
-        margin-bottom: 6px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.88rem;
-    }
-    .dark-mode .warning-header { color: #f87171; }
-
-    .warning-impact {
-        font-size: 0.8rem;
-        line-height: 1.4;
-        color: rgba(var(--ia-fg-rgb), 0.8);
-        margin-bottom: 6px;
-    }
-
-    .warning-action {
-        font-size: 0.8rem;
-        color: #d97706;
-        font-weight: 600;
-    }
-    .dark-mode .warning-action { color: #fbbf24; }
-
-    /* ── Recovery plan ── */
-    .recovery-phase {
-        background: rgba(var(--ia-line-rgb), 0.05);
-        padding: 14px 16px;
-        border-radius: 12px;
-        margin-bottom: 10px;
-        border-left: 3px solid;
-        position: relative;
-    }
-    .recovery-phase.phase-1 { border-left-color: #dc2626; }
-    .recovery-phase.phase-2 { border-left-color: #f59e0b; }
-    .recovery-phase.phase-3 { border-left-color: #10b981; }
-
-    .phase-name {
-        font-weight: 700;
-        color: var(--ia-text);
-        margin-bottom: 8px;
-        font-size: 0.92rem;
-    }
-
-    .phase-duration {
-        font-size: 0.78rem;
-        color: rgba(var(--ia-fg-rgb), 0.6);
-        margin-bottom: 10px;
-    }
-
-    .phase-actions {
-        margin: 0;
-        padding-left: 18px;
-        color: rgba(var(--ia-fg-rgb), 0.85);
-        font-size: 0.82rem;
-    }
-    .phase-actions li { margin-bottom: 5px; }
-
-    .phase-result {
-        margin-top: 10px;
-        padding: 8px 10px;
-        background: rgba(16, 185, 129, 0.12);
-        border-radius: 8px;
-        font-size: 0.78rem;
-        color: #059669;
-        font-weight: 600;
-    }
-    .dark-mode .phase-result { color: #34d399; }
-
-    .recovery-summary {
-        text-align: center;
-        margin-top: 12px;
-        padding: 12px;
-        background: rgba(184, 146, 201, 0.12);
-        border-radius: 12px;
-        color: #9868ae;
-        font-weight: 600;
-        font-size: 0.85rem;
-    }
-    .dark-mode .recovery-summary { color: #d4b3e8; }
-
-    /* ── Recommendations ── */
-    .recommendation-item {
-        background: rgba(var(--ia-line-rgb), 0.05);
-        padding: 12px 14px;
-        border-radius: 12px;
-        margin-bottom: 10px;
-        border-left: 3px solid;
-    }
-    .recommendation-item.p0 { border-left-color: #dc2626; }
-    .recommendation-item.p1 { border-left-color: #f59e0b; }
-    .recommendation-item.p2 { border-left-color: #10b981; }
-
-    .rec-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    .rec-title {
-        font-weight: 700;
-        color: var(--ia-text);
-        font-size: 0.88rem;
-    }
-
-    .rec-priority {
-        padding: 3px 9px;
-        border-radius: 10px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        color: white;
-        letter-spacing: 0.02em;
-    }
-    .rec-priority.p0 { background: #dc2626; }
-    .rec-priority.p1 { background: #f59e0b; }
-    .rec-priority.p2 { background: #10b981; }
-
-    .rec-timeframe {
-        font-size: 0.78rem;
-        color: rgba(var(--ia-fg-rgb), 0.6);
-        margin-bottom: 8px;
-    }
-
-    .rec-steps {
-        margin: 0;
-        padding-left: 18px;
-        color: rgba(var(--ia-fg-rgb), 0.85);
-        font-size: 0.82rem;
-    }
-    .rec-steps li { margin-bottom: 4px; }
-
-    .rec-impact {
-        margin-top: 10px;
-        padding: 8px 10px;
-        background: rgba(16, 185, 129, 0.12);
-        border-radius: 8px;
-        font-size: 0.78rem;
-        color: #059669;
-        font-weight: 600;
-    }
-    .dark-mode .rec-impact { color: #34d399; }
-
-    /* ── History chart ── */
-    .history-chart {
-        background: rgba(var(--ia-line-rgb), 0.05);
-        padding: 12px 14px;
-        border-radius: 12px;
-        border: 1px solid rgba(var(--ia-line-rgb), 0.08);
-        font-size: 0.85rem;
-    }
-
-    .history-entry { padding: 6px 0; }
-    .history-entry + .history-entry { border-top: 1px solid rgba(var(--ia-fg-rgb), 0.07); }
-
-    .history-date {
-        color: rgba(var(--ia-fg-rgb), 0.65);
-        margin-bottom: 5px;
-        font-size: 0.75rem;
-    }
-
-    .history-bar-container {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .history-bar-track {
-        flex: 1;
-        height: 8px;
-        border-radius: 4px;
-        background: rgba(var(--ia-line-rgb), 0.1);
-        overflow: hidden;
-    }
-
-    .history-bar {
-        height: 8px;
-        border-radius: 4px;
-        transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
-    }
-    .history-bar.deficit { background: linear-gradient(90deg,#f87171,#ef4444); }
-    .history-bar.surplus { background: linear-gradient(90deg,#34d399,#10b981); }
-
-    .history-value {
-        font-weight: 700;
-        min-width: 46px;
-        text-align: right;
-        font-size: 0.8rem;
-        flex-shrink: 0;
-    }
-
-    /* ── Empty / error state ── */
-    .debt-error {
-        text-align: center;
-        padding: 36px 20px;
-        color: rgba(var(--ia-fg-rgb), 0.65);
-    }
-    .debt-error small {
-        color: rgba(var(--ia-fg-rgb), 0.5) !important;
-    }
-
-    .critical-warning {
-        background: rgba(220, 38, 38, 0.1);
-        padding: 12px 14px;
-        border-radius: 12px;
-        margin-bottom: 12px;
-        border: 1.5px solid rgba(220, 38, 38, 0.4);
-        color: #dc2626;
-        font-weight: 600;
-        font-size: 0.82rem;
-    }
-    .dark-mode .critical-warning { color: #fca5a5; }
-
-    @media (max-width: 768px) {
-        .debt-card { padding: 16px; }
-        .metrics-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 480px) {
-        .metrics-grid { grid-template-columns: 1fr; }
-    }
-</style>
-`;
-
-// Inject CSS
-if (!document.getElementById('sleep-debt-css')) {
-    document.head.insertAdjacentHTML('beforeend', sleepDebtCSS);
-}
-
-// ====== RENDER FUNCTION ======
-function renderSleepDebtCard() {
-    const sleepSessions = window.sleepSessions || [];
-    const debtData = calculateSleepDebtWithInterest(sleepSessions);
-    
-    if (debtData.error) {
-        return `
-            <div class="debt-card">
-                <h4>💤 Máy tính nợ ngủ</h4>
-                <div class="debt-error">
-                    <p>${debtData.message}</p>
-                    ${debtData.debug ? `
-                        <small style="margin-top: 10px; display: block;">
-                            Debug: ${debtData.debug.sessions} lượt ngủ | ${debtData.debug.reason}
-                        </small>
-                    ` : ''}
-                </div>
-            </div>
-        `;
-    }
-    
-    const severityColors = {
-        'critical': '#dc2626',
-        'severe': '#ea580c',
-        'high': '#f59e0b',
-        'moderate': '#eab308',
-        'low': '#10b981'
-    };
-
-    const severityLabelsVi = {
-        'critical': 'NGHIÊM TRỌNG',
-        'severe': 'NẶNG',
-        'high': 'CAO',
-        'moderate': 'TRUNG BÌNH',
-        'low': 'THẤP'
-    };
-    
-    const severityColor = severityColors[debtData.severity] || '#9a7686';
-    
-    return `
-        <div class="debt-card" style="border-color: ${severityColor}40;">
-            <!-- Header -->
-            <div class="debt-header" style="cursor:pointer;user-select:none;" onclick="toggleSleepDebtCard()">
-                <h4>💤 Máy tính nợ ngủ</h4>
-                <div class="debt-header-controls">
-                    <div class="debt-severity-badge ${debtData.severity}">
-                        ${severityLabelsVi[debtData.severity] || debtData.severity}
-                    </div>
-                    <span id="sleepDebtCollapseIcon" style="transform:${window.sleepDebtCollapsed ? 'rotate(180deg)' : 'rotate(0deg)'};">▲</span>
-                </div>
-            </div>
-
-            <div id="sleepDebtBody" style="${window.sleepDebtCollapsed ? 'display:none;' : 'display:block;'}">
-            <!-- Main Debt Display -->
-            <div class="debt-main-display" style="
-                background: ${severityColor}10;
-                border-color: ${severityColor}30;
-            ">
-                <div class="debt-label">
-                    Tổng nợ ngủ (lãi kép 2%/ngày)
-                </div>
-                <div class="debt-value" style="color: ${severityColor};">
-                    ${debtData.totalDebt}h
-                </div>
-                <div class="debt-sublabel">
-                    ${debtData.totalDebt >= 20 ? '⚠️ Tương đương mất trọn 3+ đêm ngủ' :
-                      debtData.totalDebt >= 10 ? '⚡ Tương đương mất trọn 1-2 đêm ngủ' :
-                      debtData.totalDebt >= 5 ? '📊 Nợ ngủ mức trung bình — vẫn kiểm soát được' :
-                      '✓ Nợ ngủ thấp — kiểm soát tốt'}
-                </div>
-            </div>
-            
-            <!-- Metrics Grid -->
-            <div class="metrics-grid">
-                <div class="debt-metric-card deficit">
-                    <div class="debt-metric-label">📉 Tổng thiếu hụt</div>
-                    <div class="debt-metric-value" style="color: #ef4444;">
-                        ${debtData.metrics.totalDeficitHours}h
-                    </div>
-                    <div class="debt-metric-subvalue">
-                        ${debtData.metrics.deficitDays} ngày | TB: ${debtData.metrics.avgDeficitPerNight}h/đêm
-                    </div>
-                </div>
-                
-                <div class="debt-metric-card surplus">
-                    <div class="debt-metric-label">📈 Tổng dư</div>
-                    <div class="debt-metric-value" style="color: #10b981;">
-                        ${debtData.metrics.totalSurplusHours}h
-                    </div>
-                    <div class="debt-metric-subvalue">
-                        ${debtData.metrics.surplusDays} ngày | TB: ${debtData.metrics.avgSurplusPerNight}h/đêm
-                    </div>
-                </div>
-                
-                <div class="debt-metric-card interest">
-                    <div class="debt-metric-label">😴 Ngủ TB / Đêm</div>
-                    <div class="debt-metric-value" style="color: #f59e0b;">
-                        ${debtData.metrics.avgSleepPerNight}h
-                    </div>
-                    <div class="debt-metric-subvalue">
-                        Mục tiêu: 7.5h
-                    </div>
-                </div>
-                
-                <div class="debt-metric-card efficiency">
-                    <div class="debt-metric-label">📋 Số lượt theo dõi</div>
-                    <div class="debt-metric-value" style="color: #b892c9;">
-                        ${debtData.metrics.sessionsTracked}
-                    </div>
-                    <div class="debt-metric-subvalue">
-                        ${debtData.metrics.deficitDays} thiếu · ${debtData.metrics.surplusDays} dư
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Patterns Alert -->
-            ${debtData.patterns.debtAccelerating || debtData.patterns.debtDecreasing ? `
-                <div class="pattern-alert ${debtData.patterns.debtAccelerating ? 'accelerating' : 'decreasing'}">
-                    <div class="pattern-alert-title" style="color: ${debtData.patterns.debtAccelerating ? '#ef4444' : '#10b981'};">
-                        ${debtData.patterns.debtAccelerating ? '📈 NỢ NGỦ ĐANG TĂNG NHANH' : '📉 NỢ NGỦ ĐANG GIẢM'}
-                    </div>
-                    <div class="pattern-alert-message">
-                        ${debtData.patterns.debtAccelerating ? 
-                            'Nợ ngủ của bạn đang tăng lên. Xu hướng này không thể kéo dài và cần được xử lý ngay.' :
-                            'Tiến triển tốt! Nợ ngủ đã giảm. Hãy tiếp tục duy trì thói quen ngủ lành mạnh!'}
-                    </div>
-                </div>
-            ` : ''}
-            
-            <!-- Warnings -->
-            ${debtData.warnings.length > 0 ? `
-                <div class="warnings-section">
-                    <div class="debt-section-title">
-                        ⚠️ Cảnh báo
-                    </div>
-                    ${debtData.warnings.map(warning => `
-                        <div class="warning-item">
-                            <div class="warning-header">
-                                <span>${warning.icon}</span>
-                                <span>${warning.message}</span>
-                            </div>
-                            <div class="warning-impact">
-                                <strong>Tác động:</strong> ${warning.impact}
-                            </div>
-                            <div class="warning-action">
-                                → ${warning.action}
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            ` : ''}
-            
-            <!-- Recovery Plan -->
-            <div class="recovery-section">
-                <div class="debt-section-title">
-                    🎯 Kế hoạch phục hồi
-                </div>
-                
-                ${debtData.recoveryPlan.phases ? `
-                    ${debtData.recoveryPlan.criticalWarning ? `
-                        <div class="critical-warning">
-                            ${debtData.recoveryPlan.criticalWarning}
-                        </div>
-                    ` : ''}
-                    
-                    ${debtData.recoveryPlan.phases.map((phase, index) => `
-                        <div class="recovery-phase phase-${index + 1}">
-                            <div class="phase-name">
-                                ${phase.name}
-                            </div>
-                            <div class="phase-duration">
-                                Thời gian: ${phase.duration} | Mục tiêu: ${phase.targetSleep}
-                            </div>
-                            <ul class="phase-actions">
-                                ${phase.actions.map(action => `
-                                    <li>${action}</li>
-                                `).join('')}
-                            </ul>
-                            <div class="phase-result">
-                                ✓ Dự kiến: ${phase.expectedReduction}
-                            </div>
-                        </div>
-                    `).join('')}
-                    
-                    <div class="recovery-summary">
-                        ⏱️ Dự kiến phục hồi hoàn toàn: ${debtData.recoveryPlan.estimatedFullRecovery}
-                    </div>
-                ` : `
-                    <div class="recovery-phase phase-1">
-                        <div class="phase-name">
-                            ${debtData.recoveryPlan.phase.toUpperCase()}
-                        </div>
-                        <div class="phase-duration">
-                            Thời gian: ${debtData.recoveryPlan.duration} | Mục tiêu: ${debtData.recoveryPlan.targetSleep}
-                        </div>
-                        <ul class="phase-actions">
-                            ${debtData.recoveryPlan.actions.map(action => `
-                                <li>${action}</li>
-                            `).join('')}
-                        </ul>
-                        <div class="phase-result">
-                            ✓ ${debtData.recoveryPlan.expectedRecovery}
-                        </div>
-                    </div>
-                `}
-            </div>
-            
-            <!-- Recommendations -->
-            <div class="recommendations-section">
-                <div class="debt-section-title">
-                    💡 Việc cần làm
-                </div>
-                ${debtData.recommendations.map(rec => `
-                    <div class="recommendation-item ${rec.priority.toLowerCase()}">
-                        <div class="rec-header">
-                            <div class="rec-title">
-                                ${rec.action}
-                            </div>
-                            <div class="rec-priority ${rec.priority.toLowerCase()}">
-                                ${rec.priority}
-                            </div>
-                        </div>
-                        <div class="rec-timeframe">
-                            ⏱️ ${rec.timeframe}
-                        </div>
-                        <ol class="rec-steps">
-                            ${rec.steps.map(step => `
-                                <li>${step}</li>
-                            `).join('')}
-                        </ol>
-                        <div class="rec-impact">
-                            📈 ${rec.expectedImpact}
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            
-            <!-- Debt History Chart -->
-            <div class="history-section">
-                <div class="debt-section-title">
-                    📊 Lịch sử nợ ngủ (${Math.min(7, debtData.debtHistory.length)} ngày gần nhất)
-                </div>
-                <div class="history-chart">
-                    ${debtData.debtHistory.slice(-7).map(entry => {
-                        const barLength = Math.min(100, Math.round(entry.debt * 3));
-                        const barColor = entry.type === 'deficit' ? '#ef4444' : '#10b981';
-                        return `
-                            <div class="history-entry">
-                                <div class="history-date">
-                                    ${entry.date} · ${entry.type === 'deficit' ? '📉' : '📈'} Đã ngủ ${entry.sessionDuration}h (${entry.type === 'deficit' ? `thiếu ${entry.hours}h` : `dư ${entry.hours}h`})
-                                </div>
-                                <div class="history-bar-container">
-                                    <div class="history-bar-track">
-                                        <div class="history-bar ${entry.type}" style="width: ${barLength}%;"></div>
-                                    </div>
-                                    <span class="history-value" style="color: ${barColor};">
-                                        ${entry.debt}h
-                                    </span>
-                                </div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            </div>
-            
-            </div>
-        </div>
-    `;
-}
-
-// ====== UPDATE REFRESH FUNCTION ======
-window.sleepDebtCollapsed = false;
-function toggleSleepDebtCard() {
-    window.sleepDebtCollapsed = !window.sleepDebtCollapsed;
-    const body = document.getElementById('sleepDebtBody');
-    const icon = document.getElementById('sleepDebtCollapseIcon');
-    if (body) body.style.display = window.sleepDebtCollapsed ? 'none' : 'block';
-    if (icon) icon.style.transform = window.sleepDebtCollapsed ? 'rotate(180deg)' : 'rotate(0deg)';
-}
-
-function refreshSleepDebtCard() {
-    const container = document.getElementById('sleepDebtContainer');
-    if (container) {
-        container.style.opacity = '0.7';
-        setTimeout(() => {
-            container.innerHTML = renderSleepDebtCard();
-            container.style.opacity = '1';
-        }, 300);
-    }
-}
-
-// ====== AUTO-INITIALIZE ======
-document.addEventListener('DOMContentLoaded', function() {
-    let container = document.getElementById('sleepDebtContainer');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'sleepDebtContainer';
-        
-        const insomniaContainer = document.getElementById('insomniaAnalysisContainer');
-        if (insomniaContainer) {
-            insomniaContainer.parentNode.insertBefore(container, insomniaContainer.nextSibling);
-        } else {
-            document.body.appendChild(container);
-        }
-    }
-    
-    setTimeout(() => {
-        container.innerHTML = renderSleepDebtCard();
-    }, 1000);
-});
-
-// ====== UPDATE EXPORTS ======
-window.SleepDebtCalculator = {
-    calculate: calculateSleepDebtWithInterest,
-    render: renderSleepDebtCard,
-    refresh: refreshSleepDebtCard
-};
-
-window.renderSleepDebtCard = renderSleepDebtCard;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // ===== FIX: Load Sleep Data & Daily Study Data into Global Variables =====
 document.addEventListener('DOMContentLoaded', function() {
     // Load sleep sessions into the real global variable (not just window.*,
@@ -59180,11 +58106,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Render Sleep Stats summary (avg / streak / debt)
         if (typeof renderSleepStats === 'function') {
             renderSleepStats();
-        }
-        
-        // Refresh Sleep Debt Card
-        if (typeof refreshSleepDebtCard === 'function') {
-            refreshSleepDebtCard();
         }
         
         console.log('All sleep components refreshed');
