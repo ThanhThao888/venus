@@ -42748,16 +42748,8 @@ window.DBP={
                 saveCourses();
 
                 goals.forEach(goal => {
-                    if (goal.career === currentCareer) { 
-                        if (goal.type === 'study_hours') {
-                            if (goal.courseId === courseId) {
-                                goal.currentProgress = course.hoursStudied;
-                            } else if (!goal.courseId) {
-                                const careerHours = studyHours[currentCareer] || {};
-                                const totalHours = Object.values(careerHours).reduce((sum, h) => sum + h, 0);
-                                goal.currentProgress = totalHours;
-                            }
-                        }
+                    if (goal.type === 'study_hours' && goal.courseId === courseId) {
+                        goal.currentProgress = course.hoursStudied;
                     }
                 });
                 
@@ -43297,6 +43289,29 @@ window.DBP={
 
             // 📚 STUDY HOURS GOAL
             if (type === 'study_hours') {
+                const careerDataSH = skillsData[currentCareer];
+                const selectedSkillNames = new Set(goalData.skillNames || []);
+
+                // Grouped checkboxes so the goal can optionally be scoped to
+                // specific skill(s) instead of the whole career — leaving
+                // everything unchecked keeps the old "whole career" behavior.
+                let skillChecklistHtml = '';
+                if (careerDataSH) {
+                    Object.entries(careerDataSH.categories || {}).forEach(([catName, catData]) => {
+                        skillChecklistHtml += `
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-weight: 600; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 4px;">${escapeHtml(catName)}</div>
+                                ${(catData.skills || []).map(skill => `
+                                    <label style="display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; font-size: 0.9rem; color: var(--text-dark);">
+                                        <input type="checkbox" class="goal-study-hours-skill-cb" value="${escapeHtml(skill.name)}" ${selectedSkillNames.has(skill.name) ? 'checked' : ''}>
+                                        <span>${escapeHtml(skill.name)}</span>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        `;
+                    });
+                }
+
                 container.innerHTML = `
                     <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(96, 165, 250, 0.05)); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #3b82f6;">
                         <div style="display: flex; align-items: start; gap: 15px;">
@@ -43304,10 +43319,22 @@ window.DBP={
                             <div style="flex: 1;">
                                 <h4 style="margin: 0 0 8px 0; color: var(--text-dark); font-size: 1.1rem;">Study Hours Goal</h4>
                                 <p style="margin: 0 0 12px 0; color: var(--text-muted); font-size: 0.9rem; line-height: 1.5;">
-                                    Tracks total study hours in <strong>${skillsData[currentCareer]?.title || currentCareer}</strong>.<br>
-                                    ✅ <strong>Auto-updates</strong> when you add study time to any skill in this career.<br>
+                                    By default, tracks total study hours in <strong>${skillsData[currentCareer]?.title || currentCareer}</strong> — <strong>any</strong> skill in this career counts.<br>
+                                    Pick specific skill(s) below to track only those instead.<br>
                                     Set your target hours below in the <strong>Target Value</strong> field.
                                 </p>
+
+                                <div style="margin-top: 4px; margin-bottom: 16px;">
+                                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--text-dark); font-size: 0.9rem;">
+                                        Scope to specific skill(s) — optional:
+                                    </label>
+                                    <p style="margin: 0 0 8px 0; font-size: 0.8rem; color: var(--text-muted);">
+                                        Leave everything unchecked to keep tracking the whole career. Check one or more skills so unrelated skills studied in this career don't count toward this goal.
+                                    </p>
+                                    <div id="goalStudyHoursSkills" style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; background: var(--bg-white);">
+                                        ${skillChecklistHtml || '<p style="margin:0; color: var(--text-muted); font-size: 0.85rem;">No skills available for this career.</p>'}
+                                    </div>
+                                </div>
                                 
                                 <!-- Smart Suggestions -->
                                 <div style="background: rgba(59, 130, 246, 0.08); padding: 12px; border-radius: 8px; margin-top: 12px;">
@@ -44967,25 +44994,45 @@ document.addEventListener('DOMContentLoaded', function() {
                 return Math.min(goal.target, Math.max(0, goal.currentProgress || 0));
             }
             
+            // Always track against the career the goal was actually created
+            // for (goal.career), never the app's *global* currentCareer.
+            // Using currentCareer here used to mean: switch career tabs, and
+            // every study_hours/skill_mastery goal silently started reading
+            // (and writing progress for) whatever career you happened to be
+            // looking at — so hours logged in an unrelated career could
+            // "count" toward a goal that belongs to a different one.
+            const goalCareer = goal.career || currentCareer;
+
             if (goal.type === 'study_hours') {
                 if (goal.courseId) {
                     const course = courses.find(c => c.id === goal.courseId);
                     goal.currentProgress = course ? (course.hoursStudied || 0) : 0;
                 } else {
-                    const careerHours = studyHours[currentCareer] || {};
-                    const totalHours = Object.values(careerHours).reduce((sum, h) => sum + h, 0);
-                    goal.currentProgress = totalHours;
+                    const careerHours = studyHours[goalCareer] || {};
+                    if (goal.skillNames && goal.skillNames.length) {
+                        // Scoped goal: only count the specific skill(s) the
+                        // user picked, so unrelated skills studied in the
+                        // same career no longer bleed into this goal's total.
+                        goal.currentProgress = goal.skillNames.reduce(
+                            (sum, name) => sum + (careerHours[name] || 0), 0
+                        );
+                    } else {
+                        // Unscoped goal (old behavior, kept for backward
+                        // compatibility): counts every skill in the career.
+                        const totalHours = Object.values(careerHours).reduce((sum, h) => sum + h, 0);
+                        goal.currentProgress = totalHours;
+                    }
                 }
             } else if (goal.type === 'skill_mastery') {
                 if (goal.skillName) {
-                    goal.currentProgress = getSkillHours(currentCareer, goal.skillName);
+                    goal.currentProgress = getSkillHours(goalCareer, goal.skillName);
                 } else {
-                    const careerData = skillsData[currentCareer];
+                    const careerData = skillsData[goalCareer];
                     let totalSkillHours = 0;
                     if (careerData) {
                         Object.values(careerData.categories).forEach(category => {
                             category.skills.forEach(skill => {
-                                totalSkillHours += getSkillHours(currentCareer, skill.name);
+                                totalSkillHours += getSkillHours(goalCareer, skill.name);
                             });
                         });
                     }
@@ -45058,6 +45105,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
+            // Optional skill scope for study_hours goals — leaving every
+            // checkbox unchecked keeps the old "whole career" behavior.
+            let skillNames = undefined;
+            if (type === 'study_hours') {
+                const checked = Array.from(document.querySelectorAll('.goal-study-hours-skill-cb:checked')).map(cb => cb.value);
+                skillNames = checked.length ? checked : undefined;
+            }
+
             if (isNaN(target) || target <= 0) {
                 showGoalFormError('Please enter a target value greater than 0.');
                 document.getElementById('goalTarget').focus();
@@ -45099,6 +45154,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         target,
                         deadline,
                         skillName,
+                        skillNames,
                         priority,
                         why,
                         customUnit,
@@ -45116,6 +45172,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     deadline,
                     career: currentCareer,
                     skillName,
+                    skillNames,
                     priority,
                     why,
                     customUnit,
