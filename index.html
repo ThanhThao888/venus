@@ -6118,6 +6118,23 @@
             transform: rotate(90deg);
         }
 
+        /* My Templates — delete button lives inside #smartSuggestionsModal, whose
+           generic button:hover rule (meant for the × close button) would otherwise
+           rotate it and swap its background. */
+        #smartSuggestionsModal .gt-delete-btn:hover {
+            transform: none;
+            background: rgba(239, 68, 68, 0.10) !important;
+            color: #ef4444 !important;
+            border-color: #ef4444 !important;
+        }
+        #smartSuggestionsModal .gt-delete-btn.armed,
+        #smartSuggestionsModal .gt-delete-btn.armed:hover {
+            transform: none;
+            background: #ef4444 !important;
+            color: #ffffff !important;
+            border-color: #ef4444 !important;
+        }
+
         /* Smart Suggestions Modal Animation */
         @keyframes fadeIn {
             from {
@@ -27117,6 +27134,10 @@ window.DBP={
                                 <i class="fas fa-plus"></i> Add
                             </button>
 
+                            <button class="goal-context-btn" onclick="showSmartSuggestions()" title="My templates &amp; suggestions" aria-label="My templates and suggestions">
+                                <i class="fa-regular fa-star"></i>
+                            </button>
+
                             <button class="goal-context-btn" onclick="copyGoalsContextForAI()" title="Copy Goals Context for AI" aria-label="Copy Goals Context for AI">
                                 <i class="fa-solid fa-clipboard-list"></i>
                             </button>
@@ -33863,6 +33884,12 @@ window.DBP={
 
             <form id="goalForm" novalidate>
                 <input type="hidden" id="editGoalId">
+
+                <!-- Shown only while the Add form was pre-filled from a saved template -->
+                <div id="goalTemplateBanner" style="display:none; margin-bottom:16px; padding:10px 14px; background:rgba(219,39,119,0.07); border:1px solid rgba(219,39,119,0.25); border-radius:8px; font-size:0.85rem; color:var(--text-dark); line-height:1.45;"></div>
+
+                <!-- Soft, non-blocking heads-up when this goal would track the same hours as another active goal -->
+                <div id="goalOverlapBanner" role="status" style="display:none; margin-bottom:16px; padding:10px 14px; background:rgba(245,158,11,0.10); border:1px solid rgba(245,158,11,0.45); border-radius:8px; font-size:0.85rem; color:var(--text-dark); line-height:1.45;"></div>
 
                 <!-- Inline validation banner -->
                 <div id="goalFormError" role="alert" style="display:none; margin-bottom: 16px; padding: 10px 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; color: #ef4444; font-size: 0.85rem; font-weight: 500;"></div>
@@ -43103,6 +43130,8 @@ window.DBP={
         }
 
         function openAddGoalModal() {
+            _resetPendingGoalTemplate();
+            _resetGoalOverlapWarning();
             document.getElementById('goalModalTitle').innerHTML = '<i class="fa-solid fa-plus"></i> Add New Goal';
             document.getElementById('goalForm').reset();
             document.getElementById('editGoalId').value = '';
@@ -43131,6 +43160,8 @@ window.DBP={
         function openEditGoalModal(id) {
             const goal = goals.find(g => g.id === id);
             if (!goal) return;
+            _resetPendingGoalTemplate();
+            _resetGoalOverlapWarning();
             document.getElementById('goalModalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square"></i> Edit Goal';
             resetGoalFormValidationState();
             document.getElementById('editGoalId').value = goal.id;
@@ -44325,6 +44356,16 @@ window.DBP={
                 </button>
             `;
             
+            // ⭐ Save as template — keeps this goal's setup (target, skill scope,
+            // deadline length, checklist) so it can be reused later, in any career.
+            const savedAsTemplate = isGoalSavedAsTemplate(goal);
+            buttons += `
+                <button onclick="saveGoalAsTemplate('${goal.id}')" class="goal-action-btn edit"
+                    title="${savedAsTemplate ? 'Already saved as a template. Click to update it with the current settings of this goal.' : 'Save target, skill scope, deadline length and checklist as a reusable template.'}">
+                    <i class="${savedAsTemplate ? 'fa-solid' : 'fa-regular'} fa-star"></i> ${savedAsTemplate ? 'Template saved' : 'Save as template'}
+                </button>
+            `;
+
             // ✅ DELETE BUTTON (v9: no archive, just delete — same for active/completed)
             buttons += `
                 <button onclick="deleteGoal('${goal.id}')" class="goal-action-btn delete">
@@ -44434,10 +44475,9 @@ document.addEventListener('DOMContentLoaded', function() {
         function showSmartSuggestions() {
             const suggestions = suggestGoalsForCareer(currentCareer);
             
-            if (suggestions.length === 0) {
-                showNotification('No suggestions available for this career yet.', 'info');
-                return;
-            }
+            // Even a career with no built-in suggestions can have the user's own
+            // templates, so the modal always opens (it explains what's missing).
+            closeSmartSuggestions(); // never stack two of these modals
             const modal = document.createElement('div');
             modal.id = 'smartSuggestionsModal';
             modal.style.cssText = `
@@ -44460,10 +44500,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <div>
                                 <h2 style="margin: 0 0 8px 0; font-size: 1.5rem; color: var(--text-dark);">
-                                    💡 Smart Goal Suggestions
+                                    💡 Templates &amp; Suggestions
                                 </h2>
                                 <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">
-                                    Recommended goals for <strong>${skillsData[currentCareer]?.title || currentCareer}</strong>
+                                    Your saved templates, plus recommended goals for <strong>${skillsData[currentCareer]?.title || currentCareer}</strong>
                                 </p>
                             </div>
                             <button onclick="closeSmartSuggestions()" 
@@ -44475,13 +44515,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     <!-- Body -->
                     <div style="padding: 20px;">
-                        ${renderSuggestionsByTier(suggestions)}
+                        ${renderMyTemplatesSection()}
+                        ${suggestions.length ? `
+                            <div style="font-size: 1.05rem; font-weight: 700; color: var(--text-dark); margin: 0 0 14px 0;">💡 Suggested for this career</div>
+                            ${renderSuggestionsByTier(suggestions)}
+                        ` : `
+                            <p style="text-align: center; color: var(--text-muted); padding: 20px 0;">No suggestions available for this career yet.</p>
+                        `}
                     </div>
                     
                     <!-- Footer -->
                     <div style="padding: 16px 24px; border-top: 1px solid var(--border-color); background: var(--bg-light); text-align: center;">
                         <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">
-                            💡 Click any suggestion to add it as a goal
+                            💡 Click any template or suggestion to add it as a goal
                         </p>
                     </div>
                 </div>
@@ -44658,6 +44704,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (skillSelect) {
                             skillSelect.value = suggestion.skillName;
                             skillSelect.dispatchEvent(new Event('change'));
+                            updateGoalOverlapWarning();
                         }
                     }, 100);
                 }
@@ -44665,6 +44712,579 @@ document.addEventListener('DOMContentLoaded', function() {
                 showNotification(`✅ Template applied: ${suggestion.title}`, 'success');
             }, 100);
         }
+
+
+        // ═══════════════════════════════════════════════════════════
+        //  ⭐ MY GOAL TEMPLATES
+        //  Save the *setup* of a goal (type, target, skill scope, deadline
+        //  length, why, checklist steps) and reuse it later — next year, or
+        //  in a different career. Stored under its own localStorage key
+        //  ('goalTemplates'), so it is also picked up automatically by the
+        //  full-backup export, which scans all of localStorage.
+        //
+        //  Deliberately NOT stored: progress, streaks, milestones, chain links
+        //  (chainsFrom) and the absolute deadline date. A deadline is kept as
+        //  a *length in days* and re-based on today when the template is used,
+        //  otherwise a template saved last year would prefill a date that has
+        //  already passed.
+        // ═══════════════════════════════════════════════════════════
+        const GOAL_TEMPLATES_KEY = 'goalTemplates';
+        const GOAL_TEMPLATES_MAX = 50;
+        const GOAL_TEMPLATE_TYPES = ['study_hours', 'skill_mastery', 'custom'];
+
+        // Set while the Add Goal form is open and was pre-filled from a template.
+        // { id, title, subtasks: string[], notes: string[] }
+        let _pendingGoalTemplate = null;
+        let _gtDeleteArmed = { id: null, timer: null };
+
+        // Quote-safe escape (the shared escapeHtml() leaves " and ' alone,
+        // which is not enough for attribute values).
+        function gtEsc(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function loadGoalTemplates() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(GOAL_TEMPLATES_KEY) || '[]');
+                if (!Array.isArray(parsed)) return [];
+                // ids end up inside inline onclick="..." handlers, so only accept
+                // a safe charset (matters if a backup file was edited by hand).
+                return parsed.filter(t => t && typeof t.id === 'string' && /^[\w-]+$/.test(t.id)
+                    && typeof t.title === 'string' && t.title.trim()
+                    && GOAL_TEMPLATE_TYPES.includes(t.type)
+                    && Number(t.target) > 0);
+            } catch (e) {
+                console.error('goalTemplates could not be read, treating as empty:', e);
+                return [];
+            }
+        }
+
+        function saveGoalTemplates(list) {
+            try {
+                localStorage.setItem(GOAL_TEMPLATES_KEY, JSON.stringify(list));
+                return true;
+            } catch (e) {
+                console.error('goalTemplates could not be saved:', e);
+                showNotification('Could not save the template (browser storage is full?).', 'error');
+                return false;
+            }
+        }
+
+        function generateGoalTemplateId() {
+            return 'gt_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        }
+
+        function _gtSameTemplate(t, title, type) {
+            return t.type === type && t.title.trim().toLowerCase() === String(title).trim().toLowerCase();
+        }
+
+        function isGoalSavedAsTemplate(goal) {
+            return loadGoalTemplates().some(t => _gtSameTemplate(t, goal.title, goal.type));
+        }
+
+        // Planned window in days (creation date -> deadline, Vietnam calendar days).
+        function goalTemplateDurationDays(goal) {
+            if (!goal.deadline) return undefined;
+            let startKey = getVietnamDateStr();
+            if (goal.createdAt) {
+                const created = new Date(goal.createdAt);
+                if (!isNaN(created)) {
+                    startKey = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TIMEZONE }).format(created);
+                }
+            }
+            const days = daysBetweenDateKeys(startKey, goal.deadline);
+            return (days >= 1 && days <= 3650) ? days : undefined;
+        }
+
+        function saveGoalAsTemplate(goalId) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal) return;
+
+            const list = loadGoalTemplates();
+            const existing = list.find(t => _gtSameTemplate(t, goal.title, goal.type));
+            if (!existing && list.length >= GOAL_TEMPLATES_MAX) {
+                showNotification(`You can keep up to ${GOAL_TEMPLATES_MAX} templates. Delete an old one first.`, 'error');
+                return;
+            }
+
+            const template = {
+                // Same title + type = same template: update it in place rather
+                // than piling up near-duplicates.
+                id: existing ? existing.id : generateGoalTemplateId(),
+                title: goal.title,
+                type: goal.type,
+                target: goal.target,
+                priority: goal.priority || 'medium',
+                why: goal.why || undefined,
+                customUnit: goal.type === 'custom' ? (goal.customUnit || undefined) : undefined,
+                skillName: goal.type === 'skill_mastery' ? (goal.skillName || undefined) : undefined,
+                skillNames: (goal.type === 'study_hours' && Array.isArray(goal.skillNames) && goal.skillNames.length)
+                    ? [...goal.skillNames] : undefined,
+                durationDays: goalTemplateDurationDays(goal),
+                subtasks: (Array.isArray(goal.subtasks) ? goal.subtasks : [])
+                    .map(s => String((s && s.text) || '').trim()).filter(Boolean).slice(0, 30),
+                sourceCareer: goal.career,
+                createdAt: existing ? existing.createdAt : new Date().toISOString(),
+                lastUsedAt: existing ? existing.lastUsedAt : undefined,
+                timesUsed: existing ? (existing.timesUsed || 0) : 0
+            };
+
+            if (existing) list[list.indexOf(existing)] = template;
+            else list.unshift(template);
+            if (!saveGoalTemplates(list)) return;
+
+            renderGoals(); // so the star on the card fills in
+            const steps = template.subtasks.length;
+            showNotification(
+                existing
+                    ? `Template "${goal.title}" updated`
+                    : `⭐ Saved "${goal.title}" as a template${steps ? ` (with ${steps} checklist step${steps === 1 ? '' : 's'})` : ''}`,
+                'success'
+            );
+        }
+
+        // ── Cross-career safety ─────────────────────────────────
+        // A template can outlive the career it was made in. Skill names are
+        // career-specific, so when applying we check them against the
+        // *current* career instead of blindly selecting something that isn't there.
+        function _gtCareerSkillNames(career) {
+            const names = new Set();
+            const cd = (typeof skillsData !== 'undefined') ? skillsData[career] : null;
+            if (cd && cd.categories) {
+                Object.values(cd.categories).forEach(cat => (cat.skills || []).forEach(s => names.add(s.name)));
+            }
+            return names;
+        }
+
+        function _gtSkillStatus(t) {
+            const wanted = t.type === 'skill_mastery' ? (t.skillName ? [t.skillName] : [])
+                         : t.type === 'study_hours' ? (Array.isArray(t.skillNames) ? t.skillNames : [])
+                         : [];
+            if (!wanted.length) return { wanted: 0, missing: 0 };
+            const have = _gtCareerSkillNames(currentCareer);
+            return { wanted: wanted.length, missing: wanted.filter(n => !have.has(n)).length };
+        }
+
+        // ── Apply ───────────────────────────────────────────────
+        function applyGoalTemplate(templateId) {
+            const t = loadGoalTemplates().find(x => x.id === templateId);
+            if (!t) { showNotification('Template not found.', 'error'); return; }
+
+            closeSmartSuggestions();
+            openAddGoalModal();                       // resets the form and any pending template
+            document.getElementById('goalTitle').value = t.title;
+            selectGoalType(t.type);                   // builds the type-specific fields
+
+            const notes = [];
+            if (t.type === 'skill_mastery') {
+                // The target of a skill-mastery goal is derived from the skill
+                // (auto-filled + locked on select), so pick the skill FIRST and
+                // let it decide the target instead of overriding it.
+                const select = document.getElementById('goalSkillSelect');
+                const skillExists = !!(select && t.skillName && Array.from(select.options).some(o => o.value === t.skillName));
+                if (skillExists) {
+                    select.value = t.skillName;
+                    select.dispatchEvent(new Event('change'));
+                } else {
+                    document.getElementById('goalTarget').value = t.target;
+                    if (t.skillName) notes.push(`Skill "${t.skillName}" is not in this career. Pick another skill in the Skill dropdown.`);
+                }
+            } else {
+                document.getElementById('goalTarget').value = t.target;
+                if (t.type === 'study_hours' && Array.isArray(t.skillNames) && t.skillNames.length) {
+                    let matched = 0;
+                    document.querySelectorAll('.goal-study-hours-skill-cb').forEach(cb => {
+                        if (t.skillNames.includes(cb.value)) { cb.checked = true; matched++; }
+                    });
+                    const skipped = t.skillNames.length - matched;
+                    if (skipped > 0) notes.push(`${skipped} skill${skipped === 1 ? '' : 's'} from the template ${skipped === 1 ? 'is' : 'are'} not in this career and ${skipped === 1 ? 'was' : 'were'} skipped.`);
+                }
+                if (t.type === 'custom') {
+                    const unitInput = document.getElementById('goalCustomUnit');
+                    if (unitInput) {
+                        unitInput.value = t.customUnit || '';
+                        unitInput.dispatchEvent(new Event('input')); // refreshes the "(unit)" label + pace hint
+                    }
+                }
+            }
+
+            selectGoalPriority(t.priority || 'medium');
+            const whyInput = document.getElementById('goalWhy');
+            if (whyInput) whyInput.value = t.why || '';
+
+            if (t.durationDays) {
+                // today (Vietnam) + N days, computed in UTC so the browser's own
+                // timezone / DST can't shift the date by a day.
+                const d = new Date(getVietnamDateStr() + 'T00:00:00Z');
+                d.setUTCDate(d.getUTCDate() + Number(t.durationDays));
+                const deadlineInput = document.getElementById('goalDeadline');
+                if (deadlineInput) deadlineInput.value = d.toISOString().slice(0, 10);
+            }
+
+            _pendingGoalTemplate = {
+                id: t.id,
+                title: t.title,
+                subtasks: Array.isArray(t.subtasks) ? t.subtasks.slice(0, 30) : [],
+                notes
+            };
+            renderGoalTemplateBanner();
+            updateGoalPaceHint();
+            updateGoalOverlapWarning();
+            showNotification(`⭐ Template applied: ${t.title}`, 'success');
+        }
+
+        function renderGoalTemplateBanner() {
+            const el = document.getElementById('goalTemplateBanner');
+            if (!el) return;
+            if (!_pendingGoalTemplate) {
+                el.style.display = 'none';
+                el.innerHTML = '';
+                return;
+            }
+            const p = _pendingGoalTemplate;
+            const steps = p.subtasks.length;
+            el.innerHTML = `
+                <div style="font-weight: 600;">⭐ From template “${gtEsc(p.title)}”</div>
+                ${steps ? `<div style="margin-top: 2px;">📋 ${steps} checklist step${steps === 1 ? '' : 's'} will be added to the new goal.</div>` : ''}
+                ${p.notes.map(n => `<div style="margin-top: 2px; color: #b45309;">⚠️ ${gtEsc(n)}</div>`).join('')}
+            `;
+            el.style.display = 'block';
+        }
+
+        function _resetPendingGoalTemplate() {
+            _pendingGoalTemplate = null;
+            renderGoalTemplateBanner();
+        }
+
+        // Called by the Add Goal submit handler for a NEW goal. The checklist
+        // and the "times used" counter only apply once the goal is really
+        // created, not merely because the template was previewed and cancelled.
+        function attachPendingTemplateToNewGoal(newGoal) {
+            const p = _pendingGoalTemplate;
+            if (!p) return;
+            if (p.subtasks.length) {
+                newGoal.subtasks = p.subtasks.map(text => ({ id: generateSubtaskId(), text, done: false }));
+            }
+            const list = loadGoalTemplates();
+            const t = list.find(x => x.id === p.id);
+            if (t) {
+                t.timesUsed = (t.timesUsed || 0) + 1;
+                t.lastUsedAt = new Date().toISOString();
+                saveGoalTemplates(list);
+            }
+            _pendingGoalTemplate = null;
+            renderGoalTemplateBanner();
+        }
+
+        // ── Delete (two taps, so a stray click can't wipe a template) ──
+        function requestDeleteGoalTemplate(id, btn) {
+            if (_gtDeleteArmed.id === id) {
+                clearTimeout(_gtDeleteArmed.timer);
+                _gtDeleteArmed = { id: null, timer: null };
+                const remaining = loadGoalTemplates().filter(t => t.id !== id);
+                if (saveGoalTemplates(remaining)) {
+                    refreshMyTemplatesSection();
+                    renderGoals(); // un-fill the star on the matching goal card
+                    showNotification('Template deleted', 'info');
+                }
+                return;
+            }
+            clearTimeout(_gtDeleteArmed.timer);
+            _gtDeleteArmed = {
+                id,
+                timer: setTimeout(() => {
+                    _gtDeleteArmed = { id: null, timer: null };
+                    refreshMyTemplatesSection();
+                }, 3000)
+            };
+            if (btn) {
+                btn.classList.add('armed');
+                btn.innerHTML = 'Tap again to delete';
+            }
+        }
+
+        // ── Rendering ───────────────────────────────────────────
+        function refreshMyTemplatesSection() {
+            const el = document.getElementById('myTemplatesSection');
+            if (el) el.innerHTML = _renderMyTemplatesInner();
+        }
+
+        function renderMyTemplatesSection() {
+            return `<div id="myTemplatesSection" style="margin-bottom: 30px;">${_renderMyTemplatesInner()}</div>`;
+        }
+
+        function _renderMyTemplatesInner() {
+            const templates = loadGoalTemplates();
+            const header = `
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #db2777;">
+                    <div style="font-size: 1.3rem; font-weight: 700; color: #db2777;">⭐ My Templates</div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">Your own goals, ready to reuse</div>
+                </div>`;
+            if (!templates.length) {
+                return header + `
+                    <p style="margin: 0; padding: 14px 16px; background: var(--bg-light); border-radius: 10px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.5;">
+                        No templates yet. On any goal, click <strong>☆ Save as template</strong> to keep its target, skill scope, deadline length and checklist here for next time, in any career.
+                    </p>`;
+            }
+            return header + `<div style="display: grid; gap: 12px;">${templates.map(renderGoalTemplateCard).join('')}</div>`;
+        }
+
+        function renderGoalTemplateCard(t) {
+            const color = '#db2777';
+            const icons = {
+                study_hours: '<i class="fa-solid fa-book"></i>',
+                skill_mastery: '<i class="fa-solid fa-bullseye"></i>',
+                custom: '<i class="fa-solid fa-square-check"></i>'
+            };
+            const typeNames = { study_hours: 'Study hours', skill_mastery: 'Skill mastery', custom: 'Custom' };
+            const unit = t.type === 'custom' ? (t.customUnit || 'items') : 'hours';
+            const skill = _gtSkillStatus(t);
+            const steps = Array.isArray(t.subtasks) ? t.subtasks.length : 0;
+            const alreadyActive = goals.some(g => g.career === currentCareer && _gtSameTemplate(t, g.title, g.type)
+                && (Number(g.currentProgress) || 0) < g.target);
+            const fromOtherCareer = t.sourceCareer && t.sourceCareer !== currentCareer;
+            const chip = (html) => `<span style="padding: 4px 10px; background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 12px; font-weight: 500;">${html}</span>`;
+
+            let skillChip = '';
+            if (t.type === 'skill_mastery' && t.skillName) skillChip = chip(`📖 ${gtEsc(t.skillName)}`);
+            else if (t.type === 'study_hours' && skill.wanted) skillChip = chip(`📖 ${skill.wanted} skill${skill.wanted === 1 ? '' : 's'}`);
+
+            return `
+                <div class="suggestion-card" onclick="applyGoalTemplate('${t.id}')"
+                    style="padding: 16px; background: rgba(219, 39, 119, 0.07); border: 2px solid ${color}; border-radius: 12px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                    <div style="display: flex; gap: 12px; align-items: start;">
+                        <div style="font-size: 2rem; flex-shrink: 0;">${icons[t.type] || '📌'}</div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; font-size: 1rem; line-height: 1.3;">
+                                ${gtEsc(t.title)}
+                                ${alreadyActive ? '<span style="margin-left: 8px; font-size: 0.75rem; color: #b45309; font-weight: 500;">● already in your goals</span>' : ''}
+                            </div>
+                            ${t.why ? `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; line-height: 1.4;">💭 ${gtEsc(t.why.length > 120 ? t.why.slice(0, 117) + '…' : t.why)}</div>` : ''}
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
+                                ${chip(`🎯 ${gtEsc(t.target)} ${gtEsc(unit)}`)}
+                                ${chip(gtEsc(typeNames[t.type] || t.type))}
+                                ${skillChip}
+                                ${t.durationDays ? chip(`⏱ ${gtEsc(t.durationDays)} days`) : ''}
+                                ${steps ? chip(`📋 ${steps} step${steps === 1 ? '' : 's'}`) : ''}
+                                ${t.timesUsed ? chip(`🔁 used ${gtEsc(t.timesUsed)}×`) : ''}
+                                ${fromOtherCareer ? chip(`from ${gtEsc((typeof skillsData !== 'undefined' && skillsData[t.sourceCareer] && skillsData[t.sourceCareer].title) || t.sourceCareer)}`) : ''}
+                            </div>
+                            ${skill.missing ? `<div style="margin-top: 8px; font-size: 0.78rem; color: #b45309;">⚠️ ${skill.missing === skill.wanted ? 'Its skill' : 'Some of its skills'} ${skill.missing === 1 ? 'is' : 'are'} not in this career. You'll be asked to pick again.</div>` : ''}
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end; flex-shrink: 0;">
+                            <span style="color: ${color}; font-weight: 600; font-size: 0.8rem; white-space: nowrap;">Use →</span>
+                            <button type="button" class="gt-delete-btn" onclick="event.stopPropagation(); requestDeleteGoalTemplate('${t.id}', this)"
+                                title="Delete this template"
+                                style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 8px; padding: 4px 8px; font-size: 0.75rem; cursor: pointer; white-space: nowrap;">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+
+        // ═══════════════════════════════════════════════════════════
+        //  ⚠️ OVERLAP HEADS-UP (Add / Edit goal form)
+        //  Progress is computed from *hours per skill* (calculateGoalProgress),
+        //  so two active goals that cover the same skills silently count the
+        //  same hours twice. This surfaces that while the goal is being made.
+        //
+        //  A goal's tracked scope is either ALL skills of its career
+        //  (study_hours with no skills ticked) or a set of skills
+        //  (study_hours with skills ticked; skill_mastery = a set of one).
+        //    • "same"    — identical scope (both ALL, or the same skill set)
+        //    • "partial" — two skill sets that share some (not all) skills
+        //    • title     — identical title, whatever the scope (also covers
+        //                  custom goals, which have no scope)
+        //  Deliberately NOT flagged: ALL-vs-specific-skills (an overall goal
+        //  plus a focused one is normal nesting), completed goals, other
+        //  careers, course-linked goals, and goals connected through
+        //  "Continues From" — chaining is the intended way to stage goals.
+        //  It never blocks saving; it is a nudge, and can be waved off.
+        // ═══════════════════════════════════════════════════════════
+        let _goalOverlapDismissed = '';   // signature of the findings the user already waved off
+        let _goalOverlapFindings = [];
+
+        function _resetGoalOverlapWarning() {
+            _goalOverlapDismissed = '';
+            _goalOverlapFindings = [];
+            const el = document.getElementById('goalOverlapBanner');
+            if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+        }
+
+        // → { all: true } | { all: false, skills: Set } | null (nothing auto-tracked)
+        function _goalTrackedScope(g) {
+            if (!g || g.courseId) return null;
+            if (g.type === 'study_hours') {
+                return (Array.isArray(g.skillNames) && g.skillNames.length)
+                    ? { all: false, skills: new Set(g.skillNames) } : { all: true };
+            }
+            if (g.type === 'skill_mastery') {
+                // calculateGoalProgress treats a skill-less mastery goal as ALL
+                return g.skillName ? { all: false, skills: new Set([g.skillName]) } : { all: true };
+            }
+            return null;
+        }
+
+        function _goalScopeRelation(a, b) {
+            if (!a || !b) return null;
+            if (a.all && b.all) return { kind: 'same', all: true, shared: [] };
+            if (a.all || b.all) return null; // overall goal + focused goal: expected, not flagged
+            const shared = [...a.skills].filter(s => b.skills.has(s));
+            if (!shared.length) return null;
+            const identical = a.skills.size === b.skills.size && shared.length === a.skills.size;
+            return { kind: identical ? 'same' : 'partial', all: false, shared };
+        }
+
+        function _readGoalDraft() {
+            const val = id => { const el = document.getElementById(id); return el ? String(el.value || '') : ''; };
+            const type = val('goalType');
+            const draft = {
+                type,
+                title: val('goalTitle').trim(),
+                editId: val('editGoalId'),
+                chainsFrom: val('goalChainFrom'),
+                target: parseFloat(val('goalTarget')),
+                scope: null
+            };
+            if (type === 'study_hours') {
+                const picked = Array.from(document.querySelectorAll('.goal-study-hours-skill-cb:checked')).map(c => c.value);
+                draft.scope = picked.length ? { all: false, skills: new Set(picked) } : { all: true };
+            } else if (type === 'skill_mastery') {
+                const skill = val('goalSkillSelect');
+                draft.scope = skill ? { all: false, skills: new Set([skill]) } : null; // not picked yet → nothing to compare
+            }
+            return draft;
+        }
+
+        // Goals linked to this one through "Continues From" are intentional
+        // staging, not accidental overlap.
+        function _goalChainRelatives(draft) {
+            const rel = new Set();
+            let cur = draft.chainsFrom, guard = 0;
+            while (cur && !rel.has(cur) && guard++ < 50) {
+                rel.add(cur);
+                const g = goals.find(x => x.id === cur);
+                cur = g ? g.chainsFrom : null;
+            }
+            if (draft.editId) {
+                const queue = [draft.editId], seen = new Set(queue);
+                while (queue.length) {
+                    const id = queue.shift();
+                    goals.forEach(g => {
+                        if (g.chainsFrom === id && !seen.has(g.id)) { seen.add(g.id); rel.add(g.id); queue.push(g.id); }
+                    });
+                }
+            }
+            return rel;
+        }
+
+        function computeGoalOverlaps(draft) {
+            if (!draft.type && !draft.title) return [];
+            const editing = draft.editId ? goals.find(g => g.id === draft.editId) : null;
+            const career = (editing && editing.career) || currentCareer;
+            const relatives = _goalChainRelatives(draft);
+            const titleKey = draft.title.toLowerCase();
+            const found = [];
+            goals.forEach(g => {
+                if (g.id === draft.editId || g.career !== career || relatives.has(g.id)) return;
+                calculateGoalProgress(g);                       // same refresh renderGoals() does
+                if (getGoalStatus(g) === 'completed') return;   // finishing a goal ends the overlap
+                const rel = _goalScopeRelation(draft.scope, _goalTrackedScope(g));
+                const sameTitle = !!titleKey && String(g.title).trim().toLowerCase() === titleKey;
+                if (!rel && !sameTitle) return;
+                found.push({ goal: g, kind: rel ? rel.kind : null, all: rel ? rel.all : false, shared: rel ? rel.shared : [], sameTitle });
+            });
+            const rank = f => f.kind === 'same' ? 0 : f.kind === 'partial' ? 1 : 2;
+            return found.sort((a, b) => rank(a) - rank(b));
+        }
+
+        function _overlapSignature(findings) {
+            return findings.map(f => `${f.goal.id}:${f.kind || '-'}${f.sameTitle ? 'T' : ''}`).join('|');
+        }
+
+        function _overlapScopeText(f, career) {
+            if (f.all) {
+                const title = (typeof skillsData !== 'undefined' && skillsData[career] && skillsData[career].title) || career;
+                return `all skills in ${title}`;
+            }
+            const names = f.shared.slice(0, 3).join(', ');
+            return f.shared.length > 3 ? `${names} +${f.shared.length - 3} more` : names;
+        }
+
+        function updateGoalOverlapWarning() {
+            const el = document.getElementById('goalOverlapBanner');
+            if (!el) return;
+            const draft = _readGoalDraft();
+            const findings = computeGoalOverlaps(draft);
+            _goalOverlapFindings = findings;
+            if (!findings.length || _overlapSignature(findings) === _goalOverlapDismissed) {
+                el.style.display = 'none';
+                el.innerHTML = '';
+                return;
+            }
+            const editing = draft.editId ? goals.find(g => g.id === draft.editId) : null;
+            const career = (editing && editing.career) || currentCareer;
+            const shown = findings.slice(0, 3);
+            const lines = shown.map(f => {
+                const t = `“${gtEsc(f.goal.title)}”`;
+                const manual = (f.kind && f.goal.manuallyUpdated) ? ' <span style="opacity:.75;">(currently manual)</span>' : '';
+                let msg;
+                if (f.kind === 'same') msg = `${t} already tracks the same hours (${gtEsc(_overlapScopeText(f, career))}). Hours you log count toward both.${manual}`;
+                else if (f.kind === 'partial') msg = `${t} shares ${gtEsc(_overlapScopeText(f, career))} with this goal, so those hours count toward both.${manual}`;
+                else msg = `${t} is an active goal with the same title.`;
+                if (f.kind && f.sameTitle) msg += ' Same title too.';
+                const canChain = f.kind === 'same' && !draft.chainsFrom && (isNaN(draft.target) || draft.target > f.goal.target);
+                const chainBtn = canChain
+                    ? ` <button type="button" data-overlap-action="chain" data-goal-id="${gtEsc(f.goal.id)}" style="margin-left:4px; padding:2px 9px; border:1px solid #b45309; border-radius:12px; background:transparent; color:#b45309; font-size:0.78rem; font-weight:600; cursor:pointer;">Continue from it</button>`
+                    : '';
+                return `<div style="margin-top:4px;">• ${msg}${chainBtn}</div>`;
+            }).join('');
+            const more = findings.length > shown.length ? `<div style="margin-top:4px; opacity:.8;">+${findings.length - shown.length} more overlapping</div>` : '';
+            const tip = findings.some(f => f.kind === 'same')
+                ? `<div style="margin-top:6px; opacity:.85;">If this is the next stage of that goal, use <strong>Continues From</strong> (Step 2) so progress is staged instead of duplicated.</div>` : '';
+            el.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <div style="font-weight:600;">⚠️ Heads up: this overlaps with an active goal</div>
+                    <button type="button" data-overlap-action="dismiss" style="padding:2px 10px; border:1px solid var(--border-color); border-radius:12px; background:var(--bg-white); color:var(--text-muted); font-size:0.78rem; cursor:pointer; flex-shrink:0;">Got it</button>
+                </div>
+                ${lines}${more}${tip}`;
+            el.style.display = 'block';
+        }
+
+        // Banner buttons + live re-check as the form changes.
+        document.addEventListener('click', function(e) {
+            const btn = e.target && e.target.closest ? e.target.closest('#goalOverlapBanner [data-overlap-action]') : null;
+            if (!btn) return;
+            e.preventDefault();
+            if (btn.dataset.overlapAction === 'dismiss') {
+                _goalOverlapDismissed = _overlapSignature(_goalOverlapFindings);
+                updateGoalOverlapWarning();
+                return;
+            }
+            if (btn.dataset.overlapAction === 'chain') {
+                const prev = goals.find(g => g.id === btn.dataset.goalId);
+                const select = document.getElementById('goalChainFrom');
+                if (!prev || !select) return;
+                select.value = prev.id;
+                if (select.value !== prev.id) return; // not offered in the dropdown → don't pretend it worked
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                showNotification(`Set to continue from “${prev.title}”. This goal's target must be above ${prev.target}.`, 'info');
+            }
+        });
+        (function wireGoalOverlapListeners() {
+            const wire = () => {
+                const form = document.getElementById('goalForm');
+                if (!form) return;
+                form.addEventListener('input', updateGoalOverlapWarning);
+                form.addEventListener('change', updateGoalOverlapWarning);
+            };
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+            else wire();
+        })();
 
         // ENHANCED: Career-Specific Goal Suggestions
         // Each suggestion carries an explicit `tier` (foundation / intermediate /
@@ -45426,6 +46046,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     manuallyUpdated: false,
                     createdAt: new Date().toISOString()
                 };
+                attachPendingTemplateToNewGoal(newGoal);
                 goals.push(newGoal);
                 showNotification('Goal added successfully!', 'success');
             }
@@ -50288,6 +50909,7 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('goalFormError').style.display = 'none';
             populateGoalTypeSpecificFields(type);
             updateGoalPaceHint();
+            updateGoalOverlapWarning();
         }
 
         function selectGoalPriority(priority) {
@@ -59703,6 +60325,10 @@ function saveDailyStudyData() {
         window.addGoalSubtaskFromInput       = addGoalSubtaskFromInput;
         window.toggleGoalSubtask             = toggleGoalSubtask;
         window.deleteGoalSubtask             = deleteGoalSubtask;
+        window.showSmartSuggestions          = showSmartSuggestions;
+        window.saveGoalAsTemplate            = saveGoalAsTemplate;
+        window.applyGoalTemplate             = applyGoalTemplate;
+        window.requestDeleteGoalTemplate     = requestDeleteGoalTemplate;
 
 
 // ===================================================================
