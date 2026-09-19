@@ -42814,6 +42814,13 @@ window.DBP={
                     goal.streak.best = Math.max(goal.streak.best || 0, goal.streak.count);
                     goal.streak.lastDate = todayKey;
                 }
+                // Record this bump so calculateGoalForecast() has something to
+                // average — it was reading goal.progressHistory, but nothing
+                // in the app ever wrote to it, so the "days until completion"
+                // estimate could never appear for any goal.
+                if (typeof trackGoalProgressHistory === 'function') {
+                    trackGoalProgressHistory(goal.id, progress - prevProgress);
+                }
                 goal.streak.lastProgress = progress;
                 changed = true;
             } else if (goal.streak.lastDate && daysBetweenDateKeys(goal.streak.lastDate, todayKey) > 1) {
@@ -43236,6 +43243,11 @@ window.DBP={
             }
             if (goal.type === 'study_hours' || goal.type === 'skill_mastery') {
                 goal.currentProgress = (goal.currentProgress || 0) + hours;
+                // Without this, the very next renderGoals() call recomputes
+                // currentProgress straight from studyHours/skill data (since
+                // this goal isn't linked to a real skill log entry) and
+                // silently overwrites the hours just added here.
+                goal.manuallyUpdated = true;
                 const pointsEarned = Math.floor(hours * 10);
                 gamification.points += pointsEarned;
                 gamification.level = Math.floor(gamification.points / 100) + 1;
