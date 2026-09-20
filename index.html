@@ -16927,6 +16927,11 @@
             display: flex; align-items: center; justify-content: center;
         }
         body.dark-mode #goalsSection .goals-focus-rank { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+        #goalsSection .goals-focus-career {
+            font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+            color: var(--text-muted); margin: 0 22px 3px 0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
         #goalsSection .goals-focus-title {
             font-size: 0.88rem; font-weight: 700; color: var(--text-dark);
             margin: 0 22px 8px 0;
@@ -44640,6 +44645,22 @@ window.DBP={
             return { text: 'On track', cls: 'ok' };
         }
 
+        // Global candidate list for the Today's Focus strip — every
+        // non-completed goal from EVERY career, so the strip is the same
+        // no matter which career tab happens to be open right now.
+        function computeGlobalFocusGoals() {
+            goals.forEach(g => calculateGoalProgress(g));
+            const statusMap = new Map(goals.map(g => [g.id, getGoalStatus(g)]));
+            const activeGoals = goals.filter(g => statusMap.get(g.id) !== 'completed');
+            const pctMap = new Map(activeGoals.map(g => [g.id, getGoalProgressPercent(g)]));
+            const nowTs = getVietnamNow().getTime();
+            const paceMap = new Map(activeGoals.map(g => [g.id, goalPaceInfo(g, pctMap.get(g.id), nowTs)]));
+            const focusGoals = activeGoals
+                .sort((a, b) => compareGoalsForView(a, b, 'pace', pctMap, paceMap))
+                .slice(0, 3);
+            return { focusGoals, statusMap, pctMap, paceMap };
+        }
+
         function renderTodaysFocusStrip(focusGoals, statusMap, pctMap, paceMap) {
             if (!focusGoals.length) return '';
             const collapsed = isGoalsFocusCollapsed();
@@ -44655,10 +44676,12 @@ window.DBP={
                 const paceInfo = paceMap.get(goal.id);
                 const reason = goalFocusReason(goal, status, paceInfo);
                 const step = firstIncompleteGoalStep(goal);
+                const careerLabel = `${getCareerIcon(goal.career)} ${getCareerDisplayName(goal.career)}`;
                 return `
                     <div class="goals-focus-card" onclick="DLT.navigate('g_${goal.id}')" role="button" tabindex="0"
                          onkeydown="if(event.key==='Enter'){DLT.navigate('g_${goal.id}');}" title="Jump to this goal">
                         <span class="goals-focus-rank">${i + 1}</span>
+                        <div class="goals-focus-career">${careerLabel}</div>
                         <div class="goals-focus-title">${typeIcons[goal.type] || ''} ${escapeHtml(goal.title)}</div>
                         <div class="goals-focus-meta-row">
                             <span class="goals-focus-pct">${pct}%</span>
@@ -44678,7 +44701,7 @@ window.DBP={
                     <button type="button" class="goals-focus-header" onclick="toggleGoalsFocusCollapse()" aria-expanded="${!collapsed}">
                         <i class="fa-solid fa-sun"></i>
                         <span class="goals-focus-title-text">Today's Focus</span>
-                        <span class="goals-focus-sub">Top ${focusGoals.length} to start with</span>
+                        <span class="goals-focus-sub">Top ${focusGoals.length} across all tracks</span>
                         <i class="fa-solid fa-chevron-${collapsed ? 'down' : 'up'} goals-focus-chevron"></i>
                     </button>
                     ${collapsed ? '' : `<div class="goals-focus-list">${cards}</div>`}
@@ -44686,6 +44709,7 @@ window.DBP={
             `;
         }
         // ═══════════ END "TODAY'S FOCUS" STRIP ═══════════
+
 
         function renderGoals() {
             const container = document.getElementById('goalsContainer');
@@ -44720,15 +44744,14 @@ window.DBP={
             const activeGoals = visibleGoals.filter(g => statusMap.get(g.id) !== 'completed');
             const completedGoals = visibleGoals.filter(g => statusMap.get(g.id) === 'completed');
 
-            // Today's Focus candidates: every non-completed goal in this
-            // career (ignores the toolbar's own filter/search/sort), most
-            // behind pace first, then highest priority — same ordering as
-            // the "Pace" sort mode, just capped to the top 3.
-            const focusGoals = careerGoals
-                .filter(g => statusMap.get(g.id) !== 'completed')
-                .sort((a, b) => compareGoalsForView(a, b, 'pace', pctMap, paceMap))
-                .slice(0, 3);
-            const focusStripHtml = renderTodaysFocusStrip(focusGoals, statusMap, pctMap, paceMap);
+            // Today's Focus: top 3 most-worth-opening goals across EVERY
+            // career, not just this one — most behind pace first, then
+            // highest priority (same ordering as the "Pace" sort mode).
+            // Deliberately global so it's the same regardless of which
+            // career tab happens to be open when you load the app.
+            const globalFocus = computeGlobalFocusGoals();
+            const focusStripHtml = renderTodaysFocusStrip(globalFocus.focusGoals, globalFocus.statusMap, globalFocus.pctMap, globalFocus.paceMap);
+
 
             // Default sort ('smart') = the original one: priority High → Low,
             // then nearest deadline. Completed goals keep their order unless
@@ -44758,7 +44781,7 @@ window.DBP={
 
             // ✅ Nếu không có goals nào
             if (careerGoals.length === 0) {
-                container.innerHTML = `
+                container.innerHTML = focusStripHtml + `
                     <div style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
                         <i class="fa-solid fa-flag-checkered" style="font-size: 5rem; margin-bottom: 15px; opacity: 0.5;"></i>
                         <h3 style="margin: 0 0 10px 0; color: var(--text-dark);">No Goals Yet</h3>
