@@ -8,6 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35025,8 +35026,31 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 }
 .nv-prose blockquote > :last-child { margin-bottom: 0; }
 .nv-prose code { font-family: var(--nv-mono); font-size: 0.84em; padding: 1px 6px; border-radius: 5px; background: rgba(var(--primary-rgb), 0.13); }
-.nv-prose pre { margin: 1.2em 0; padding: 14px 16px; overflow-x: auto; border-radius: 12px; background: var(--bg-light); border: 1px solid var(--border-color); line-height: 1.6; }
+.nv-prose pre { position: relative; margin: 1.2em 0; padding: 14px 16px; overflow-x: auto; border-radius: 12px; background: var(--bg-light); border: 1px solid var(--border-color); line-height: 1.6; }
 .nv-prose pre code { padding: 0; background: none; font-size: 0.85rem; }
+.nv-prose pre[data-lang]::before {
+    content: attr(data-lang); position: absolute; top: 9px; right: 14px; z-index: 1;
+    padding: 1px 8px; border-radius: 999px; background: var(--bg-white); color: var(--text-muted);
+    font-family: var(--nv-sans); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+    opacity: 0.85; pointer-events: none;
+}
+
+/* ── Syntax highlighting (highlight.js output) — reuses the vault's own palette so code
+   blocks stay on-brand and adapt to dark mode automatically via the existing tokens. ── */
+.nv-prose .hljs-comment, .nv-prose .hljs-quote { color: var(--text-muted); font-style: italic; }
+.nv-prose .hljs-keyword, .nv-prose .hljs-selector-tag, .nv-prose .hljs-tag, .nv-prose .hljs-name,
+.nv-prose .hljs-selector-id, .nv-prose .hljs-selector-class { color: var(--primary-dark); font-weight: 600; }
+.nv-prose .hljs-string, .nv-prose .hljs-doctag, .nv-prose .hljs-regexp, .nv-prose .hljs-addition { color: var(--nv-ok); }
+.nv-prose .hljs-number, .nv-prose .hljs-literal, .nv-prose .hljs-built_in, .nv-prose .hljs-type,
+.nv-prose .hljs-symbol { color: var(--nv-warn); }
+.nv-prose .hljs-title, .nv-prose .hljs-title.function_, .nv-prose .hljs-title.class_ { color: var(--primary); font-weight: 700; }
+.nv-prose .hljs-attr, .nv-prose .hljs-attribute, .nv-prose .hljs-params, .nv-prose .hljs-variable,
+.nv-prose .hljs-template-variable { color: var(--text-dark); }
+.nv-prose .hljs-deletion { color: var(--nv-danger); }
+.nv-prose .hljs-meta { color: var(--text-muted); }
+.nv-prose .hljs-link { color: var(--primary-dark); text-decoration: underline; }
+.nv-prose .hljs-emphasis { font-style: italic; }
+.nv-prose .hljs-strong { font-weight: 700; }
 .nv-prose hr { border: 0; height: 1px; margin: 2em 0; background: var(--border-color); }
 .nv-prose img { max-width: 100%; height: auto; border-radius: 8px; }
 .nv-tablewrap { overflow-x: auto; margin: 1.2em 0; }
@@ -35126,6 +35150,11 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-save[data-s="saving"] .nv-dot { background: var(--nv-warn); opacity: 1; }
 .nv-save[data-s="error"] { color: var(--nv-danger); font-weight: 600; }
 .nv-save[data-s="error"] .nv-dot { background: var(--nv-danger); opacity: 1; }
+
+/* ═════════════ Reading progress bar (Read mode only, when the note actually scrolls) ═════════════ */
+.nv-progress { display: none; flex-shrink: 0; height: 3px; background: var(--border-color); overflow: hidden; }
+.nv-app.nv-reading .nv-progress.nv-progress-on { display: block; }
+.nv-progress-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 0 2px 2px 0; transition: width 0.1s linear; }
 
 /* ═════════════ Trash + version history ═════════════ */
 .nv-lib-head { display: flex; align-items: flex-end; gap: 16px; }
@@ -35452,6 +35481,7 @@ kbd {
                 <button class="nv-ib nv-hide-focus" id="nvInspBtn" type="button" title="Note info &amp; outline" aria-pressed="false"><i class="fa-solid fa-circle-info"></i></button>
                 <button class="nv-ib" type="button" data-close title="Close (Esc)" aria-label="Close Notes Vault"><i class="fa-solid fa-xmark"></i></button>
             </div>
+            <div class="nv-progress" id="nvProgress" aria-hidden="true"><div class="nv-progress-fill" id="nvProgressFill"></div></div>
             <div class="nv-tools" id="nvTools" role="toolbar" aria-label="Formatting" hidden>
                 <div class="nv-tools-in">
                     <div class="nv-tools-scroll" id="nvToolsScroll">
@@ -36230,9 +36260,33 @@ kbd {
             tb.replaceWith(w);
             w.appendChild(tb);
         });
+        highlightCode(tpl.content);
         tpl.content.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
         target.replaceChildren(tpl.content);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
+    }
+
+    // Syntax-highlight fenced code blocks (```js, ```py, …) with highlight.js, and tag each
+    // block with its detected language for the little corner label. No-op if hljs failed to load.
+    function highlightCode(root) {
+        if (!window.hljs) return;
+        root.querySelectorAll('pre > code').forEach((block) => {
+            const langClass = (block.className.match(/language-([\w-]+)/) || [])[1];
+            const known = langClass && hljs.getLanguage(langClass);
+            let res;
+            try {
+                res = known ? hljs.highlight(block.textContent, { language: langClass }) : hljs.highlightAuto(block.textContent);
+            } catch (e) { return; }
+            if (!res) return;
+            block.innerHTML = res.value;
+            block.classList.add('hljs');
+            // Explicit ```lang fences always get the label; auto-detected ones only when hljs is confident —
+            // avoids slapping a wrong-looking tag on plain text or ambiguous snippets.
+            const lang = (known ? langClass : res.language || '').toLowerCase();
+            if (lang && (known || (res.relevance || 0) > 0)) {
+                block.closest('pre').setAttribute('data-lang', lang);
+            }
+        });
     }
 
     /* ═════════════ Document view ═════════════ */
@@ -36327,6 +36381,31 @@ kbd {
         el.statRight.textContent = words.toLocaleString() + ' words · ' + md.length.toLocaleString() + ' characters';
     }
 
+    /* Reading progress bar — only meaningful in Read mode, and only when the note
+       actually needs scrolling. Recomputed synchronously whenever the doc's layout
+       could have changed (mode switch, revision preview, font size / width, resize);
+       on scroll itself it's throttled to one update per animation frame so fast
+       scrolling doesn't spam layout work. */
+    function updateProgress() {
+        if (!el.progress) return;
+        if (!S.note || S.mode !== 'read') { el.progress.classList.remove('nv-progress-on'); return; }
+        const sc = el.docScroll;
+        const max = sc.scrollHeight - sc.clientHeight;
+        if (max <= 24) {                       // note fits on screen — nothing to track
+            el.progress.classList.remove('nv-progress-on');
+            el.progressFill.style.width = '0%';
+            return;
+        }
+        el.progress.classList.add('nv-progress-on');
+        const pct = Math.min(100, Math.max(0, (sc.scrollTop / max) * 100));
+        el.progressFill.style.width = pct.toFixed(1) + '%';
+    }
+    let S_progressRAF = null;
+    function scheduleProgress() {
+        if (S_progressRAF) return;
+        S_progressRAF = requestAnimationFrame(() => { S_progressRAF = null; updateProgress(); });
+    }
+
     function scheduleDerived() {
         clearTimeout(S.derivedTimer);
         S.derivedTimer = setTimeout(() => {
@@ -36367,6 +36446,7 @@ kbd {
         renderOutline();
         if (edit) refreshToolbar();
         if (edit && focus) el.src.focus();
+        updateProgress();
     }
 
     async function openNote(id) {
@@ -36474,6 +36554,7 @@ kbd {
         renderOutline();
         paintHistory();
         closeDrawers();
+        updateProgress();
     }
     function exitRevView() {
         if (!S.viewRev) return;
@@ -37228,6 +37309,7 @@ kbd {
         el.fsDown.disabled = S.fs === 0;
         el.fsUp.disabled = S.fs === FS_STEPS.length - 1;
         fitTitle();
+        updateProgress();
     }
     function saveReading() { try { localStorage.setItem('nvReading', JSON.stringify({ fs: S.fs, wd: S.wd })); } catch (e) { /* ignore */ } }
     function toggleFocus(force) {
@@ -37947,6 +38029,7 @@ kbd {
             storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'),
             lib: $('nvLib'), libScroll: $('nvLibScroll'), libTitle: $('nvLibTitle'), libSub: $('nvLibSub'), list: $('nvList'),
             docView: $('nvDocView'), docScroll: $('nvDocScroll'), title: $('nvTitle'), docMeta: $('nvDocMeta'),
+            progress: $('nvProgress'), progressFill: $('nvProgressFill'),
             read: $('nvRead'), src: $('nvSrc'), modeRead: $('nvModeRead'), modeEdit: $('nvModeEdit'),
             moreBtn: $('nvMoreBtn'), docMenu: $('nvDocMenu'), inspBtn: $('nvInspBtn'), focusBtn: $('nvFocusBtn'), fsDown: $('nvFsDown'), fsUp: $('nvFsUp'), widthBtn: $('nvWidthBtn'),
             insp: $('nvInsp'), tabInfo: $('nvTabInfo'), tabOutline: $('nvTabOutline'), paneInfo: $('nvPaneInfo'), paneOutline: $('nvPaneOutline'),
@@ -37978,7 +38061,10 @@ kbd {
         $('nvNewBtn').addEventListener('click', newNote);
         el.scrim.addEventListener('click', closeDrawers);
         $('nvMenuBtn').addEventListener('click', () => { S.sideOpen = true; applyLayout(); });
-        window.addEventListener('resize', () => { if (S.open) applyLayout(); });
+        window.addEventListener('resize', () => { if (S.open) applyLayout(); updateProgress(); });
+
+        // reading progress bar — follows scroll in Read mode, throttled to one paint per frame
+        el.docScroll.addEventListener('scroll', scheduleProgress, { passive: true });
 
         // sidebar navigation
         el.sideScroll.addEventListener('click', (e) => {
