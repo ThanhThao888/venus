@@ -35016,7 +35016,10 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-prose li { margin: 0.25em 0; }
 .nv-prose li > ul, .nv-prose li > ol { margin: 0.25em 0 0.4em; }
 .nv-prose li::marker { color: var(--primary); }
-.nv-prose input[type="checkbox"] { accent-color: var(--primary); margin-right: 0.5em; padding: 0; }
+.nv-prose input[type="checkbox"] { accent-color: var(--primary); margin-right: 0.5em; padding: 0; cursor: pointer; }
+.nv-prose input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.7; }
+.nv-prose li:has(> input[type="checkbox"]) { list-style: none; }
+.nv-prose li:has(> input[type="checkbox"]:checked) { color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--border-color); }
 .nv-prose strong { font-weight: 700; }
 .nv-prose a { color: var(--primary-dark); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(var(--primary-rgb), 0.5); }
 .nv-prose a:hover { text-decoration-color: currentColor; }
@@ -35025,6 +35028,27 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     border-radius: 0 10px 10px 0; background: rgba(var(--primary-rgb), 0.07); color: var(--text-dark);
 }
 .nv-prose blockquote > :last-child { margin-bottom: 0; }
+
+/* ── Callouts: `> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!QUESTION]`
+   blockquotes get promoted into a labelled, coloured box instead of a plain quote. ── */
+.nv-callout {
+    --nv-callout-c: var(--primary);
+    margin: 1.3em 0; padding: 12px 16px 14px; border: 1px solid var(--border-color); border-left: 4px solid var(--nv-callout-c);
+    border-radius: 4px 10px 10px 4px; background: color-mix(in srgb, var(--nv-callout-c) 8%, var(--bg-white));
+}
+.nv-callout-title {
+    display: flex; align-items: center; gap: 9px;
+    font-family: var(--nv-sans); font-weight: 700; font-size: 0.92rem; color: var(--nv-callout-c);
+}
+.nv-callout-title i { font-size: 0.85rem; width: 1em; text-align: center; }
+.nv-callout-body { margin-top: 7px; font-family: var(--nv-serif); font-size: 0.97em; line-height: 1.68; color: var(--text-dark); }
+.nv-callout-body > :first-child { margin-top: 0; }
+.nv-callout-body > :last-child { margin-bottom: 0; }
+.nv-callout-tip { --nv-callout-c: var(--nv-ok); }
+.nv-callout-important { --nv-callout-c: var(--nv-danger); }
+.nv-callout-warning { --nv-callout-c: var(--nv-warn); }
+.nv-callout-question { --nv-callout-c: var(--primary-dark); }
+
 .nv-prose code { font-family: var(--nv-mono); font-size: 0.84em; padding: 1px 6px; border-radius: 5px; background: rgba(var(--primary-rgb), 0.13); }
 .nv-prose pre { position: relative; margin: 1.2em 0; padding: 14px 16px; overflow-x: auto; border-radius: 12px; background: var(--bg-light); border: 1px solid var(--border-color); line-height: 1.6; }
 .nv-prose pre code { padding: 0; background: none; font-size: 0.85rem; }
@@ -36236,7 +36260,7 @@ kbd {
     }
 
     /* ═════════════ Markdown → reading view ═════════════ */
-    function renderInto(target, md) {
+    function renderInto(target, md, interactive) {
         if (!md.trim()) {
             target.innerHTML = '<p class="nv-blank">Nothing here yet — switch to Edit and start writing.</p>';
             return;
@@ -36261,6 +36285,13 @@ kbd {
             w.appendChild(tb);
         });
         highlightCode(tpl.content);
+        convertCallouts(tpl.content);
+        // GFM task checkboxes ("- [ ] …") come out of marked as disabled inputs — leave them
+        // disabled while previewing an old revision (read-only), otherwise make them clickable;
+        // the click handler on el.read does the actual toggling + writes back to the source.
+        if (interactive !== false) {
+            tpl.content.querySelectorAll('li > input[type="checkbox"]').forEach((cb) => { cb.disabled = false; });
+        }
         tpl.content.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
         target.replaceChildren(tpl.content);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
@@ -36286,6 +36317,58 @@ kbd {
             if (lang && (known || (res.relevance || 0) > 0)) {
                 block.closest('pre').setAttribute('data-lang', lang);
             }
+        });
+    }
+
+    // Obsidian-style callouts: a blockquote whose first line is "[!TYPE]" (optionally
+    // followed by a custom title on the same line) becomes a labelled, coloured box.
+    // Unrecognised types still render as a callout (falls back to the Note look) rather
+    // than being left as a plain quote, so a typo in the type name doesn't look broken.
+    const CALLOUT_TYPES = {
+        note: { icon: 'circle-info', label: 'Note' },
+        tip: { icon: 'lightbulb', label: 'Tip' },
+        important: { icon: 'circle-exclamation', label: 'Important' },
+        warning: { icon: 'triangle-exclamation', label: 'Warning' },
+        question: { icon: 'circle-question', label: 'Question' },
+        info: 'note', abstract: 'note', summary: 'note', example: 'note', quote: 'note',
+        hint: 'tip', success: 'tip', check: 'tip', done: 'tip',
+        caution: 'warning', danger: 'warning', bug: 'warning', attention: 'warning',
+        help: 'question', faq: 'question'
+    };
+    function convertCallouts(root) {
+        root.querySelectorAll('blockquote').forEach((bq) => {
+            const first = bq.firstElementChild;
+            if (!first || first.tagName !== 'P') return;
+            const m = first.innerHTML.match(/^\s*\[!([A-Za-z][\w-]*)\]\s*([\s\S]*)$/i);
+            if (!m) return;
+            const key = m[1].toLowerCase();
+            let entry = CALLOUT_TYPES[key];
+            if (typeof entry === 'string') entry = CALLOUT_TYPES[entry];
+            const known = !!entry;
+            entry = entry || CALLOUT_TYPES.note;
+            const defaultTitle = known ? entry.label : key.charAt(0).toUpperCase() + key.slice(1);
+
+            const br = m[2].match(/^([\s\S]*?)<br\s*\/?>([\s\S]*)$/i);
+            const titleHTML = (br ? br[1] : m[2]).trim();
+            const restOfFirstP = br ? br[2] : '';
+
+            const box = document.createElement('div');
+            box.className = 'nv-callout' + (known ? ' nv-callout-' + key : '');
+            const titleEl = document.createElement('div');
+            titleEl.className = 'nv-callout-title';
+            titleEl.innerHTML = '<i class="fa-solid fa-' + entry.icon + '" aria-hidden="true"></i><span>' + (titleHTML || defaultTitle) + '</span>';
+            const bodyEl = document.createElement('div');
+            bodyEl.className = 'nv-callout-body';
+            if (restOfFirstP.trim()) {
+                const p = document.createElement('p');
+                p.innerHTML = restOfFirstP;
+                bodyEl.appendChild(p);
+            }
+            let sib = first.nextSibling;
+            while (sib) { const next = sib.nextSibling; bodyEl.appendChild(sib); sib = next; }
+            box.appendChild(titleEl);
+            if (bodyEl.childNodes.length) box.appendChild(bodyEl);
+            bq.replaceWith(box);
         });
     }
 
@@ -36549,7 +36632,7 @@ kbd {
         el.title.value = rev.title;
         el.title.readOnly = true;
         fitTitle();
-        renderInto(el.read, rev.markdown);
+        renderInto(el.read, rev.markdown, false);
         el.docScroll.scrollTop = 0;
         renderOutline();
         paintHistory();
@@ -36693,6 +36776,33 @@ kbd {
         S.toastAct = act || null;
         el.toast.hidden = false;
         S.toastTimer = setTimeout(hideToast, act ? 9000 : 3500);
+    }
+    // Matches a GFM task marker at the start of a (non-fenced) list-item line: bullet or
+    // ordered marker, then "[ ]" / "[x]" / "[X]". Only the bracket itself is captured/replaced,
+    // so anything else on the line is left untouched.
+    const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\](?=\s|$)/;
+    // Flips the n-th task checkbox (in document order, skipping fenced code blocks so a literal
+    // "- [ ]" inside a code sample doesn't throw off the count) in the current note's markdown.
+    // Returns true if a matching line was found and toggled.
+    function toggleTaskAt(index) {
+        if (!S.note) return false;
+        const lines = S.note.markdown.split('\n');
+        let count = 0, inFence = false;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (/^\s*(`{3,}|~{3,})/.test(line)) { inFence = !inFence; continue; }
+            if (inFence) continue;
+            const m = TASK_RE.exec(line);
+            if (!m) continue;
+            if (count === index) {
+                const next = m[2].toLowerCase() === 'x' ? ' ' : 'x';
+                lines[i] = line.slice(0, m[1].length) + '[' + next + ']' + line.slice(m[1].length + 3);
+                S.note.markdown = lines.join('\n');
+                return true;
+            }
+            count++;
+        }
+        return false;
     }
     function markDirty() {
         if (!S.note) return;
@@ -37118,7 +37228,7 @@ kbd {
             let first = true;
             return lines.map((l, i) => {
                 if (!t[i]) return l;
-                const label = first ? '**Important:** ' : '';
+                const label = first ? '[!IMPORTANT] ' : '';
                 first = false;
                 return '> ' + label + l.replace(/^\s*>[ \t]?/, '');
             });
@@ -38145,6 +38255,21 @@ kbd {
             if (e.key === 'Enter') { e.preventDefault(); if (S.mode === 'edit') el.src.focus(); else el.title.blur(); }
         });
         el.src.addEventListener('input', () => { S.note.markdown = el.src.value; markDirty(); });
+
+        // Task checkboxes in Read mode: click toggles the box AND the "[ ]"/"[x]" in the
+        // markdown source, kept in sync via markDirty() (same path as any other edit).
+        el.read.addEventListener('click', (e) => {
+            const cb = e.target.closest('input[type="checkbox"]');
+            if (!cb) return;
+            e.preventDefault();                 // we drive the checked state ourselves, after the source edit
+            if (S.viewRev || cb.disabled || !S.note) return;   // read-only revision preview
+            const items = [...el.read.querySelectorAll('input[type="checkbox"]')];
+            const idx = items.indexOf(cb);
+            if (idx === -1 || !toggleTaskAt(idx)) return;
+            cb.checked = !cb.checked;
+            el.src.value = S.note.markdown;
+            markDirty();
+        });
 
         // formatting toolbar
         const tip = (b) => {
