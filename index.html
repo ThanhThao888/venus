@@ -7,7 +7,7 @@
     <title> Finance Career Skills Tracker </title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33359,234 +33359,7 @@ window.DBP={
         </div>
         <!-- End Edit Book Modal -->
 
-        <!-- ===================================================================
-             MD NOTES — quick markdown notes (prompt / study note / transcript)
-             =================================================================== -->
-        <style>
-        .mdn-storage-wrap { margin-bottom: 14px; }
-        .mdn-storage-bar {
-            width: 100%; height: 6px; border-radius: 4px;
-            background: var(--bg-light); overflow: hidden; border: 1px solid var(--border-color);
-        }
-        .mdn-storage-fill { height: 100%; width: 0%; background: var(--primary); transition: width 0.4s ease, background 0.4s ease; }
-        .mdn-storage-label { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
-
-        .mdn-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-        .mdn-search-wrap {
-            flex: 1; min-width: 140px; display: flex; align-items: center; gap: 6px;
-            background: var(--bg-light); border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm); padding: 6px 10px; color: var(--text-muted);
-        }
-        .mdn-search-wrap svg { width: 15px; height: 15px; flex-shrink: 0; }
-        .mdn-search-wrap input {
-            border: none; background: transparent; outline: none; width: 100%;
-            color: var(--text-dark); font-size: 0.85rem;
-        }
-        .mdn-filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-        .mdn-chip {
-            padding: 7px 14px; border-radius: 20px; border: 1px solid var(--border-color);
-            background: var(--bg-light); color: var(--text-muted); font-size: 0.82rem; font-weight: 600;
-            cursor: pointer; transition: var(--transition); white-space: nowrap;
-        }
-        .mdn-chip:hover { border-color: var(--primary); color: var(--text-dark); }
-        .mdn-chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
-
-        .mdn-actions-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-        .mdn-btn {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 7px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);
-            background: var(--bg-light); color: var(--text-dark); font-size: 0.82rem; font-weight: 600;
-            cursor: pointer; transition: var(--transition);
-        }
-        .mdn-btn svg { width: 14px; height: 14px; }
-        .mdn-btn:hover { background: var(--primary-light); border-color: var(--primary); }
-        .mdn-btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
-        .mdn-btn-primary:hover { background: var(--primary-dark); }
-        .mdn-btn-danger { background: transparent; color: #e74c3c; border-color: rgba(231,76,60,0.3); }
-        .mdn-btn-danger:hover { background: rgba(231,76,60,0.1); }
-
-        .mdn-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
-        .mdn-empty { text-align: center; padding: 24px 10px; color: var(--text-muted); font-size: 0.85rem; }
-
-        .mdn-item {
-            display: flex; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md);
-            background: var(--bg-light); border: 1px solid var(--border-color); cursor: pointer;
-            transition: var(--transition);
-        }
-        .mdn-item:hover { box-shadow: var(--shadow-sm); border-color: var(--primary); transform: translateY(-1px); }
-        .mdn-item-icon { flex-shrink: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
-        .mdn-item-icon svg { width: 18px; height: 18px; }
-        .mdn-item-body { min-width: 0; flex: 1; }
-        .mdn-item-title { font-weight: 700; font-size: 0.88rem; color: var(--text-dark); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .mdn-item-preview { font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
-        .mdn-item-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .mdn-badge { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
-        .mdn-item-date, .mdn-item-len { font-size: 0.68rem; color: var(--text-muted); }
-
-        .mdn-modal-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 10000;
-            display: flex; align-items: center; justify-content: center; padding: 20px;
-        }
-        .mdn-modal {
-            background: var(--bg-white); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-            width: 100%; max-width: 860px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
-        }
-        .mdn-modal-header { display: flex; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color); align-items: center; }
-        .mdn-title-input {
-            flex: 1; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-            padding: 8px 10px; font-size: 0.95rem; font-weight: 700; background: var(--bg-light); color: var(--text-dark);
-        }
-        .mdn-type-select { border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-light); color: var(--text-dark); padding: 8px; font-size: 0.82rem; }
-        .mdn-icon-btn { background: transparent; border: none; cursor: pointer; color: var(--text-muted); padding: 6px; border-radius: var(--radius-sm); display: flex; }
-        .mdn-icon-btn svg { width: 18px; height: 18px; }
-        .mdn-icon-btn:hover { background: var(--bg-light); color: var(--text-dark); }
-
-        .mdn-modal-toolbar { display: flex; align-items: center; gap: 4px; padding: 8px 16px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
-        .mdn-tab-btn {
-            display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: var(--radius-sm);
-            border: none; background: transparent; color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer;
-        }
-        .mdn-tab-btn svg { width: 14px; height: 14px; }
-        .mdn-tab-btn.active { background: var(--primary-light); color: var(--primary-dark); }
-        .mdn-char-count { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); }
-
-        .mdn-modal-body { flex: 1; overflow: hidden; display: flex; min-height: 0; }
-        .mdn-modal-body.mdn-split .mdn-textarea,
-        .mdn-modal-body.mdn-split .mdn-preview-pane { width: 50%; }
-        .mdn-textarea {
-            flex: 1; width: 100%; border: none; outline: none; resize: none; padding: 16px;
-            background: var(--bg-white); color: var(--text-dark); font-family: 'SFMono-Regular', Consolas, Menlo, monospace;
-            font-size: 0.88rem; line-height: 1.6; overflow-y: auto;
-        }
-        .mdn-preview-pane {
-            flex: 1; padding: 16px; overflow-y: auto; color: var(--text-dark); line-height: 1.65;
-            border-left: 1px solid var(--border-color);
-        }
-        .mdn-preview-pane h1, .mdn-preview-pane h2, .mdn-preview-pane h3 {
-            margin: 0.6em 0 0.35em; color: var(--primary-dark); font-weight: 700; line-height: 1.3;
-        }
-        .mdn-preview-pane h1 { font-size: 1.4rem; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
-        .mdn-preview-pane h2 { font-size: 1.2rem; }
-        .mdn-preview-pane h3 { font-size: 1.05rem; }
-        .mdn-preview-pane p { margin: 0.5em 0; }
-        .mdn-preview-pane strong { color: var(--text-dark); font-weight: 700; }
-        .mdn-preview-pane code {
-            background: var(--bg-light); padding: 1px 5px; border-radius: 4px; font-size: 0.85em;
-            font-family: Consolas, Menlo, monospace;
-        }
-        .mdn-preview-pane pre {
-            background: var(--bg-light); padding: 10px 12px; border-radius: var(--radius-sm);
-            overflow-x: auto; border: 1px solid var(--border-color);
-        }
-        .mdn-preview-pane pre code { background: none; padding: 0; }
-        .mdn-preview-pane blockquote {
-            border-left: 3px solid var(--primary); margin: 0.6em 0; padding: 2px 12px;
-            color: var(--text-muted); background: var(--bg-light);
-        }
-        .mdn-preview-pane ul, .mdn-preview-pane ol { padding-left: 1.4em; margin: 0.5em 0; }
-        .mdn-preview-pane a { color: var(--primary); }
-        .mdn-preview-pane hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
-        .mdn-preview-pane table { border-collapse: collapse; width: 100%; margin: 0.6em 0; font-size: 0.85rem; }
-        .mdn-preview-pane th, .mdn-preview-pane td { border: 1px solid var(--border-color); padding: 6px 8px; text-align: left; }
-
-        .mdn-modal-footer { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border-color); }
-        .mdn-save-indicator { font-size: 0.75rem; color: var(--text-muted); }
-
-        @media (max-width: 640px) {
-            .mdn-modal { max-width: 100%; max-height: 94vh; }
-            .mdn-modal-body.mdn-split { flex-direction: column; overflow-y: auto; }
-            .mdn-modal-body.mdn-split .mdn-textarea,
-            .mdn-modal-body.mdn-split .mdn-preview-pane { width: 100%; }
-        }
-        </style>
-
-        <div class="sidebar-card" id="mdNotesSection" style="margin-top: 20px;">
-            <h3 class="sidebar-title"><svg class="icon-svg" aria-hidden="true"><use href="#icon-notebook"></use></svg> Quick Notes</h3>
-
-            <div class="mdn-storage-wrap">
-                <div class="mdn-storage-bar"><div class="mdn-storage-fill" id="mdnStorageFill"></div></div>
-                <div class="mdn-storage-label" id="mdnStorageLabel">Calculating...</div>
-            </div>
-
-            <div class="mdn-toolbar">
-                <div class="mdn-search-wrap">
-                    <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-search"></use></svg>
-                    <input type="text" id="mdnSearchInput" placeholder="Search notes..." oninput="mdnRenderList()">
-                </div>
-            </div>
-
-            <div class="mdn-filter-chips" id="mdnFilterChips">
-                <button class="mdn-chip active" data-type="all" onclick="mdnSetFilter('all')">All</button>
-                <button class="mdn-chip" data-type="prompt" onclick="mdnSetFilter('prompt')">Prompt</button>
-                <button class="mdn-chip" data-type="study" onclick="mdnSetFilter('study')">Study Note</button>
-                <button class="mdn-chip" data-type="transcript" onclick="mdnSetFilter('transcript')">Transcript</button>
-                <button class="mdn-chip" data-type="other" onclick="mdnSetFilter('other')">Other</button>
-            </div>
-
-            <div class="mdn-actions-row">
-                <button class="mdn-btn mdn-btn-primary" onclick="mdnOpenEditor()">
-                    <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-plus"></use></svg> New Note
-                </button>
-                <button class="mdn-btn" onclick="mdnExportAll()" title="Back up all notes to a JSON file">
-                    <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-download"></use></svg> Export
-                </button>
-                <button class="mdn-btn" onclick="document.getElementById('mdnImportInput').click()" title="Import from a backup file">
-                    <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-upload"></use></svg> Import
-                </button>
-                <input type="file" id="mdnImportInput" accept=".json,application/json" style="display:none" onchange="mdnImportFile(event)">
-            </div>
-
-            <div id="mdnListContainer" class="mdn-list"></div>
-        </div>
-
-        <!-- MD Notes editor modal -->
-        <div id="mdnEditorModal" class="mdn-modal-overlay" style="display:none;" onclick="if(event.target===this) mdnCloseEditor()">
-            <div class="mdn-modal">
-                <div class="mdn-modal-header">
-                    <input type="text" id="mdnTitleInput" placeholder="Note title..." class="mdn-title-input">
-                    <select id="mdnTypeInput" class="mdn-type-select">
-                        <option value="prompt">Prompt</option>
-                        <option value="study">Study Note</option>
-                        <option value="transcript">Transcript</option>
-                        <option value="other">Other</option>
-                    </select>
-                    <button class="mdn-icon-btn" onclick="mdnCloseEditor()" title="Close">
-                        <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-x"></use></svg>
-                    </button>
-                </div>
-
-                <div class="mdn-modal-toolbar">
-                    <button class="mdn-tab-btn active" id="mdnTabEdit" onclick="mdnSwitchTab('edit')">
-                        <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-pencil"></use></svg> Edit
-                    </button>
-                    <button class="mdn-tab-btn" id="mdnTabPreview" onclick="mdnSwitchTab('preview')">
-                        <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-eye"></use></svg> Preview
-                    </button>
-                    <button class="mdn-tab-btn" id="mdnTabSplit" onclick="mdnSwitchTab('split')">
-                        <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-layers"></use></svg> Split
-                    </button>
-                    <span class="mdn-char-count" id="mdnCharCount">0 characters</span>
-                </div>
-
-                <div class="mdn-modal-body" id="mdnModalBody">
-                    <textarea id="mdnContentInput" class="mdn-textarea" placeholder="Type here... # Heading, **bold**, - list, &#96;&#96;&#96;code&#96;&#96;&#96;..." oninput="mdnOnContentInput()" spellcheck="false"></textarea>
-                    <div id="mdnPreviewPane" class="mdn-preview-pane" style="display:none;"></div>
-                </div>
-
-                <div class="mdn-modal-footer">
-                    <button class="mdn-btn mdn-btn-danger" id="mdnDeleteBtn" onclick="mdnDeleteCurrent()" style="display:none;">
-                        <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-trash-2"></use></svg> Delete
-                    </button>
-                    <div style="flex:1;"></div>
-                    <span class="mdn-save-indicator" id="mdnSaveIndicator"></span>
-                    <button class="mdn-btn" onclick="mdnCloseEditor()">Cancel</button>
-                    <button class="mdn-btn mdn-btn-primary" onclick="mdnSaveCurrent()">
-                        <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#icon-save"></use></svg> Save
-                    </button>
-                </div>
-            </div>
-        </div>
-        <!-- End MD Notes -->
+        
 
         
                     <div class="sidebar-card" id="dataManagementCard">
@@ -34944,6 +34717,645 @@ window.DBP={
             </div>
         </div>
     </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+     NOTES VAULT — Markdown note storage (IndexedDB), unlimited length.
+     Stores prompts / study notes / transcripts / research / anything you
+     paste, renders # and ** etc. as real headings/bold, autosaves, and
+     lets you export any note as a real .md file whenever you want it in
+     Obsidian. Primary storage is IndexedDB (not localStorage), so long
+     pastes won't hit the ~5MB localStorage ceiling.
+════════════════════════════════════════════════════════════════════ -->
+<style>
+    #nvFab {
+        position: fixed;
+        bottom: 90px; left: 20px;
+        width: 52px; height: 52px;
+        border-radius: 50%;
+        background: rgba(107, 191, 168, 0.14);
+        color: #2f7a63; border: 1px solid #6bbfa8; cursor: pointer;
+        backdrop-filter: blur(2px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        z-index: 1000;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem;
+        transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s;
+        outline: none;
+    }
+    #nvFab:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    #nvFab:focus-visible { outline: 2px solid #2f7a63; outline-offset: 2px; }
+    .dark-mode #nvFab { background: rgba(31, 44, 40, 0.75); color: #8fe0c6; border-color: #3fa585; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    #nvFab.nv-open { transform: rotate(90deg) scale(1.05); background: rgba(239,68,68,0.15); color:#ef4444; border-color:#ef4444; }
+    @media (max-width: 640px) {
+        #nvFab { bottom: calc(142px + env(safe-area-inset-bottom)); left: 16px; width: 46px; height: 46px; font-size: 1.05rem; }
+    }
+
+    #nvPanel {
+        position: fixed; bottom: 154px; left: 20px;
+        width: 420px; max-width: calc(100vw - 32px);
+        height: 72vh; max-height: 640px;
+        background: var(--bg-white);
+        border-radius: 18px;
+        box-shadow: 0 12px 48px rgba(0,0,0,0.18), 0 2px 8px rgba(47,122,99,0.14);
+        border: 1px solid var(--border-color);
+        z-index: 999; display: flex; flex-direction: column; overflow: hidden;
+        transform: translateY(12px) scale(0.97); opacity: 0; pointer-events: none;
+        transition: all 0.22s cubic-bezier(0.34,1.2,0.64,1);
+    }
+    #nvPanel.nv-visible { transform: translateY(0) scale(1); opacity: 1; pointer-events: all; }
+    @media (max-width: 640px) {
+        #nvPanel { bottom: calc(196px + env(safe-area-inset-bottom)); left: 16px; height: 68vh; }
+    }
+
+    .nv-header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; padding: 12px 14px 10px; flex-shrink: 0;
+        border-bottom: 1px solid var(--border-color);
+        background: linear-gradient(90deg, rgba(107,191,168,0.10), rgba(209,123,150,0.06));
+    }
+    .nv-header-title { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 0.92rem; color: var(--text-dark); }
+    .nv-header-title i { color: #2f7a63; }
+    .dark-mode .nv-header-title i { color: #8fe0c6; }
+    .nv-header-btns { display: flex; align-items: center; gap: 6px; }
+    .nv-icon-btn {
+        width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border-color);
+        background: var(--bg-light); color: var(--text-muted); cursor: pointer;
+        display: flex; align-items: center; justify-content: center; font-size: 0.78rem;
+        transition: var(--transition);
+    }
+    .nv-icon-btn:hover { color: var(--text-dark); border-color: #6bbfa8; }
+    .nv-icon-btn.nv-danger:hover { color: #ef4444; border-color: #ef4444; }
+
+    /* ── List view ── */
+    .nv-toolbar { padding: 8px 12px; display: flex; gap: 6px; flex-shrink: 0; border-bottom: 1px solid var(--border-color); }
+    .nv-search { flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); font-size: 0.78rem; outline: none; }
+    .nv-search:focus { border-color: #6bbfa8; }
+    .nv-new-btn { flex-shrink: 0; padding: 6px 11px; border-radius: 8px; border: none; background: #2f7a63; color: #fff; font-size: 0.76rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+    .nv-new-btn:hover { background: #256250; }
+
+    .nv-filter-row { display: flex; gap: 5px; padding: 8px 12px 0; flex-wrap: wrap; flex-shrink: 0; }
+    .nv-chip { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-muted); font-size: 0.66rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .nv-chip.active { background: #2f7a63; border-color: #2f7a63; color: #fff; }
+
+    .nv-list { flex: 1; overflow-y: auto; padding: 8px 10px; }
+    .nv-empty { text-align: center; color: var(--text-muted); font-size: 0.78rem; padding: 36px 16px; }
+    .nv-empty i { font-size: 1.6rem; display: block; margin-bottom: 8px; opacity: 0.5; }
+    .nv-item {
+        display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border-radius: 10px;
+        cursor: pointer; margin-bottom: 4px; border: 1px solid transparent;
+        transition: var(--transition);
+    }
+    .nv-item:hover { background: var(--bg-light); border-color: var(--border-color); }
+    .nv-item-body { flex: 1; min-width: 0; }
+    .nv-item-title { font-size: 0.82rem; font-weight: 700; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
+    .nv-item-title .fa-star { color: #d99a6c; font-size: 0.7rem; }
+    .nv-item-snippet { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nv-item-meta { font-size: 0.62rem; color: var(--text-muted); margin-top: 3px; display: flex; gap: 6px; align-items: center; }
+    .nv-type-badge { padding: 1px 6px; border-radius: 999px; background: rgba(107,191,168,0.16); color: #2f7a63; font-weight: 800; letter-spacing: 0.2px; }
+    .dark-mode .nv-type-badge { background: rgba(143,224,198,0.14); color: #8fe0c6; }
+    .nv-item-del { flex-shrink: 0; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.78rem; padding: 4px; opacity: 0.55; }
+    .nv-item-del:hover { color: #ef4444; opacity: 1; }
+
+    .nv-footer { flex-shrink: 0; padding: 7px 12px; border-top: 1px solid var(--border-color); font-size: 0.62rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+    .nv-footer a { color: #2f7a63; cursor: pointer; font-weight: 700; text-decoration: none; }
+    .dark-mode .nv-footer a { color: #8fe0c6; }
+
+    /* ── Editor view ── */
+    #nvEditorView { display: none; flex-direction: column; flex: 1; min-height: 0; }
+    #nvEditorView.nv-active { display: flex; }
+    #nvListView { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    #nvListView.nv-hidden { display: none; }
+
+    .nv-editor-topbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+    .nv-back-btn { background: none; border: none; color: var(--text-muted); font-size: 0.85rem; cursor: pointer; padding: 4px 6px; }
+    .nv-back-btn:hover { color: var(--text-dark); }
+    .nv-save-status { font-size: 0.64rem; color: var(--text-muted); flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nv-save-status.nv-saved { color: #2f7a63; }
+    .dark-mode .nv-save-status.nv-saved { color: #8fe0c6; }
+
+    .nv-editor-fields { padding: 8px 10px 4px; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+    .nv-title-input { width: 100%; border: none; background: none; font-size: 0.95rem; font-weight: 800; color: var(--text-dark); outline: none; padding: 2px 0; }
+    .nv-title-input::placeholder { color: var(--text-muted); font-weight: 700; }
+    .nv-meta-row { display: flex; gap: 6px; align-items: center; }
+    .nv-type-select { flex: 1; padding: 4px 6px; border-radius: 7px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); font-size: 0.68rem; font-weight: 700; }
+    .nv-tags-input { flex: 1.4; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); font-size: 0.68rem; outline: none; }
+    .nv-pin-btn { flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-muted); cursor: pointer; font-size: 0.72rem; }
+    .nv-pin-btn.nv-pinned { background: rgba(217,154,108,0.16); color: #d99a6c; border-color: #d99a6c; }
+
+    .nv-tab-row { display: flex; gap: 4px; padding: 0 10px; flex-shrink: 0; }
+    .nv-tab { padding: 5px 12px; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; }
+    .nv-tab.active { color: #2f7a63; border-bottom-color: #2f7a63; }
+    .dark-mode .nv-tab.active { color: #8fe0c6; border-bottom-color: #8fe0c6; }
+
+    .nv-editor-body { flex: 1; min-height: 0; padding: 8px 10px 10px; display: flex; }
+    #nvMdInput {
+        flex: 1; width: 100%; resize: none; border: 1px solid var(--border-color);
+        border-radius: 10px; background: var(--bg-light); color: var(--text-dark);
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 0.78rem; line-height: 1.55; padding: 10px 11px; outline: none;
+    }
+    #nvMdInput:focus { border-color: #6bbfa8; }
+    #nvPreview {
+        flex: 1; width: 100%; overflow-y: auto; border: 1px solid var(--border-color);
+        border-radius: 10px; background: var(--bg-white); color: var(--text-dark);
+        padding: 12px 14px; font-size: 0.82rem; line-height: 1.6; display: none;
+    }
+    #nvPreview.nv-shown { display: block; }
+    #nvMdInput.nv-hidden-pane { display: none; }
+    #nvPreview h1, #nvPreview h2, #nvPreview h3 { font-family: 'Playfair Display', serif; color: var(--text-dark); margin: 0.6em 0 0.35em; line-height: 1.3; }
+    #nvPreview h1 { font-size: 1.3rem; } #nvPreview h2 { font-size: 1.12rem; } #nvPreview h3 { font-size: 1rem; }
+    #nvPreview p { margin: 0.5em 0; }
+    #nvPreview ul, #nvPreview ol { margin: 0.4em 0; padding-left: 1.3em; }
+    #nvPreview li { margin: 0.15em 0; }
+    #nvPreview strong { color: var(--text-dark); font-weight: 800; }
+    #nvPreview code { background: rgba(107,191,168,0.14); padding: 1px 5px; border-radius: 4px; font-size: 0.82em; }
+    #nvPreview pre { background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 8px; padding: 9px 11px; overflow-x: auto; }
+    #nvPreview pre code { background: none; padding: 0; }
+    #nvPreview blockquote { border-left: 3px solid #6bbfa8; margin: 0.5em 0; padding: 2px 12px; color: var(--text-muted); }
+    #nvPreview table { border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 0.8em; }
+    #nvPreview th, #nvPreview td { border: 1px solid var(--border-color); padding: 4px 8px; }
+    #nvPreview a { color: #2f7a63; }
+    #nvPreview:empty::before { content: 'Nothing to preview yet — write something in Edit first.'; color: var(--text-muted); font-style: italic; }
+
+    .nv-editor-footer { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border-color); flex-shrink: 0; }
+    .nv-footer-btn { flex: 1; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); font-size: 0.7rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; }
+    .nv-footer-btn:hover { border-color: #6bbfa8; }
+    .nv-footer-btn.nv-danger { color: #ef4444; }
+    .nv-footer-btn.nv-danger:hover { border-color: #ef4444; background: rgba(239,68,68,0.08); }
+</style>
+
+<button id="nvFab" onclick="NotesVault.toggle()" title="Notes Vault — paste prompts, transcripts, study notes (unlimited length, saved as Markdown)" aria-haspopup="dialog" aria-expanded="false" aria-controls="nvPanel">
+    <i class="fa-solid fa-book-open"></i>
+</button>
+
+<div id="nvPanel" role="dialog" aria-label="Notes Vault">
+    <div class="nv-header">
+        <div class="nv-header-title"><i class="fa-solid fa-book-open"></i> Notes Vault</div>
+        <div class="nv-header-btns">
+            <button class="nv-icon-btn" title="Export all notes (JSON backup)" onclick="NotesVault.exportAllJson()"><i class="fa-solid fa-download"></i></button>
+            <button class="nv-icon-btn" title="Import JSON backup" onclick="document.getElementById('nvImportFile').click()"><i class="fa-solid fa-upload"></i></button>
+            <button class="nv-icon-btn" title="Close" onclick="NotesVault.toggle()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <input type="file" id="nvImportFile" accept="application/json" style="display:none" onchange="NotesVault.importJson(this.files[0])">
+    </div>
+
+    <!-- LIST VIEW -->
+    <div id="nvListView">
+        <div class="nv-toolbar">
+            <input type="text" id="nvSearch" class="nv-search" placeholder="Search notes..." oninput="NotesVault.renderList()">
+            <button class="nv-new-btn" onclick="NotesVault.newNote()"><i class="fa-solid fa-plus"></i> New</button>
+        </div>
+        <div class="nv-filter-row" id="nvFilterRow">
+            <button class="nv-chip active" data-type="all" onclick="NotesVault.setFilter(this)">All</button>
+            <button class="nv-chip" data-type="prompt" onclick="NotesVault.setFilter(this)">Prompt</button>
+            <button class="nv-chip" data-type="study" onclick="NotesVault.setFilter(this)">Study</button>
+            <button class="nv-chip" data-type="transcript" onclick="NotesVault.setFilter(this)">Transcript</button>
+            <button class="nv-chip" data-type="research" onclick="NotesVault.setFilter(this)">Research</button>
+            <button class="nv-chip" data-type="general" onclick="NotesVault.setFilter(this)">General</button>
+            <button class="nv-chip" data-type="pinned" onclick="NotesVault.setFilter(this)"><i class="fa-solid fa-star"></i> Pinned</button>
+        </div>
+        <div class="nv-list" id="nvList"></div>
+        <div class="nv-footer">
+            <span id="nvStorageInfo">—</span>
+            <a onclick="NotesVault.requestPersist()" title="Ask the browser to protect this data from automatic eviction">Enable persistent storage</a>
+        </div>
+    </div>
+
+    <!-- EDITOR VIEW -->
+    <div id="nvEditorView">
+        <div class="nv-editor-topbar">
+            <button class="nv-back-btn" onclick="NotesVault.backToList()"><i class="fa-solid fa-arrow-left"></i></button>
+            <span class="nv-save-status" id="nvSaveStatus"></span>
+        </div>
+        <div class="nv-editor-fields">
+            <input type="text" id="nvTitleInput" class="nv-title-input" placeholder="Untitled note" oninput="NotesVault.scheduleSave()">
+            <div class="nv-meta-row">
+                <select id="nvTypeSelect" class="nv-type-select" onchange="NotesVault.scheduleSave()">
+                    <option value="prompt">Prompt</option>
+                    <option value="study">Study note</option>
+                    <option value="transcript">Transcript</option>
+                    <option value="research">Research</option>
+                    <option value="brain-dump">Brain dump</option>
+                    <option value="session">Session</option>
+                    <option value="general" selected>General</option>
+                </select>
+                <input type="text" id="nvTagsInput" class="nv-tags-input" placeholder="tags, comma, separated" oninput="NotesVault.scheduleSave()">
+                <button class="nv-pin-btn" id="nvPinBtn" title="Pin this note" onclick="NotesVault.togglePin()"><i class="fa-solid fa-star"></i></button>
+            </div>
+        </div>
+        <div class="nv-tab-row">
+            <button class="nv-tab active" id="nvTabEdit" onclick="NotesVault.setPane('edit')">Edit</button>
+            <button class="nv-tab" id="nvTabPreview" onclick="NotesVault.setPane('preview')">Preview</button>
+        </div>
+        <div class="nv-editor-body">
+            <textarea id="nvMdInput" placeholder="Paste anything here — prompts, transcripts, study notes... Markdown like # heading or **bold** will render properly in Preview. No length limit." oninput="NotesVault.scheduleSave()" spellcheck="false"></textarea>
+            <div id="nvPreview"></div>
+        </div>
+        <div class="nv-editor-footer">
+            <button class="nv-footer-btn" onclick="NotesVault.exportCurrentMd()"><i class="fa-solid fa-file-arrow-down"></i> Export .md</button>
+            <button class="nv-footer-btn nv-danger" onclick="NotesVault.deleteCurrent()"><i class="fa-solid fa-trash"></i> Delete</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const DB_NAME = 'FinanceTrackerVaultDB';
+    const DB_VERSION = 1;
+    const STORE = 'notes';
+
+    let dbPromise = null;
+    let isOpen = false;
+    let currentFilter = 'all';
+    let currentNote = null;      // note object currently being edited
+    let saveTimer = null;
+    let notesCache = [];
+
+    /* ───────── IndexedDB layer ───────── */
+    function openDb() {
+        if (dbPromise) return dbPromise;
+        dbPromise = new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(STORE)) {
+                    const store = db.createObjectStore(STORE, { keyPath: 'id' });
+                    store.createIndex('updatedAt', 'updatedAt');
+                    store.createIndex('type', 'type');
+                    store.createIndex('pinned', 'pinned');
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        return dbPromise;
+    }
+    async function dbPut(note) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE, 'readwrite');
+            tx.objectStore(STORE).put(note);
+            tx.oncomplete = () => resolve(note);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function dbGetAll() {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(STORE).objectStore(STORE).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function dbDelete(id) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE, 'readwrite');
+            tx.objectStore(STORE).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    function uid() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return 'nv-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    }
+
+    /* ───────── Markdown rendering ───────── */
+    function renderMarkdown(md) {
+        if (!md) return '';
+        try {
+            const raw = window.marked ? window.marked.parse(md) : md.replace(/\n/g, '<br>');
+            if (window.DOMPurify) return DOMPurify.sanitize(raw);
+            return raw;
+        } catch (e) {
+            console.warn('Notes Vault markdown render error:', e);
+            return md;
+        }
+    }
+
+    /* ───────── List rendering ───────── */
+    function typeLabel(t) {
+        return ({ prompt: 'Prompt', study: 'Study', transcript: 'Transcript', research: 'Research', 'brain-dump': 'Brain dump', session: 'Session', general: 'General' })[t] || 'General';
+    }
+    function snippetOf(md) {
+        const plain = (md || '').replace(/[#*`>_\-\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+        return plain.slice(0, 90);
+    }
+    function fmtTime(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        const now = new Date();
+        const sameDay = d.toDateString() === now.toDateString();
+        if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+
+    async function renderList() {
+        const listEl = document.getElementById('nvList');
+        if (!listEl) return;
+        notesCache = await dbGetAll();
+        notesCache.sort((a, b) => (b.pinned - a.pinned) || (b.updatedAt - a.updatedAt));
+
+        const q = (document.getElementById('nvSearch').value || '').toLowerCase().trim();
+        let filtered = notesCache;
+        if (currentFilter === 'pinned') filtered = filtered.filter(n => n.pinned);
+        else if (currentFilter !== 'all') filtered = filtered.filter(n => n.type === currentFilter);
+        if (q) {
+            filtered = filtered.filter(n =>
+                (n.title || '').toLowerCase().includes(q) ||
+                (n.markdown || '').toLowerCase().includes(q) ||
+                (n.tags || []).some(t => t.toLowerCase().includes(q))
+            );
+        }
+
+        if (filtered.length === 0) {
+            listEl.innerHTML = '<div class="nv-empty"><i class="fa-solid fa-feather"></i>' +
+                (notesCache.length === 0 ? 'No notes yet. Paste a prompt, transcript or study note and hit New.' : 'No notes match this search/filter.') +
+                '</div>';
+            updateStorageInfo();
+            return;
+        }
+
+        listEl.innerHTML = filtered.map(n => `
+            <div class="nv-item" onclick="NotesVault.openNote('${n.id}')">
+                <div class="nv-item-body">
+                    <div class="nv-item-title">${n.pinned ? '<i class="fa-solid fa-star"></i>' : ''}${escapeHtml(n.title || 'Untitled note')}</div>
+                    <div class="nv-item-snippet">${escapeHtml(snippetOf(n.markdown))}</div>
+                    <div class="nv-item-meta"><span class="nv-type-badge">${typeLabel(n.type)}</span><span>${fmtTime(n.updatedAt)}</span></div>
+                </div>
+                <button class="nv-item-del" title="Delete" onclick="event.stopPropagation(); NotesVault.deleteById('${n.id}')"><i class="fa-solid fa-trash"></i></button>
+            </div>
+        `).join('');
+
+        updateStorageInfo();
+    }
+
+    async function updateStorageInfo() {
+        const el = document.getElementById('nvStorageInfo');
+        if (!el) return;
+        const count = notesCache.length + ' note' + (notesCache.length === 1 ? '' : 's');
+        if (navigator.storage && navigator.storage.estimate) {
+            try {
+                const { usage, quota } = await navigator.storage.estimate();
+                const mb = (usage / (1024 * 1024)).toFixed(usage > 1024 * 1024 ? 1 : 2);
+                const pct = quota ? ((usage / quota) * 100).toFixed(2) : null;
+                el.textContent = count + ' · ' + mb + ' MB used' + (pct !== null ? ' (' + pct + '%)' : '');
+                return;
+            } catch (e) { /* fall through */ }
+        }
+        el.textContent = count;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }
+
+    /* ───────── Panel open/close ───────── */
+    function toggle() {
+        isOpen = !isOpen;
+        const panel = document.getElementById('nvPanel');
+        const fab = document.getElementById('nvFab');
+        panel.classList.toggle('nv-visible', isOpen);
+        fab.classList.toggle('nv-open', isOpen);
+        fab.querySelector('i').className = isOpen ? 'fa-solid fa-xmark' : 'fa-solid fa-book-open';
+        fab.setAttribute('aria-expanded', String(isOpen));
+        if (isOpen) {
+            backToList();
+            renderList();
+        }
+    }
+
+    function setFilter(btn) {
+        document.querySelectorAll('#nvFilterRow .nv-chip').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.type;
+        renderList();
+    }
+
+    /* ───────── Editor ───────── */
+    function backToList() {
+        document.getElementById('nvEditorView').classList.remove('nv-active');
+        document.getElementById('nvListView').classList.remove('nv-hidden');
+        currentNote = null;
+        renderList();
+    }
+
+    function showEditor() {
+        document.getElementById('nvListView').classList.add('nv-hidden');
+        document.getElementById('nvEditorView').classList.add('nv-active');
+        setPane('edit');
+    }
+
+    function newNote() {
+        const now = Date.now();
+        currentNote = {
+            id: uid(),
+            title: '',
+            markdown: '',
+            type: 'general',
+            tags: [],
+            pinned: false,
+            createdAt: now,
+            updatedAt: now
+        };
+        fillEditorFrom(currentNote);
+        showEditor();
+        document.getElementById('nvTitleInput').focus();
+        setSaveStatus('');
+    }
+
+    async function openNote(id) {
+        const notes = await dbGetAll();
+        const note = notes.find(n => n.id === id);
+        if (!note) return;
+        currentNote = note;
+        fillEditorFrom(note);
+        showEditor();
+        setSaveStatus('Saved locally · ' + fmtTime(note.updatedAt), true);
+    }
+
+    function fillEditorFrom(note) {
+        document.getElementById('nvTitleInput').value = note.title || '';
+        document.getElementById('nvTypeSelect').value = note.type || 'general';
+        document.getElementById('nvTagsInput').value = (note.tags || []).join(', ');
+        document.getElementById('nvMdInput').value = note.markdown || '';
+        document.getElementById('nvPreview').innerHTML = '';
+        updatePinBtn();
+    }
+
+    function updatePinBtn() {
+        const btn = document.getElementById('nvPinBtn');
+        if (!currentNote) return;
+        btn.classList.toggle('nv-pinned', !!currentNote.pinned);
+    }
+
+    function togglePin() {
+        if (!currentNote) return;
+        currentNote.pinned = !currentNote.pinned;
+        updatePinBtn();
+        scheduleSave(true);
+    }
+
+    function setPane(pane) {
+        const input = document.getElementById('nvMdInput');
+        const preview = document.getElementById('nvPreview');
+        const tabEdit = document.getElementById('nvTabEdit');
+        const tabPrev = document.getElementById('nvTabPreview');
+        if (pane === 'preview') {
+            preview.innerHTML = renderMarkdown(input.value);
+            input.classList.add('nv-hidden-pane');
+            preview.classList.add('nv-shown');
+            tabEdit.classList.remove('active');
+            tabPrev.classList.add('active');
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise([preview]).catch(() => {});
+            }
+        } else {
+            input.classList.remove('nv-hidden-pane');
+            preview.classList.remove('nv-shown');
+            tabEdit.classList.add('active');
+            tabPrev.classList.remove('active');
+        }
+    }
+
+    function setSaveStatus(text, saved) {
+        const el = document.getElementById('nvSaveStatus');
+        if (!el) return;
+        el.textContent = text;
+        el.classList.toggle('nv-saved', !!saved);
+    }
+
+    function scheduleSave(immediate) {
+        if (!currentNote) return;
+        setSaveStatus('Saving...');
+        clearTimeout(saveTimer);
+        const doSave = async () => {
+            currentNote.title = document.getElementById('nvTitleInput').value;
+            currentNote.type = document.getElementById('nvTypeSelect').value;
+            currentNote.tags = document.getElementById('nvTagsInput').value
+                .split(',').map(t => t.trim()).filter(Boolean);
+            currentNote.markdown = document.getElementById('nvMdInput').value;
+            currentNote.updatedAt = Date.now();
+            try {
+                await dbPut(currentNote);
+                setSaveStatus('Saved locally · ' + fmtTime(currentNote.updatedAt), true);
+            } catch (e) {
+                console.error('Notes Vault save failed:', e);
+                setSaveStatus('Save failed — check storage space');
+            }
+        };
+        if (immediate) { doSave(); return; }
+        saveTimer = setTimeout(doSave, 700);
+    }
+
+    async function deleteCurrent() {
+        if (!currentNote) return;
+        if (!confirm('Delete "' + (currentNote.title || 'Untitled note') + '"? This cannot be undone.')) return;
+        await dbDelete(currentNote.id);
+        backToList();
+    }
+
+    async function deleteById(id) {
+        const note = notesCache.find(n => n.id === id);
+        if (!confirm('Delete "' + (note ? (note.title || 'Untitled note') : 'this note') + '"? This cannot be undone.')) return;
+        await dbDelete(id);
+        renderList();
+    }
+
+    /* ───────── Export / Import ───────── */
+    function downloadBlob(content, filename, mime) {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function slugify(title) {
+        return (title || 'untitled-note').toLowerCase()
+            .replace(/[^a-z0-9\u00c0-\u024f\u1e00-\u1eff\s-]/gi, '')
+            .trim().replace(/\s+/g, '-').slice(0, 60) || 'untitled-note';
+    }
+
+    function exportCurrentMd() {
+        if (!currentNote) return;
+        // Save any pending edits first so the exported file matches the editor.
+        scheduleSave(true);
+        const meta = `tags: ${(currentNote.tags || []).join(', ')}\ntype: ${currentNote.type}\n`;
+        const content = (currentNote.title ? `# ${currentNote.title}\n\n` : '') + currentNote.markdown;
+        downloadBlob(content, slugify(currentNote.title) + '.md', 'text/markdown');
+    }
+
+    async function exportAllJson() {
+        const notes = await dbGetAll();
+        const payload = { app: 'FinanceTracker-NotesVault', exportedAt: new Date().toISOString(), notes };
+        downloadBlob(JSON.stringify(payload, null, 2), 'notes-vault-backup-' + new Date().toISOString().slice(0,10) + '.json', 'application/json');
+    }
+
+    function importJson(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                const notes = Array.isArray(data) ? data : (data.notes || []);
+                if (!Array.isArray(notes) || notes.length === 0) {
+                    alert('No notes found in that file.');
+                    return;
+                }
+                let count = 0;
+                for (const n of notes) {
+                    if (!n || typeof n.markdown !== 'string') continue;
+                    await dbPut({
+                        id: n.id || uid(),
+                        title: n.title || '',
+                        markdown: n.markdown,
+                        type: n.type || 'general',
+                        tags: Array.isArray(n.tags) ? n.tags : [],
+                        pinned: !!n.pinned,
+                        createdAt: n.createdAt || Date.now(),
+                        updatedAt: n.updatedAt || Date.now()
+                    });
+                    count++;
+                }
+                renderList();
+                alert('Imported ' + count + ' note(s).');
+            } catch (err) {
+                console.error(err);
+                alert('Could not read that file — is it a Notes Vault JSON backup?');
+            }
+        };
+        reader.readAsText(file);
+        document.getElementById('nvImportFile').value = '';
+    }
+
+    async function requestPersist() {
+        if (!navigator.storage || !navigator.storage.persist) {
+            alert('This browser does not support persistent storage requests.');
+            return;
+        }
+        try {
+            const granted = await navigator.storage.persist();
+            alert(granted ? 'Persistent storage granted — your notes are now protected from automatic browser cleanup.' : 'The browser did not grant persistent storage this time. Your notes are still saved, just without the extra protection.');
+        } catch (e) {
+            alert('Could not request persistent storage.');
+        }
+    }
+
+    window.NotesVault = {
+        toggle, setFilter, renderList, newNote, openNote, backToList,
+        togglePin, setPane, scheduleSave, deleteCurrent, deleteById,
+        exportCurrentMd, exportAllJson, importJson, requestPersist
+    };
+})();
+</script>
+
+
 
     <div id="bookDetailsModal" class="modal">
         <div class="modal-content">
@@ -70421,348 +70833,6 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
         }
     });
 })();
-</script>
-
-<!-- ============================================================
-     MD NOTES — quick markdown notes (prompt / study note / transcript)
-     Stored in localStorage under 'mdNotesData', compressed with LZString
-     when available so more text fits before the browser's storage limit.
-     ============================================================ -->
-<script>
-let mdNotes = [];
-try {
-    const rawMdn = localStorage.getItem('mdNotesData');
-    if (rawMdn) {
-        let decompressed = null;
-        if (window.LZString) {
-            try { decompressed = LZString.decompressFromUTF16(rawMdn); } catch (e) { decompressed = null; }
-        }
-        mdNotes = JSON.parse(decompressed || rawMdn);
-    }
-    if (!Array.isArray(mdNotes)) mdNotes = [];
-} catch (e) {
-    console.error('MD Notes data corrupted, resetting to empty list:', e);
-    mdNotes = [];
-}
-
-let mdnEditingId = null;
-let mdnCurrentTab = 'edit';
-let mdnPreviewDebounce = null;
-
-const MDN_TYPE_META = {
-    prompt:     { label: 'Prompt',      icon: 'icon-message-square', color: '#7048e8' },
-    study:      { label: 'Study Note',  icon: 'icon-book-open',      color: '#2ecc71' },
-    transcript: { label: 'Transcript',  icon: 'icon-mic',            color: '#e67e22' },
-    other:      { label: 'Other',       icon: 'icon-file-text',      color: '#3498db' }
-};
-
-let mdnCurrentFilter = 'all';
-
-function mdnSetFilter(type) {
-    mdnCurrentFilter = type;
-    document.querySelectorAll('#mdnFilterChips .mdn-chip').forEach(chip => {
-        chip.classList.toggle('active', chip.dataset.type === type);
-    });
-    mdnRenderList();
-}
-
-function mdnSaveToStorage() {
-    try {
-        const json = JSON.stringify(mdNotes);
-        const payload = window.LZString ? LZString.compressToUTF16(json) : json;
-        localStorage.setItem('mdNotesData', payload);
-        mdnUpdateStorageBar();
-        return true;
-    } catch (e) {
-        console.error('Failed to save MD Notes:', e);
-        if (typeof showNotification === 'function') {
-            showNotification("Couldn't save the note — storage might be full. Export your notes, then delete a few old ones.", 'error');
-        } else {
-            alert("Couldn't save the note — storage might be full.");
-        }
-        return false;
-    }
-}
-
-function mdnEsc(s) {
-    if (typeof escapeHtml === 'function') return escapeHtml(s || '');
-    const div = document.createElement('div');
-    div.textContent = s || '';
-    return div.innerHTML;
-}
-
-function mdnRenderMarkdown(text) {
-    if (!text) return '<p style="color:var(--text-muted);">(Empty)</p>';
-    try {
-        if (window.marked) return marked.parse(text);
-    } catch (e) {
-        console.warn('Markdown parse error:', e);
-    }
-    // Plain-text fallback in case marked hasn't loaded yet (rare, since it's loaded synchronously in <head>)
-    return mdnEsc(text)
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/\n/g, '<br>');
-}
-
-function mdnFormatDate(ts) {
-    const d = new Date(ts);
-    return d.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
-           ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-// Rough usage estimate: each JS character is ~2 bytes (UTF-16). The real
-// browser quota can't be queried precisely, so 5MB is used as a conservative
-// baseline (Safari is usually lower than Chrome/Edge's ~10MB) to warn early.
-function mdnGetStorageUsageBytes() {
-    let total = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        const v = localStorage.getItem(k) || '';
-        total += (k.length + v.length) * 2;
-    }
-    return total;
-}
-
-function mdnUpdateStorageBar() {
-    const fill = document.getElementById('mdnStorageFill');
-    const label = document.getElementById('mdnStorageLabel');
-    if (!fill || !label) return;
-    const usedBytes = mdnGetStorageUsageBytes();
-    const usedMB = usedBytes / (1024 * 1024);
-    const assumedQuotaMB = 5;
-    const pct = Math.min(100, (usedMB / assumedQuotaMB) * 100);
-    fill.style.width = pct + '%';
-    fill.style.background = pct > 85 ? '#e74c3c' : (pct > 60 ? '#f39c12' : 'var(--primary)');
-    label.textContent = `~${usedMB.toFixed(2)}MB used`;
-}
-
-// ----- List -----
-function mdnRenderList() {
-    const container = document.getElementById('mdnListContainer');
-    if (!container) return;
-    const query = (document.getElementById('mdnSearchInput')?.value || '').trim().toLowerCase();
-    const filterType = mdnCurrentFilter || 'all';
-
-    let list = mdNotes.slice().sort((a, b) => b.updatedAt - a.updatedAt);
-    if (filterType !== 'all') list = list.filter(n => n.type === filterType);
-    if (query) {
-        list = list.filter(n =>
-            (n.title || '').toLowerCase().includes(query) ||
-            (n.content || '').toLowerCase().includes(query)
-        );
-    }
-
-    if (!list.length) {
-        container.innerHTML = `<div class="mdn-empty">${query ? 'No notes match your search.' : 'No notes yet. Click "New Note" to get started.'}</div>`;
-        return;
-    }
-
-    container.innerHTML = list.map(n => {
-        const meta = MDN_TYPE_META[n.type] || MDN_TYPE_META.other;
-        const rawPreview = (n.content || '').replace(/[#*`>_~\[\]]/g, '').replace(/\s+/g, ' ').trim();
-        const preview = rawPreview.slice(0, 110);
-        return `
-            <div class="mdn-item" onclick="mdnOpenEditor('${n.id}')">
-                <div class="mdn-item-icon" style="color:${meta.color};">
-                    <svg class="icon-svg icon-inherit" aria-hidden="true"><use href="#${meta.icon}"></use></svg>
-                </div>
-                <div class="mdn-item-body">
-                    <div class="mdn-item-title">${mdnEsc(n.title || '(Untitled)')}</div>
-                    <div class="mdn-item-preview">${mdnEsc(preview)}${rawPreview.length > 110 ? '…' : ''}</div>
-                    <div class="mdn-item-meta">
-                        <span class="mdn-badge" style="background:${meta.color}22;color:${meta.color};">${meta.label}</span>
-                        <span class="mdn-item-date">${mdnFormatDate(n.updatedAt)}</span>
-                        <span class="mdn-item-len">${(n.content || '').length.toLocaleString('en-US')} chars</span>
-                    </div>
-                </div>
-            </div>`;
-    }).join('');
-}
-
-// ----- Editor -----
-function mdnOpenEditor(id) {
-    mdnEditingId = id || null;
-    const note = id ? mdNotes.find(n => n.id === id) : null;
-
-    document.getElementById('mdnTitleInput').value = note ? note.title : '';
-    document.getElementById('mdnTypeInput').value = note ? note.type : 'prompt';
-    document.getElementById('mdnContentInput').value = note ? note.content : '';
-    document.getElementById('mdnDeleteBtn').style.display = note ? 'inline-flex' : 'none';
-    document.getElementById('mdnSaveIndicator').textContent = '';
-
-    mdnSwitchTab('edit');
-    mdnUpdateCharCount();
-
-    document.getElementById('mdnEditorModal').style.display = 'flex';
-    setTimeout(() => document.getElementById('mdnTitleInput').focus(), 50);
-}
-
-function mdnCloseEditor() {
-    document.getElementById('mdnEditorModal').style.display = 'none';
-    mdnEditingId = null;
-}
-
-function mdnSwitchTab(tab) {
-    mdnCurrentTab = tab;
-    const body = document.getElementById('mdnModalBody');
-    const textarea = document.getElementById('mdnContentInput');
-    const preview = document.getElementById('mdnPreviewPane');
-
-    ['mdnTabEdit', 'mdnTabPreview', 'mdnTabSplit'].forEach(id => document.getElementById(id).classList.remove('active'));
-
-    if (tab === 'edit') {
-        document.getElementById('mdnTabEdit').classList.add('active');
-        body.classList.remove('mdn-split');
-        textarea.style.display = 'block';
-        preview.style.display = 'none';
-    } else if (tab === 'preview') {
-        document.getElementById('mdnTabPreview').classList.add('active');
-        body.classList.remove('mdn-split');
-        textarea.style.display = 'none';
-        preview.style.display = 'block';
-        mdnRefreshPreview();
-    } else {
-        document.getElementById('mdnTabSplit').classList.add('active');
-        body.classList.add('mdn-split');
-        textarea.style.display = 'block';
-        preview.style.display = 'block';
-        mdnRefreshPreview();
-    }
-}
-
-function mdnOnContentInput() {
-    mdnUpdateCharCount();
-    if (mdnCurrentTab === 'preview' || mdnCurrentTab === 'split') {
-        clearTimeout(mdnPreviewDebounce);
-        mdnPreviewDebounce = setTimeout(mdnRefreshPreview, 200);
-    }
-}
-
-function mdnRefreshPreview() {
-    const text = document.getElementById('mdnContentInput').value;
-    const pane = document.getElementById('mdnPreviewPane');
-    pane.innerHTML = mdnRenderMarkdown(text);
-    if (window.MathJax && window.MathJax.typesetPromise) {
-        window.MathJax.typesetPromise([pane]).catch(() => {});
-    }
-}
-
-function mdnUpdateCharCount() {
-    const len = (document.getElementById('mdnContentInput').value || '').length;
-    document.getElementById('mdnCharCount').textContent = `${len.toLocaleString('en-US')} characters`;
-}
-
-function mdnSaveCurrent() {
-    const title = document.getElementById('mdnTitleInput').value.trim();
-    const type = document.getElementById('mdnTypeInput').value;
-    const content = document.getElementById('mdnContentInput').value;
-
-    if (!title && !content.trim()) {
-        if (typeof showNotification === 'function') showNotification('This note is empty — nothing to save.', 'warning');
-        return;
-    }
-
-    const now = Date.now();
-    if (mdnEditingId) {
-        const note = mdNotes.find(n => n.id === mdnEditingId);
-        if (note) {
-            note.title = title || '(Untitled)';
-            note.type = type;
-            note.content = content;
-            note.updatedAt = now;
-        }
-    } else {
-        mdNotes.push({
-            id: 'mdn_' + now + '_' + Math.random().toString(36).slice(2, 8),
-            title: title || '(Untitled)',
-            type,
-            content,
-            createdAt: now,
-            updatedAt: now
-        });
-    }
-
-    if (mdnSaveToStorage()) {
-        if (typeof showNotification === 'function') showNotification('Note saved.', 'success');
-        mdnRenderList();
-        mdnCloseEditor();
-    }
-}
-
-function mdnDeleteCurrent() {
-    if (!mdnEditingId) return;
-    if (!confirm("Delete this note? This can't be undone.")) return;
-    mdNotes = mdNotes.filter(n => n.id !== mdnEditingId);
-    mdnSaveToStorage();
-    mdnRenderList();
-    mdnCloseEditor();
-    if (typeof showNotification === 'function') showNotification('Note deleted.', 'info');
-}
-
-// ----- Backup / restore -----
-function mdnExportAll() {
-    if (!mdNotes.length) {
-        if (typeof showNotification === 'function') showNotification('No notes to export yet.', 'warning');
-        return;
-    }
-    const payload = { app: 'FinanceTracker-MDNotes', exportedAt: new Date().toISOString(), notes: mdNotes };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `md-notes-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    if (typeof showNotification === 'function') showNotification('Exported all notes.', 'success');
-}
-
-function mdnImportFile(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            const incoming = Array.isArray(data) ? data : (data.notes || []);
-            if (!Array.isArray(incoming) || !incoming.length) {
-                if (typeof showNotification === 'function') showNotification("This file isn't a valid notes backup.", 'error');
-                return;
-            }
-            let added = 0;
-            incoming.forEach(n => {
-                if (!n || !n.id) return;
-                if (mdNotes.some(x => x.id === n.id)) return; // skip duplicates on re-import
-                mdNotes.push(n);
-                added++;
-            });
-            mdnSaveToStorage();
-            mdnRenderList();
-            if (typeof showNotification === 'function') showNotification(`Imported ${added} new note(s).`, 'success');
-        } catch (err) {
-            console.error(err);
-            if (typeof showNotification === 'function') showNotification("Couldn't read the backup file.", 'error');
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-}
-
-// ----- Init -----
-function mdnInit() {
-    mdnRenderList();
-    mdnUpdateStorageBar();
-}
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mdnInit);
-} else {
-    mdnInit();
-}
 </script>
 
 </body>
