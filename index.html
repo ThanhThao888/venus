@@ -35211,10 +35211,170 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     .nv-side { transition: none; }
     .nv-docscroll { scroll-behavior: auto; }
 }
+
+/* ═════════════ Command palette + Quick capture — shared bits ═════════════ */
+kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 1.35em; height: 1.35em;
+    padding: 0 4px; border-radius: 5px; background: rgba(var(--primary-rgb), 0.12); color: var(--text-muted);
+    font-family: var(--nv-sans); font-size: 0.72rem; font-weight: 600; line-height: 1;
+}
+
+/* entry points in the sidebar */
+.nv-cmdhint {
+    display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; margin-top: -2px;
+    border: 0; border-radius: 9px; background: none; color: var(--text-muted);
+    font-size: 0.82rem; text-align: left; cursor: pointer;
+}
+.nv-cmdhint:hover { background: var(--nv-hover); color: var(--text-dark); }
+.nv-cmdhint > i:first-child { width: 16px; text-align: center; font-size: 0.8rem; color: var(--text-muted); flex-shrink: 0; }
+.nv-cmdhint span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-cmdhint kbd { background: var(--bg-white); border: 1px solid var(--border-color); }
+
+#nvCapFab {
+    position: fixed; bottom: 138px; left: 20px;
+    width: 40px; height: 40px; border-radius: 50%; box-sizing: border-box; padding: 0;
+    background: var(--bg-white); color: var(--primary-dark); border: 1px solid var(--border-color);
+    cursor: pointer; box-shadow: var(--shadow-sm); z-index: 1000;
+    display: flex; align-items: center; justify-content: center; font-size: 0.92rem; outline: none;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s, border-color 0.15s;
+}
+#nvCapFab:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--primary); }
+#nvCapFab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (max-width: 480px) { #nvCapFab { bottom: 122px; left: 16px; width: 36px; height: 36px; } }
+
+/* ═════════════ Command palette ═════════════ */
+.nv-pal-scrim { position: absolute; inset: 0; z-index: 50; background: rgba(40, 20, 32, 0.4); }
+.nv-pal {
+    position: absolute; left: 50%; top: 64px; z-index: 51; transform: translateX(-50%);
+    width: min(92%, 560px); max-height: min(70%, 520px);
+    display: flex; flex-direction: column;
+    background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: 0 28px 70px -20px rgba(74, 50, 64, 0.55), 0 4px 18px rgba(201, 125, 150, 0.2);
+    overflow: hidden; font-family: var(--nv-sans);
+}
+.nv-pal-bar { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 16px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.nv-pal-bar > i { color: var(--text-muted); font-size: 0.88rem; flex-shrink: 0; }
+#nvOverlay .nv-pal-in {
+    flex: 1; min-width: 0; padding: 13px 4px; border: 0; outline: none; background: none;
+    color: var(--text-dark); font: inherit; font-size: 0.98rem;
+}
+.nv-pal-in::placeholder { color: var(--text-muted); opacity: 0.75; }
+.nv-pal-chip {
+    flex-shrink: 0; padding: 4px 10px; border-radius: 999px; background: var(--nv-active);
+    color: var(--primary-dark); font-size: 0.76rem; font-weight: 600;
+}
+.nv-pal-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; }
+.nv-pal-h { padding: 10px 10px 5px; font-size: 0.73rem; font-weight: 700; letter-spacing: 0.02em; color: var(--text-muted); }
+.nv-pal-row {
+    display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; cursor: pointer;
+    scroll-margin: 6px;
+}
+.nv-pal-row[aria-selected="true"] { background: var(--nv-hover); }
+.nv-pal-row.nv-danger .nv-pal-ic, .nv-pal-row.nv-danger .nv-pal-t { color: var(--nv-danger); }
+.nv-pal-ic { width: 18px; flex-shrink: 0; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+.nv-pal-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nv-pal-t { font-size: 0.87rem; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-pal-t mark.nv-hit { background: var(--nv-hit); border-radius: 3px; padding: 0 1px; }
+.nv-pal-s { margin-top: 1px; font-size: 0.76rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-pal-k { flex-shrink: 0; display: flex; gap: 3px; }
+.nv-pal-empty { padding: 28px 14px; text-align: center; font-size: 0.86rem; color: var(--text-muted); }
+.nv-pal-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.nv-pal-foot {
+    display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+    padding: 9px 16px; border-top: 1px solid var(--border-color); background: var(--bg-light);
+    font-size: 0.74rem; color: var(--text-muted);
+}
+.nv-pal-foot span { display: inline-flex; align-items: center; gap: 5px; }
+@media (max-width: 900px) {
+    .nv-pal { top: 0; left: 0; transform: none; width: 100%; height: 100%; max-height: none; border-radius: 0; border: 0; }
+}
+
+/* ═════════════ Quick capture ═════════════ */
+#nvCap {
+    --nv-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --nv-mono: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    --nv-hover: rgba(var(--primary-rgb), 0.09);
+    position: fixed; inset: 0; z-index: 10060;
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 9vh 3vw 3vh; box-sizing: border-box;
+    background: rgba(74, 50, 64, 0.40); backdrop-filter: blur(6px);
+    font-family: var(--nv-sans); color: var(--text-dark); line-height: 1.45;
+}
+.dark-mode #nvCap { background: rgba(8, 4, 8, 0.66); }
+#nvCap.nv-on { display: flex; }
+#nvCap [hidden] { display: none !important; }
+#nvCap *, #nvCap *::before, #nvCap *::after { box-sizing: border-box; font-family: inherit; }
+#nvCap :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+#nvCap input, #nvCap textarea,
+#nvCap input:hover, #nvCap textarea:hover,
+#nvCap input:focus, #nvCap textarea:focus {
+    transform: none; animation: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: none; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.nv-cap-box {
+    width: 100%; max-width: 620px;
+    background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 18px;
+    box-shadow: 0 32px 80px -24px rgba(74, 50, 64, 0.5), 0 4px 18px rgba(201, 125, 150, 0.18);
+    overflow: hidden;
+}
+#nvCap.nv-on .nv-cap-box { animation: nvIn 0.2s ease-out; }
+.nv-cap-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 12px; }
+.nv-cap-brand { display: flex; align-items: center; gap: 8px; font-family: var(--nv-display, inherit); font-weight: 700; font-size: 0.98rem; color: var(--text-dark); }
+.nv-cap-brand i { color: var(--primary); }
+#nvOverlay ~ #nvCap .nv-cap-brand { font-family: 'Playfair Display', Georgia, serif; }
+.nv-cap-folder {
+    display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 4px 10px 4px 8px;
+    border-radius: 999px; background: var(--primary-light); color: var(--primary-dark); font-size: 0.78rem; font-weight: 600;
+}
+.nv-cap-folder i:first-child { font-size: 0.72rem; }
+#nvCap .nv-cap-folder input {
+    width: 92px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; outline: none;
+}
+#nvCap .nv-cap-title {
+    display: block; width: 100%; margin: 0; padding: 2px 16px 6px; border: 0; outline: none;
+    background: none; color: var(--text-dark); font-weight: 700; font-size: 1.06rem;
+}
+.nv-cap-title::placeholder { color: var(--text-muted); opacity: 0.6; }
+#nvCap .nv-cap-src {
+    display: block; width: 100%; min-height: 176px; resize: none; outline: none; border: 0;
+    padding: 4px 16px 14px; background: none; color: var(--text-dark);
+    font-family: var(--nv-mono); font-size: 0.88rem; line-height: 1.7;
+}
+.nv-cap-src::placeholder { color: var(--text-muted); opacity: 0.75; }
+.nv-cap-foot {
+    display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--border-color);
+    background: var(--bg-light); font-size: 0.78rem; color: var(--text-muted);
+}
+.nv-cap-save { display: inline-flex; align-items: center; gap: 7px; }
+.nv-cap-save .nv-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); opacity: 0.5; }
+.nv-cap-save[data-s="saved"] .nv-dot { background: var(--nv-ok, #3f9b72); opacity: 1; }
+.nv-cap-save[data-s="saving"] .nv-dot { background: var(--nv-warn, #d99a6c); opacity: 1; }
+.nv-cap-save[data-s="error"] { color: var(--nv-danger, #c0364a); font-weight: 600; }
+.nv-cap-save[data-s="error"] .nv-dot { background: var(--nv-danger, #c0364a); opacity: 1; }
+.nv-cap-stat { font-variant-numeric: tabular-nums; }
+.nv-cap-hint { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+.nv-cap-toast {
+    position: absolute; left: 50%; bottom: -54px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; max-width: min(92vw, 480px);
+    padding: 9px 9px 9px 16px; border-radius: 12px;
+    background: var(--text-dark); color: var(--bg-white); font-size: 0.85rem; box-shadow: var(--shadow-lg, 0 10px 30px rgba(0,0,0,.2));
+}
+.nv-cap-toast > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-cap-toast button { flex-shrink: 0; padding: 5px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.nv-cap-toast button:hover { background: rgba(128, 128, 128, 0.25); }
+@media (max-width: 900px) {
+    #nvCap { padding: 0; align-items: flex-end; }
+    .nv-cap-box { max-width: none; border-radius: 18px 18px 0 0; }
+    #nvCap .nv-cap-title { font-size: 16px !important; }  /* host app forces 16px !important on every input ≤768px */
+    #nvCap .nv-cap-src { font-size: 16px !important; }
+}
 </style>
 
 <button id="nvFab" onclick="NotesVault.toggle()" title="Notes Vault — prompts, transcripts, study notes (unlimited length, saved as Markdown)" aria-haspopup="dialog" aria-expanded="false" aria-controls="nvOverlay">
     <i class="fa-solid fa-book-open"></i>
+</button>
+<button id="nvCapFab" onclick="NotesVault.quickCapture()" title="Quick capture (Alt+Shift+N)" aria-haspopup="dialog" aria-expanded="false" aria-controls="nvCap">
+    <i class="fa-solid fa-feather-pointed"></i>
 </button>
 
 <div id="nvOverlay" aria-hidden="true">
@@ -35228,6 +35388,9 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             <input type="search" id="nvSearch" placeholder="Search notes…" autocomplete="off" spellcheck="false" aria-label="Search notes">
             <button class="nv-clear" id="nvClear" type="button" title="Clear search" aria-label="Clear search" hidden><i class="fa-solid fa-xmark"></i></button>
         </div>
+        <button class="nv-cmdhint" id="nvPalOpen" type="button" aria-haspopup="dialog" aria-controls="nvPal">
+            <i class="fa-solid fa-bolt"></i><span>Command palette</span><kbd id="nvPalKeyHint">Ctrl K</kbd>
+        </button>
         <button class="nv-btn nv-btn-primary" id="nvNewBtn" type="button"><i class="fa-solid fa-plus"></i> New note</button>
         <nav class="nv-side-scroll" id="nvSideScroll" aria-label="Notes navigation"></nav>
         <div class="nv-side-foot">
@@ -35384,6 +35547,44 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 
     <div class="nv-toast" id="nvToast" role="status" aria-live="polite" hidden><span id="nvToastTxt"></span><button type="button" id="nvToastBtn">Undo</button></div>
     <div class="nv-scrim" id="nvScrim" hidden></div>
+
+    <!-- ── Command palette: Ctrl/⌘+K or Ctrl/⌘+Shift+P — every command, folder, tag and note in one box ── -->
+    <div class="nv-pal-scrim" id="nvPalScrim" hidden></div>
+    <div class="nv-pal" id="nvPal" role="dialog" aria-modal="true" aria-label="Command palette" hidden>
+        <div class="nv-pal-bar">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input class="nv-pal-in" id="nvPalIn" type="text" autocomplete="off" spellcheck="false"
+                   role="combobox" aria-expanded="true" aria-controls="nvPalList" aria-autocomplete="list" aria-label="Type a command or search notes">
+            <span class="nv-pal-chip" id="nvPalChip" hidden></span>
+        </div>
+        <div class="nv-pal-list" id="nvPalList" role="listbox" aria-label="Results"></div>
+        <div class="nv-pal-live" id="nvPalLive" aria-live="polite"></div>
+        <div class="nv-pal-foot" id="nvPalFoot"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Quick capture: Alt+Shift+N — paste or type from anywhere, even with the vault closed ── -->
+<div id="nvCap" aria-hidden="true">
+  <div class="nv-cap-box" id="nvCapBox" role="dialog" aria-modal="true" aria-label="Quick capture">
+    <div class="nv-cap-head">
+        <div class="nv-cap-brand"><i class="fa-solid fa-feather-pointed" aria-hidden="true"></i> Quick capture</div>
+        <label class="nv-cap-folder">
+            <i class="fa-solid fa-folder-open" id="nvCapFolderIc" aria-hidden="true"></i>
+            <input type="text" id="nvCapFolder" list="nvCapFolderList" autocomplete="off" aria-label="Save to folder">
+            <datalist id="nvCapFolderList"></datalist>
+        </label>
+        <button class="nv-ib" id="nvCapOpen" type="button" title="Open in vault" aria-label="Open in vault"><i class="fa-solid fa-up-right-from-square"></i></button>
+        <button class="nv-ib" id="nvCapClose" type="button" title="Done (Esc)" aria-label="Close quick capture"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <input class="nv-cap-title" id="nvCapTitle" type="text" autocomplete="off" spellcheck="false" placeholder="Title (optional)" aria-label="Title (optional)">
+    <textarea class="nv-cap-src" id="nvCapSrc" spellcheck="false" aria-label="Note content" placeholder="Paste or type anything — it's saved as you go."></textarea>
+    <div class="nv-cap-foot">
+        <span class="nv-cap-save" id="nvCapSave" data-s="idle" role="status" aria-live="polite"><span class="nv-dot"></span><span id="nvCapSaveTxt">Autosave on</span></span>
+        <span class="nv-cap-stat" id="nvCapStat"></span>
+        <span class="nv-cap-hint"><kbd>Esc</kbd> done</span>
+    </div>
+    <div class="nv-cap-toast" id="nvCapToast" role="status" aria-live="polite" hidden><span id="nvCapToastTxt"></span><button type="button" id="nvCapToastBtn">Open</button></div>
   </div>
 </div>
 
@@ -37147,6 +37348,597 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
     }
 
+/* ═════════════ Command palette ═════════════
+       Ctrl/⌘+K (or Ctrl/⌘+Shift+P) opens one box for everything: commands, folders, tags and notes.
+       Type to filter, ↑ ↓ to move, Enter to run, Esc to close. Commands that need a second answer
+       ("Move to folder…", "Add or remove tags…") turn the same box into a chooser.
+       The palette stores nothing itself: every command calls the same function its button already uses.
+       Inside the note text box Ctrl+K stays "insert link"; Ctrl+Shift+P opens the palette from there. */
+    const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || '');
+    const KEYNAME = { mod: IS_MAC ? '⌘' : 'Ctrl', shift: IS_MAC ? '⇧' : 'Shift', alt: IS_MAC ? '⌥' : 'Alt', esc: 'Esc' };
+    const kbds = (keys) => keys.map((k) => '<kbd>' + esc(KEYNAME[k] || k) + '</kbd>').join('');
+    const keyText = (keys) => keys.map((k) => KEYNAME[k] || k).join(IS_MAC ? '' : '+');
+    const P = { open: false, mode: 'root', items: [], active: 0, prevFocus: null, timer: 0 };
+    const PAL_PLACE = { root: 'Type a command or search notes…', folder: 'Pick a folder, or type a new name', tag: 'Pick a tag to add, or type a new one' };
+    const PAL_CHIP = { folder: 'Move to folder', tag: 'Tags' };
+    const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+
+    const tokensOf = (q) => { q = (q || '').trim(); return q ? fold(q.normalize('NFC')).split(/\s+/).filter(Boolean) : []; };
+    function textScore(folded, tokens) {              // every word must start a word in the text
+        let s = 0;
+        for (const t of tokens) {
+            const i = findAt(folded, t, 0);
+            if (i < 0) return -1;
+            s += i === 0 ? 30 : 20;
+        }
+        return s;
+    }
+    function cmdScore(c, tokens) {                    // words may match the label, or its extra search words
+        const fl = fold(c.label), fk = fold(c.kw || '');
+        let s = 0;
+        for (const t of tokens) {
+            const i = findAt(fl, t, 0);
+            if (i >= 0) s += i === 0 ? 30 : 20;
+            else if (findAt(fk, t, 0) >= 0) s += 8;
+            else return -1;
+        }
+        return s;
+    }
+
+    /* ── small actions the palette needs that had no single function yet ── */
+    function showInspector(tab) {
+        if (S.focus) toggleFocus(false);
+        S.inspOpen = true;
+        applyLayout();
+        setInspTab(tab);
+    }
+    function focusSearch() {
+        if (S.focus) toggleFocus(false);
+        if (mq('(max-width: 900px)')) { S.sideOpen = true; applyLayout(); }
+        el.search.focus();
+        el.search.select();
+    }
+    async function applySearch(q) {
+        if (S.note) await leaveDoc();
+        S.query = q; S.limit = PAGE;
+        el.search.value = q; el.clear.hidden = !q;
+        renderSide(); renderLibrary();
+        el.libScroll.scrollTop = 0;
+    }
+    async function openBrainDump() {
+        await close();
+        const p = document.getElementById('bdPanel');
+        if (window.BrainDump && p && !p.classList.contains('bd-visible')) window.BrainDump.toggle();
+    }
+    function liveFolders() {                          // fresh counts, including an unsaved note's folder
+        const m = new Map();
+        for (const n of S.notes) {
+            const k = typeKey(n.type), f = m.get(k) || { key: k, label: normType(n.type), count: 0 };
+            f.count++; m.set(k, f);
+        }
+        if (S.note) { const k = typeKey(S.note.type); if (!m.has(k)) m.set(k, { key: k, label: normType(S.note.type), count: 0 }); }
+        return [...m.values()].sort((a, b) => a.label.localeCompare(b.label));
+    }
+    function liveTags() {
+        const m = new Map();
+        for (const n of S.notes) for (const t of n.tags) {
+            const k = t.toLowerCase(), g = m.get(k) || { label: t, count: 0 };
+            g.count++; m.set(k, g);
+        }
+        return m;
+    }
+    function moveToFolder(name) {
+        const n = S.note;
+        if (!n) return;
+        const typed = normType(name), ex = liveFolders().find((f) => f.key === typeKey(typed));
+        const label = ex ? ex.label : typed;               // typing "study" reuses the existing "Study"
+        if (label === normType(n.type)) { flash('Already in “' + label + '”'); return; }
+        n.type = label;
+        el.folderIn.value = label;
+        renderDocMeta();
+        markDirty();
+        flash('Moved to “' + label + '”');
+    }
+    function tagsChanged() {
+        renderTagChips(); renderDocMeta(); markDirty();
+        el.palIn.value = ''; P.active = 0;
+        palRender();
+        el.palList.scrollTop = 0;
+    }
+    function addNoteTag(raw) {
+        const n = S.note, t = normTag(raw);
+        if (!n || !t || n.tags.some((x) => x.toLowerCase() === t.toLowerCase())) return;
+        const ex = liveTags().get(t.toLowerCase());
+        n.tags.push(ex ? ex.label : t);
+        tagsChanged();
+    }
+    function removeNoteTag(t) {
+        const n = S.note;
+        if (!n) return;
+        n.tags = n.tags.filter((x) => x !== t);
+        tagsChanged();
+    }
+
+    /* ── what the palette can do ── */
+    function palCommands() {
+        const n = S.note, out = [];
+        const add = (g, id, icon, label, run, o) => out.push(Object.assign({ g, id, icon, label, run }, o));
+        if (n) {
+            const T = 'This note';
+            if (S.viewRev) add(T, 'cur', 'clock-rotate-left', 'Back to current version', backToCurrent, { kw: 'history restore preview' });
+            else add(T, 'mode', S.mode === 'edit' ? 'eye' : 'pen', S.mode === 'edit' ? 'Read this note' : 'Edit this note',
+                () => setMode(S.mode === 'edit' ? 'read' : 'edit', S.mode === 'read'), { kw: 'read edit write view toggle', keys: ['mod', 'E'] });
+            add(T, 'focus', S.focus ? 'compress' : 'expand', S.focus ? 'Exit focus mode' : 'Enter focus mode', () => toggleFocus(),
+                { kw: 'reading distraction fullscreen zen', keys: ['mod', 'shift', 'F'] });
+            add(T, 'pin', 'star', n.pinned ? 'Unpin note' : 'Pin note', () => runAction('pin'), { kw: 'favourite favorite star' });
+            add(T, 'move', 'folder-open', 'Move to folder…', () => palSub('folder'), { kw: 'folder category type file', stay: true });
+            add(T, 'tags', 'tag', 'Add or remove tags…', () => palSub('tag'), { kw: 'tag label hashtag', stay: true });
+            add(T, 'hist', 'clock-rotate-left', 'Version history', () => runAction('hist'), { kw: 'versions revisions restore earlier' });
+            add(T, 'ver', 'camera', 'Save a version now', saveVersionNow, { kw: 'snapshot checkpoint revision' });
+            add(T, 'outline', 'list', 'Show outline', () => showInspector('outline'), { kw: 'headings contents toc' });
+            add(T, 'info', 'circle-info', 'Show note info', () => showInspector('info'), { kw: 'details words characters created updated', more: true });
+            add(T, 'dup', 'copy', 'Duplicate note', () => runAction('dup'), { kw: 'copy clone' });
+            add(T, 'copy', 'clipboard', 'Copy Markdown', () => runAction('copy'), { kw: 'clipboard' });
+            add(T, 'md', 'file-arrow-down', 'Export as .md', () => runAction('md'), { kw: 'download markdown obsidian' });
+            add(T, 'txt', 'file-lines', 'Export as .txt', () => runAction('txt'), { kw: 'download text plain', more: true });
+            add(T, 'back', 'arrow-left', 'Back to notes', leaveDoc, { kw: 'close library list', keys: ['esc'] });
+            add(T, 'del', 'trash', 'Move to Trash', () => runAction('del'), { kw: 'delete remove', danger: true });
+            if (S.mode === 'edit' && !S.viewRev) {            // formatting: found by typing, kept out of the default list
+                [['h1', 'heading', 'Heading 1'], ['h2', 'heading', 'Heading 2'], ['h3', 'heading', 'Heading 3'],
+                    ['bold', 'bold', 'Bold', ['mod', 'B']], ['italic', 'italic', 'Italic', ['mod', 'I']],
+                    ['strike', 'strikethrough', 'Strikethrough', ['mod', 'shift', 'X']], ['code', 'code', 'Inline code', ['mod', '`']],
+                    ['ul', 'list-ul', 'Bulleted list'], ['ol', 'list-ol', 'Numbered list'], ['task', 'list-check', 'Checklist'],
+                    ['quote', 'quote-left', 'Quote'], ['codeblock', 'file-code', 'Code block'], ['table', 'table', 'Table'],
+                    ['callout', 'circle-exclamation', 'Callout'], ['hr', 'minus', 'Divider'], ['link', 'link', 'Insert link', ['mod', 'K']]]
+                    .forEach(([c, ic, lb, keys]) => add('Format', 'fmt-' + c, ic, lb, () => runCmd(c), { more: true, keys, kw: 'format markdown insert' }));
+            }
+        }
+        const V = 'Vault';
+        add(V, 'new', 'plus', 'New note', newNote, { kw: 'create write blank add' });
+        add(V, 'cap', 'feather-pointed', 'Quick capture', openCapture, { kw: 'inbox dump paste jot fast', keys: CAP_KEY });
+        add(V, 'search', 'magnifying-glass', 'Search notes', focusSearch, { kw: 'find filter', keys: ['/'] });
+        if (window.BrainDump && document.getElementById('bdPanel')) add(V, 'bd', 'brain', 'Open Brain Dump', openBrainDump, { kw: 'inbox capture tracker thoughts' });
+        add(V, 'exp', 'download', 'Export backup (JSON)', exportAllJson, { kw: 'backup save download all' });
+        add(V, 'imp', 'upload', 'Import backup…', () => el.importFile.click(), { kw: 'backup restore load json', more: true });
+        add(V, 'persist', 'shield-alt', 'Protect from browser cleanup', requestPersist, { kw: 'storage persistent', more: true });
+        if (S.trash.length) add(V, 'empty', 'trash', 'Empty Trash', emptyTrash, { kw: 'delete forever purge', danger: true });
+        add(V, 'close', 'xmark', 'Close Notes Vault', close, { kw: 'exit quit hide', more: true });
+
+        const G = 'Go to', now = Date.now();
+        let recent = 0, pinned = 0;
+        for (const x of S.notes) { if (now - x.updatedAt < RECENT_MS) recent++; if (x.pinned) pinned++; }
+        [['all', 'layer-group', 'All notes', S.notes.length], ['recent', 'clock', 'Recent', recent], ['pinned', 'star', 'Pinned', pinned], ['trash', 'trash', 'Trash', S.trash.length]]
+            .forEach(([kind, icon, label, count]) => add(G, 'go-' + kind, icon, label, () => setScope(kind, ''), { hint: plural(count, 'note'), kw: 'go open show' }));
+        [...S.fmap.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label))
+            .forEach(([k, f]) => add(G, 'f-' + k, iconFor(f.label), f.label, () => setScope('folder', k), { hint: 'Folder · ' + plural(f.count, 'note'), kw: 'folder go open' }));
+        [...S.tmap.entries()].sort((a, b) => (b[1].count - a[1].count) || a[1].label.localeCompare(b[1].label))
+            .forEach(([k, g]) => add(G, 't-' + k, 'hashtag', g.label, () => setScope('tag', k), { hint: 'Tag · ' + plural(g.count, 'note'), kw: 'tag go open', more: true }));
+        return out;
+    }
+
+    function noteItem(n, tokens, score) {
+        const f = tokens.length ? getFold(n) : null, has = !!n.title.trim();
+        const inMeta = !!f && tokens.every((t) => findAt(f.ft, t, 0) >= 0 || findAt(f.fg, t, 0) >= 0 || findAt(f.fy, t, 0) >= 0);
+        return {
+            id: 'n:' + n.id, g: 'Notes', icon: n.pinned ? 'star' : 'file-lines', score,
+            titleHtml: (f && has) ? highlight(f.title, f.ft, tokens) : esc(has ? n.title : 'Untitled note'),
+            hintHtml: (f && !inMeta) ? searchSnippet(n, tokens) : esc(normType(n.type) + ' · ' + fmtRel(n.updatedAt)),
+            run: () => openNote(n.id)
+        };
+    }
+    function palRecent() {
+        const cur = S.note && S.note.id;
+        return S.notes.filter((n) => n.id !== cur).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5).map((n) => noteItem(n, [], 0));
+    }
+    function palNotes(tokens) {
+        const cur = S.note && S.note.id, deep = tokens.join('').length >= 2, hits = [];
+        for (const n of S.notes) {
+            if (n.id === cur) continue;
+            const f = getFold(n);
+            let s = 0, ok = true;
+            for (const t of tokens) {
+                const it = findAt(f.ft, t, 0);
+                if (it >= 0) { s += it === 0 ? 100 : 80; continue; }
+                if (findAt(f.fg, t, 0) >= 0 || findAt(f.fy, t, 0) >= 0) { s += 40; continue; }
+                if (deep && findAt(f.fb, t, 0) >= 0) { s += 15; continue; }
+                ok = false; break;
+            }
+            if (ok) hits.push({ n, s });
+        }
+        hits.sort((a, b) => (b.s - a.s) || (b.n.updatedAt - a.n.updatedAt));
+        return hits.slice(0, 8).map((h) => noteItem(h.n, tokens, h.s));
+    }
+
+    // second-step choosers
+    function palFolderGroups(q, tokens) {
+        const n = S.note;
+        if (!n) return [];
+        const cur = typeKey(n.type), items = [];
+        for (const f of liveFolders()) {
+            let sc = 0;
+            if (tokens.length) { sc = textScore(fold(f.label), tokens); if (sc < 0) continue; }
+            const isCur = f.key === cur;
+            items.push({ icon: iconFor(f.label), label: f.label, hint: isCur ? 'Current folder' : plural(f.count, 'note'), score: sc, run: () => { closePalette(); moveToFolder(f.label); } });
+        }
+        const typed = q.trim();
+        if (typed && !items.some((i) => i.label.toLowerCase() === typed.toLowerCase())) {
+            items.push({ icon: 'folder-plus', label: 'Create folder “' + typed + '”', plain: true, score: -1, run: () => { closePalette(); moveToFolder(typed); } });
+        }
+        items.sort((a, b) => b.score - a.score);
+        return [{ label: 'Folders', items }];
+    }
+    function palTagGroups(q, tokens) {
+        const n = S.note;
+        if (!n) return [];
+        const has = new Set(n.tags.map((t) => t.toLowerCase())), all = liveTags(), add = [], rm = [];
+        for (const [k, g] of [...all.entries()].sort((a, b) => (b[1].count - a[1].count) || a[1].label.localeCompare(b[1].label))) {
+            if (has.has(k)) continue;
+            let sc = 0;
+            if (tokens.length) { sc = textScore(fold(g.label), tokens); if (sc < 0) continue; }
+            add.push({ icon: 'hashtag', label: g.label, hint: plural(g.count, 'note'), score: sc, stay: true, run: () => addNoteTag(g.label) });
+        }
+        add.sort((a, b) => b.score - a.score);
+        const typed = normTag(q);
+        const groups = [{ label: 'Add a tag', items: add.slice(0, 40) }];
+        if (typed && !has.has(typed.toLowerCase()) && !all.has(typed.toLowerCase())) {
+            groups[0].items.push({ icon: 'plus', label: 'Create tag “' + typed + '”', plain: true, score: -1, stay: true, run: () => addNoteTag(typed) });
+        }
+        for (const t of n.tags) {
+            if (tokens.length && textScore(fold(t), tokens) < 0) continue;
+            rm.push({ icon: 'xmark', label: 'Remove “' + t + '”', plain: true, score: 0, stay: true, run: () => removeNoteTag(t) });
+        }
+        groups.push({ label: 'On this note', items: rm });
+        return groups;
+    }
+
+    function palBuild(q) {
+        const tokens = tokensOf(q);
+        if (P.mode === 'folder') return { tokens, groups: palFolderGroups(q, tokens) };
+        if (P.mode === 'tag') return { tokens, groups: palTagGroups(q, tokens) };
+        const cmds = palCommands(), groups = [], byG = new Map();
+        const push = (g, it) => {
+            let x = byG.get(g);
+            if (!x) { x = { label: g, items: [], best: -1 }; byG.set(g, x); groups.push(x); }
+            x.items.push(it);
+            if (it.score > x.best) x.best = it.score;
+        };
+        if (!tokens.length) {                                   // nothing typed: a short, predictable list
+            cmds.filter((c) => !c.more).forEach((c) => push(c.g, Object.assign({ score: 0 }, c)));
+            palRecent().forEach((it) => push('Recent notes', it));
+            const order = ['This note', 'Recent notes', 'Vault', 'Go to'];
+            groups.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
+        } else {                                                // typing: everything that matches, best group first
+            for (const c of cmds) { const s = cmdScore(c, tokens); if (s >= 0) push(c.g, Object.assign({ score: s }, c)); }
+            palNotes(tokens).forEach((it) => push('Notes', it));
+            push('Notes', { id: 'search-all', icon: 'magnifying-glass', label: 'Search all notes for “' + q.trim() + '”', plain: true, score: 0, run: () => applySearch(q.trim()) });
+            groups.forEach((g) => g.items.sort((a, b) => b.score - a.score));
+            groups.sort((a, b) => b.best - a.best);
+        }
+        return { tokens, groups };
+    }
+
+    function palRender() {
+        const q = el.palIn.value, { tokens, groups } = palBuild(q);
+        P.items = [];
+        let html = '';
+        for (const g of groups) {
+            if (!g.items.length) continue;
+            html += '<div class="nv-pal-h" role="presentation">' + esc(g.label) + '</div>';
+            for (const it of g.items) {
+                const i = P.items.push(it) - 1;
+                const title = it.titleHtml || ((tokens.length && !it.plain) ? highlight(it.label, fold(it.label), tokens) : esc(it.label));
+                const hint = it.hintHtml || (it.hint ? esc(it.hint) : '');
+                html += '<div class="nv-pal-row' + (it.danger ? ' nv-danger' : '') + '" role="option" id="nvPalO' + i + '" data-i="' + i + '" aria-selected="false">'
+                    + '<span class="nv-pal-ic"><i class="fa-solid fa-' + it.icon + '" aria-hidden="true"></i></span>'
+                    + '<span class="nv-pal-tx"><span class="nv-pal-t">' + title + '</span>' + (hint ? '<span class="nv-pal-s">' + hint + '</span>' : '') + '</span>'
+                    + (it.keys ? '<span class="nv-pal-k">' + kbds(it.keys) + '</span>' : '') + '</div>';
+            }
+        }
+        if (!P.items.length) {
+            html = '<div class="nv-pal-empty">' + (P.mode === 'folder' ? 'Type a name to create a folder.' : P.mode === 'tag' ? 'Type a name to create a tag.' : 'Nothing matches.') + '</div>';
+        }
+        el.palList.innerHTML = html;
+        el.palLive.textContent = plural(P.items.length, 'result');
+        palSetActive(Math.min(P.active, Math.max(0, P.items.length - 1)), false);
+    }
+    function palSetActive(i, scroll) {
+        const rows = el.palList.querySelectorAll('.nv-pal-row');
+        if (!rows.length) { P.active = 0; el.palIn.setAttribute('aria-activedescendant', ''); return; }
+        i = (i + rows.length) % rows.length;
+        P.active = i;
+        rows.forEach((r, k) => r.setAttribute('aria-selected', k === i ? 'true' : 'false'));
+        el.palIn.setAttribute('aria-activedescendant', rows[i].id);
+        if (scroll) { if (i === 0) el.palList.scrollTop = 0; else rows[i].scrollIntoView({ block: 'nearest' }); }
+    }
+    function palFlush() {                                       // render now if a keystroke is still waiting to be shown
+        if (!P.timer) return;
+        clearTimeout(P.timer); P.timer = 0;
+        palRender();
+    }
+    function palRun(i) {
+        palFlush();
+        const it = P.items[i == null ? P.active : i];
+        if (!it) return;
+        if (it.stay) { it.run(); return; }
+        closePalette();                                         // put focus back first, so a command can move it elsewhere
+        try {
+            const r = it.run();
+            if (r && r.catch) r.catch((e) => console.error('Notes Vault command failed:', e));
+        } catch (e) { console.error('Notes Vault command failed:', e); flash('Couldn’t run that command'); }
+    }
+    function palChrome() {
+        const sub = P.mode !== 'root';
+        el.palIn.placeholder = PAL_PLACE[P.mode];
+        el.palChip.hidden = !sub;
+        el.palChip.textContent = PAL_CHIP[P.mode] || '';
+        el.palFoot.innerHTML = '<span>' + kbds(['↑', '↓']) + ' move</span><span>' + kbds(['↵']) + (sub ? ' choose' : ' run') + '</span><span>' + kbds(['esc']) + (sub ? ' back' : ' close') + '</span>';
+    }
+    function palSub(mode) {
+        P.mode = mode; P.active = 0;
+        el.palIn.value = '';
+        palChrome();
+        palRender();
+        el.palList.scrollTop = 0;
+        el.palIn.focus();
+    }
+    function openPalette() {
+        if (!S.open || C.open) return;
+        if (P.open) { el.palIn.focus(); return; }
+        closeMenus();
+        P.open = true; P.mode = 'root'; P.active = 0;
+        P.prevFocus = document.activeElement;
+        el.palScrim.hidden = false;
+        el.pal.hidden = false;
+        el.palIn.value = '';
+        palChrome();
+        palRender();
+        el.palList.scrollTop = 0;
+        el.palIn.focus();
+    }
+    function refocus(node) {
+        try { if (node && node.isConnected && node.focus) node.focus(); } catch (e) { /* ignore */ }
+        if ((!document.activeElement || document.activeElement === document.body) && S.open && el.app) el.app.focus();
+    }
+    function closePalette(restore) {
+        if (!P.open) return;
+        clearTimeout(P.timer); P.timer = 0;
+        P.open = false; P.mode = 'root';
+        el.pal.hidden = true;
+        el.palScrim.hidden = true;
+        el.palIn.setAttribute('aria-activedescendant', '');
+        const f = P.prevFocus;
+        P.prevFocus = null;
+        if (restore !== false) refocus(f);
+    }
+    function palKey(e) {
+        e.stopPropagation();                                    // the palette is modal: nothing behind it should react to keys
+        if (e.isComposing || e.keyCode === 229) return;         // Vietnamese IME is mid-composition: Enter/arrows belong to it
+        const mod = e.ctrlKey || e.metaKey, k = e.key;
+        if (k === 'Escape') { e.preventDefault(); if (P.mode !== 'root') palSub('root'); else closePalette(); }
+        else if (k === 'ArrowDown') { e.preventDefault(); palSetActive(P.active + 1, true); }
+        else if (k === 'ArrowUp') { e.preventDefault(); palSetActive(P.active - 1, true); }
+        else if (k === 'PageDown') { e.preventDefault(); palSetActive(Math.min(P.items.length - 1, P.active + 6), true); }
+        else if (k === 'PageUp') { e.preventDefault(); palSetActive(Math.max(0, P.active - 6), true); }
+        else if (k === 'Tab') { e.preventDefault(); palSetActive(P.active + (e.shiftKey ? -1 : 1), true); }
+        else if (k === 'Enter') { e.preventDefault(); palRun(); }
+        else if (k === 'Backspace' && !el.palIn.value && P.mode !== 'root') { e.preventDefault(); palSub('root'); }
+        else if (mod && !e.altKey && ((!e.shiftKey && keyIs(e, 'k')) || (e.shiftKey && keyIs(e, 'p')))) { e.preventDefault(); closePalette(); }
+    }
+
+/* ═════════════ Quick capture ═════════════
+       Alt+Shift+N (⌥⇧N on Mac) opens a small panel from anywhere in the tracker, even with the vault closed:
+       paste or type, and it is already saved. Esc / Ctrl+Enter / Done closes it. Nothing is ever discarded:
+       a capture is a normal note in the "Inbox" folder, ready to be sorted later.
+       It only touches the database when there is text to keep, and it never loads the other notes just to open. */
+    const CAP_FOLDER = 'Inbox';
+    const CAP_TITLE_PH = 'Title (optional)';
+    const CAP_KEY = ['alt', 'shift', 'N'];
+    const C = { open: false, note: null, persisted: false, dirty: false, titleTouched: false, saveTimer: 0, statTimer: 0, prevFocus: null, savedAt: 0, toastTimer: 0, toastId: '', busy: false };
+    let capChain = Promise.resolve();      // writes run one after another, so "Done" always waits for the write in flight
+    let folderIdx = '';                    // last folder list written to localStorage (lets capture suggest folders without loading notes)
+
+    const isCaptureKey = (e) => e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyN' || (e.key && e.key.toLowerCase() === 'n'));
+
+    function rememberFolders(labels) {
+        try {
+            const s = JSON.stringify(labels);
+            if (s !== folderIdx) { folderIdx = s; localStorage.setItem('nvFolders', s); }
+        } catch (e) { /* ignore */ }
+    }
+    function knownFolders() {
+        const set = new Map([[typeKey(CAP_FOLDER), CAP_FOLDER]]);
+        let saved = [];
+        try { saved = JSON.parse(localStorage.getItem('nvFolders') || '[]'); } catch (e) { /* ignore */ }
+        (Array.isArray(saved) ? saved : []).forEach((l) => { if (typeof l === 'string' && l.trim() && !set.has(typeKey(l))) set.set(typeKey(l), l.trim()); });
+        S.notes.forEach((n) => { if (!set.has(typeKey(n.type))) set.set(typeKey(n.type), normType(n.type)); });
+        return [...set.values()].sort((a, b) => a.localeCompare(b));
+    }
+
+    // "Title" for a capture with no title: its first real line, without Markdown marks.
+    function deriveTitle(md) {
+        let fence = false;
+        for (const raw of md.slice(0, 4000).split('\n')) {
+            let t = raw.trim();
+            if (!t) continue;
+            if (/^(```|~~~)/.test(t)) { fence = !fence; continue; }
+            if (fence) continue;
+            t = t.replace(/^(?:>\s*)+/, '');
+            if (/^\[![A-Za-z]+\]/.test(t)) continue;                                   // "> [!NOTE]" callout marker line
+            t = t.replace(/^#{1,6}\s+/, '').replace(/^(?:[-*+]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/, '')
+                .replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+                .replace(/[*`]|~~/g, '').replace(/\s+/g, ' ').trim();
+            if (!t) continue;
+            if (t.length <= 60) return t;
+            const cut = t.slice(0, 60), sp = cut.lastIndexOf(' ');
+            return (sp >= 30 ? cut.slice(0, sp) : cut).replace(/[\s,.;:–—-]+$/, '') + '…';
+        }
+        return '';
+    }
+    const fallbackTitle = (ts) => { const d = new Date(ts); return 'Quick capture · ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ', ' + clock(ts); };
+
+    function capSetSave(state) {
+        el.capSave.dataset.s = state;
+        el.capSaveTxt.textContent =
+            state === 'saving' ? 'Saving…' :
+            state === 'saved' ? 'Saved to ' + normType(C.note.type) + ' · ' + clock(C.savedAt) :
+            state === 'error' ? 'Couldn’t save — browser storage may be full' : 'Autosave on';
+    }
+    function capIcon() { el.capFolderIc.className = 'fa-solid fa-' + iconFor(el.capFolder.value || CAP_FOLDER); }
+    function capFit() {                                    // grow with the text, up to 46% of the screen, then scroll
+        const t = el.capSrc;
+        if (t.value.length > 20000) { t.style.height = Math.round(window.innerHeight * 0.46) + 'px'; return; }
+        t.style.height = 'auto';
+        t.style.height = Math.min(Math.max(t.scrollHeight + 2, 176), Math.round(window.innerHeight * 0.46)) + 'px';
+    }
+    function capStats() {
+        clearTimeout(C.statTimer);
+        C.statTimer = setTimeout(() => {
+            const words = C.note ? (C.note.markdown.match(/\S+/g) || []).length : 0;
+            el.capStat.textContent = words ? words.toLocaleString() + (words === 1 ? ' word' : ' words') : '';
+        }, 250);
+    }
+    function capDirty() {
+        C.dirty = true;
+        capSetSave('saving');
+        clearTimeout(C.saveTimer);
+        C.saveTimer = setTimeout(capFlush, SAVE_DELAY);
+        capStats();
+    }
+    // If the vault is open, show the new capture in its list right away.
+    function capSync(n) {
+        if (!S.open) return;
+        if (!S.notes.some((x) => x.id === n.id)) S.notes.push(n);
+        renderSide();
+        if (!S.note) renderLibrary();
+    }
+    async function capWrite() {
+        clearTimeout(C.saveTimer);
+        const n = C.note;
+        if (!n || !C.dirty) return true;
+        const body = n.markdown.trim();
+        if (!C.persisted && !body && !n.title.trim()) { C.dirty = false; capSetSave('idle'); return true; }   // nothing worth keeping
+        C.dirty = false;
+        if (!C.titleTouched) n.title = body ? (deriveTitle(n.markdown) || fallbackTitle(n.createdAt)) : '';
+        n.updatedAt = Date.now();
+        try {
+            await dbPut(n);
+            C.persisted = true; C.savedAt = n.updatedAt;
+            capSync(n);
+            if (C.note === n) {
+                if (!C.dirty) capSetSave('saved');
+                el.capTitle.placeholder = (!C.titleTouched && n.title) ? n.title : CAP_TITLE_PH;
+            }
+            return true;
+        } catch (e) {
+            console.error('Quick capture could not save:', e);
+            C.dirty = true;
+            if (C.note === n) capSetSave('error');
+            return false;
+        }
+    }
+    function capFlush() { capChain = capChain.then(capWrite, capWrite); return capChain; }
+    async function capSettle() {                           // true once everything typed so far is stored
+        for (let i = 0; i < 3; i++) {
+            if (!(await capFlush())) return false;
+            if (!C.dirty) return true;
+        }
+        return !C.dirty;
+    }
+
+    function openCapture() {
+        if (C.open) { el.capSrc.focus(); return; }
+        if (P.open) closePalette(false);
+        if (S.open) closeMenus();
+        hideCapToast();
+        const now = Date.now();
+        C.note = { id: uid(), title: '', markdown: '', type: CAP_FOLDER, tags: [], pinned: false, deletedAt: 0, createdAt: now, updatedAt: now };
+        C.persisted = false; C.dirty = false; C.titleTouched = false; C.busy = false;
+        C.prevFocus = document.activeElement;
+        el.capTitle.value = ''; el.capTitle.placeholder = CAP_TITLE_PH;
+        el.capSrc.value = ''; el.capSrc.style.height = '';
+        el.capFolder.value = CAP_FOLDER;
+        el.capFolderList.innerHTML = knownFolders().map((l) => '<option value="' + esc(l) + '"></option>').join('');
+        el.capStat.textContent = '';
+        capIcon();
+        capSetSave('idle');
+        el.cap.classList.add('nv-on');
+        el.cap.setAttribute('aria-hidden', 'false');
+        C.open = true;
+        lockScroll();
+        capFit();
+        el.capSrc.focus();
+        requestAnimationFrame(() => { if (C.open && document.activeElement !== el.capSrc && !el.cap.contains(document.activeElement)) el.capSrc.focus(); });
+    }
+    function capHide(noRestore) {
+        clearTimeout(C.saveTimer); clearTimeout(C.statTimer);
+        C.open = false;
+        el.cap.classList.remove('nv-on');
+        el.cap.setAttribute('aria-hidden', 'true');
+        if (!S.open) unlockScroll();                       // the vault keeps the page locked while it is open
+        const f = C.prevFocus;
+        C.prevFocus = null;
+        if (!noRestore) refocus(f);
+    }
+    async function capDone() {                             // save, then close. If saving fails, stay open so the text is not lost.
+        if (!C.open || C.busy) return;
+        C.busy = true;
+        try {
+            if (!(await capSettle())) { capSetSave('error'); return; }
+            const n = C.note, kept = C.persisted;
+            capHide();
+            if (kept) capToast('Saved to ' + normType(n.type) + ' · ' + shortName(n), n.id);
+        } finally { C.busy = false; }
+    }
+    async function revealNote(id) {                        // open the vault (if needed) and go straight to a note
+        if (!S.open) await open();
+        if (id && !S.notes.some((x) => x.id === id)) { try { await loadAll(); } catch (e) { console.error(e); } renderAll(); }
+        if (id) await openNote(id);
+    }
+    async function capOpenInVault() {
+        if (!C.open || C.busy) return;
+        C.busy = true;
+        try {
+            if (!(await capSettle())) { capSetSave('error'); return; }
+            const id = C.persisted ? C.note.id : '';
+            capHide(true);
+            await revealNote(id);
+        } finally { C.busy = false; }
+    }
+    function hideCapToast() { clearTimeout(C.toastTimer); if (el && el.capToast) el.capToast.hidden = true; }
+    function capToast(msg, id) {
+        el.capToastTxt.textContent = msg;
+        C.toastId = id;
+        el.capToast.hidden = false;
+        clearTimeout(C.toastTimer);
+        C.toastTimer = setTimeout(hideCapToast, 6000);
+    }
+    function capKey(e) {
+        e.stopPropagation();                               // while capturing, the tracker and the vault behind must not see keys
+        if (e.isComposing || e.keyCode === 229) return;
+        const mod = e.ctrlKey || e.metaKey, k = e.key;
+        if (k === 'Escape' || (mod && k === 'Enter')) { e.preventDefault(); capDone(); }
+        else if (mod && !e.altKey && keyIs(e, 's')) { e.preventDefault(); capFlush().then(() => { if (C.open && !C.dirty && C.persisted) capSetSave('saved'); }); }
+        else if (k === 'Enter' && !e.shiftKey && (e.target === el.capTitle || e.target === el.capFolder)) { e.preventDefault(); el.capSrc.focus(); }
+        else if (k === 'Tab') {
+            const nodes = [...el.capBox.querySelectorAll('input,textarea,button')].filter((x) => !x.disabled && x.offsetParent !== null);
+            if (!nodes.length) return;
+            const first = nodes[0], last = nodes[nodes.length - 1], a = document.activeElement;
+            if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
+        }
+    }
+    // Runs before everything else on the page, so the shortcut works wherever focus is.
+    function globalKeys(e) {
+        if (e.isComposing || e.keyCode === 229) return;
+        if (isCaptureKey(e)) {
+            e.preventDefault(); e.stopPropagation();
+            if (C.open) el.capSrc.focus(); else openCapture();
+        } else if (C.open && e.key === 'Escape' && !el.cap.contains(e.target)) {
+            e.preventDefault(); e.stopPropagation();
+            capDone();
+        }
+    }
+
     /* ═════════════ Wiring ═════════════ */
     function init() {
         el = {
@@ -37166,7 +37958,16 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             revBar: $('nvRevBar'), revTxt: $('nvRevTxt'), revBack: $('nvRevBack'), revRestore: $('nvRevRestore'),
             emptyTrash: $('nvEmptyTrash'), toast: $('nvToast'), toastTxt: $('nvToastTxt'), toastBtn: $('nvToastBtn'),
             tools: $('nvTools'), toolsScroll: $('nvToolsScroll'), toolsMore: $('nvToolsMore'), toolsMenu: $('nvToolsMenu'),
-            save: $('nvSave'), saveTxt: $('nvSaveTxt'), statRight: $('nvStatRight')
+            save: $('nvSave'), saveTxt: $('nvSaveTxt'), statRight: $('nvStatRight'),
+            palOpen: $('nvPalOpen'), palKeyHint: $('nvPalKeyHint'),
+            palScrim: $('nvPalScrim'), pal: $('nvPal'), palIn: $('nvPalIn'), palChip: $('nvPalChip'),
+            palList: $('nvPalList'), palLive: $('nvPalLive'), palFoot: $('nvPalFoot'),
+            capFab: $('nvCapFab'), cap: $('nvCap'), capBox: $('nvCapBox'),
+            capFolder: $('nvCapFolder'), capFolderIc: $('nvCapFolderIc'), capFolderList: $('nvCapFolderList'),
+            capOpenBtn: $('nvCapOpen'), capCloseBtn: $('nvCapClose'),
+            capTitle: $('nvCapTitle'), capSrc: $('nvCapSrc'),
+            capSave: $('nvCapSave'), capSaveTxt: $('nvCapSaveTxt'), capStat: $('nvCapStat'),
+            capToast: $('nvCapToast'), capToastTxt: $('nvCapToastTxt'), capToastBtn: $('nvCapToastBtn')
         };
 
         // open / close / new
@@ -37377,6 +38178,9 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             } else if (mod && (e.key === 'e' || e.key === 'E') && S.note) {
                 e.preventDefault();
                 setMode(S.mode === 'edit' ? 'read' : 'edit', S.mode === 'read');
+            } else if (mod && !e.altKey && ((!e.shiftKey && keyIs(e, 'k')) || (e.shiftKey && keyIs(e, 'p')))) {
+                e.preventDefault();
+                openPalette();
             } else if (e.key === '/' && !mod && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ''))) {
                 e.preventDefault();
                 if (mq('(max-width: 900px)')) { S.sideOpen = true; applyLayout(); }
@@ -37390,6 +38194,60 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         window.addEventListener('pagehide', () => { if (S.open) settle(); });
         document.addEventListener('visibilitychange', () => { if (document.hidden && S.open) settle(); });
 
+        // ── command palette ──
+        el.palKeyHint.textContent = keyText(['mod', 'K']);
+        el.palOpen.addEventListener('click', openPalette);
+        el.palScrim.addEventListener('click', () => closePalette());
+        el.palIn.addEventListener('keydown', palKey);
+        el.palIn.addEventListener('input', () => {
+            clearTimeout(P.timer);
+            P.active = 0;
+            P.timer = setTimeout(() => { P.timer = 0; palRender(); }, 90);
+        });
+        el.palList.addEventListener('mousemove', (e) => {
+            const row = e.target.closest('.nv-pal-row');
+            if (!row) return;
+            const i = +row.dataset.i;
+            if (i !== P.active) palSetActive(i, false);
+        });
+        el.palList.addEventListener('click', (e) => {
+            const row = e.target.closest('.nv-pal-row');
+            if (row) palRun(+row.dataset.i);
+        });
+
+        // ── quick capture ──
+        el.capFab.addEventListener('click', openCapture);
+        el.cap.addEventListener('mousedown', (e) => { if (e.target === el.cap) capDone(); });
+        el.cap.addEventListener('keydown', capKey);
+        el.capCloseBtn.addEventListener('click', capDone);
+        el.capOpenBtn.addEventListener('click', capOpenInVault);
+        el.capTitle.addEventListener('input', () => {
+            if (!C.note) return;
+            C.titleTouched = true;
+            C.note.title = el.capTitle.value;
+            capDirty();
+        });
+        el.capTitle.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); el.capSrc.focus(); } });
+        el.capSrc.addEventListener('input', () => {
+            if (!C.note) return;
+            C.note.markdown = el.capSrc.value;
+            capFit();
+            capDirty();
+        });
+        el.capFolder.addEventListener('input', () => { capIcon(); if (C.note) { C.note.type = normType(el.capFolder.value); capDirty(); } });
+        el.capFolder.addEventListener('blur', () => {
+            if (!C.note) return;
+            const label = normType(el.capFolder.value);
+            el.capFolder.value = label; C.note.type = label; capIcon();
+            rememberFolders(knownFolders().concat(label));
+        });
+        el.capFolder.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); el.capSrc.focus(); } });
+        el.capToastBtn.addEventListener('click', () => { const id = C.toastId; hideCapToast(); revealNote(id); });
+        window.addEventListener('resize', () => { if (C.open) capFit(); });
+
+        // the quick-capture shortcut must work everywhere on the page, vault open or not
+        document.addEventListener('keydown', globalKeys, true);
+
         setInspTab('info');
     }
 
@@ -37398,7 +38256,8 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     window.NotesVault = {
         toggle, open, close, newNote, openNote,
         renderList: () => { if (S.open) renderAll(); },
-        exportAllJson, importJson, requestPersist
+        exportAllJson, importJson, requestPersist,
+        quickCapture: openCapture
     };
 })();
 </script>
