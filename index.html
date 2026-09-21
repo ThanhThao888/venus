@@ -35162,6 +35162,48 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-ol .nv-l1 { font-weight: 700; }
 .nv-ol-empty { font-size: 0.84rem; line-height: 1.6; color: var(--text-muted); }
 
+/* ═════════════ Wikilinks: [[Note title]] in reading view ═════════════ */
+.nv-prose a.nv-wikilink {
+    padding: 0.05em 0.3em; border-radius: 5px; text-decoration: none;
+    background: rgba(var(--primary-rgb), 0.12); color: var(--primary-dark); font-weight: 600;
+}
+.nv-prose a.nv-wikilink:hover { background: rgba(var(--primary-rgb), 0.22); }
+.nv-prose a.nv-wikilink.nv-wikilink-new {
+    background: none; color: var(--text-muted); border: 1px dashed var(--border-color);
+}
+.nv-prose a.nv-wikilink.nv-wikilink-new:hover { color: var(--text-dark); border-color: var(--text-muted); }
+
+/* ── Links tab (outgoing links + backlinks) ── */
+.nv-lk-hint { margin: 0 0 12px; font-size: 0.8rem; line-height: 1.55; color: var(--text-muted); }
+.nv-lk { list-style: none; margin: 0 0 20px; padding: 0; }
+.nv-lk-item {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 9px; margin-bottom: 2px;
+    border: 0; border-radius: 8px; background: none; color: var(--text-dark);
+    font-size: 0.83rem; text-align: left; cursor: pointer;
+}
+.nv-lk-item:hover { background: var(--nv-hover); }
+.nv-lk-item > i { flex-shrink: 0; width: 14px; text-align: center; color: var(--text-muted); font-size: 0.78rem; }
+.nv-lk-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-lk-item em { margin-left: auto; flex-shrink: 0; font-style: normal; font-size: 0.7rem; font-weight: 700; color: var(--primary-dark); }
+.nv-lk-item.nv-lk-new { color: var(--text-muted); }
+.nv-lk-item.nv-lk-new > i { color: var(--primary-dark); }
+.nv-lk-back-item { flex-direction: column; align-items: stretch; gap: 2px; }
+.nv-lk-back-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-lk-back-snip { font-size: 0.76rem; line-height: 1.45; color: var(--text-muted); white-space: normal; }
+.nv-lk-count { font-weight: 400; color: var(--text-muted); }
+
+/* ── [[ ]] autocomplete popup in the editor ── */
+.nv-wl-pop {
+    position: fixed; z-index: 4000; list-style: none; margin: 0; padding: 4px;
+    min-width: 200px; max-width: 320px; max-height: 240px; overflow-y: auto;
+    background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+}
+.nv-wl-pop li { padding: 7px 10px; border-radius: 7px; font-size: 0.84rem; color: var(--text-dark); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-wl-pop li.nv-wl-sel { background: var(--nv-active); }
+.nv-wl-pop li.nv-wl-hint { cursor: default; color: var(--text-muted); font-size: 0.72rem; padding: 6px 10px 3px; white-space: normal; }
+.nv-wl-pop li.nv-wl-hint:hover { background: none; }
+
 /* ═════════════ Status bar ═════════════ */
 .nv-status {
     grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 14px;
@@ -35527,6 +35569,7 @@ kbd {
                         <span class="nv-tsep" aria-hidden="true"></span>
                         <button class="nv-tb" type="button" data-cmd="quote" data-tip="Quote" aria-pressed="false"><i class="fa-solid fa-quote-left"></i></button>
                         <button class="nv-tb" type="button" data-cmd="link" data-tip="Link"><i class="fa-solid fa-link"></i></button>
+                        <button class="nv-tb nv-tb-txt" type="button" data-cmd="wikilink" data-tip="Link to note">[[ ]]</button>
                     </div>
                     <div class="nv-menuwrap">
                         <button class="nv-tb" id="nvToolsMore" type="button" title="More formatting" aria-label="More formatting" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>
@@ -35553,6 +35596,7 @@ kbd {
                     <div class="nv-docmeta" id="nvDocMeta"></div>
                     <div class="nv-prose" id="nvRead"></div>
                     <textarea class="nv-src" id="nvSrc" spellcheck="false" aria-label="Note content (Markdown)" placeholder="Paste anything — prompts, transcripts, study notes. Markdown like # heading or **bold** becomes formatted text in Read mode. No length limit."></textarea>
+                    <ul class="nv-wl-pop" id="nvWlPop" role="listbox" aria-label="Matching notes" hidden></ul>
                 </div>
             </div>
         </section>
@@ -35563,6 +35607,7 @@ kbd {
         <div class="nv-tabs" role="tablist">
             <button class="nv-tab" role="tab" id="nvTabInfo" data-tab="info" aria-selected="true" type="button">Info</button>
             <button class="nv-tab" role="tab" id="nvTabOutline" data-tab="outline" aria-selected="false" type="button">Outline</button>
+            <button class="nv-tab" role="tab" id="nvTabLinks" data-tab="links" aria-selected="false" type="button">Links</button>
             <button class="nv-tab" role="tab" id="nvTabHistory" data-tab="history" aria-selected="false" type="button">History</button>
         </div>
         <div class="nv-insp-body" id="nvPaneInfo" role="tabpanel" aria-labelledby="nvTabInfo">
@@ -35584,6 +35629,13 @@ kbd {
         </div>
         <div class="nv-insp-body" id="nvPaneOutline" role="tabpanel" aria-labelledby="nvTabOutline" hidden>
             <ol class="nv-ol" id="nvOutline"></ol>
+        </div>
+        <div class="nv-insp-body" id="nvPaneLinks" role="tabpanel" aria-labelledby="nvTabLinks" hidden>
+            <p class="nv-lk-hint">Type <code>[[</code> in Edit mode to link to another note — type a title and pick it, or link to a title that doesn't exist yet to create it.</p>
+            <div class="nv-side-h">Links out</div>
+            <ul class="nv-lk" id="nvLinksOut"></ul>
+            <div class="nv-side-h">Linked from <span class="nv-lk-count" id="nvBacklinkCount"></span></div>
+            <ul class="nv-lk" id="nvLinksBack"></ul>
         </div>
         <div class="nv-insp-body" id="nvPaneHistory" role="tabpanel" aria-labelledby="nvTabHistory" hidden>
             <p class="nv-hist-note">Earlier versions of this note are kept automatically, about every 10 minutes while you write and whenever you leave the note.</p>
@@ -35889,6 +35941,70 @@ kbd {
             .replace(/^\s{0,3}#{1,6}\s+/gm, '')
             .replace(/[*_`>~|]/g, '')
             .replace(/\s+/g, ' ').trim().slice(0, 200);
+    }
+    /* ───────── Internal links: [[Note title]] or [[Note title|Display text]] ─────────
+       Resolution is by title, case/accent-insensitive (via fold()), computed fresh on every
+       render rather than stored — so renaming or deleting a note is instantly reflected in
+       every link that pointed to it, with no separate index to keep in sync. */
+    const WIKILINK_RE = /\[\[([^\[\]\|\n]+?)(?:\|([^\[\]\n]+?))?\]\]/g;
+    function stripFences(md) {
+        // Same length as the input, with fenced code blocks and inline code blanked out, so a
+        // "[[" that is only sample text inside code never becomes a link or a backlink hit.
+        const lines = md.split('\n');
+        let inFence = false;
+        for (let i = 0; i < lines.length; i++) {
+            if (/^\s*(`{3,}|~{3,})/.test(lines[i])) { inFence = !inFence; lines[i] = ' '.repeat(lines[i].length); continue; }
+            if (inFence) lines[i] = ' '.repeat(lines[i].length);
+            else lines[i] = lines[i].replace(/`[^`]+`/g, (m) => ' '.repeat(m.length));
+        }
+        return lines.join('\n');
+    }
+    function extractWikilinks(md) {
+        const clean = stripFences(md);
+        const out = [];
+        WIKILINK_RE.lastIndex = 0;
+        let m;
+        while ((m = WIKILINK_RE.exec(clean))) {
+            const title = m[1].trim();
+            if (!title) continue;
+            out.push({ title, alias: (m[2] || '').trim() || null, index: m.index, len: m[0].length });
+        }
+        return out;
+    }
+    function plainSnippetWiki(md) {
+        return plainSnippet(md.replace(WIKILINK_RE, (mm, t, a) => (a || t).trim()));
+    }
+    function findNoteByTitle(title) {
+        const key = fold(String(title || '').trim());
+        if (!key) return null;
+        return S.notes.find((n) => fold((n.title || '').trim()) === key) || null;
+    }
+    // Every note this note links to, deduped by title — each resolved to a live note, or
+    // null when nothing with that title exists yet.
+    function computeOutgoingLinks(note) {
+        if (!note) return [];
+        const seen = new Map();
+        for (const l of extractWikilinks(note.markdown)) {
+            const key = fold(l.title);
+            if (!key || seen.has(key)) continue;
+            seen.set(key, { title: l.title, note: findNoteByTitle(l.title) });
+        }
+        return [...seen.values()];
+    }
+    // Every live note that links to this one, with a short snippet of surrounding text.
+    function computeBacklinks(note) {
+        if (!note || !note.title.trim()) return [];
+        const key = fold(note.title.trim());
+        const out = [];
+        for (const n of S.notes) {
+            if (n.id === note.id) continue;
+            const hit = extractWikilinks(n.markdown).find((l) => fold(l.title) === key);
+            if (!hit) continue;
+            const start = Math.max(0, hit.index - 70), end = Math.min(n.markdown.length, hit.index + hit.len + 90);
+            out.push({ note: n, snippet: plainSnippetWiki(n.markdown.slice(start, end)) });
+        }
+        out.sort((a, b) => b.note.updatedAt - a.note.updatedAt);
+        return out;
     }
     function searchSnippet(n, tokens) {
         const f = getFold(n);
@@ -36259,6 +36375,49 @@ kbd {
         el.storage.textContent = S.notes.length + ' notes';
     }
 
+    // Turns literal "[[Title]]" / "[[Title|Alias]]" text left over from marked (which has no
+    // wikilink syntax of its own) into real, clickable <a> elements. Built with createElement +
+    // textContent rather than innerHTML, so this never needs a second DOMPurify pass.
+    function linkifyWikilinks(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node.nodeValue || node.nodeValue.indexOf('[[') === -1) return NodeFilter.FILTER_REJECT;
+                for (let p = node.parentNode; p && p !== root; p = p.parentNode) {
+                    if (p.nodeName === 'CODE' || p.nodeName === 'PRE' || p.nodeName === 'A') return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const nodes = [];
+        let cur;
+        while ((cur = walker.nextNode())) nodes.push(cur);
+        nodes.forEach((node) => {
+            const text = node.nodeValue;
+            WIKILINK_RE.lastIndex = 0;
+            let m, last = 0, hit = false;
+            const frag = document.createDocumentFragment();
+            while ((m = WIKILINK_RE.exec(text))) {
+                const title = m[1].trim();
+                if (!title) continue;
+                hit = true;
+                if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+                const alias = (m[2] || '').trim();
+                const resolved = findNoteByTitle(title);
+                const a = document.createElement('a');
+                a.href = '#';
+                a.className = resolved ? 'nv-wikilink' : 'nv-wikilink nv-wikilink-new';
+                a.dataset.wikilink = title;
+                a.title = resolved ? 'Open “' + title + '”' : 'Create note “' + title + '”';
+                a.textContent = alias || title;
+                frag.appendChild(a);
+                last = m.index + m[0].length;
+            }
+            if (!hit) return;
+            if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+            node.parentNode.replaceChild(frag, node);
+        });
+    }
+
     /* ═════════════ Markdown → reading view ═════════════ */
     function renderInto(target, md, interactive) {
         if (!md.trim()) {
@@ -36278,6 +36437,7 @@ kbd {
         html = DOMPurify.sanitize(html, { FORBID_TAGS: ['style'] });
         const tpl = document.createElement('template');
         tpl.innerHTML = html;
+        linkifyWikilinks(tpl.content);
         tpl.content.querySelectorAll('table').forEach((tb) => {
             const w = document.createElement('div');
             w.className = 'nv-tablewrap';
@@ -36451,6 +36611,7 @@ kbd {
         el.updated.textContent = S.persisted ? fmtFull(n.updatedAt) : 'Not saved yet';
         refreshStats();
         renderHistory();
+        renderLinksPane();
     }
 
     function refreshStats() {
@@ -36495,6 +36656,7 @@ kbd {
             if (!S.note) return;
             refreshStats();
             if (S.mode === 'edit') renderOutline();
+            renderLinksPane();
         }, 250);
     }
 
@@ -36523,10 +36685,11 @@ kbd {
         el.read.hidden = edit;
         el.src.hidden = !edit;
         el.tools.hidden = !edit;
-        if (!edit) renderInto(el.read, S.note.markdown);
+        if (!edit) { renderInto(el.read, S.note.markdown); closeWlPopup(); }
         el.docScroll.scrollTop = 0;
         fitTitle();
         renderOutline();
+        renderLinksPane();
         if (edit) refreshToolbar();
         if (edit && focus) el.src.focus();
         updateProgress();
@@ -36567,8 +36730,36 @@ kbd {
         requestAnimationFrame(() => { fitTitle(); el.title.focus(); });
     }
 
+    // Clicking a [[wikilink]] opens the note with that title, or — if none exists — creates a
+    // blank one with that title and drops straight into Edit mode, the way Obsidian does.
+    async function openOrCreateByTitle(title) {
+        const t = String(title || '').trim();
+        if (!t) return;
+        const existing = findNoteByTitle(t);
+        if (existing) { await openNote(existing.id); return; }
+        await settle();
+        closeWlPopup();
+        const now = Date.now();
+        const note = {
+            id: uid(), title: t, markdown: '',
+            type: (S.scope.kind === 'folder' && S.fmap.get(S.scope.value)) ? S.fmap.get(S.scope.value).label : 'General',
+            tags: [], pinned: false, createdAt: now, updatedAt: now
+        };
+        S.note = note; S.persisted = false; S.dirty = false;
+        S.edited = false; S.editStart = 0; S.base = null;
+        fillDoc();
+        showDoc();
+        setSave('idle');
+        setMode('edit', false);
+        closeDrawers();
+        markDirty();                       // schedule the save that actually creates the note
+        requestAnimationFrame(() => el.src.focus());
+        flash('Created “' + t + '”');
+    }
+
     async function leaveDoc() {
         if (!S.note) return;
+        closeWlPopup();
         await settle();
         exitRevView();
         S.note = null; S.dirty = false;
@@ -36718,6 +36909,26 @@ kbd {
         const min = Math.min(...items.map((i) => i.level));
         el.outline.innerHTML = items.map((it, k) =>
             `<li><button type="button" data-o="${k}" class="${it.level === min ? 'nv-l1' : ''}" style="padding-left:${8 + (it.level - min) * 14}px" title="${esc(it.text)}">${esc(it.text)}</button></li>`).join('');
+    }
+    function linkRowHtml(title, note) {
+        return note
+            ? `<li><button type="button" class="nv-lk-item" data-open="${esc(note.id)}"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span>${esc(note.title.trim() || 'Untitled note')}</span></button></li>`
+            : `<li><button type="button" class="nv-lk-item nv-lk-new" data-create="${esc(title)}"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>${esc(title)}</span><em>Create</em></button></li>`;
+    }
+    function renderLinksPane() {
+        if (!S.note || !S.inspOpen || S.inspTab !== 'links') return;
+        const out = computeOutgoingLinks(S.note);
+        el.linksOut.innerHTML = out.length
+            ? out.map((o) => linkRowHtml(o.title, o.note)).join('')
+            : '<li class="nv-ol-empty">No links yet. Type <code>[[</code> in Edit mode to link to another note.</li>';
+        const back = computeBacklinks(S.note);
+        el.backlinkCount.textContent = back.length ? String(back.length) : '';
+        el.linksBack.innerHTML = back.length
+            ? back.map((b) => `<li><button type="button" class="nv-lk-item nv-lk-back-item" data-open="${esc(b.note.id)}">
+                <span class="nv-lk-back-title">${b.note.pinned ? '<i class="fa-solid fa-star" aria-hidden="true"></i> ' : ''}${esc(b.note.title.trim() || 'Untitled note')}</span>
+                <span class="nv-lk-back-snip">${esc(b.snippet)}</span>
+            </button></li>`).join('')
+            : '<li class="nv-ol-empty">No other notes link here yet. Once one does, it will show up here automatically.</li>';
     }
     function scrollSrcTo(off) {
         const ta = el.src, cs = getComputedStyle(ta);
@@ -37285,6 +37496,13 @@ kbd {
         else replaceRange(a, b, '```\n' + block + '\n```', a + 4, a + 4 + block.length);
     }
 
+    function insertWikilink() {
+        const ta = el.src, v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, sel = v.slice(s, e);
+        if (sel && !sel.includes('\n')) replaceRange(s, e, '[[' + sel + ']]', s + 2, s + 2 + sel.length);
+        else replaceRange(s, e, '[[]]', s + 2, s + 2);
+        checkWlTrigger();
+    }
+
     const CMD = {
         undo: () => { el.src.focus(); document.execCommand('undo'); },
         redo: () => { el.src.focus(); document.execCommand('redo'); },
@@ -37292,7 +37510,7 @@ kbd {
         strike: () => toggleInline('strike'), code: () => toggleInline('code'),
         h1: () => setHeading(1), h2: () => setHeading(2), h3: () => setHeading(3),
         ul: () => setList('ul'), ol: () => setList('ol'), task: () => setList('task'),
-        quote: toggleQuote, link: insertLink, codeblock: toggleCodeBlock,
+        quote: toggleQuote, link: insertLink, wikilink: insertWikilink, codeblock: toggleCodeBlock,
         table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting
     };
     function runCmd(name) {
@@ -37361,9 +37579,85 @@ kbd {
         e.preventDefault();
         editLines((ls) => ls.map((l) => (!isItem(l) ? l : e.shiftKey ? l.replace(/^(?: {1,4}|\t)/, '') : '    ' + l)));
     }
+    /* ═════════════ [[ ]] autocomplete while typing in the editor ═════════════ */
+    const WL = { open: false, items: [], sel: 0, start: -1, end: -1 };
+    function closeWlPopup() {
+        if (!WL.open) return;
+        WL.open = false;
+        if (el.wlPop) el.wlPop.hidden = true;
+    }
+    function wlCandidates(q) {
+        const key = fold(q);
+        return S.notes
+            .filter((n) => n.title.trim())
+            .map((n) => ({ n, idx: fold(n.title.trim()).indexOf(key) }))
+            .filter((x) => x.idx >= 0)
+            .sort((a, b) => (a.idx - b.idx) || (a.n.title.length - b.n.title.length))
+            .slice(0, 8)
+            .map((x) => x.n);
+    }
+    // Pixel position of the caret in a plain <textarea>, via an offscreen mirror element —
+    // the same trick scrollSrcTo() uses to scroll the editor to a given offset.
+    function caretCoords(ta) {
+        const cs = getComputedStyle(ta);
+        const div = document.createElement('div');
+        ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize', 'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'borderLeftWidth', 'borderRightWidth', 'borderTopWidth', 'borderBottomWidth', 'borderStyle', 'boxSizing']
+            .forEach((p) => { div.style[p] = cs[p]; });
+        div.style.cssText += 'position:absolute;visibility:hidden;left:-9999px;top:0;white-space:pre-wrap;overflow-wrap:break-word;';
+        div.style.width = ta.clientWidth + 'px';
+        div.textContent = ta.value.slice(0, ta.selectionStart);
+        const mark = document.createElement('span');
+        mark.textContent = '\u200b';
+        div.appendChild(mark);
+        document.body.appendChild(div);
+        const rect = ta.getBoundingClientRect();
+        const x = rect.left + (mark.offsetLeft - ta.scrollLeft);
+        const y = rect.top + (mark.offsetTop - ta.scrollTop) + parseFloat(cs.lineHeight || '20');
+        div.remove();
+        return { x, y };
+    }
+    function openWlPopup(items) {
+        WL.items = items; WL.sel = 0; WL.open = items.length > 0;
+        if (!el.wlPop) return;
+        if (!WL.open) { el.wlPop.hidden = true; return; }
+        el.wlPop.innerHTML = items.map((n, i) => `<li data-i="${i}" class="${i === 0 ? 'nv-wl-sel' : ''}">${esc(n.title.trim())}</li>`).join('')
+            + '<li class="nv-wl-hint">↑↓ choose · Enter to link · Esc to cancel</li>';
+        const { x, y } = caretCoords(el.src);
+        el.wlPop.style.left = Math.max(4, Math.min(x, window.innerWidth - 324)) + 'px';
+        el.wlPop.style.top = Math.min(y, window.innerHeight - 200) + 'px';
+        el.wlPop.hidden = false;
+    }
+    // Fires on every keystroke/click in the editor: opens (or updates) the popup whenever the
+    // caret sits right after an unclosed "[[", closes it otherwise.
+    function checkWlTrigger() {
+        const ta = el.src;
+        if (S.mode !== 'edit' || document.activeElement !== ta || ta.selectionStart !== ta.selectionEnd) { closeWlPopup(); return; }
+        const before = ta.value.slice(Math.max(0, ta.selectionStart - 80), ta.selectionStart);
+        const m = /\[\[([^\[\]\n]*)$/.exec(before);
+        if (!m) { closeWlPopup(); return; }
+        WL.start = ta.selectionStart - m[1].length; WL.end = ta.selectionStart;
+        openWlPopup(wlCandidates(m[1]));
+    }
+    function applyWlPick(n) {
+        if (!n) return;
+        const title = n.title.trim();
+        replaceRange(WL.start, WL.end, title + ']]', WL.start + title.length + 2, WL.start + title.length + 2);
+        closeWlPopup();
+        refreshToolbar();
+    }
     const keyIs = (e, ch) => (e.key && e.key.toLowerCase() === ch) || e.code === 'Key' + ch.toUpperCase();
     function onEditorKey(e) {
         if (e.isComposing || e.keyCode === 229) return;                // Vietnamese IME is mid-composition
+        if (WL.open) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                WL.sel = (WL.sel + (e.key === 'ArrowDown' ? 1 : -1) + WL.items.length) % WL.items.length;
+                [...el.wlPop.children].forEach((li, i) => li.classList.toggle('nv-wl-sel', i === WL.sel));
+                return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyWlPick(WL.items[WL.sel]); return; }
+            if (e.key === 'Escape') { e.preventDefault(); closeWlPopup(); return; }
+        }
         const mod = e.ctrlKey || e.metaKey;
         if (mod && !e.altKey) {
             let cmd = null;
@@ -37464,15 +37758,17 @@ kbd {
         if (mq('(min-width: 1181px)')) { try { localStorage.setItem('nvInspector', S.inspOpen ? '1' : '0'); } catch (e) { /* ignore */ } }
         applyLayout();
         renderOutline();
+        renderLinksPane();
         renderHistory();
     }
     function setInspTab(tab) {
         S.inspTab = tab;
-        [['info', el.tabInfo, el.paneInfo], ['outline', el.tabOutline, el.paneOutline], ['history', el.tabHistory, el.paneHistory]].forEach(([k, t, p]) => {
+        [['info', el.tabInfo, el.paneInfo], ['outline', el.tabOutline, el.paneOutline], ['links', el.tabLinks, el.paneLinks], ['history', el.tabHistory, el.paneHistory]].forEach(([k, t, p]) => {
             t.setAttribute('aria-selected', String(k === tab));
             p.hidden = k !== tab;
         });
         renderOutline();
+        renderLinksPane();
         renderHistory();
     }
     async function setScope(kind, value) {
@@ -38147,6 +38443,8 @@ kbd {
             created: $('nvCreated'), updated: $('nvUpdated'), words: $('nvWords'), chars: $('nvChars'), readTime: $('nvReadTime'),
             actions: $('nvActions'), outline: $('nvOutline'),
             tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
+            tabLinks: $('nvTabLinks'), paneLinks: $('nvPaneLinks'), linksOut: $('nvLinksOut'), linksBack: $('nvLinksBack'), backlinkCount: $('nvBacklinkCount'),
+            wlPop: $('nvWlPop'),
             saveVersion: $('nvSaveVersion'), histClear: $('nvHistClear'),
             revBar: $('nvRevBar'), revTxt: $('nvRevTxt'), revBack: $('nvRevBack'), revRestore: $('nvRevRestore'),
             emptyTrash: $('nvEmptyTrash'), toast: $('nvToast'), toastTxt: $('nvToastTxt'), toastBtn: $('nvToastBtn'),
@@ -38258,7 +38556,10 @@ kbd {
 
         // Task checkboxes in Read mode: click toggles the box AND the "[ ]"/"[x]" in the
         // markdown source, kept in sync via markDirty() (same path as any other edit).
+        // Wikilinks in Read mode: open the target note, or create it if it doesn't exist yet.
         el.read.addEventListener('click', (e) => {
+            const wl = e.target.closest('.nv-wikilink');
+            if (wl) { e.preventDefault(); openOrCreateByTitle(wl.dataset.wikilink); return; }
             const cb = e.target.closest('input[type="checkbox"]');
             if (!cb) return;
             e.preventDefault();                 // we drive the checked state ourselves, after the source edit
@@ -38300,12 +38601,28 @@ kbd {
         });
         el.src.addEventListener('keydown', onEditorKey);
         el.src.addEventListener('paste', onEditorPaste);
-        ['keyup', 'mouseup', 'input', 'focus'].forEach((ev) => el.src.addEventListener(ev, refreshToolbar));
+        ['keyup', 'mouseup', 'input', 'focus'].forEach((ev) => el.src.addEventListener(ev, () => { refreshToolbar(); checkWlTrigger(); }));
+        el.src.addEventListener('blur', () => setTimeout(closeWlPopup, 150));   // delayed so a click on the popup still registers first
+        if (el.wlPop) {
+            el.wlPop.addEventListener('mousedown', (e) => e.preventDefault());  // don't steal focus from the textarea
+            el.wlPop.addEventListener('click', (e) => {
+                const li = e.target.closest('li[data-i]');
+                if (li) applyWlPick(WL.items[+li.dataset.i]);
+            });
+        }
 
         // inspector
         el.tabInfo.addEventListener('click', () => setInspTab('info'));
         el.tabOutline.addEventListener('click', () => setInspTab('outline'));
+        el.tabLinks.addEventListener('click', () => setInspTab('links'));
         el.tabHistory.addEventListener('click', () => setInspTab('history'));
+        // Links tab: open the target note, or create it (for an unresolved outgoing link).
+        [el.linksOut, el.linksBack].forEach((box) => box.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-open],[data-create]');
+            if (!b) return;
+            if (b.dataset.open) openNote(b.dataset.open);
+            else openOrCreateByTitle(b.dataset.create);
+        }));
         el.histList.addEventListener('click', (e) => {
             const b = e.target.closest('[data-rev]');
             if (!b) return;
