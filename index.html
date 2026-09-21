@@ -35127,6 +35127,58 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-save[data-s="error"] { color: var(--nv-danger); font-weight: 600; }
 .nv-save[data-s="error"] .nv-dot { background: var(--nv-danger); opacity: 1; }
 
+/* ═════════════ Trash + version history ═════════════ */
+.nv-lib-head { display: flex; align-items: flex-end; gap: 16px; }
+.nv-lib-headtxt { flex: 1; min-width: 0; }
+.nv-btn-warn { color: var(--nv-danger); }
+.nv-btn-warn:hover { border-color: var(--nv-danger); }
+.nv-row-trash .nv-row-title { color: var(--text-muted); }
+.nv-row-acts.nv-always { opacity: 1; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.nv-row-acts.nv-always .nv-btn { padding: 5px 11px; font-size: 0.78rem; }
+
+.nv-hist-note { margin: 0 0 12px; font-size: 0.8rem; line-height: 1.55; color: var(--text-muted); }
+.nv-hist-save { width: 100%; margin-bottom: 18px; }
+.nv-hist { list-style: none; margin: 0 0 0 5px; padding: 0; border-left: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px; }
+.nv-rev {
+    position: relative; display: block; width: 100%; padding: 9px 10px 9px 16px;
+    border: 0; border-radius: 9px; background: none; color: var(--text-dark); text-align: left; cursor: pointer;
+}
+.nv-rev::before {
+    content: ''; position: absolute; left: -4px; top: 15px; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--bg-light); border: 1.5px solid var(--text-muted);
+}
+.nv-rev:hover { background: var(--nv-hover); }
+.nv-rev.nv-cur { background: var(--nv-active); }
+.nv-rev.nv-cur::before { background: var(--primary); border-color: var(--primary); }
+.nv-rev-when { display: block; font-size: 0.85rem; font-weight: 600; }
+.nv-rev-meta { display: block; margin-top: 2px; font-size: 0.76rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-rev-tag { display: block; margin-top: 2px; font-size: 0.76rem; color: var(--primary-dark); }
+.nv-hist-clear { margin-top: 18px; font-size: 0.78rem; }
+
+.nv-revbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; flex-shrink: 0;
+    padding: 9px 16px; border-bottom: 1px solid var(--border-color);
+    background: rgba(var(--primary-rgb), 0.12); font-size: 0.84rem; color: var(--text-dark);
+}
+.nv-revbar > i { color: var(--primary-dark); }
+.nv-revbar .nv-btn { padding: 6px 12px; }
+
+.nv-toast {
+    position: absolute; left: 50%; bottom: 52px; z-index: 40; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; max-width: min(92vw, 520px);
+    padding: 9px 9px 9px 16px; border-radius: 12px;
+    background: var(--text-dark); color: var(--bg-white); font-size: 0.85rem; box-shadow: var(--shadow-lg);
+}
+.nv-toast > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-toast button { flex-shrink: 0; padding: 5px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.nv-toast button:hover { background: rgba(128, 128, 128, 0.25); }
+@media (max-width: 900px) {
+    .nv-row-trash { grid-template-columns: minmax(0, 1fr); }
+    .nv-row-trash .nv-row-side { align-items: flex-start; }
+    .nv-row-acts.nv-always { justify-content: flex-start; }
+    .nv-lib-head { align-items: flex-start; flex-direction: column; gap: 10px; }
+}
+
 /* ═════════════ Narrower screens ═════════════ */
 @media (max-width: 1180px) {
     .nv-insp {
@@ -35205,8 +35257,11 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             <div class="nv-lib-scroll" id="nvLibScroll">
                 <div class="nv-lib-inner">
                     <div class="nv-lib-head">
-                        <h2 class="nv-lib-title" id="nvLibTitle">All notes</h2>
-                        <p class="nv-lib-sub" id="nvLibSub"></p>
+                        <div class="nv-lib-headtxt">
+                            <h2 class="nv-lib-title" id="nvLibTitle">All notes</h2>
+                            <p class="nv-lib-sub" id="nvLibSub"></p>
+                        </div>
+                        <button class="nv-btn nv-btn-warn" id="nvEmptyTrash" type="button" hidden><i class="fa-solid fa-trash"></i> Empty Trash</button>
                     </div>
                     <div class="nv-list" id="nvList"></div>
                 </div>
@@ -35268,6 +35323,13 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
                     </div>
                 </div>
             </div>
+            <div class="nv-revbar" id="nvRevBar" hidden>
+                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                <span id="nvRevTxt"></span>
+                <span class="nv-grow"></span>
+                <button class="nv-btn" id="nvRevBack" type="button">Back to current</button>
+                <button class="nv-btn nv-btn-primary" id="nvRevRestore" type="button">Restore this version</button>
+            </div>
             <div class="nv-docscroll" id="nvDocScroll">
                 <div class="nv-doc">
                     <textarea class="nv-title" id="nvTitle" rows="1" placeholder="Untitled note" aria-label="Note title" spellcheck="false"></textarea>
@@ -35284,6 +35346,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         <div class="nv-tabs" role="tablist">
             <button class="nv-tab" role="tab" id="nvTabInfo" data-tab="info" aria-selected="true" type="button">Info</button>
             <button class="nv-tab" role="tab" id="nvTabOutline" data-tab="outline" aria-selected="false" type="button">Outline</button>
+            <button class="nv-tab" role="tab" id="nvTabHistory" data-tab="history" aria-selected="false" type="button">History</button>
         </div>
         <div class="nv-insp-body" id="nvPaneInfo" role="tabpanel" aria-labelledby="nvTabInfo">
             <div class="nv-field">
@@ -35305,6 +35368,12 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         <div class="nv-insp-body" id="nvPaneOutline" role="tabpanel" aria-labelledby="nvTabOutline" hidden>
             <ol class="nv-ol" id="nvOutline"></ol>
         </div>
+        <div class="nv-insp-body" id="nvPaneHistory" role="tabpanel" aria-labelledby="nvTabHistory" hidden>
+            <p class="nv-hist-note">Earlier versions of this note are kept automatically, about every 10 minutes while you write and whenever you leave the note.</p>
+            <button class="nv-btn nv-hist-save" id="nvSaveVersion" type="button"><i class="fa-solid fa-camera"></i> Save a version now</button>
+            <ol class="nv-hist" id="nvHistList"></ol>
+            <button class="nv-btn nv-btn-ghost nv-hist-clear" id="nvHistClear" type="button" hidden>Clear this note’s history</button>
+        </div>
     </aside>
 
     <footer class="nv-status">
@@ -35313,6 +35382,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         <span id="nvStatRight"></span>
     </footer>
 
+    <div class="nv-toast" id="nvToast" role="status" aria-live="polite" hidden><span id="nvToastTxt"></span><button type="button" id="nvToastBtn">Undo</button></div>
     <div class="nv-scrim" id="nvScrim" hidden></div>
   </div>
 </div>
@@ -35324,12 +35394,19 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     /* ═════════════════════════════════════════════════════════════
        Notes Vault — step 1
        Full-screen workspace: sidebar · library / document · inspector.
-       Storage schema is unchanged (FinanceTrackerVaultDB / notes), so
-       notes saved by the previous popup version open as-is.
+       Storage: FinanceTrackerVaultDB v2. The "notes" store is unchanged, so
+       older notes open as-is; v2 adds a "revisions" store for version history.
+       Deleting a note moves it to Trash (a deletedAt stamp on the same record).
     ═════════════════════════════════════════════════════════════ */
     const DB_NAME = 'FinanceTrackerVaultDB';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     const STORE = 'notes';
+    const DB_REV = 'revisions';
+    const TRASH_MS = 30 * 864e5;          // Trash keeps a note for 30 days
+    const REV_EVERY = 10 * 60 * 1000;     // at most one automatic version per 10 minutes of writing
+    const REV_KEEP = 60;                  // versions kept per note (oldest are dropped first)
+    const REV_KEEP_BIG = 20;              // … for very long notes, to protect storage
+    const BIG_NOTE = 200000;              // characters
     const RECENT_MS = 7 * 864e5;   // "Recent" = edited in the last 7 days
     const PAGE = 200;              // rows rendered per "page" in the library
     const SAVE_DELAY = 700;
@@ -35351,6 +35428,10 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         outline: [],
         fmap: new Map(), tmap: new Map(),
         focus: false, fs: 1, wd: 1,
+        trash: [],                     // notes in Trash (S.notes only ever holds live notes)
+        base: null, edited: false, editStart: 0,      // what the open note looked like when opened
+        viewRev: null, revPrev: 'read', revs: [],     // version being previewed / previous mode / loaded versions
+        toastTimer: null, toastAct: null,
         saveState: 'idle', savedAt: 0,
         saveTimer: null, derivedTimer: null, flashTimer: null,
         lastFocus: null, prevOverflow: null
@@ -35374,8 +35455,21 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
                     store.createIndex('type', 'type');
                     store.createIndex('pinned', 'pinned');
                 }
+                if (!db.objectStoreNames.contains(DB_REV)) {
+                    const rs = db.createObjectStore(DB_REV, { keyPath: 'id' });
+                    rs.createIndex('noteAt', ['noteId', 'savedAt']);
+                }
             };
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => {
+                const db = req.result;
+                // if another tab needs to upgrade the database later, step aside instead of blocking it
+                db.onversionchange = () => { db.close(); dbPromise = null; };
+                resolve(db);
+            };
+            req.onblocked = () => {
+                console.warn('Notes Vault: database upgrade is waiting for other tabs of this app to close.');
+                if (el && el.storage) el.storage.textContent = 'Close other tabs of this app to finish updating';
+            };
             req.onerror = () => { dbPromise = null; reject(req.error); };
         });
         return dbPromise;
@@ -35423,6 +35517,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         n.type = normType(n.type);
         n.tags = Array.isArray(n.tags) ? n.tags.map(normTag).filter(Boolean) : [];
         n.pinned = !!n.pinned;
+        n.deletedAt = +n.deletedAt || 0;      // 0 = live note, otherwise the moment it went to Trash
         n.createdAt = +n.createdAt || Date.now();
         n.updatedAt = +n.updatedAt || n.createdAt;
         return n;
@@ -35563,9 +35658,159 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         return (start > 0 ? '…' : '') + highlight(f.body.slice(start, end), f.fb.slice(start, end), tokens) + (end < f.body.length ? '…' : '');
     }
 
+    /* ───────── Version history (IndexedDB store "revisions") ─────────
+       A version is a full copy of a note's title + text. One is saved:
+         · about every 10 minutes while you are writing,
+         · when you leave a note or close the vault,
+         · when you press "Save a version now",
+         · just before a restore replaces your text (so a restore can be undone).
+       History is best-effort: if it ever fails, saving the note itself is not affected. */
+    const revLast = new Map();   // noteId → { at, sig } for the newest version (null = none yet)
+    const REV_LABELS = {
+        manual: 'Saved by you',
+        original: 'Before your first edit',
+        'before-restore': 'Before a restore',
+        restore: 'After a restore'
+    };
+    const revRange = (id) => IDBKeyRange.bound([id, 0], [id, Number.MAX_SAFE_INTEGER]);
+
+    async function revList(noteId, limit) {          // newest first
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const out = [];
+            const req = db.transaction(DB_REV).objectStore(DB_REV).index('noteAt').openCursor(revRange(noteId), 'prev');
+            req.onsuccess = () => {
+                const c = req.result;
+                if (!c || (limit && out.length >= limit)) return resolve(out);
+                out.push(c.value);
+                c.continue();
+            };
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function revPut(rec) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_REV, 'readwrite');
+            tx.objectStore(DB_REV).put(rec);
+            tx.oncomplete = () => resolve(rec);
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    }
+    async function revKeys(noteId) {                 // primary keys only, newest first (cheap: no note text is loaded)
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const out = [];
+            const req = db.transaction(DB_REV).objectStore(DB_REV).index('noteAt').openKeyCursor(revRange(noteId), 'prev');
+            req.onsuccess = () => {
+                const c = req.result;
+                if (!c) return resolve(out);
+                out.push(c.primaryKey);
+                c.continue();
+            };
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function revDeleteKeys(keys) {
+        if (!keys.length) return;
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_REV, 'readwrite');
+            const st = tx.objectStore(DB_REV);
+            keys.forEach((k) => st.delete(k));
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    }
+    async function revPrune(noteId, chars) {
+        const keep = chars > BIG_NOTE ? REV_KEEP_BIG : REV_KEEP;
+        const keys = await revKeys(noteId);
+        if (keys.length > keep) await revDeleteKeys(keys.slice(keep));
+    }
+    async function revDeleteForNote(noteId) {
+        revLast.delete(noteId);
+        await revDeleteKeys(await revKeys(noteId));
+    }
+
+    function sigOf(n) {                              // cheap fingerprint of title + text
+        const t = (n.title || '') + '\u0001' + (n.markdown || '');
+        let h = 5381;
+        for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
+        return t.length + ':' + (h >>> 0).toString(36);
+    }
+    async function revLatest(noteId) {
+        if (revLast.has(noteId)) return revLast.get(noteId);
+        const [r] = await revList(noteId, 1);
+        const v = r ? { at: r.savedAt, sig: r.sig } : null;
+        revLast.set(noteId, v);
+        return v;
+    }
+    // Store a version unless it is identical to the newest one. Never throws.
+    async function snapshot(src, opts) {
+        opts = opts || {};
+        try {
+            const last = await revLatest(src.id);
+            const sig = sigOf(src);
+            if (last && last.sig === sig) return false;
+            const md = src.markdown || '';
+            const savedAt = opts.at || Math.max(Date.now(), last ? last.at + 1 : 0);
+            const rec = {
+                id: uid(), noteId: src.id, savedAt, title: src.title || '', markdown: md,
+                words: (md.match(/\S+/g) || []).length, chars: md.length, sig, label: opts.label || ''
+            };
+            await revPut(rec);
+            revLast.set(src.id, { at: savedAt, sig });
+            await revPrune(src.id, md.length);
+            if (S.note && S.note.id === src.id) renderHistory();
+            return true;
+        } catch (e) {
+            console.warn('Notes Vault: could not store a version', e);
+            return false;
+        }
+    }
+    // The first time an older note is edited, keep how it looked before that edit.
+    async function captureOriginal(n) {
+        const b = S.base;
+        if (!b || b.id !== n.id || !S.persisted) return;
+        try {
+            const last = await revLatest(n.id);
+            if (!last && sigOf(b) !== sigOf(n)) await snapshot(b, { at: b.updatedAt, label: 'original' });
+        } catch (e) { console.warn('Notes Vault: history skipped', e); }
+    }
+    async function autoSnapshot(n) {
+        try {
+            if (!S.edited || S.note !== n) return;
+            const last = await revLatest(n.id);
+            const ref = Math.max(S.editStart || 0, last ? last.at : 0);
+            if (Date.now() - ref >= REV_EVERY) await snapshot(n, {});
+        } catch (e) { console.warn('Notes Vault: history skipped', e); }
+    }
+    // Save now, and keep a version of what was just written (used when leaving a note).
+    async function settle() {
+        await flushSave();
+        const n = S.note;
+        if (n && S.persisted && S.edited && !S.dirty) await snapshot(n, {});
+    }
+
     /* ───────── Loading ───────── */
     async function loadAll() {
-        S.notes = (await dbGetAll()).map(normalizeNote);
+        const all = (await dbGetAll()).map(normalizeNote);
+        S.notes = all.filter((n) => !n.deletedAt);
+        S.trash = all.filter((n) => n.deletedAt);
+    }
+    async function purgeExpired() {                  // Trash empties itself after 30 days
+        try {
+            const cutoff = Date.now() - TRASH_MS;
+            const old = S.trash.filter((n) => n.deletedAt < cutoff);
+            for (const n of old) {
+                await dbDelete(n.id);
+                try { await revDeleteForNote(n.id); } catch (e) { /* history is best-effort */ }
+                foldCache.delete(n.id);
+            }
+            if (old.length) S.trash = S.trash.filter((n) => n.deletedAt >= cutoff);
+        } catch (e) { console.warn('Notes Vault: could not clear old Trash', e); }
     }
 
     /* ───────── Filtering ───────── */
@@ -35588,6 +35833,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         const { kind, value } = S.scope;
         const now = Date.now();
         let list;
+        if (kind === 'trash') return S.trash.slice().sort((a, b) => b.deletedAt - a.deletedAt);
         if (kind === 'recent') list = S.notes.filter((n) => now - n.updatedAt < RECENT_MS);
         else if (kind === 'pinned') list = S.notes.filter((n) => n.pinned);
         else if (kind === 'folder') list = S.notes.filter((n) => typeKey(n.type) === value);
@@ -35633,7 +35879,8 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 
         let html = item('all', '', 'layer-group', 'All notes', S.notes.length)
             + item('recent', '', 'clock', 'Recent', recent)
-            + item('pinned', '', 'star', 'Pinned', pinned);
+            + item('pinned', '', 'star', 'Pinned', pinned)
+            + item('trash', '', 'trash', 'Trash', S.trash.length);
 
         const fl = [...folders.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
         if (fl.length) html += '<div class="nv-side-h">Folders</div>' + fl.map(([k, f]) => item('folder', k, iconFor(f.label), f.label, f.count)).join('');
@@ -35654,6 +35901,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         const q = S.query.trim(), sc = S.scope;
         const pl = count === 1 ? 'note' : 'notes';
         if (q) return ['Search results', `${count} of ${S.notes.length} notes match “${q}”`];
+        if (sc.kind === 'trash') return ['Trash', count ? `${count} ${pl} · removed for good after 30 days` : 'Deleted notes wait here for 30 days'];
         if (sc.kind === 'recent') return ['Recent', `${count} ${pl} edited in the last 7 days`];
         if (sc.kind === 'pinned') return ['Pinned', `${count} ${pl}`];
         if (sc.kind === 'folder') return [(S.fmap.get(sc.value) || {}).label || 'Folder', `${count} ${pl}`];
@@ -35664,6 +35912,9 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     function emptyHtml(searching) {
         if (searching) {
             return `<div class="nv-empty"><i class="fa-solid fa-magnifying-glass"></i><strong>No matches</strong>Nothing found for “${esc(S.query.trim())}”. Search ignores capital letters and accents, so try fewer or shorter words.</div>`;
+        }
+        if (S.scope.kind === 'trash') {
+            return `<div class="nv-empty"><i class="fa-solid fa-trash"></i><strong>Trash is empty</strong>Deleted notes wait here for 30 days so you can change your mind. After that they are removed for good.</div>`;
         }
         if (!S.notes.length) {
             return `<div class="nv-empty"><i class="fa-solid fa-feather"></i><strong>Your vault is empty</strong>Paste a prompt, transcript or study note. Everything is saved as Markdown on this device, with no length limit.<br><button type="button" class="nv-btn nv-btn-primary" data-new><i class="fa-solid fa-plus"></i> New note</button></div>`;
@@ -35691,7 +35942,27 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
                 <span title="${esc(fmtFull(n.updatedAt))}">${esc(fmtRel(n.updatedAt))}</span>
                 <span class="nv-row-acts">
                     <button type="button" class="nv-ib${n.pinned ? ' nv-on-pin' : ''}" data-act="pin" title="${n.pinned ? 'Unpin' : 'Pin'}" aria-label="${n.pinned ? 'Unpin' : 'Pin'} note"><i class="fa-solid fa-star"></i></button>
-                    <button type="button" class="nv-ib nv-danger" data-act="del" title="Delete" aria-label="Delete note"><i class="fa-solid fa-trash"></i></button>
+                    <button type="button" class="nv-ib nv-danger" data-act="del" title="Move to Trash" aria-label="Move note to Trash"><i class="fa-solid fa-trash"></i></button>
+                </span>
+            </div>
+        </article>`;
+    }
+
+    function trashRowHtml(n) {
+        const left = Math.max(0, Math.ceil((n.deletedAt + TRASH_MS - Date.now()) / 864e5));
+        const hasTitle = !!n.title.trim();
+        const snip = esc(plainSnippet(n.markdown));
+        const when = fmtRel(n.deletedAt);
+        return `<article class="nv-row nv-row-trash" data-id="${esc(n.id)}">
+            <div>
+                <div class="nv-row-title"><span>${esc(hasTitle ? n.title : 'Untitled note')}</span></div>
+                ${snip ? `<div class="nv-row-snip">${snip}</div>` : ''}
+                <div class="nv-row-meta"><span class="nv-folder-pill"><i class="fa-solid fa-${iconFor(n.type)}"></i>${esc(normType(n.type))}</span><span title="${esc(fmtFull(n.deletedAt))}">Deleted ${esc(when.charAt(0).toLowerCase() + when.slice(1))}</span><span>Removed for good in ${left} ${left === 1 ? 'day' : 'days'}</span></div>
+            </div>
+            <div class="nv-row-side">
+                <span class="nv-row-acts nv-always">
+                    <button type="button" class="nv-btn" data-act="restore"><i class="fa-solid fa-rotate-left"></i> Restore</button>
+                    <button type="button" class="nv-btn nv-btn-warn" data-act="purge"><i class="fa-solid fa-trash"></i> Delete forever</button>
                 </span>
             </div>
         </article>`;
@@ -35700,12 +35971,14 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     function renderLibrary() {
         const tokens = qTokens();
         const list = filterNotes(tokens);
+        const inTrash = S.scope.kind === 'trash' && !tokens.length;
         const [title, sub] = libHeader(list.length);
         el.libTitle.textContent = title;
         el.libSub.textContent = sub;
+        el.emptyTrash.hidden = !(inTrash && list.length);
         if (!list.length) { el.list.innerHTML = emptyHtml(tokens.length > 0); updateStatusRight(); return; }
         const shown = list.slice(0, S.limit);
-        el.list.innerHTML = shown.map((n) => rowHtml(n, tokens)).join('')
+        el.list.innerHTML = shown.map((n) => inTrash ? trashRowHtml(n) : rowHtml(n, tokens)).join('')
             + (list.length > shown.length ? `<button type="button" class="nv-btn nv-more" data-more>Show ${Math.min(PAGE, list.length - shown.length)} more</button>` : '');
         updateStatusRight();
     }
@@ -35813,7 +36086,8 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             { id: 'copy', icon: 'clipboard', label: 'Copy Markdown' },
             { id: 'md', icon: 'file-arrow-down', label: 'Export .md' },
             { id: 'txt', icon: 'file-lines', label: 'Export .txt' },
-            { id: 'del', icon: 'trash', label: 'Delete note', danger: true }
+            { id: 'hist', icon: 'clock-rotate-left', label: 'Version history' },
+            { id: 'del', icon: 'trash', label: 'Move to Trash', danger: true }
         ];
     }
     function renderActions() {
@@ -35826,6 +36100,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 
     function fillDoc() {
         const n = S.note;
+        S.viewRev = null; el.revBar.hidden = true; el.title.readOnly = false;   // never carry a version preview over to another note
         el.title.value = n.title;
         el.src.value = n.markdown;
         el.folderIn.value = normType(n.type);
@@ -35837,6 +36112,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         el.created.textContent = fmtFull(n.createdAt);
         el.updated.textContent = S.persisted ? fmtFull(n.updatedAt) : 'Not saved yet';
         refreshStats();
+        renderHistory();
     }
 
     function refreshStats() {
@@ -35874,6 +36150,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     }
 
     function setMode(m, focus) {
+        if (S.viewRev) exitRevView();
         S.mode = m;
         const edit = m === 'edit';
         el.app.classList.toggle('nv-reading', !edit);
@@ -35892,10 +36169,12 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     }
 
     async function openNote(id) {
-        await flushSave();
+        await settle();
         const n = S.notes.find((x) => x.id === id);
         if (!n) return;
         S.note = n; S.persisted = true; S.dirty = false;
+        S.edited = false; S.editStart = 0;
+        S.base = { id: n.id, title: n.title, markdown: n.markdown, updatedAt: n.updatedAt };
         fillDoc();
         showDoc();
         S.savedAt = n.updatedAt;
@@ -35905,7 +36184,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     }
 
     async function newNote() {
-        await flushSave();
+        await settle();
         const now = Date.now();
         const sc = S.scope;
         const note = {
@@ -35915,6 +36194,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             pinned: false, createdAt: now, updatedAt: now
         };
         S.note = note; S.persisted = false; S.dirty = false;
+        S.edited = false; S.editStart = 0; S.base = null;
         fillDoc();
         showDoc();
         setSave('idle');
@@ -35925,10 +36205,122 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 
     async function leaveDoc() {
         if (!S.note) return;
-        await flushSave();
+        await settle();
+        exitRevView();
         S.note = null; S.dirty = false;
         showLibrary();
         renderAll();
+    }
+
+    /* ═════════════ Version history panel ═════════════ */
+    function fmtVer(ts) {
+        const d = new Date(ts), now = new Date();
+        if (d.toDateString() === now.toDateString()) return 'Today ' + clock(ts);
+        const y = new Date(now); y.setDate(now.getDate() - 1);
+        if (d.toDateString() === y.toDateString()) return 'Yesterday ' + clock(ts);
+        return d.getDate() + ' ' + MONTHS[d.getMonth()] + (d.getFullYear() === now.getFullYear() ? '' : ' ' + d.getFullYear()) + ', ' + clock(ts);
+    }
+
+    async function renderHistory() {
+        if (!S.note || !S.inspOpen || S.inspTab !== 'history') return;
+        const id = S.note.id;
+        let revs = [];
+        if (S.persisted) { try { revs = await revList(id); } catch (e) { console.warn('Notes Vault: could not read history', e); } }
+        if (!S.note || S.note.id !== id) return;      // user moved on while we were reading
+        S.revs = revs;
+        paintHistory();
+    }
+    function paintHistory() {
+        const n = S.note;
+        if (!n) return;
+        const revs = S.revs;
+        el.histClear.hidden = !revs.length;
+        if (!revs.length) {
+            el.histList.innerHTML = '<li class="nv-ol-empty">No earlier versions yet. The first one appears about 10 minutes into writing, or when you leave the note. You can also save one yourself with the button above.</li>';
+            return;
+        }
+        const viewing = S.viewRev ? S.viewRev.id : null;
+        const cur = `<li><button type="button" class="nv-rev${viewing ? '' : ' nv-cur'}" data-rev="current"${viewing ? '' : ' aria-current="true"'}><span class="nv-rev-when">Current version</span><span class="nv-rev-meta">Edited ${esc(fmtRel(n.updatedAt))}</span></button></li>`;
+        const rows = revs.map((r, i) => {
+            const older = revs[i + 1];
+            let delta = '';
+            if (older) {
+                const d = r.words - older.words;
+                if (d) delta = ' · ' + (d > 0 ? '+' : '−') + Math.abs(d).toLocaleString();
+            }
+            const tag = REV_LABELS[r.label] || '';
+            const on = viewing === r.id;
+            return `<li><button type="button" class="nv-rev${on ? ' nv-cur' : ''}" data-rev="${esc(r.id)}"${on ? ' aria-current="true"' : ''} title="${esc(fmtFull(r.savedAt))}"><span class="nv-rev-when">${esc(fmtVer(r.savedAt))}</span><span class="nv-rev-meta">${r.words.toLocaleString()} words${delta}</span>${tag ? `<span class="nv-rev-tag">${esc(tag)}</span>` : ''}</button></li>`;
+        });
+        el.histList.innerHTML = cur + rows.join('');
+    }
+
+    // Preview an old version in the reading view. Nothing is changed until "Restore this version".
+    async function viewRevision(id) {
+        const rev = S.revs.find((r) => r.id === id);
+        if (!S.note || !rev) return;
+        await flushSave();
+        if (!S.viewRev) S.revPrev = S.mode;
+        setMode('read');
+        S.viewRev = rev;
+        el.revTxt.textContent = 'Viewing the version from ' + fmtFull(rev.savedAt) + '. Read only.';
+        el.revBar.hidden = false;
+        el.title.value = rev.title;
+        el.title.readOnly = true;
+        fitTitle();
+        renderInto(el.read, rev.markdown);
+        el.docScroll.scrollTop = 0;
+        renderOutline();
+        paintHistory();
+        closeDrawers();
+    }
+    function exitRevView() {
+        if (!S.viewRev) return;
+        S.viewRev = null;
+        el.revBar.hidden = true;
+        el.title.readOnly = false;
+        if (S.note) { el.title.value = S.note.title; fitTitle(); }
+        paintHistory();
+    }
+    function backToCurrent() {
+        if (!S.viewRev || !S.note) return;
+        const m = S.revPrev || 'read';
+        exitRevView();
+        setMode(m, false);
+    }
+    async function restoreRevision(id) {
+        const rev = S.revs.find((r) => r.id === id);
+        const n = S.note;
+        if (!rev || !n || !S.persisted) return;
+        await flushSave();
+        await snapshot(n, { label: 'before-restore' });   // what you have now stays available in History
+        exitRevView();
+        n.title = rev.title;
+        n.markdown = rev.markdown;
+        S.dirty = true; S.edited = true;
+        if (!S.editStart) S.editStart = Date.now();
+        await flushSave();
+        await snapshot(n, { label: 'restore' });
+        fillDoc();
+        setMode(S.revPrev || 'read', false);
+        flash('Restored the version from ' + fmtFull(rev.savedAt));
+    }
+    async function saveVersionNow() {
+        if (!S.note || !S.persisted) { flash('Write something first, then save a version'); return; }
+        await flushSave();
+        const ok = await snapshot(S.note, { label: 'manual' });
+        flash(ok ? 'Version saved' : 'Nothing has changed since the last version');
+        renderHistory();
+    }
+    async function clearHistory() {
+        if (!S.note) return;
+        if (!confirm('Delete every saved version of this note? The note itself is not affected.')) return;
+        const id = S.note.id;
+        backToCurrent();
+        try { await revDeleteForNote(id); } catch (e) { console.warn(e); }
+        S.base = null; S.revs = [];
+        paintHistory();
+        flash('History cleared');
     }
 
     /* ═════════════ Outline ═════════════ */
@@ -36006,9 +36398,24 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         clearTimeout(S.flashTimer);
         S.flashTimer = setTimeout(() => setSave(S.saveState), 2200);
     }
+    function hideToast() {
+        clearTimeout(S.toastTimer);
+        S.toastAct = null;
+        if (el && el.toast) el.toast.hidden = true;
+    }
+    function toast(msg, label, act) {
+        clearTimeout(S.toastTimer);
+        el.toastTxt.textContent = msg;
+        el.toastBtn.textContent = label || '';
+        el.toastBtn.hidden = !act;
+        S.toastAct = act || null;
+        el.toast.hidden = false;
+        S.toastTimer = setTimeout(hideToast, act ? 9000 : 3500);
+    }
     function markDirty() {
         if (!S.note) return;
         S.dirty = true;
+        if (!S.edited) { S.edited = true; S.editStart = Date.now(); }
         setSave('saving');
         clearTimeout(S.saveTimer);
         S.saveTimer = setTimeout(() => flushSave(), SAVE_DELAY);
@@ -36025,6 +36432,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         S.dirty = false;
         if (!(opts && opts.keepTime)) n.updatedAt = Date.now();
         try {
+            await captureOriginal(n);
             await dbPut(n);
             if (!S.persisted) { S.persisted = true; if (!S.notes.includes(n)) S.notes.push(n); }
             S.savedAt = n.updatedAt;
@@ -36035,6 +36443,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             }
             renderSide();
             renderDatalists();
+            await autoSnapshot(n);
         } catch (e) {
             console.error('Notes Vault save failed:', e);
             S.dirty = true;
@@ -36082,17 +36491,65 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         }
     }
 
-    async function deleteNote(id) {
+    /* ── Trash: "delete" moves a note here for 30 days ── */
+    const shortName = (n) => { const t = (n.title || '').trim() || 'Untitled note'; return t.length > 42 ? t.slice(0, 41) + '…' : t; };
+
+    async function deleteNote(id) {                  // moves to Trash (recoverable), never erases
+        const isOpen = !!(S.note && S.note.id === id);
+        if (isOpen) await settle();                  // store the latest text first (a brand-new note is created here)
         const n = S.notes.find((x) => x.id === id);
-        const name = n ? (n.title || 'Untitled note') : 'this note';
-        if (!confirm('Delete “' + name + '”? This cannot be undone.')) return false;
-        await dbDelete(id);
+        if (!n) {                                    // a blank note that was never saved: nothing to keep
+            if (isOpen) { exitRevView(); clearTimeout(S.saveTimer); S.dirty = false; S.note = null; showLibrary(); renderAll(); }
+            return isOpen;
+        }
+        n.deletedAt = Date.now();
+        try { await dbPut(n); }
+        catch (e) { n.deletedAt = 0; console.error('Notes Vault: could not move to Trash', e); flash('Couldn’t move that note to Trash'); return false; }
         S.notes = S.notes.filter((x) => x.id !== id);
-        foldCache.delete(id);
-        if (S.note && S.note.id === id) { clearTimeout(S.saveTimer); S.dirty = false; S.note = null; showLibrary(); }
+        S.trash.push(n);
+        if (isOpen) { exitRevView(); clearTimeout(S.saveTimer); S.dirty = false; S.note = null; showLibrary(); }
         renderAll();
-        flash('Note deleted');
+        toast('Moved “' + shortName(n) + '” to Trash', 'Undo', () => restoreNote(id));
         return true;
+    }
+
+    async function restoreNote(id) {
+        const n = S.trash.find((x) => x.id === id);
+        if (!n) return;
+        const was = n.deletedAt;
+        n.deletedAt = 0;
+        try { await dbPut(n); }
+        catch (e) { n.deletedAt = was; console.error('Notes Vault: could not restore', e); flash('Couldn’t restore that note'); return; }
+        S.trash = S.trash.filter((x) => x.id !== id);
+        S.notes.push(n);
+        renderAll();
+        flash('Restored “' + shortName(n) + '”');
+    }
+
+    async function purgeNote(id) {                   // permanent
+        const n = S.trash.find((x) => x.id === id);
+        if (!n) return;
+        if (!confirm('Delete “' + shortName(n) + '” forever? This cannot be undone.')) return;
+        await dbDelete(id);
+        try { await revDeleteForNote(id); } catch (e) { /* history is best-effort */ }
+        S.trash = S.trash.filter((x) => x.id !== id);
+        foldCache.delete(id);
+        renderAll();
+        flash('Deleted forever');
+    }
+
+    async function emptyTrash() {
+        const count = S.trash.length;
+        if (!count) return;
+        if (!confirm('Delete ' + count + (count === 1 ? ' note' : ' notes') + ' in Trash forever? This cannot be undone.')) return;
+        for (const n of S.trash.slice()) {
+            await dbDelete(n.id);
+            try { await revDeleteForNote(n.id); } catch (e) { /* history is best-effort */ }
+            foldCache.delete(n.id);
+        }
+        S.trash = [];
+        renderAll();
+        flash('Trash emptied');
     }
 
     async function togglePinById(id) {
@@ -36129,6 +36586,11 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             download(toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
         } else if (id === 'txt') {
             download((n.title ? n.title + '\n\n' : '') + n.markdown, slugify(n.title) + '.txt', 'text/plain');
+        } else if (id === 'hist') {
+            if (S.focus) toggleFocus(false);
+            S.inspOpen = true;
+            applyLayout();
+            setInspTab('history');
         } else if (id === 'del') {
             await deleteNote(n.id);
         }
@@ -36150,13 +36612,13 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
                 const list = Array.isArray(data) ? data : (data.notes || []);
                 if (!Array.isArray(list) || !list.length) { alert('No notes found in that file.'); return; }
                 await flushSave();
-                const existing = new Map(S.notes.map((n) => [n.id, n]));
+                const existing = new Map(S.notes.concat(S.trash).map((n) => [n.id, n]));
                 let added = 0, updated = 0, skipped = 0;
                 for (const raw of list) {
                     if (!raw || typeof raw.markdown !== 'string') continue;
                     const inc = normalizeNote({
                         id: raw.id || uid(), title: raw.title, markdown: raw.markdown, type: raw.type,
-                        tags: raw.tags, pinned: raw.pinned, createdAt: raw.createdAt, updatedAt: raw.updatedAt
+                        tags: raw.tags, pinned: raw.pinned, createdAt: raw.createdAt, updatedAt: raw.updatedAt, deletedAt: raw.deletedAt
                     });
                     const ex = existing.get(inc.id);
                     if (ex && ex.updatedAt > inc.updatedAt) { skipped++; continue; }   // never overwrite a newer note with an older backup
@@ -36609,15 +37071,16 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         if (mq('(min-width: 1181px)')) { try { localStorage.setItem('nvInspector', S.inspOpen ? '1' : '0'); } catch (e) { /* ignore */ } }
         applyLayout();
         renderOutline();
+        renderHistory();
     }
     function setInspTab(tab) {
         S.inspTab = tab;
-        const info = tab === 'info';
-        el.tabInfo.setAttribute('aria-selected', String(info));
-        el.tabOutline.setAttribute('aria-selected', String(!info));
-        el.paneInfo.hidden = !info;
-        el.paneOutline.hidden = info;
+        [['info', el.tabInfo, el.paneInfo], ['outline', el.tabOutline, el.paneOutline], ['history', el.tabHistory, el.paneHistory]].forEach(([k, t, p]) => {
+            t.setAttribute('aria-selected', String(k === tab));
+            p.hidden = k !== tab;
+        });
         renderOutline();
+        renderHistory();
     }
     async function setScope(kind, value) {
         S.query = ''; el.search.value = ''; el.clear.hidden = true;
@@ -36655,16 +37118,18 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         S.inspOpen = mq('(min-width: 1181px)') && pref !== '0';
         S.sideOpen = false; S.note = null; S.dirty = false;
         showLibrary();
-        try { await loadAll(); } catch (e) { console.error('Notes Vault could not open its database:', e); S.notes = []; }
+        revLast.clear();
+        try { await loadAll(); await purgeExpired(); } catch (e) { console.error('Notes Vault could not open its database:', e); S.notes = []; S.trash = []; }
         renderAll();
         updateStorage();
         el.app.focus();
     }
     async function close() {
         if (!S.open) return;
-        await flushSave();
+        await settle();
         S.open = false;
         closeMenus();
+        hideToast();
         el.overlay.classList.remove('nv-on');
         el.overlay.setAttribute('aria-hidden', 'true');
         el.fab.setAttribute('aria-expanded', 'false');
@@ -36696,6 +37161,10 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             folderIn: $('nvFolderIn'), folderList: $('nvFolderList'), tagBox: $('nvTagBox'), tagIn: $('nvTagIn'), tagList: $('nvTagList'),
             created: $('nvCreated'), updated: $('nvUpdated'), words: $('nvWords'), chars: $('nvChars'), readTime: $('nvReadTime'),
             actions: $('nvActions'), outline: $('nvOutline'),
+            tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
+            saveVersion: $('nvSaveVersion'), histClear: $('nvHistClear'),
+            revBar: $('nvRevBar'), revTxt: $('nvRevTxt'), revBack: $('nvRevBack'), revRestore: $('nvRevRestore'),
+            emptyTrash: $('nvEmptyTrash'), toast: $('nvToast'), toastTxt: $('nvToastTxt'), toastBtn: $('nvToastBtn'),
             tools: $('nvTools'), toolsScroll: $('nvToolsScroll'), toolsMore: $('nvToolsMore'), toolsMenu: $('nvToolsMenu'),
             save: $('nvSave'), saveTxt: $('nvSaveTxt'), statRight: $('nvStatRight')
         };
@@ -36755,11 +37224,15 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
             if (b.dataset.act === 'open') openNote(id);
             else if (b.dataset.act === 'pin') togglePinById(id);
             else if (b.dataset.act === 'del') deleteNote(id);
+            else if (b.dataset.act === 'restore') restoreNote(id);
+            else if (b.dataset.act === 'purge') purgeNote(id);
         });
+        el.emptyTrash.addEventListener('click', emptyTrash);
+        el.toastBtn.addEventListener('click', () => { const f = S.toastAct; hideToast(); if (f) f(); });
 
         // document: header controls
         $('nvBack').addEventListener('click', leaveDoc);
-        el.modeRead.addEventListener('click', () => { if (S.note && S.mode !== 'read') setMode('read'); });
+        el.modeRead.addEventListener('click', () => { if (S.note && (S.mode !== 'read' || S.viewRev)) setMode('read'); });
         el.modeEdit.addEventListener('click', () => { if (S.note && S.mode !== 'edit') setMode('edit', true); });
         el.moreBtn.addEventListener('click', () => toggleMenu(el.moreBtn, el.docMenu));
         el.inspBtn.addEventListener('click', toggleInspector);
@@ -36820,6 +37293,16 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         // inspector
         el.tabInfo.addEventListener('click', () => setInspTab('info'));
         el.tabOutline.addEventListener('click', () => setInspTab('outline'));
+        el.tabHistory.addEventListener('click', () => setInspTab('history'));
+        el.histList.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-rev]');
+            if (!b) return;
+            if (b.dataset.rev === 'current') backToCurrent(); else viewRevision(b.dataset.rev);
+        });
+        el.saveVersion.addEventListener('click', saveVersionNow);
+        el.histClear.addEventListener('click', clearHistory);
+        el.revBack.addEventListener('click', backToCurrent);
+        el.revRestore.addEventListener('click', () => { if (S.viewRev) restoreRevision(S.viewRev.id); });
         el.outline.addEventListener('click', (e) => {
             const b = e.target.closest('[data-o]');
             if (b) jumpToHeading(+b.dataset.o);
@@ -36883,6 +37366,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
                 if (closeMenus()) return;
                 if (S.focus) { toggleFocus(false); return; }
                 if (closeDrawers()) return;
+                if (S.viewRev) { backToCurrent(); return; }
                 if (S.note) leaveDoc(); else close();
             } else if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F') && S.note) {
                 e.preventDefault();
@@ -36903,8 +37387,8 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
         });
 
         // never lose the last few keystrokes
-        window.addEventListener('pagehide', () => { if (S.open) flushSave(); });
-        document.addEventListener('visibilitychange', () => { if (document.hidden && S.open) flushSave(); });
+        window.addEventListener('pagehide', () => { if (S.open) settle(); });
+        document.addEventListener('visibilitychange', () => { if (document.hidden && S.open) settle(); });
 
         setInspTab('info');
     }
