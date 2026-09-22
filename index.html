@@ -39652,7 +39652,54 @@ kbd {
             .trim().replace(/\s+/g, '-').slice(0, 60) || 'untitled-note';
     }
     const yamlStr = (s) => (/^[\w][\w .\-\/]*$/.test(s) && !/\s$/.test(s)) ? s : JSON.stringify(s);
-    function toMarkdownFile(n) {
+    function extFromMime(mime) {
+        const m = /^image\/([a-z0-9.+-]+)/i.exec(mime || '');
+        if (!m) return 'bin';
+        return m[1].split('+')[0] === 'jpeg' ? 'jpg' : m[1].split('+')[0];
+    }
+    // Rewrites `attachment://id` references so an exported note works *outside* the app —
+    // Obsidian/GitHub/VS Code have no idea what an `attachment://` scheme is, only this app's
+    // own IndexedDB-backed renderer does. Two modes:
+    //   'folder' — used when exporting into a real folder (exportNotesToFolder): rewrites to a
+    //     relative `attachments/<id>.<ext>` path, and reports each attachment via
+    //     opts.onAttachment(rec, filename) so the caller can write the actual image file once
+    //     per unique id (several notes, or several references in one note, can share an image).
+    //   anything else ('inline', the default) — used for single-file exports (Save .md to disk,
+    //     the plain "Export as .md" download) where there's nowhere to put a sidecar file:
+    //     embeds the image right in the Markdown as a base64 data: URI.
+    // An id that no longer resolves locally (attachment missing/orphaned) is left as
+    // `attachment://` untouched — better a reference the app itself can still make sense of
+    // than a silently vanished image.
+    async function resolveAttachmentForExport(id, opts) {
+        const rec = await dbGetAttachment(id).catch(() => null);
+        if (!rec) return null;
+        if (opts.mode === 'folder') {
+            const filename = id + '.' + extFromMime(rec.mime);
+            if (opts.onAttachment) await opts.onAttachment(rec, filename);
+            return 'attachments/' + filename;
+        }
+        try {
+            const b64 = await blobToBase64(rec.blob);
+            return 'data:' + (rec.mime || 'image/webp') + ';base64,' + b64;
+        } catch (e) { return null; }
+    }
+    async function portableizeAttachments(markdown, opts) {
+        opts = opts || {};
+        if (!markdown || markdown.indexOf('attachment://') === -1) return markdown;
+        const re = /!\[([^\]]*)\]\(attachment:\/\/([a-zA-Z0-9_-]+)\)/g;
+        const cache = new Map();   // attachment id -> resolved target (filename or data URI), or null if unavailable
+        let out = '', last = 0, m;
+        while ((m = re.exec(markdown))) {
+            out += markdown.slice(last, m.index);
+            last = re.lastIndex;
+            const [full, alt, id] = m;
+            if (!cache.has(id)) cache.set(id, await resolveAttachmentForExport(id, opts));
+            const target = cache.get(id);
+            out += target !== null ? ('![' + alt + '](' + target + ')') : full;
+        }
+        return out + markdown.slice(last);
+    }
+    async function toMarkdownFile(n, opts) {
         // Obsidian-friendly: YAML properties on top, then the note itself.
         // course/deadline/career/skill are only written when set, so plain notes keep a clean
         // frontmatter block — these round-trip back in via extractFrontmatter()/applyFrontmatterFill().
@@ -39671,7 +39718,7 @@ kbd {
         // Obsidian note copied in as-is), drop it here — its fields were already folded into
         // title/type/tags when it was pasted (see applyFrontmatterFill), so keeping it would
         // just export two frontmatter blocks back to back.
-        const body = extractFrontmatter(n.markdown).body;
+        const body = await portableizeAttachments(extractFrontmatter(n.markdown).body, opts);
         const hasH1 = /^\s*#\s/.test(body);
         return fm + ((n.title && !hasH1) ? '# ' + n.title + '\n\n' : '') + body;
     }
@@ -39683,7 +39730,7 @@ kbd {
        Falls back to a normal download in browsers without the API (Firefox, Safari). */
     async function saveNoteAsFile(n) {
         if (!FS_SUPPORTED) {
-            download(toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
+            download(await toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
             flash('Your browser can’t save straight to a file — downloaded instead');
             return null;
         }
@@ -39695,7 +39742,7 @@ kbd {
             });
         } catch (e) { return null; }                      // user cancelled the dialog
         try {
-            await writeToHandle(handle, toMarkdownFile(n));
+            await writeToHandle(handle, await toMarkdownFile(n));
             await setLinkedFile(n.id, handle);
             if (S.note && S.note.id === n.id) { renderDocMeta(); renderActions(); }
             flash('Saved to ' + handle.name);
@@ -39717,7 +39764,7 @@ kbd {
             return null;
         }
         try {
-            await writeToHandle(rec.handle, toMarkdownFile(n));
+            await writeToHandle(rec.handle, await toMarkdownFile(n));
             rec.linkedAt = Date.now();
             try { await dbPutLink(rec); } catch (e) { /* best-effort refresh of the timestamp */ }
             if (S.note && S.note.id === n.id) renderDocMeta();
@@ -39740,13 +39787,27 @@ kbd {
     async function exportNotesToFolder(list, label) {
         if (!list.length) { flash('Nothing to export here'); return; }
         if (!FS_SUPPORTED) {
-            list.forEach((n) => download(toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown'));
+            for (const n of list) download(await toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
             flash('Your browser can’t save to a folder — downloaded ' + list.length + ' files instead');
             return;
         }
         let dir;
         try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); }
         catch (e) { return; }                              // user cancelled
+        // Lazily created on the first image, and shared across every note in this export — two
+        // notes (or two references in one note) pointing at the same attachment id write that
+        // image file only once.
+        let attachDir = null;
+        const written = new Set();
+        const onAttachment = async (rec, filename) => {
+            if (written.has(filename)) return;
+            written.add(filename);
+            try {
+                if (!attachDir) attachDir = await dir.getDirectoryHandle('attachments', { create: true });
+                const fh = await attachDir.getFileHandle(filename, { create: true });
+                await writeToHandle(fh, rec.blob);
+            } catch (e) { console.error('Notes Vault: could not export attachment', filename, e); written.delete(filename); }
+        };
         const used = new Set();
         let ok = 0;
         for (const n of list) {
@@ -39755,11 +39816,12 @@ kbd {
             used.add(name);
             try {
                 const fh = await dir.getFileHandle(name, { create: true });
-                await writeToHandle(fh, toMarkdownFile(n));
+                await writeToHandle(fh, await toMarkdownFile(n, { mode: 'folder', onAttachment }));
                 ok++;
             } catch (e) { console.error('Notes Vault: could not export', n.title, e); }
         }
-        flash('Exported ' + ok + ' of ' + list.length + (label ? ' notes (' + label + ')' : ' notes'));
+        const imgMsg = written.size ? ' + ' + written.size + (written.size === 1 ? ' image' : ' images') : '';
+        flash('Exported ' + ok + ' of ' + list.length + (label ? ' notes (' + label + ')' : ' notes') + imgMsg);
     }
     async function copyText(t) {
         try { await navigator.clipboard.writeText(t); return true; }
@@ -39906,7 +39968,7 @@ kbd {
             await unlinkNoteFile(n);
         } else if (id === 'md') {
             await flushSave();
-            download(toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
+            download(await toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
         } else if (id === 'txt') {
             download((n.title ? n.title + '\n\n' : '') + n.markdown, slugify(n.title) + '.txt', 'text/plain');
         } else if (id === 'hist') {
