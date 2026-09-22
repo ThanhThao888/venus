@@ -34980,6 +34980,10 @@ window.DBP={
     border-top: 1px solid var(--border-color); font-size: 0.75rem; color: var(--text-muted);
 }
 .nv-side-foot > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Quota guard: the compact "Storage NN%" indicator tints itself once usage climbs, so the
+   warning is visible without opening Manage storage. See getStorageHealth(). */
+#nvStorage[data-health="warning"] { color: var(--nv-warn); }
+#nvStorage[data-health="critical"], #nvStorage[data-health="near-full"] { color: var(--nv-danger); font-weight: 600; }
 
 /* ═════════════ Menus ═════════════ */
 .nv-menuwrap { position: relative; }
@@ -35094,6 +35098,44 @@ window.DBP={
     background: var(--primary-light); color: var(--primary-dark); font-weight: 600;
 }
 .nv-folder-pill i { font-size: 0.7rem; }
+.nv-relink-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px;
+    background: rgba(217, 154, 108, 0.16); color: var(--nv-warn); font-weight: 600;
+}
+.nv-relink-pill i { font-size: 0.7rem; }
+
+/* ═════════════ Storage manager ═════════════
+   v1: read-only "where did it go" breakdown + a quota guard. No Clean/Optimize actions yet —
+   those need the attachments store (real, exact byte sizes) to be worth building. */
+.nv-stor-scrim { position: absolute; inset: 0; z-index: 55; background: rgba(40, 20, 32, 0.4); }
+.nv-stor {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 56;
+    width: min(480px, 92vw); max-height: 84vh; display: flex; flex-direction: column;
+    background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: var(--shadow-lg); overflow: hidden;
+}
+.nv-stor-bar { display: flex; align-items: center; gap: 8px; padding: 12px 10px 12px 18px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.nv-stor-bartitle { font-family: var(--nv-display); font-weight: 700; font-size: 1rem; color: var(--text-dark); display: flex; align-items: center; gap: 8px; }
+.nv-stor-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 20px; }
+@media (max-width: 620px) {
+    .nv-stor { top: 0; left: 0; transform: none; width: 100%; height: 100%; max-height: none; border-radius: 0; border: 0; }
+}
+.nv-stor-meter { height: 10px; border-radius: 999px; background: var(--bg-light); overflow: hidden; border: 1px solid var(--border-color); }
+.nv-stor-meter-fill { height: 100%; border-radius: 999px; background: var(--nv-ok); transition: width 0.3s ease; }
+.nv-stor-meter[data-level="warning"] .nv-stor-meter-fill { background: var(--nv-warn); }
+.nv-stor-meter[data-level="critical"] .nv-stor-meter-fill, .nv-stor-meter[data-level="near-full"] .nv-stor-meter-fill { background: var(--nv-danger); }
+.nv-stor-headline { margin-top: 10px; font-weight: 700; color: var(--text-dark); font-size: 0.95rem; }
+.nv-stor-msg { margin: 4px 0 0; font-size: 0.83rem; color: var(--text-muted); line-height: 1.5; }
+.nv-stor-msg.nv-stor-msg-warn { color: var(--nv-warn); }
+.nv-stor-msg.nv-stor-msg-danger { color: var(--nv-danger); }
+.nv-stor-section { margin-top: 18px; }
+.nv-stor-section-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.nv-stor-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; font-size: 0.86rem; color: var(--text-dark); border-bottom: 1px solid var(--border-color); }
+.nv-stor-row:last-child { border-bottom: 0; }
+.nv-stor-row > span:last-child { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-note { margin: 14px 0 0; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
+.nv-stor-unsupported { padding: 24px 4px; text-align: center; color: var(--text-muted); font-size: 0.88rem; }
+.nv-stor-unsupported i { font-size: 1.4rem; display: block; margin-bottom: 10px; color: var(--primary); }
 .nv-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 0.77rem; color: var(--text-muted); white-space: nowrap; }
 .nv-row-acts { position: relative; z-index: 2; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
 .nv-row:hover .nv-row-acts, .nv-row:focus-within .nv-row-acts { opacity: 1; }
@@ -35767,6 +35809,7 @@ kbd {
                     <button class="nv-act" role="menuitem" data-gear="import"><i class="fa-solid fa-upload"></i> Import backup…</button>
                     <button class="nv-act" role="menuitem" data-gear="persist"><i class="fa-solid fa-shield-halved"></i> Protect from browser cleanup</button>
                     <button class="nv-act" role="menuitem" data-gear="dupes"><i class="fa-solid fa-clone"></i> Find duplicates…</button>
+                    <button class="nv-act" role="menuitem" data-gear="storage"><i class="fa-solid fa-database"></i> Manage storage…</button>
                 </div>
             </div>
         </div>
@@ -36039,6 +36082,18 @@ kbd {
         <div class="nv-dup-body" id="nvDupBody"></div>
     </div>
 
+    <!-- ── Storage manager: browser usage + an estimated notes/revisions/attachments breakdown ── -->
+    <div class="nv-stor-scrim" id="nvStorScrim" hidden></div>
+    <div class="nv-stor" id="nvStor" role="dialog" aria-modal="true" aria-label="Storage" hidden>
+        <div class="nv-stor-bar">
+            <span class="nv-stor-bartitle"><i class="fa-solid fa-database" aria-hidden="true"></i> Storage</span>
+            <span class="nv-grow"></span>
+            <button class="nv-btn nv-btn-ghost" id="nvStorRefresh" type="button"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+            <button class="nv-ib" id="nvStorClose" type="button" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="nv-stor-body" id="nvStorBody"></div>
+    </div>
+
     <!-- ── Safe rename: shown when a title change would break other notes' [[wikilinks]] ── -->
     <div class="nv-ren-scrim" id="nvRenScrim" hidden>
         <div class="nv-ren" id="nvRen" role="dialog" aria-modal="true" aria-label="Rename note">
@@ -36128,6 +36183,14 @@ kbd {
     const RECENT_MS = 7 * 864e5;   // "Recent" = edited in the last 7 days
     const PAGE = 200;              // rows rendered per "page" in the library
     const SAVE_DELAY = 700;
+    // A backup is only "full" if it carries every IndexedDB store the vault actually uses —
+    // notes alone silently drops version history and file links. Bumped if that shape changes.
+    const BACKUP_SCHEMA = 1;
+    // FileSystemFileHandle can't survive JSON (structured-clone only), so a restored file link
+    // can't reopen the real file — this remembers just enough (name + when) to show a
+    // "needs relinking" hint, keyed by noteId. Lives in localStorage, not IndexedDB: it is a
+    // small, purely advisory hint, not vault data, so it doesn't need a DB schema bump.
+    const RELINK_KEY = 'nvPendingRelinks';
 
     const S = {
         open: false,
@@ -36155,6 +36218,7 @@ kbd {
         focus: false, fs: 1, wd: 1,
         trash: [],                     // notes in Trash (S.notes only ever holds live notes)
         fileLinks: new Map(),          // noteId → { handle, name, linkedAt } — see "File links" below
+        pendingRelinks: new Map(),     // noteId → { name, linkedAt } — a link restored from backup with no usable handle
         base: null, edited: false, editStart: 0,      // what the open note looked like when opened
         renamePrompted: false,                        // guards against a second "Rename note?" dialog stacking on the first
         viewRev: null, revPrev: 'read', revs: [],     // version being previewed / previous mode / loaded versions
@@ -36168,7 +36232,9 @@ kbd {
             swapped: new Set(),           // pair keys where the person flipped which note is "kept"
             compareKey: null,             // pair key currently shown in the Compare view, or null for the list
             prevFocus: null
-        }
+        },
+        stor: { open: false, prevFocus: null },   // Manage storage panel
+        storageStats: null                        // last getVaultStorageStats() result, cached for the compact indicator + panel
     };
     let el = null;
 
@@ -36294,11 +36360,38 @@ kbd {
         const rec = { id: noteId, handle, name: handle.name, linkedAt: Date.now() };
         S.fileLinks.set(noteId, rec);
         try { await dbPutLink(rec); } catch (e) { console.warn('Notes Vault: could not remember file link', e); }
+        clearPendingRelink(noteId);   // a real handle now exists — the "needs relinking" hint is stale
         return rec;
     }
     async function clearLinkedFile(noteId) {
         S.fileLinks.delete(noteId);
         try { await dbDeleteLink(noteId); } catch (e) { /* ignore */ }
+    }
+
+    /* ───────── Pending relinks: file links restored from a backup ─────────
+       A backup can only carry a file link's name and timestamp (see getBackupData below) —
+       never a working handle. After restore, the note remembers "this used to be linked to
+       X" here until the person re-links it via Save .md, at which point setLinkedFile clears
+       the hint again. */
+    function loadPendingRelinks() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(RELINK_KEY) || '{}');
+            S.pendingRelinks = new Map(Object.entries(raw).map(([id, v]) => [id, v]));
+        } catch (e) { S.pendingRelinks = new Map(); }
+    }
+    function savePendingRelinks() {
+        try { localStorage.setItem(RELINK_KEY, JSON.stringify(Object.fromEntries(S.pendingRelinks))); }
+        catch (e) { /* best-effort — a full localStorage shouldn't block anything else */ }
+    }
+    function setPendingRelink(noteId, name, linkedAt) {
+        if (S.fileLinks.has(noteId)) return;   // a real, working link already exists — don't shadow it
+        S.pendingRelinks.set(noteId, { name: name || '', linkedAt: linkedAt || 0 });
+        savePendingRelinks();
+    }
+    function clearPendingRelink(noteId) {
+        if (!S.pendingRelinks.has(noteId)) return;
+        S.pendingRelinks.delete(noteId);
+        savePendingRelinks();
     }
 
     /* ───────── Small helpers ───────── */
@@ -36408,6 +36501,72 @@ kbd {
         if (b < 1048576) return Math.max(1, Math.round(b / 1024)) + ' KB';
         if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
         return (b / 1073741824).toFixed(1) + ' GB';
+    }
+    /* ═════════════ Storage accounting ═════════════
+       navigator.storage.estimate() only ever gives the whole origin's usage/quota — it can't
+       break that down by IndexedDB store, and there is no browser API that can (no
+       indexedDB.getStoreSize()-style call exists anywhere). So notesBytes/revisionsBytes below
+       are an ESTIMATE — the serialized size of every record — not a measurement, and the UI
+       must say "estimated" rather than imply precision it doesn't have. Attachments (once that
+       store exists) are the one part of this that CAN be exact, since every stored Blob already
+       carries a real blob.size. */
+    function roughSize(obj) {
+        try { return JSON.stringify(obj).length * 2; } catch (e) { return 0; }   // UTF-16 code units ≈ bytes, close enough for an estimate
+    }
+    // The single source of truth for "where did the storage go" — used by both the compact
+    // sidebar indicator and the Manage storage panel, and reusable as-is once attachments ship
+    // (attachmentsBytes just stops being hardcoded to 0).
+    async function getVaultStorageStats() {
+        let browser = { usage: 0, quota: 0, supported: false };
+        if (navigator.storage && navigator.storage.estimate) {
+            try {
+                const { usage, quota } = await navigator.storage.estimate();
+                browser = { usage: usage || 0, quota: quota || 0, supported: true };
+            } catch (e) { /* unsupported in this context (e.g. some private-browsing modes) */ }
+        }
+        let lsBytes = 0;
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                lsBytes += (k.length + (localStorage.getItem(k) || '').length) * 2;
+            }
+        } catch (e) { /* private mode, blocked storage, etc. */ }
+        let notesBytes = 0, revisionsBytes = 0;
+        try { notesBytes = (await dbGetAll()).reduce((sum, n) => sum + roughSize(n), 0); }
+        catch (e) { console.warn('Notes Vault: could not estimate notes size', e); }
+        try { revisionsBytes = (await dbGetAllRevisions()).reduce((sum, r) => sum + roughSize(r), 0); }
+        catch (e) { console.warn('Notes Vault: could not estimate version-history size', e); }
+        const attachmentsBytes = 0;   // wired up once the attachments store lands — see comment above
+        const estimatedBytes = notesBytes + revisionsBytes + attachmentsBytes + lsBytes;
+        const percent = browser.supported && browser.quota ? Math.min(100, Math.round((browser.usage / browser.quota) * 100)) : 0;
+        const freeBytes = browser.supported && browser.quota ? Math.max(0, browser.quota - browser.usage) : 0;
+        return {
+            browser,
+            localStorage: { bytes: lsBytes },
+            vault: { notesBytes, revisionsBytes, attachmentsBytes },
+            totals: { estimatedBytes, freeBytes, percent }
+        };
+    }
+    // Quota guard: five bands from "not worth mentioning" to "about to fail". blockAttachments
+    // is exposed now (even with no attachments feature yet) so Attachment Core can gate on it
+    // from day one instead of re-deriving these thresholds. Never gates note-taking itself —
+    // only ever a signal, text stays saved even past 95%.
+    function getStorageHealth(percent) {
+        if (percent > 95) return { level: 'near-full', label: 'Near full', blockAttachments: true };
+        if (percent > 90) return { level: 'critical', label: 'Critical', blockAttachments: false };
+        if (percent > 80) return { level: 'warning', label: 'Warning', blockAttachments: false };
+        if (percent > 70) return { level: 'normal', label: 'Normal', blockAttachments: false };
+        return { level: 'healthy', label: 'Healthy', blockAttachments: false };
+    }
+    function storageHealthMessage(percent, health) {
+        switch (health.level) {
+            case 'warning': return 'Storage ' + percent + '% — consider exporting a backup.';
+            case 'critical': return 'Storage ' + percent + '% — large files may fail to save.';
+            // No attachments feature exists yet, so this doesn't promise one — once Attachment
+            // Core ships, it can read health.blockAttachments and say so here.
+            case 'near-full': return 'Storage ' + percent + '% — back up soon, space is nearly gone.';
+            default: return 'Storage ' + percent + '%';
+        }
     }
 
     const FOLDER_ICONS = [
@@ -36847,6 +37006,16 @@ kbd {
         revLast.delete(noteId);
         await revDeleteKeys(await revKeys(noteId));
     }
+    // Every version of every note, across the whole store — used only for a full backup
+    // (getBackupData), never by the app's normal per-note history views.
+    async function dbGetAllRevisions() {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_REV).objectStore(DB_REV).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
 
     function sigOf(n) {                              // cheap fingerprint of title + text
         const t = (n.title || '') + '\u0001' + (n.markdown || '');
@@ -37178,13 +37347,19 @@ kbd {
     }
 
     async function updateStorage() {
-        if (navigator.storage && navigator.storage.estimate) {
-            try {
-                const { usage, quota } = await navigator.storage.estimate();
-                el.storage.textContent = 'Storage ' + fmtBytes(usage) + (quota ? ' of ' + fmtBytes(quota) : '');
+        try {
+            const stats = await getVaultStorageStats();
+            S.storageStats = stats;
+            if (stats.browser.supported && stats.browser.quota) {
+                const health = getStorageHealth(stats.totals.percent);
+                el.storage.textContent = storageHealthMessage(stats.totals.percent, health);
+                el.storage.title = fmtBytes(stats.browser.usage) + ' of ' + fmtBytes(stats.browser.quota) + ' — click the gear menu → Manage storage for a breakdown';
+                el.storage.dataset.health = health.level;
                 return;
-            } catch (e) { /* fall through */ }
-        }
+            }
+        } catch (e) { /* fall through */ }
+        el.storage.removeAttribute('data-health');
+        el.storage.title = '';
         el.storage.textContent = S.notes.length + ' notes';
     }
 
@@ -37694,10 +37869,12 @@ kbd {
         const n = S.note;
         if (!n) return;
         const link = S.fileLinks.get(n.id);
+        const pendingRelink = !link ? S.pendingRelinks.get(n.id) : null;
         el.docMeta.innerHTML =
             `<span class="nv-folder-pill"><i class="fa-solid fa-${iconFor(n.type)}"></i>${esc(normType(n.type))}</span>`
             + n.tags.map((t) => `<span>#${esc(t)}</span>`).join('')
             + (link ? `<span class="nv-folder-pill" title="Linked — “Save changes to file” writes here"><i class="fa-solid fa-link"></i>${esc(link.name)}</span>` : '')
+            + (pendingRelink ? `<span class="nv-relink-pill" title="Restored from a backup — the file handle itself can't be backed up, so this note needs to be pointed at the file again"><i class="fa-solid fa-triangle-exclamation"></i> Needs relinking${pendingRelink.name ? ': ' + esc(pendingRelink.name) : ''}</span>` : '')
             + renderSkillLinkPill(n)
             + (n.linkedCourseId ? renderCourseLinkPill(n) : (n.course ? `<span title="Course"><i class="fa-solid fa-book" aria-hidden="true"></i> ${esc(n.course)}</span>` : ''))
             + (n.deadline ? `<span title="Deadline"><i class="fa-solid fa-calendar" aria-hidden="true"></i> ${esc(nvFmtDate(n.deadline))}</span>` : '')
@@ -37742,6 +37919,7 @@ kbd {
     function actionList() {
         const n = S.note;
         const linked = FS_SUPPORTED ? S.fileLinks.get(n.id) : null;
+        const pendingRelink = !linked ? S.pendingRelinks.get(n.id) : null;
         const list = [
             { id: 'pin', icon: 'star', label: n.pinned ? 'Unpin note' : 'Pin note' },
             { id: 'dup', icon: 'copy', label: 'Duplicate' },
@@ -37752,7 +37930,9 @@ kbd {
             list.push({ id: 'savefs', icon: 'file-export', label: 'Save As .md…' });
             list.push({ id: 'unlinkfs', icon: 'link-slash', label: 'Unlink from file' });
         } else {
-            list.push({ id: 'savefs', icon: 'floppy-disk', label: FS_SUPPORTED ? 'Save .md to disk…' : 'Save .md (download)' });
+            // Same action either way (picking a file creates a fresh, real link) — only the
+            // label changes, so a restored note's "needs relinking" hint has an obvious next step.
+            list.push({ id: 'savefs', icon: pendingRelink ? 'triangle-exclamation' : 'floppy-disk', label: pendingRelink ? 'Relink to file…' : (FS_SUPPORTED ? 'Save .md to disk…' : 'Save .md (download)') });
         }
         list.push(
             { id: 'md', icon: 'file-arrow-down', label: 'Export .md' },
@@ -38568,6 +38748,8 @@ kbd {
         if (!confirm('Delete “' + shortName(n) + '” forever? This cannot be undone.')) return;
         await dbDelete(id);
         try { await revDeleteForNote(id); } catch (e) { /* history is best-effort */ }
+        try { await clearLinkedFile(id); } catch (e) { /* ignore */ }
+        clearPendingRelink(id);
         S.trash = S.trash.filter((x) => x.id !== id);
         foldCache.delete(id);
         renderAll();
@@ -38581,6 +38763,8 @@ kbd {
         for (const n of S.trash.slice()) {
             await dbDelete(n.id);
             try { await revDeleteForNote(n.id); } catch (e) { /* history is best-effort */ }
+            try { await clearLinkedFile(n.id); } catch (e) { /* ignore */ }
+            clearPendingRelink(n.id);
             foldCache.delete(n.id);
         }
         S.trash = [];
@@ -38674,17 +38858,33 @@ kbd {
         await exportNotesToFolder(list, el.libTitle ? el.libTitle.textContent : '');
     }
     async function exportAllJson() {
-        const { notes } = await getBackupData();
-        const payload = { app: 'FinanceTracker-NotesVault', exportedAt: new Date().toISOString(), notes };
+        const backup = await getBackupData();
+        const payload = {
+            app: 'FinanceTracker-NotesVault', schema: BACKUP_SCHEMA, exportedAt: new Date().toISOString(),
+            notes: backup.notes, revisions: backup.revisions, fileLinks: backup.fileLinks
+        };
         download(JSON.stringify(payload, null, 2), 'notes-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json');
     }
-    // The raw notes (IndexedDB), flushed and ready to embed in any backup file — used both by
-    // this module's own Export button and by the app-wide "Data Management" full backup, which
-    // otherwise only ever sees localStorage and would silently miss every note.
+    // The raw notes + their version history + file-link metadata (all three IndexedDB stores),
+    // flushed and ready to embed in any backup file — used both by this module's own Export
+    // button and by the app-wide "Data Management" full backup, which otherwise only ever sees
+    // localStorage and would silently miss the vault entirely.
+    //   · notes      — every live and trashed note, verbatim.
+    //   · revisions  — every stored version of every note (up to REV_KEEP/REV_KEEP_BIG each).
+    //     Without this, a restore looks complete (the note is there) but its whole edit
+    //     history is gone — a loss you only discover the day you actually need to roll back.
+    //   · fileLinks  — NOT the raw IndexedDB records: a FileSystemFileHandle can't survive
+    //     JSON (it's a live, structured-clone-only browser object), so trying to serialize it
+    //     would just produce "{}" silently. Only what's actually useful to restore — the file's
+    //     name and when it was linked — is kept; restoreFileLinksList turns that into a
+    //     "needs relinking" hint rather than a fake, broken link.
     async function getBackupData() {
         await flushSave();
         const notes = await dbGetAll();
-        return { notes };
+        const revisions = await dbGetAllRevisions().catch((e) => { console.warn('Notes Vault: could not back up version history', e); return []; });
+        const rawLinks = await dbGetAllLinks().catch((e) => { console.warn('Notes Vault: could not back up file links', e); return []; });
+        const fileLinks = rawLinks.map((r) => ({ noteId: r.id, name: r.name || '', linkedAt: r.linkedAt || 0 }));
+        return { schema: BACKUP_SCHEMA, notes, revisions, fileLinks };
     }
     // Same merge rule either way: a note already here newer than the one in the backup wins,
     // so importing an old file can never clobber more recent edits.
@@ -38697,7 +38897,13 @@ kbd {
             if (!raw || typeof raw.markdown !== 'string') continue;
             const inc = normalizeNote({
                 id: raw.id || uid(), title: raw.title, markdown: raw.markdown, type: raw.type,
-                tags: raw.tags, pinned: raw.pinned, createdAt: raw.createdAt, updatedAt: raw.updatedAt, deletedAt: raw.deletedAt
+                tags: raw.tags, pinned: raw.pinned, createdAt: raw.createdAt, updatedAt: raw.updatedAt, deletedAt: raw.deletedAt,
+                // These four ride along on the note record itself, so a backup that only kept
+                // the fields above would quietly un-link every note from its skill/course/
+                // deadline on restore — same "looks fine, data's actually gone" shape as the
+                // revisions/fileLinks gap above.
+                linkedCareer: raw.linkedCareer, linkedSkill: raw.linkedSkill,
+                course: raw.course, deadline: raw.deadline, linkedCourseId: raw.linkedCourseId
             });
             const ex = existing.get(inc.id);
             if (ex && ex.updatedAt > inc.updatedAt) { skipped++; continue; }   // never overwrite a newer note with an older backup
@@ -38712,12 +38918,53 @@ kbd {
         }
         return { added, updated, skipped };
     }
+    // Merges backed-up versions in by id, skipping any already present (a version's id never
+    // changes, so this makes restoring the same backup twice a safe no-op rather than a pile of
+    // duplicates). revLast is cleared since a note's "newest known version" pointer may now be
+    // stale if the backup carried something more recent than what this browser had cached.
+    async function restoreRevisionsList(list) {
+        if (!Array.isArray(list) || !list.length) return { added: 0 };
+        let existingIds;
+        try { existingIds = new Set((await dbGetAllRevisions()).map((r) => r.id)); }
+        catch (e) { console.warn('Notes Vault: could not read existing version history', e); return { added: 0 }; }
+        let added = 0;
+        for (const raw of list) {
+            if (!raw || !raw.id || !raw.noteId || typeof raw.markdown !== 'string') continue;
+            if (existingIds.has(raw.id)) continue;
+            const rec = {
+                id: raw.id, noteId: raw.noteId, savedAt: +raw.savedAt || Date.now(),
+                title: raw.title || '', markdown: raw.markdown,
+                words: +raw.words || 0, chars: +raw.chars || raw.markdown.length, sig: raw.sig || '', label: raw.label || ''
+            };
+            try { await revPut(rec); added++; } catch (e) { console.warn('Notes Vault: could not restore a version', e); }
+        }
+        revLast.clear();
+        return { added };
+    }
+    // A restored file link can never carry a real handle (see getBackupData), so this only ever
+    // sets a "needs relinking" hint — never touches the real fileLinks store — and only for
+    // notes that don't already have a working link here (a link made on THIS device since the
+    // backup was taken is more current than the backup, and stays untouched).
+    async function restoreFileLinksList(list) {
+        if (!Array.isArray(list) || !list.length) return { added: 0 };
+        let added = 0;
+        for (const raw of list) {
+            if (!raw || !raw.noteId) continue;
+            if (S.fileLinks.has(raw.noteId)) continue;
+            setPendingRelink(raw.noteId, raw.name, raw.linkedAt);
+            added++;
+        }
+        return { added };
+    }
     // Entry point for the app-wide "Data Management" import: a full backup JSON carries a
     // notesVault field alongside the localStorage dump; that page reloads right after restoring,
-    // so there is no UI here worth refreshing — just get the notes into IndexedDB.
+    // so there is no UI here worth refreshing — just get everything into IndexedDB/localStorage.
     async function restoreFromBackup(payload) {
         const list = payload && Array.isArray(payload.notes) ? payload.notes : [];
-        return restoreNotesList(list, { silent: true });
+        const result = await restoreNotesList(list, { silent: true });
+        try { await restoreRevisionsList(payload && payload.revisions); } catch (e) { console.warn('Notes Vault: version history restore skipped', e); }
+        try { await restoreFileLinksList(payload && payload.fileLinks); } catch (e) { console.warn('Notes Vault: file link restore skipped', e); }
+        return result;
     }
     function importJson(file) {
         if (!file) return;
@@ -38728,7 +38975,11 @@ kbd {
                 const list = Array.isArray(data) ? data : (data.notes || []);
                 if (!Array.isArray(list) || !list.length) { alert('No notes found in that file.'); return; }
                 const { added, updated, skipped } = await restoreNotesList(list);
-                alert('Imported ' + (added + updated) + ' note(s)' + (skipped ? ' — ' + skipped + ' skipped because a newer version is already here.' : '.'));
+                const revResult = await restoreRevisionsList(data.revisions).catch(() => ({ added: 0 }));
+                await restoreFileLinksList(data.fileLinks).catch(() => ({ added: 0 }));
+                if (S.note) renderDocMeta();
+                const revMsg = revResult.added ? ' + ' + revResult.added + ' version' + (revResult.added === 1 ? '' : 's') + ' of history' : '';
+                alert('Imported ' + (added + updated) + ' note(s)' + revMsg + (skipped ? ' — ' + skipped + ' skipped because a newer version is already here.' : '.'));
             } catch (err) {
                 console.error(err);
                 alert('Could not read that file — is it a Notes Vault JSON backup?');
@@ -39435,7 +39686,7 @@ kbd {
         S.sideOpen = false; S.note = null; S.dirty = false;
         showLibrary();
         revLast.clear();
-        try { await loadAll(); await purgeExpired(); await loadAllLinks(); } catch (e) { console.error('Notes Vault could not open its database:', e); S.notes = []; S.trash = []; }
+        try { await loadAll(); await purgeExpired(); await loadAllLinks(); loadPendingRelinks(); } catch (e) { console.error('Notes Vault could not open its database:', e); S.notes = []; S.trash = []; }
         renderAll();
         updateStorage();
         el.app.focus();
@@ -39937,6 +40188,64 @@ kbd {
         const f = S.dup.prevFocus; S.dup.prevFocus = null;
         refocus(f);
     }
+
+    /* ═════════════ Storage manager: panel (v1 — read-only breakdown + quota guard) ═════════════ */
+    function storRowHtml(label, bytes, isEstimate) {
+        const val = bytes ? (isEstimate ? '~' : '') + fmtBytes(bytes) : '—';
+        return '<div class="nv-stor-row"><span>' + esc(label) + '</span><span>' + val + '</span></div>';
+    }
+    async function renderStorBody() {
+        if (!el.storBody) return;
+        let stats;
+        try { stats = await getVaultStorageStats(); S.storageStats = stats; }
+        catch (e) { console.warn('Notes Vault: storage stats failed', e); stats = null; }
+        if (!stats || !stats.browser.supported || !stats.browser.quota) {
+            el.storBody.innerHTML =
+                '<div class="nv-stor-unsupported"><i class="fa-solid fa-database" aria-hidden="true"></i>This browser doesn\'t report overall storage usage, but here\'s what the vault itself holds.</div>'
+                + '<div class="nv-stor-section"><div class="nv-stor-section-title">Vault (estimated)</div>'
+                + storRowHtml('Notes', stats ? stats.vault.notesBytes : 0, true)
+                + storRowHtml('Version history', stats ? stats.vault.revisionsBytes : 0, true)
+                + storRowHtml('Attachments', stats ? stats.vault.attachmentsBytes : 0, true)
+                + '</div>';
+            return;
+        }
+        const pct = stats.totals.percent;
+        const health = getStorageHealth(pct);
+        const msg = storageHealthMessage(pct, health);
+        const msgClass = health.level === 'warning' ? ' nv-stor-msg-warn' : (health.level === 'critical' || health.level === 'near-full') ? ' nv-stor-msg-danger' : '';
+        el.storBody.innerHTML =
+            '<div class="nv-stor-meter" data-level="' + esc(health.level) + '"><div class="nv-stor-meter-fill" style="width:' + Math.max(2, pct) + '%"></div></div>'
+            + '<div class="nv-stor-headline">' + pct + '% used — ' + esc(fmtBytes(stats.browser.usage)) + ' of ' + esc(fmtBytes(stats.browser.quota)) + '</div>'
+            + '<p class="nv-stor-msg' + msgClass + '">' + esc(msg) + '</p>'
+            + '<div class="nv-stor-section"><div class="nv-stor-section-title">Vault (estimated)</div>'
+            + storRowHtml('Notes', stats.vault.notesBytes, true)
+            + storRowHtml('Version history', stats.vault.revisionsBytes, true)
+            + storRowHtml('Attachments', stats.vault.attachmentsBytes, true)
+            + '</div>'
+            + '<div class="nv-stor-section"><div class="nv-stor-section-title">Everything else in this app</div>'
+            + storRowHtml('Other app data', stats.localStorage.bytes, true)
+            + '</div>'
+            + '<p class="nv-stor-note">Notes and version history are estimated from record size — browsers don\'t expose an exact per-store figure. Attachments (once added) will be exact.</p>';
+    }
+    async function openStorModal() {
+        if (!S.open || !el.stor) return;
+        closeMenus();
+        S.stor.open = true;
+        S.stor.prevFocus = document.activeElement;
+        el.storScrim.hidden = false;
+        el.stor.hidden = false;
+        el.storClose.focus();
+        el.storBody.innerHTML = '<div class="nv-dup-loading">Checking storage…</div>';
+        await renderStorBody();
+    }
+    function closeStorModal() {
+        if (!S.stor.open) return;
+        S.stor.open = false;
+        el.stor.hidden = true;
+        el.storScrim.hidden = true;
+        const f = S.stor.prevFocus; S.stor.prevFocus = null;
+        refocus(f);
+    }
     function handleDupAction(e) {
         const b = e.target.closest('[data-dup-act]');
         if (!b) return;
@@ -40089,6 +40398,7 @@ kbd {
             palScrim: $('nvPalScrim'), pal: $('nvPal'), palIn: $('nvPalIn'), palChip: $('nvPalChip'),
             palList: $('nvPalList'), palLive: $('nvPalLive'), palFoot: $('nvPalFoot'),
             dupScrim: $('nvDupScrim'), dup: $('nvDup'), dupClose: $('nvDupClose'), dupRescan: $('nvDupRescan'), dupBody: $('nvDupBody'),
+            storScrim: $('nvStorScrim'), stor: $('nvStor'), storClose: $('nvStorClose'), storRefresh: $('nvStorRefresh'), storBody: $('nvStorBody'),
             renScrim: $('nvRenScrim'), ren: $('nvRen'), renBody: $('nvRenBody'), renUpdate: $('nvRenUpdate'), renOnly: $('nvRenOnly'), renCancel: $('nvRenCancel')
         };
 
@@ -40356,6 +40666,7 @@ kbd {
             else if (b.dataset.gear === 'import') el.importFile.click();
             else if (b.dataset.gear === 'persist') requestPersist();
             else if (b.dataset.gear === 'dupes') openDupModal();
+            else if (b.dataset.gear === 'storage') openStorModal();
         });
         el.importFile.addEventListener('change', () => importJson(el.importFile.files[0]));
 
@@ -40364,6 +40675,11 @@ kbd {
         el.dupScrim.addEventListener('click', closeDupModal);
         el.dupRescan.addEventListener('click', () => { S.dup.dismissed.clear(); S.dup.swapped.clear(); S.dup.compareKey = null; scanDuplicates(); });
         el.dupBody.addEventListener('click', handleDupAction);
+
+        // Storage manager modal
+        el.storClose.addEventListener('click', closeStorModal);
+        el.storScrim.addEventListener('click', closeStorModal);
+        el.storRefresh.addEventListener('click', renderStorBody);
 
         // sort menu
         el.sortBtn.addEventListener('click', () => toggleMenu(el.sortBtn, el.sortMenu));
@@ -40415,6 +40731,7 @@ kbd {
             if (e.key === 'Escape') {
                 if (Gr.open) { closeGraph(); return; }
                 if (S.dup.open) { closeDupModal(); return; }
+                if (S.stor.open) { closeStorModal(); return; }
                 if (closeMenus()) return;
                 if (S.focus) { toggleFocus(false); return; }
                 if (closeDrawers()) return;
@@ -40941,7 +41258,8 @@ kbd {
         exportAllJson, importJson, requestPersist,
         getBackupData, restoreFromBackup,
         getLinkCounts, openForSkill,
-        getCourseLinkCounts, openForCourse
+        getCourseLinkCounts, openForCourse,
+        getVaultStorageStats, getStorageHealth
     };
 })();
 </script>
@@ -71123,12 +71441,16 @@ window.fcRenderTagChips = fcRenderTagChips;
                     version: "3.2-full-backup",
                     keyCount: Object.keys(raw).length,
                     notesVaultCount: notesVault ? notesVault.notes.length : 0,
+                    // Version history + file-link metadata ride along inside notesVault itself now
+                    // (see NotesVault.getBackupData) — surfaced here too just for the import/export
+                    // confirmation messages below.
+                    notesVaultRevisionsCount: notesVault ? (notesVault.revisions || []).length : 0,
                     excludes: FULLBACKUP_EXCLUDE_KEYS,
                     ...extraMeta
                 },
                 resourceStats: (typeof getResourceStats === 'function') ? getResourceStats() : null,
                 data: raw,
-                notesVault   // { notes: [...] } from Notes Vault's IndexedDB, or null if the vault script hasn't loaded
+                notesVault   // { schema, notes, revisions, fileLinks } from Notes Vault's IndexedDB, or null if the vault script hasn't loaded
             };
         }
 
@@ -71153,7 +71475,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                 // Đồng thời gom cả note trong Notes Vault (IndexedDB riêng) vào cùng 1 file.
                 const backup = await buildFullBackupObject();
                 downloadBackupObject(backup, 'finance-skills-tracker-FULLBACKUP');
-                const noteMsg = backup.__meta.notesVaultCount ? `, ${backup.__meta.notesVaultCount} note (Notes Vault)` : '';
+                const revCount = backup.__meta.notesVaultRevisionsCount || 0;
+                const noteMsg = backup.__meta.notesVaultCount
+                    ? `, ${backup.__meta.notesVaultCount} note (Notes Vault)${revCount ? ` + ${revCount} version lịch sử` : ''}`
+                    : '';
                 showNotification(
                     `✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu${noteMsg}!`,
                     'success'
