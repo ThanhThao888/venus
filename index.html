@@ -35381,6 +35381,16 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-combo-opt { padding: 7px 10px; border-radius: 7px; font-size: 0.84rem; color: var(--text-dark); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nv-combo-opt:hover, .nv-combo-opt.nv-combo-sel { background: var(--nv-active); }
 
+/* Full-text tooltip for a truncated .nv-combo-opt — a single shared, fixed-position
+   element (see showComboTip in attachCombo) so it can float outside the popup's
+   scroll/clip box without ever changing the popup's own width. */
+.nv-combo-tip {
+    position: fixed; z-index: 4100; max-width: 320px;
+    padding: 6px 10px; border-radius: 8px; font-size: 0.8rem; line-height: 1.4;
+    background: var(--bg-white); color: var(--text-dark); border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-lg); pointer-events: none; white-space: normal; overflow-wrap: break-word;
+}
+
 /* ═════════════ Status bar ═════════════ */
 .nv-status {
     grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 14px;
@@ -39803,6 +39813,33 @@ kbd {
         }
     }
 
+    /* Shared full-text tooltip for truncated .nv-combo-opt rows — one fixed-position
+       element reused by every combo instance (see attachCombo below). */
+    let comboTipEl = null;
+    function ensureComboTip() {
+        if (comboTipEl) return comboTipEl;
+        comboTipEl = document.createElement('div');
+        comboTipEl.className = 'nv-combo-tip';
+        comboTipEl.hidden = true;
+        (el.overlay || document.body).appendChild(comboTipEl);
+        return comboTipEl;
+    }
+    function showComboTip(anchorLi, text) {
+        const tip = ensureComboTip();
+        tip.textContent = text;
+        tip.hidden = false;
+        const r = anchorLi.getBoundingClientRect();
+        const vw = window.innerWidth, vh = window.innerHeight;
+        tip.style.left = '-9999px'; tip.style.top = '-9999px';  // measure off-screen first
+        const tw = tip.offsetWidth, th = tip.offsetHeight;
+        let left = r.right + 8;
+        if (left + tw > vw - 8) left = Math.max(8, r.left - tw - 8);
+        const top = Math.min(Math.max(8, r.top), vh - th - 8);
+        tip.style.left = left + 'px';
+        tip.style.top = top + 'px';
+    }
+    function hideComboTip() { if (comboTipEl) comboTipEl.hidden = true; }
+
     /* ── Themed replacement for native <datalist> suggestion popups (.nv-combo-pop). Wires
        an input to a filtered, clickable, keyboard-navigable dropdown of options.
        opts: { getOptions(): string[], multi (comma-separated field), onPick(value),
@@ -39816,14 +39853,14 @@ kbd {
             const v = input.value;
             return (multi ? v.slice(v.lastIndexOf(',') + 1) : v).trim().toLowerCase();
         };
-        const close = () => { popEl.hidden = true; popEl.innerHTML = ''; items = []; sel = -1; };
+        const close = () => { popEl.hidden = true; popEl.innerHTML = ''; items = []; sel = -1; hideComboTip(); };
         const render = () => {
             const q = query();
             const all = (getOptions() || []).filter((v) => v && v.toLowerCase() !== q);
             items = (q ? all.filter((v) => v.toLowerCase().includes(q)) : all).slice(0, 8);
             if (!items.length) { close(); return; }
             sel = -1;
-            popEl.innerHTML = items.map((v, i) => `<li class="nv-combo-opt" data-i="${i}" role="option">${esc(v)}</li>`).join('');
+            popEl.innerHTML = items.map((v, i) => `<li class="nv-combo-opt" data-i="${i}" data-full="${esc(v)}" role="option">${esc(v)}</li>`).join('');
             popEl.hidden = false;
         };
         const move = (d) => {
@@ -39859,6 +39896,16 @@ kbd {
         popEl.addEventListener('click', (e) => {
             const li = e.target.closest('.nv-combo-opt');
             if (li) pick(+li.dataset.i);
+        });
+        // Full-text tooltip on hover — only for rows actually clipped by the ellipsis,
+        // and it never changes .nv-combo-pop's own width (see .nv-combo-tip, fixed-position).
+        popEl.addEventListener('mouseover', (e) => {
+            const li = e.target.closest('.nv-combo-opt');
+            if (!li || li.scrollWidth <= li.clientWidth) return;
+            showComboTip(li, li.dataset.full);
+        });
+        popEl.addEventListener('mouseout', (e) => {
+            if (e.target.closest('.nv-combo-opt')) hideComboTip();
         });
         input.addEventListener('blur', () => { setTimeout(close, 120); });
     }
