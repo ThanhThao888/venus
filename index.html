@@ -34932,6 +34932,31 @@ window.DBP={
 .nv-seg button:hover { color: var(--text-dark); }
 .nv-seg button[aria-pressed="true"] { background: var(--bg-white); color: var(--primary-dark); box-shadow: var(--shadow-sm); }
 
+/* ═════════════ Tab strip: several notes held open at once ═════════════ */
+.nv-tabstrip {
+    display: flex; align-items: stretch; flex-shrink: 0; gap: 2px;
+    padding: 6px 8px 0; overflow-x: auto; scrollbar-width: thin;
+    border-bottom: 1px solid var(--border-color); background: var(--bg-light);
+}
+.nv-tabstrip[hidden] { display: none; }
+.nv-tabitem {
+    display: flex; align-items: center; gap: 7px; flex: 0 0 auto; min-width: 0; max-width: 200px;
+    padding: 7px 6px 7px 13px; border: 1px solid transparent; border-bottom: none;
+    border-radius: 9px 9px 0 0; background: none; color: var(--text-muted);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.nv-tabitem:hover { color: var(--text-dark); background: var(--nv-hover); }
+.nv-tabitem[aria-selected="true"] { background: var(--bg-white); color: var(--text-dark); border-color: var(--border-color); }
+.nv-tabitem-title { overflow: hidden; text-overflow: ellipsis; }
+.nv-tabitem-close {
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 18px; height: 18px; border-radius: 5px; font-size: 0.7rem; line-height: 1; opacity: 0.45;
+}
+.nv-tabitem:hover .nv-tabitem-close, .nv-tabitem-close:focus-visible { opacity: 1; }
+.nv-tabitem-close:hover { background: var(--nv-hover); opacity: 1; }
+.nv-app.nv-focus .nv-tabstrip { display: none !important; }
+@media (max-width: 640px) { .nv-tabitem { max-width: 130px; } }
+
 /* ═════════════ Library ═════════════ */
 .nv-lib { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .nv-lib .nv-bar { border-bottom-color: transparent; }
@@ -35505,6 +35530,7 @@ kbd {
 
     <!-- ── Main: library ⇄ document ── -->
     <main class="nv-main">
+        <div class="nv-tabstrip" id="nvTabStrip" role="tablist" aria-label="Open notes" hidden></div>
         <section class="nv-lib" id="nvLib">
             <div class="nv-bar">
                 <button class="nv-ib nv-only-narrow" id="nvMenuBtn" type="button" title="Navigation" aria-label="Open navigation"><i class="fa-solid fa-bars"></i></button>
@@ -35725,6 +35751,7 @@ kbd {
         query: '',
         limit: PAGE,
         note: null,          // note open in the document view
+        tabs: [], activeTab: null,   // ids of notes held open as tabs, and which tab is showing
         persisted: false,    // has S.note been written to IndexedDB yet?
         dirty: false,
         mode: 'read',        // read | edit
@@ -36357,6 +36384,7 @@ kbd {
     function renderAll() {
         renderSide();
         renderLibrary();
+        renderTabStrip();
     }
 
     function updateStatusRight() {
@@ -36695,13 +36723,73 @@ kbd {
         updateProgress();
     }
 
+    /* ═════════════ Tab strip: several notes held open at once, browser-tab style ═════════════
+       S.tabs is just a list of note ids — never anything heavier — so a stale id (the note got
+       deleted or purged elsewhere) is harmless and gets swept out the next time the strip
+       renders. Nothing here duplicates a note's data; the strip always reads titles live off
+       S.note / S.notes. */
+    const TABS_KEY = 'nvTabs';
+    function saveTabsToStorage() {
+        try { localStorage.setItem(TABS_KEY, JSON.stringify(S.tabs)); } catch (e) { /* private mode, quota, etc. — fine, session-only */ }
+    }
+    function loadTabsFromStorage() {
+        try { return JSON.parse(localStorage.getItem(TABS_KEY) || '[]').filter((x) => typeof x === 'string'); }
+        catch (e) { return []; }
+    }
+    function tabLabel(n) { return (n && n.title && n.title.trim()) || 'Untitled note'; }
+    function addTab(id) {
+        if (!S.tabs.includes(id)) S.tabs.push(id);
+        S.activeTab = id;
+        renderTabStrip();
+    }
+    // A brand-new, never-typed-in note isn't worth a permanent tab — same "nothing to keep"
+    // rule flushSave() already applies to whether it gets saved at all.
+    function pruneCurrentTabIfBlank() {
+        const n = S.note;
+        if (!n || S.persisted || n.title.trim() || n.markdown.trim() || (n.tags && n.tags.length)) return;
+        S.tabs = S.tabs.filter((x) => x !== n.id);
+    }
+    function renderTabStrip() {
+        if (!el.tabStrip) return;
+        S.tabs = S.tabs.filter((id) => (S.note && S.note.id === id) || S.notes.some((x) => x.id === id));
+        if (S.activeTab && !S.tabs.includes(S.activeTab)) S.activeTab = null;
+        saveTabsToStorage();
+        if (!S.tabs.length) { el.tabStrip.hidden = true; el.tabStrip.innerHTML = ''; return; }
+        el.tabStrip.hidden = false;
+        el.tabStrip.innerHTML = S.tabs.map((id) => {
+            const n = (S.note && S.note.id === id) ? S.note : S.notes.find((x) => x.id === id);
+            const label = tabLabel(n);
+            return `<button type="button" class="nv-tabitem" role="tab" data-tab-id="${esc(id)}" aria-selected="${S.activeTab === id}" title="${esc(label)}">
+                <span class="nv-tabitem-title">${esc(label)}</span>
+                <span class="nv-tabitem-close" data-close-tab="${esc(id)}" title="Close tab" aria-label="Close ${esc(label)} tab"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>
+            </button>`;
+        }).join('');
+    }
+    // Closes one tab. If it was the active one, falls back to whichever tab was opened most
+    // recently — same "closed tab → nearest sibling" feel as a browser.
+    async function closeTab(id) {
+        const wasActive = !!(S.note && S.note.id === id);
+        if (wasActive) await settle();
+        S.tabs = S.tabs.filter((x) => x !== id);
+        renderTabStrip();
+        if (!wasActive) return;
+        S.note = null; S.dirty = false; S.activeTab = null;
+        const next = S.tabs[S.tabs.length - 1];
+        if (next) { await openNote(next); return; }
+        showLibrary();
+        renderAll();
+    }
+
     async function openNote(id) {
+        if (S.note && S.note.id === id) { addTab(id); showDoc(); closeDrawers(); return; }  // already the active tab
         await settle();
+        pruneCurrentTabIfBlank();
         const n = S.notes.find((x) => x.id === id);
-        if (!n) return;
+        if (!n) { renderTabStrip(); return; }
         S.note = n; S.persisted = true; S.dirty = false;
         S.edited = false; S.editStart = 0;
         S.base = { id: n.id, title: n.title, markdown: n.markdown, updatedAt: n.updatedAt };
+        addTab(id);
         fillDoc();
         showDoc();
         S.savedAt = n.updatedAt;
@@ -36712,6 +36800,7 @@ kbd {
 
     async function newNote() {
         await settle();
+        pruneCurrentTabIfBlank();
         const now = Date.now();
         const sc = S.scope;
         const note = {
@@ -36722,6 +36811,7 @@ kbd {
         };
         S.note = note; S.persisted = false; S.dirty = false;
         S.edited = false; S.editStart = 0; S.base = null;
+        addTab(note.id);
         fillDoc();
         showDoc();
         setSave('idle');
@@ -36738,6 +36828,7 @@ kbd {
         const existing = findNoteByTitle(t);
         if (existing) { await openNote(existing.id); return; }
         await settle();
+        pruneCurrentTabIfBlank();
         closeWlPopup();
         const now = Date.now();
         const note = {
@@ -36747,6 +36838,7 @@ kbd {
         };
         S.note = note; S.persisted = false; S.dirty = false;
         S.edited = false; S.editStart = 0; S.base = null;
+        addTab(note.id);
         fillDoc();
         showDoc();
         setSave('idle');
@@ -36761,9 +36853,11 @@ kbd {
         if (!S.note) return;
         closeWlPopup();
         await settle();
+        pruneCurrentTabIfBlank();
         exitRevView();
-        S.note = null; S.dirty = false;
+        S.note = null; S.dirty = false; S.activeTab = null;
         showLibrary();
+        renderTabStrip();
         renderAll();
     }
 
@@ -38445,6 +38539,7 @@ kbd {
             tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
             tabLinks: $('nvTabLinks'), paneLinks: $('nvPaneLinks'), linksOut: $('nvLinksOut'), linksBack: $('nvLinksBack'), backlinkCount: $('nvBacklinkCount'),
             wlPop: $('nvWlPop'),
+            tabStrip: $('nvTabStrip'),
             saveVersion: $('nvSaveVersion'), histClear: $('nvHistClear'),
             revBar: $('nvRevBar'), revTxt: $('nvRevTxt'), revBack: $('nvRevBack'), revRestore: $('nvRevRestore'),
             emptyTrash: $('nvEmptyTrash'), toast: $('nvToast'), toastTxt: $('nvToastTxt'), toastBtn: $('nvToastBtn'),
@@ -38772,6 +38867,14 @@ kbd {
         el.capFolder.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); el.capSrc.focus(); } });
         el.capToastBtn.addEventListener('click', () => { const id = C.toastId; hideCapToast(); revealNote(id); });
         window.addEventListener('resize', () => { if (C.open) capFit(); });
+
+        if (el.tabStrip) el.tabStrip.addEventListener('click', (e) => {
+            const close = e.target.closest('[data-close-tab]');
+            if (close) { closeTab(close.dataset.closeTab); return; }
+            const tab = e.target.closest('[data-tab-id]');
+            if (tab) openNote(tab.dataset.tabId);
+        });
+        S.tabs = loadTabsFromStorage();          // ids only — resolved against S.notes once the vault first opens
 
         // the quick-capture shortcut must work everywhere on the page, vault open or not
         document.addEventListener('keydown', globalKeys, true);
