@@ -34915,6 +34915,29 @@ window.DBP={
 .nv-act:hover { background: var(--nv-hover); }
 .nv-act.nv-danger, .nv-act.nv-danger > i { color: var(--nv-danger); }
 
+/* ═════════════ Sort menu (checkmark radio list) ═════════════ */
+.nv-sort-chk { opacity: 0; }
+.nv-sort-opt[aria-checked="true"] { color: var(--primary-dark); font-weight: 600; }
+.nv-sort-opt[aria-checked="true"] .nv-sort-chk { opacity: 1; }
+
+/* ═════════════ Filter menu ═════════════ */
+.nv-filter-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--primary); margin-left: 5px; vertical-align: middle;
+}
+.nv-filter-menu { min-width: 250px; padding: 12px; }
+.nv-ffield { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; align-items: center; margin-bottom: 9px; }
+.nv-ffield label { font-size: 0.78rem; color: var(--text-muted); }
+.nv-ffield select, .nv-ffield input {
+    width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border-color);
+    background: var(--bg-white); color: var(--text-dark); font: inherit; font-size: 0.82rem; outline: none;
+}
+.nv-ffield select:focus, .nv-ffield input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16); }
+.nv-fcheck-group { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 12px; padding-top: 10px; border-top: 1px solid var(--border-color); }
+.nv-fcheck { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--text-dark); cursor: pointer; }
+.nv-fcheck input { accent-color: var(--primary); cursor: pointer; }
+.nv-filter-actions { display: flex; justify-content: flex-end; }
+
 /* ═════════════ Main column ═════════════ */
 .nv-main { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-white); }
 .nv-bar {
@@ -35318,6 +35341,8 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     }
     .nv-app.nv-side-open .nv-side { transform: none; }
     .nv-only-narrow { display: inline-flex !important; }
+    #nvSortBtn .nv-btn-label, #nvFilterBtn .nv-btn-label { display: none; }
+    .nv-filter-menu { position: fixed; left: 10px; right: 10px; top: auto; width: auto; min-width: 0; }
     .nv-lib-scroll { padding: 0 12px 32px; }
     .nv-lib-head { padding: 18px 10px 10px; }
     .nv-lib-title { font-size: 1.5rem; }
@@ -35442,6 +35467,72 @@ kbd {
         <section class="nv-lib" id="nvLib">
             <div class="nv-bar">
                 <button class="nv-ib nv-only-narrow" id="nvMenuBtn" type="button" title="Navigation" aria-label="Open navigation"><i class="fa-solid fa-bars"></i></button>
+                <div class="nv-menuwrap">
+                    <button class="nv-btn nv-btn-ghost" id="nvSortBtn" type="button" title="Sort notes" aria-haspopup="menu" aria-expanded="false">
+                        <i class="fa-solid fa-arrow-down-wide-short"></i> <span class="nv-btn-label">Sort</span>
+                    </button>
+                    <div class="nv-menu" id="nvSortMenu" role="menu" aria-label="Sort by">
+                        <button class="nv-act nv-sort-opt" role="menuitemradio" aria-checked="true" data-sort="updated" type="button"><i class="fa-solid fa-check nv-sort-chk"></i> Updated</button>
+                        <button class="nv-act nv-sort-opt" role="menuitemradio" aria-checked="false" data-sort="created" type="button"><i class="fa-solid fa-check nv-sort-chk"></i> Created</button>
+                        <button class="nv-act nv-sort-opt" role="menuitemradio" aria-checked="false" data-sort="title" type="button"><i class="fa-solid fa-check nv-sort-chk"></i> Title</button>
+                        <button class="nv-act nv-sort-opt" role="menuitemradio" aria-checked="false" data-sort="words" type="button"><i class="fa-solid fa-check nv-sort-chk"></i> Word count</button>
+                    </div>
+                </div>
+                <div class="nv-menuwrap">
+                    <button class="nv-btn nv-btn-ghost" id="nvFilterBtn" type="button" title="Filter notes" aria-haspopup="dialog" aria-expanded="false">
+                        <i class="fa-solid fa-filter"></i> <span class="nv-btn-label">Filter</span><span class="nv-filter-dot" id="nvFilterDot" hidden></span>
+                    </button>
+                    <div class="nv-menu nv-filter-menu" id="nvFilterMenu" role="dialog" aria-label="Filter notes">
+                        <div class="nv-ffield">
+                            <label for="nvFType">Type</label>
+                            <select id="nvFType">
+                                <option value="">Any</option>
+                                <option value="checklist">Checklist</option>
+                                <option value="code">Code</option>
+                                <option value="link">Link</option>
+                                <option value="text">Plain text</option>
+                            </select>
+                        </div>
+                        <div class="nv-ffield">
+                            <label for="nvFFolder">Folder</label>
+                            <select id="nvFFolder"><option value="">Any folder</option></select>
+                        </div>
+                        <div class="nv-ffield">
+                            <label for="nvFTag">Tag</label>
+                            <input type="text" id="nvFTag" list="nvFTagList" autocomplete="off" spellcheck="false" placeholder="e.g. accounting, cfa">
+                            <datalist id="nvFTagList"></datalist>
+                        </div>
+                        <div class="nv-ffield">
+                            <label for="nvFCreated">Created</label>
+                            <select id="nvFCreated">
+                                <option value="">Any time</option>
+                                <option value="7">Last 7 days</option>
+                                <option value="30">Last 30 days</option>
+                                <option value="90">Last 90 days</option>
+                                <option value="365">Last year</option>
+                            </select>
+                        </div>
+                        <div class="nv-ffield">
+                            <label for="nvFUpdated">Updated</label>
+                            <select id="nvFUpdated">
+                                <option value="">Any time</option>
+                                <option value="7">Last 7 days</option>
+                                <option value="30">Last 30 days</option>
+                                <option value="90">Last 90 days</option>
+                                <option value="365">Last year</option>
+                            </select>
+                        </div>
+                        <div class="nv-fcheck-group">
+                            <label class="nv-fcheck"><input type="checkbox" id="nvFChecklist"> Contains checklist</label>
+                            <label class="nv-fcheck"><input type="checkbox" id="nvFCode"> Contains code</label>
+                            <label class="nv-fcheck"><input type="checkbox" id="nvFLink"> Contains link</label>
+                            <label class="nv-fcheck"><input type="checkbox" id="nvFPinned"> Pinned only</label>
+                        </div>
+                        <div class="nv-filter-actions">
+                            <button type="button" class="nv-btn" id="nvFilterClear"><i class="fa-solid fa-rotate-left"></i> Clear filters</button>
+                        </div>
+                    </div>
+                </div>
                 <span class="nv-grow"></span>
                 <button class="nv-btn nv-btn-primary nv-only-narrow" type="button" data-new><i class="fa-solid fa-plus"></i> New note</button>
                 <button class="nv-ib" type="button" data-close title="Close (Esc)" aria-label="Close Notes Vault"><i class="fa-solid fa-xmark"></i></button>
@@ -35633,6 +35724,12 @@ kbd {
         open: false,
         notes: [],
         scope: { kind: 'all', value: '' },   // all | recent | pinned | folder | tag
+        sort: 'updated',                     // updated | created | title | words — always applied except while searching (search keeps relevance order)
+        filters: {                           // advanced filter panel — additive (AND) on top of the current scope/search
+            type: '', folder: '', tags: [],    // tags: lowercased, all must match
+            createdDays: '', updatedDays: '',  // '' | '7' | '30' | '90' | '365'
+            checklist: false, code: false, link: false, pinnedOnly: false
+        },
         query: '',
         limit: PAGE,
         note: null,          // note open in the document view
@@ -35806,6 +35903,53 @@ kbd {
         n.createdAt = +n.createdAt || Date.now();
         n.updatedAt = +n.updatedAt || n.createdAt;
         return n;
+    }
+
+    /* ───────── Content detection (drives the Type filter, the Contains-X checkboxes,
+       and Sort-by-word-count) — cheap regex checks, no markdown parsing needed. ───────── */
+    const wordCount = (md) => (md.match(/\S+/g) || []).length;
+    const hasChecklistSyntax = (md) => /^[ \t]*[-*+]\s\[[ xX]\]/m.test(md || '');
+    const hasCodeSyntax = (md) => (md || '').includes('```');
+    const hasLinkSyntax = (md) => /\[[^\]]+\]\(\S+?\)/.test(md || '') || /https?:\/\/\S+/i.test(md || '');
+    // A note's overall "Type" for the filter dropdown — priority order below, first match wins.
+    function contentKind(n) {
+        const md = n.markdown || '';
+        if (hasCodeSyntax(md)) return 'code';
+        if (hasChecklistSyntax(md)) return 'checklist';
+        if (hasLinkSyntax(md)) return 'link';
+        return 'text';
+    }
+
+    function filtersActive() {
+        const f = S.filters;
+        return !!(f.type || f.folder || f.tags.length || f.createdDays || f.updatedDays || f.checklist || f.code || f.link || f.pinnedOnly);
+    }
+    function passesFilters(n) {
+        const f = S.filters;
+        if (f.pinnedOnly && !n.pinned) return false;
+        if (f.folder && typeKey(n.type) !== f.folder) return false;
+        if (f.tags.length) {
+            const have = n.tags.map((t) => t.toLowerCase());
+            for (const t of f.tags) if (!have.includes(t)) return false;
+        }
+        if (f.type && contentKind(n) !== f.type) return false;
+        if (f.checklist && !hasChecklistSyntax(n.markdown)) return false;
+        if (f.code && !hasCodeSyntax(n.markdown)) return false;
+        if (f.link && !hasLinkSyntax(n.markdown)) return false;
+        if (f.createdDays && n.createdAt < Date.now() - Number(f.createdDays) * 864e5) return false;
+        if (f.updatedDays && n.updatedAt < Date.now() - Number(f.updatedDays) * 864e5) return false;
+        return true;
+    }
+    // Pinned notes always float to the top; S.sort only decides the order within/below that.
+    function sortList(list) {
+        const cmp = {
+            updated: (a, b) => b.updatedAt - a.updatedAt,
+            created: (a, b) => b.createdAt - a.createdAt,
+            title: (a, b) => (a.title.trim() || 'Untitled note').localeCompare(b.title.trim() || 'Untitled note', undefined, { sensitivity: 'base', numeric: true }),
+            words: (a, b) => wordCount(b.markdown) - wordCount(a.markdown)
+        }[S.sort] || ((a, b) => b.updatedAt - a.updatedAt);
+        list.sort((a, b) => (b.pinned - a.pinned) || cmp(a, b));
+        return list;
     }
 
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -36164,9 +36308,11 @@ kbd {
 
     /* ───────── Filtering ───────── */
     function filterNotes(tokens) {
+        const active = filtersActive();
         if (tokens.length) {
             const hits = [];
             for (const n of S.notes) {
+                if (active && !passesFilters(n)) continue;
                 const f = getFold(n);
                 let score = 0, ok = true;
                 for (const t of tokens) {
@@ -36176,6 +36322,7 @@ kbd {
                 }
                 if (ok) hits.push({ n, score });
             }
+            // Search relevance always wins the order here — Sort-by only shapes plain browsing below.
             hits.sort((a, b) => (b.score - a.score) || (b.n.updatedAt - a.n.updatedAt));
             return hits.map((h) => h.n);
         }
@@ -36188,13 +36335,23 @@ kbd {
         else if (kind === 'folder') list = S.notes.filter((n) => typeKey(n.type) === value);
         else if (kind === 'tag') list = S.notes.filter((n) => n.tags.some((t) => t.toLowerCase() === value));
         else list = S.notes.slice();
-        list.sort(kind === 'recent'
-            ? (a, b) => b.updatedAt - a.updatedAt
-            : (a, b) => (b.pinned - a.pinned) || (b.updatedAt - a.updatedAt));
-        return list;
+        if (active) list = list.filter(passesFilters);
+        return sortList(list);
     }
 
     /* ═════════════ Rendering: sidebar ═════════════ */
+    // Keeps the Filter panel's Folder dropdown and Tag autocomplete in sync with the
+    // vault's current folders/tags (called from renderSide, right after S.fmap/S.tmap rebuild).
+    function renderFilterOptions() {
+        if (!el || !el.fFolder) return;
+        const cur = el.fFolder.value;
+        const fl = [...S.fmap.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
+        el.fFolder.innerHTML = '<option value="">Any folder</option>' + fl.map(([k, f]) => `<option value="${esc(k)}">${esc(f.label)}</option>`).join('');
+        if (fl.some(([k]) => k === cur)) el.fFolder.value = cur;
+        const tl = [...S.tmap.values()].sort((a, b) => a.label.localeCompare(b.label));
+        el.fTagList.innerHTML = tl.map((g) => `<option value="${esc(g.label)}">`).join('');
+    }
+
     function renderSide() {
         const now = Date.now();
         let recent = 0, pinned = 0;
@@ -36215,6 +36372,7 @@ kbd {
             }
         }
         S.fmap = folders; S.tmap = tags;
+        renderFilterOptions();
 
         const sc = S.scope;
         if ((sc.kind === 'folder' && !folders.has(sc.value)) || (sc.kind === 'tag' && !tags.has(sc.value))) {
@@ -36249,13 +36407,14 @@ kbd {
     function libHeader(count) {
         const q = S.query.trim(), sc = S.scope;
         const pl = count === 1 ? 'note' : 'notes';
-        if (q) return ['Search results', `${count} of ${S.notes.length} notes match “${q}”`];
+        const fx = (sc.kind !== 'trash' && filtersActive()) ? ' · filtered' : '';
+        if (q) return ['Search results', `${count} of ${S.notes.length} notes match “${q}”${fx}`];
         if (sc.kind === 'trash') return ['Trash', count ? `${count} ${pl} · removed for good after 30 days` : 'Deleted notes wait here for 30 days'];
-        if (sc.kind === 'recent') return ['Recent', `${count} ${pl} edited in the last 7 days`];
-        if (sc.kind === 'pinned') return ['Pinned', `${count} ${pl}`];
-        if (sc.kind === 'folder') return [(S.fmap.get(sc.value) || {}).label || 'Folder', `${count} ${pl}`];
-        if (sc.kind === 'tag') return ['#' + ((S.tmap.get(sc.value) || {}).label || sc.value), `${count} ${pl}`];
-        return ['All notes', `${count} ${pl}`];
+        if (sc.kind === 'recent') return ['Recent', `${count} ${pl} edited in the last 7 days${fx}`];
+        if (sc.kind === 'pinned') return ['Pinned', `${count} ${pl}${fx}`];
+        if (sc.kind === 'folder') return [(S.fmap.get(sc.value) || {}).label || 'Folder', `${count} ${pl}${fx}`];
+        if (sc.kind === 'tag') return ['#' + ((S.tmap.get(sc.value) || {}).label || sc.value), `${count} ${pl}${fx}`];
+        return ['All notes', `${count} ${pl}${fx}`];
     }
 
     function emptyHtml(searching) {
@@ -37863,15 +38022,87 @@ kbd {
         if (e.key === 'Enter' && !e.shiftKey) onEnter(e);
         else if (e.key === 'Tab') onTab(e);
     }
+    /* ═════════════ Source Capture ═════════════
+       Pasting a bare URL into an otherwise-empty note turns it into a sourced clip: a small
+       "Source / URL / Captured" header, then a blank line for the person's own notes. Domain,
+       URL and date are always available offline; the human-readable Source name starts as a
+       guess from the domain and is quietly upgraded if the site's page can be read (most sites
+       block cross-origin reads with no CORS headers, so this silently keeps the guess then). */
+    const SOURCE_HEADER_RE = /^\*\*Source:\*\* (.*)\n\*\*URL:\*\* (.*)\n\*\*Captured:\*\* (.*)\n\n---\n\n/;
+    function sourceDomain(url) {
+        try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url; }
+    }
+    function domainLabel(domain) {
+        const base = domain.split('.')[0].replace(/[-_]+/g, ' ').trim();
+        return base ? base.replace(/\b\w/g, (c) => c.toUpperCase()) : domain;
+    }
+    const sourceHeader = (name, url, captured) => `**Source:** ${name}\n**URL:** ${url}\n**Captured:** ${captured}\n\n---\n\n`;
+
+    async function captureSource(url) {
+        if (!S.note) return;
+        const fallback = domainLabel(sourceDomain(url));
+        const captured = fmtFull(Date.now()).split(',')[0].trim();     // "22 Sep 2026" — drop the time
+        const header = sourceHeader(fallback, url, captured);
+
+        S.note.markdown = header;
+        if (!S.note.title.trim()) S.note.title = fallback;
+        if (normType(S.note.type) === 'General') S.note.type = 'Sources';
+        if (!S.note.tags.some((t) => t.toLowerCase() === 'source')) S.note.tags.push('source');
+        fillDoc();
+        fitTitle();
+        el.src.focus();
+        el.src.setSelectionRange(header.length, header.length);
+        markDirty();
+        flash('Source captured');
+
+        // Best-effort upgrade — see comment above. Silently gives up on any failure, timeout,
+        // or if the person has since moved on to another note or edited the header away.
+        const noteId = S.note.id;
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 6000);
+            const res = await fetch(url, { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (!res.ok) return;
+            const html = await res.text();
+            const siteName = (html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']*)["']/i) || [])[1];
+            const pageTitle = (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1];
+            const name = ((siteName || pageTitle || fallback) + '').trim() || fallback;
+            if (!S.note || S.note.id !== noteId) return;
+            const m = SOURCE_HEADER_RE.exec(S.note.markdown);
+            if (!m || m[2] !== url) return;                            // header was edited/removed meanwhile
+            const newHeader = sourceHeader(name, url, m[3]);
+            S.note.markdown = newHeader + S.note.markdown.slice(m[0].length);
+            if (S.note.title.trim() === fallback && pageTitle) S.note.title = pageTitle.trim();
+            if (S.mode === 'edit' && !el.src.hidden) {
+                const pos = Math.max(0, el.src.selectionStart + (newHeader.length - m[0].length));
+                el.src.value = S.note.markdown;
+                el.title.value = S.note.title;
+                fitTitle();
+                el.src.setSelectionRange(pos, pos);
+            }
+            markDirty();
+        } catch (e) { /* offline, blocked by CORS, or timed out — the domain-based guess stands */ }
+    }
+
     function onEditorPaste(e) {
-        // Paste a URL over selected words → [words](url)
         const ta = el.src, s = ta.selectionStart, en = ta.selectionEnd;
-        if (s === en) return;
         const t = ((e.clipboardData && e.clipboardData.getData('text/plain')) || '').trim();
-        const sel = ta.value.slice(s, en);
-        if (!/^https?:\/\/\S+$/.test(t) || sel.includes('\n')) return;
-        e.preventDefault();
-        replaceRange(s, en, '[' + sel + '](' + t + ')', s + sel.length + t.length + 4);
+        const isLoneUrl = /^https?:\/\/\S+$/.test(t);
+        // Paste a URL over selected words → [words](url)
+        if (s !== en) {
+            const sel = ta.value.slice(s, en);
+            if (isLoneUrl && !sel.includes('\n')) {
+                e.preventDefault();
+                replaceRange(s, en, '[' + sel + '](' + t + ')', s + sel.length + t.length + 4);
+            }
+            return;
+        }
+        // Source Capture: a bare URL pasted into an otherwise-empty note becomes a sourced clip
+        if (isLoneUrl && !ta.value.trim()) {
+            e.preventDefault();
+            captureSource(t);
+        }
     }
 
     /* ═════════════ Focus reading mode ═════════════
@@ -37933,7 +38164,7 @@ kbd {
     }
     function closeMenus() {
         let any = false;
-        [[el.moreBtn, el.docMenu], [el.gear, el.gearMenu], [el.toolsMore, el.toolsMenu]].forEach(([b, m]) => {
+        [[el.moreBtn, el.docMenu], [el.gear, el.gearMenu], [el.toolsMore, el.toolsMenu], [el.sortBtn, el.sortMenu], [el.filterBtn, el.filterMenu]].forEach(([b, m]) => {
             if (m.classList.contains('nv-open')) { m.classList.remove('nv-open'); b.setAttribute('aria-expanded', 'false'); any = true; }
         });
         return any;
@@ -38432,6 +38663,12 @@ kbd {
             saveVersion: $('nvSaveVersion'), histClear: $('nvHistClear'),
             revBar: $('nvRevBar'), revTxt: $('nvRevTxt'), revBack: $('nvRevBack'), revRestore: $('nvRevRestore'),
             emptyTrash: $('nvEmptyTrash'), toast: $('nvToast'), toastTxt: $('nvToastTxt'), toastBtn: $('nvToastBtn'),
+            sortBtn: $('nvSortBtn'), sortMenu: $('nvSortMenu'),
+            filterBtn: $('nvFilterBtn'), filterMenu: $('nvFilterMenu'), filterDot: $('nvFilterDot'),
+            fType: $('nvFType'), fFolder: $('nvFFolder'), fTag: $('nvFTag'), fTagList: $('nvFTagList'),
+            fCreated: $('nvFCreated'), fUpdated: $('nvFUpdated'),
+            fChecklist: $('nvFChecklist'), fCode: $('nvFCode'), fLink: $('nvFLink'), fPinned: $('nvFPinned'),
+            filterClear: $('nvFilterClear'),
             tools: $('nvTools'), toolsScroll: $('nvToolsScroll'), toolsMore: $('nvToolsMore'), toolsMenu: $('nvToolsMenu'),
             save: $('nvSave'), saveTxt: $('nvSaveTxt'), statRight: $('nvStatRight'),
             palOpen: $('nvPalOpen'), palKeyHint: $('nvPalKeyHint'),
@@ -38662,6 +38899,45 @@ kbd {
             else if (b.dataset.gear === 'persist') requestPersist();
         });
         el.importFile.addEventListener('change', () => importJson(el.importFile.files[0]));
+
+        // sort menu
+        el.sortBtn.addEventListener('click', () => toggleMenu(el.sortBtn, el.sortMenu));
+        el.sortMenu.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-sort]');
+            if (!b) return;
+            S.sort = b.dataset.sort;
+            el.sortMenu.querySelectorAll('.nv-sort-opt').forEach((o) => o.setAttribute('aria-checked', String(o === b)));
+            closeMenus();
+            S.limit = PAGE;
+            renderLibrary();
+        });
+
+        // filter panel — every change re-renders the library immediately (no separate "Apply" step)
+        el.filterBtn.addEventListener('click', () => { renderFilterOptions(); toggleMenu(el.filterBtn, el.filterMenu); });
+        function updateFilterDot() { el.filterDot.hidden = !filtersActive(); }
+        function applyFilterChange() { S.limit = PAGE; updateFilterDot(); renderLibrary(); }
+        el.fType.addEventListener('change', () => { S.filters.type = el.fType.value; applyFilterChange(); });
+        el.fFolder.addEventListener('change', () => { S.filters.folder = el.fFolder.value; applyFilterChange(); });
+        let fTagTimer = null;
+        el.fTag.addEventListener('input', () => {
+            clearTimeout(fTagTimer);
+            fTagTimer = setTimeout(() => {
+                S.filters.tags = el.fTag.value.split(',').map((t) => t.trim().replace(/^#+/, '').toLowerCase()).filter(Boolean);
+                applyFilterChange();
+            }, 200);
+        });
+        el.fCreated.addEventListener('change', () => { S.filters.createdDays = el.fCreated.value; applyFilterChange(); });
+        el.fUpdated.addEventListener('change', () => { S.filters.updatedDays = el.fUpdated.value; applyFilterChange(); });
+        el.fChecklist.addEventListener('change', () => { S.filters.checklist = el.fChecklist.checked; applyFilterChange(); });
+        el.fCode.addEventListener('change', () => { S.filters.code = el.fCode.checked; applyFilterChange(); });
+        el.fLink.addEventListener('change', () => { S.filters.link = el.fLink.checked; applyFilterChange(); });
+        el.fPinned.addEventListener('change', () => { S.filters.pinnedOnly = el.fPinned.checked; applyFilterChange(); });
+        el.filterClear.addEventListener('click', () => {
+            S.filters = { type: '', folder: '', tags: [], createdDays: '', updatedDays: '', checklist: false, code: false, link: false, pinnedOnly: false };
+            el.fType.value = ''; el.fFolder.value = ''; el.fTag.value = ''; el.fCreated.value = ''; el.fUpdated.value = '';
+            el.fChecklist.checked = false; el.fCode.checked = false; el.fLink.checked = false; el.fPinned.checked = false;
+            applyFilterChange();
+        });
 
         // menus close on outside click
         document.addEventListener('click', (e) => { if (S.open && !e.target.closest('.nv-menuwrap')) closeMenus(); });
