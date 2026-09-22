@@ -42271,6 +42271,37 @@ kbd {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initGraphUI); else initGraphUI();
 
+    // Lightweight, read-only note search for the app-wide Global Search (Ctrl/⌘+K outside
+    // the vault). Reads straight from IndexedDB like getLinkCounts does, so it works even
+    // before the person has ever opened the Notes Vault overlay this session — no S.notes
+    // dependency, no side effects. Scores title > body > tags/folder, same idea as the
+    // in-vault search, just trimmed down and capped to `limit` results.
+    async function searchNotesLite(query, limit) {
+        limit = limit || 8;
+        const q = (query || '').trim();
+        if (!q) return [];
+        let all;
+        try { all = (await dbGetAll()).map(normalizeNote).filter((n) => !n.deletedAt); }
+        catch (e) { return []; }
+        const tokens = fold(q.normalize('NFC')).split(/\s+/).filter(Boolean);
+        if (!tokens.length) return [];
+        const out = [];
+        for (const n of all) {
+            const e = getFold(n);
+            let score = 0, ok = true;
+            for (const t of tokens) {
+                const it = findAt(e.ft, t, 0), ib = findAt(e.fb, t, 0), ig = findAt(e.fg + ' ' + e.fc, t, 0);
+                if (it >= 0) score += it === 0 ? 30 : 20;
+                else if (ib >= 0) score += 10;
+                else if (ig >= 0) score += 8;
+                else { ok = false; break; }
+            }
+            if (ok) out.push({ id: n.id, title: n.title.trim() || 'Untitled note', type: normType(n.type), snippet: plainSnippet(n.markdown), score });
+        }
+        out.sort((a, b) => b.score - a.score);
+        return out.slice(0, limit);
+    }
+
     window.NotesVault = {
         toggle, open, close, newNote, openNote,
         renderList: () => { if (S.open) renderAll(); },
@@ -42281,7 +42312,8 @@ kbd {
         getResourceLinkCounts, openForResource,
         getAnalysisLinkCounts, openForAnalysis,
         getDealLinkCounts, openForDeal,
-        getVaultStorageStats, getStorageHealth
+        getVaultStorageStats, getStorageHealth,
+        searchNotesLite
     };
 })();
 </script>
@@ -78224,6 +78256,407 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
     }, true);
     document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'visible') resetHorizontalScroll();
+    });
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     GLOBAL SEARCH — one box for the whole app: Skills, Courses,
+     Resources, Notes, Investment Analysis, Goals, Deal Diary.
+     Ctrl/⌘+K opens it from anywhere (Notes Vault keeps its own Ctrl+K
+     for its in-vault command palette — this one steps aside whenever
+     that overlay is open). Each result reuses the app's own existing
+     navigation: DLT.navigate() for Courses/Goals, the jumpFromNoteTo*
+     helpers for Skills/Resources/Investment Analysis/Deal Diary, and
+     NotesVault.open()+openNote() for Notes.
+     ════════════════════════════════════════════════════════════════════ -->
+<style>
+    #gsFab {
+        position: fixed; top: 16px; right: 16px; z-index: 9500;
+        display: flex; align-items: center; gap: 8px;
+        padding: 9px 14px 9px 12px; border-radius: 999px;
+        background: var(--bg-white); color: var(--text-muted, #888);
+        border: 1px solid var(--border-color); cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        font-size: 0.85rem; font-family: inherit;
+        transition: box-shadow .18s, transform .18s, border-color .18s;
+    }
+    #gsFab:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.14); transform: translateY(-1px); border-color: var(--primary); color: var(--text-dark); }
+    #gsFab .gs-fab-kbd { display: inline-flex; gap: 2px; }
+    #gsFab kbd {
+        font-family: inherit; font-size: 0.72rem; font-weight: 700; line-height: 1;
+        padding: 3px 6px; border-radius: 5px;
+        background: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-muted, #888);
+    }
+    @media (max-width: 640px) {
+        #gsFab .gs-fab-label { display: none; }
+        #gsFab { padding: 10px; }
+    }
+
+    #gsOverlay {
+        position: fixed; inset: 0; z-index: 100050;
+        background: rgba(30, 15, 22, 0.5); backdrop-filter: blur(2px);
+        display: none; align-items: flex-start; justify-content: center;
+        padding: 10vh 16px 16px;
+    }
+    #gsOverlay.gs-on { display: flex; }
+    #gsBox {
+        width: 100%; max-width: 640px; max-height: 72vh;
+        background: var(--bg-white); color: var(--text-dark);
+        border-radius: 16px; border: 1px solid var(--border-color);
+        box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        display: flex; flex-direction: column; overflow: hidden;
+        animation: gsPopIn .16s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes gsPopIn { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+    #gsInputRow { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border-color); flex: none; }
+    #gsInputRow i.fa-magnifying-glass { color: var(--text-muted, #888); font-size: 0.95rem; }
+    #gsInput { flex: 1; border: none; outline: none; background: transparent; font-size: 1.02rem; color: var(--text-dark); font-family: inherit; }
+    #gsInput::placeholder { color: var(--text-muted, #888); }
+    #gsInputRow kbd { font-family: inherit; font-size: 0.72rem; font-weight: 700; padding: 3px 6px; border-radius: 5px; background: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-muted, #888); }
+
+    #gsResults { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    .gs-group { margin: 8px 6px 4px; }
+    .gs-group-label { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--primary); padding: 4px 8px; }
+    .gs-item {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 9px 10px; border-radius: 10px; cursor: pointer;
+    }
+    .gs-item:hover, .gs-item.gs-active { background: rgba(var(--primary-rgb), 0.12); }
+    .gs-item-icon {
+        flex: none; width: 28px; height: 28px; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(var(--primary-rgb), 0.14); color: var(--primary-dark); font-size: 0.8rem; margin-top: 1px;
+    }
+    .gs-item-body { min-width: 0; flex: 1; }
+    .gs-item-title { font-weight: 600; font-size: 0.92rem; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gs-item-title mark { background: rgba(var(--primary-rgb), 0.35); color: inherit; border-radius: 3px; padding: 0 1px; }
+    .gs-item-sub { font-size: 0.76rem; color: var(--text-muted, #888); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    #gsEmpty, #gsHint { padding: 28px 16px; text-align: center; color: var(--text-muted, #888); font-size: 0.9rem; }
+    #gsFooter { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 16px; border-top: 1px solid var(--border-color); font-size: 0.72rem; color: var(--text-muted, #888); }
+    #gsFooter .gs-hint-group { display: flex; align-items: center; gap: 12px; }
+    #gsFooter kbd { font-family: inherit; font-size: 0.68rem; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: var(--bg-light); border: 1px solid var(--border-color); }
+</style>
+
+<button id="gsFab" type="button" title="Global Search — search everything in the app" aria-haspopup="dialog" aria-controls="gsOverlay">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="gs-fab-label">Search everything</span>
+    <span class="gs-fab-kbd"><kbd id="gsFabKbdMod">Ctrl</kbd><kbd>K</kbd></span>
+</button>
+
+<div id="gsOverlay" role="presentation">
+    <div id="gsBox" role="dialog" aria-modal="true" aria-label="Global Search">
+        <div id="gsInputRow">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input id="gsInput" type="text" autocomplete="off" spellcheck="false"
+                   placeholder="Search skills, courses, resources, notes, investment analysis, goals…">
+            <kbd>Esc</kbd>
+        </div>
+        <div id="gsResults"></div>
+        <div id="gsFooter">
+            <div class="gs-hint-group">
+                <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+                <span><kbd>Enter</kbd> Open</span>
+            </div>
+            <span id="gsFooterCount"></span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || '');
+    const KMOD = IS_MAC ? '⌘' : 'Ctrl';
+    const fabKbd = document.getElementById('gsFabKbdMod');
+    if (fabKbd) fabKbd.textContent = KMOD;
+
+    const overlay = document.getElementById('gsOverlay');
+    const box = document.getElementById('gsBox');
+    const input = document.getElementById('gsInput');
+    const resultsEl = document.getElementById('gsResults');
+    const footerCount = document.getElementById('gsFooterCount');
+    const fab = document.getElementById('gsFab');
+
+    let items = [];        // flat, currently-rendered result list (in DOM order)
+    let active = -1;        // index into items
+    let seq = 0;             // guards against a stale async response overwriting a newer one
+    let lastFocus = null;
+    let debounceTimer = 0;
+
+    function escHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    // Vietnamese-diacritic-insensitive + lowercase fold, same idea as the Skills search
+    // and the Notes Vault search already use, so typing "ke toan" still finds "Kế Toán".
+    function fold(s) {
+        return String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+    }
+    function highlight(text, query) {
+        const t = String(text ?? '');
+        const ft = fold(t), fq = fold(query);
+        const i = fq ? ft.indexOf(fq) : -1;
+        if (i === -1) return escHtml(t);
+        return escHtml(t.slice(0, i)) + '<mark>' + escHtml(t.slice(i, i + query.length)) + '</mark>' + escHtml(t.slice(i + query.length));
+    }
+    // Every whitespace-separated token must appear somewhere in the haystack. Returns a
+    // score (higher = better: a hit at the very start of the haystack ranks first) or -1.
+    function scoreTokens(haystack, tokens) {
+        const fh = fold(haystack);
+        let score = 0;
+        for (const t of tokens) {
+            const i = fh.indexOf(t);
+            if (i === -1) return -1;
+            score += i === 0 ? 30 : (i < 12 ? 18 : 8);
+        }
+        return score;
+    }
+
+    function readJson(key) {
+        try { return JSON.parse(localStorage.getItem(key) || '[]') || []; } catch (e) { return []; }
+    }
+
+    /* ───────── Per-category search functions — each returns [{title, sub, run, score}] ───────── */
+
+    function searchSkills(tokens) {
+        if (typeof skillsData === 'undefined') return [];
+        const out = [];
+        Object.entries(skillsData).forEach(([careerKey, careerData]) => {
+            Object.entries(careerData.categories || {}).forEach(([categoryName, categoryData]) => {
+                (categoryData.skills || []).forEach(skill => {
+                    const score = scoreTokens(skill.name, tokens);
+                    if (score < 0) return;
+                    out.push({
+                        score, title: skill.name,
+                        sub: (careerData.title || careerKey) + ' · ' + categoryName,
+                        run: () => {
+                            if (typeof window.jumpFromNoteToSkill === 'function') window.jumpFromNoteToSkill(careerKey, skill.name);
+                        }
+                    });
+                });
+            });
+        });
+        return out;
+    }
+
+    function searchCourses(tokens) {
+        const courses = readJson('courses');
+        const out = [];
+        for (const c of courses) {
+            const haystack = [c.title, c.description, c.notes, ...(c.tags || [])].filter(Boolean).join(' ');
+            const score = scoreTokens(haystack, tokens);
+            if (score < 0) continue;
+            out.push({
+                score, title: c.title || 'Untitled course',
+                sub: (skillsData && skillsData[c.career] ? skillsData[c.career].title : c.career || '') + (c.difficulty ? ' · ' + c.difficulty : ''),
+                run: () => { if (window.DLT && typeof window.DLT.navigate === 'function') window.DLT.navigate('c_' + c.id); }
+            });
+        }
+        return out;
+    }
+
+    function searchGoals(tokens) {
+        const goals = readJson('goals');
+        const out = [];
+        for (const g of goals) {
+            const haystack = [g.title, g.why, g.type].filter(Boolean).join(' ');
+            const score = scoreTokens(haystack, tokens);
+            if (score < 0) continue;
+            out.push({
+                score, title: g.title || 'Untitled goal',
+                sub: (skillsData && skillsData[g.career] ? skillsData[g.career].title : g.career || '') + (g.deadline ? ' · due ' + g.deadline : ''),
+                run: () => { if (window.DLT && typeof window.DLT.navigate === 'function') window.DLT.navigate('g_' + g.id); }
+            });
+        }
+        return out;
+    }
+
+    function searchResources(tokens) {
+        const resources = readJson('resourceLibrary');
+        const out = [];
+        for (const r of resources) {
+            const haystack = [r.title, r.author, r.domain, r.notes, r.category, ...(r.tags || [])].filter(Boolean).join(' ');
+            const score = scoreTokens(haystack, tokens);
+            if (score < 0) continue;
+            out.push({
+                score, title: r.title || 'Untitled resource',
+                sub: [r.category, r.author].filter(Boolean).join(' · '),
+                run: () => { if (typeof window.jumpFromNoteToResource === 'function') window.jumpFromNoteToResource(r.id); }
+            });
+        }
+        return out;
+    }
+
+    function searchInvestments(tokens) {
+        const analyses = readJson('investmentAnalyses');
+        const out = [];
+        for (const a of analyses) {
+            const haystack = [a.title, a.thesis, a.type, ...(a.tags || [])].filter(Boolean).join(' ');
+            const score = scoreTokens(haystack, tokens);
+            if (score < 0) continue;
+            out.push({
+                score, title: a.title || 'Untitled analysis',
+                sub: [a.type, a.thesisStatus].filter(Boolean).join(' · '),
+                run: () => { if (typeof window.jumpFromNoteToAnalysis === 'function') window.jumpFromNoteToAnalysis(a.id); }
+            });
+        }
+        return out;
+    }
+
+    function searchDeals(tokens) {
+        const deals = readJson('dealDiary');
+        const out = [];
+        for (const d of deals) {
+            const haystack = [d.dealName, d.dealType, d.whatWorked, d.whatWentWrong, d.framework].filter(Boolean).join(' ');
+            const score = scoreTokens(haystack, tokens);
+            if (score < 0) continue;
+            out.push({
+                score, title: d.dealName || 'Untitled deal',
+                sub: [d.dealType, d.status].filter(Boolean).join(' · '),
+                run: () => { if (typeof window.jumpFromNoteToDeal === 'function') window.jumpFromNoteToDeal(d.id); }
+            });
+        }
+        return out;
+    }
+
+    async function searchNotes(query) {
+        if (!window.NotesVault || typeof window.NotesVault.searchNotesLite !== 'function') return [];
+        let hits;
+        try { hits = await window.NotesVault.searchNotesLite(query, 8); } catch (e) { return []; }
+        return hits.map(n => ({
+            score: n.score, title: n.title, sub: n.type + (n.snippet ? ' · ' + n.snippet : ''),
+            run: async () => {
+                closeGS();
+                if (window.NotesVault) { await window.NotesVault.open(); await window.NotesVault.openNote(n.id); }
+            }
+        }));
+    }
+
+    const GROUPS = [
+        { key: 'skills', label: 'Skills', icon: 'fa-bullseye', fn: (tokens) => searchSkills(tokens) },
+        { key: 'courses', label: 'Courses', icon: 'fa-book', fn: (tokens) => searchCourses(tokens) },
+        { key: 'resources', label: 'Resources', icon: 'fa-book-open', fn: (tokens) => searchResources(tokens) },
+        { key: 'notes', label: 'Notes', icon: 'fa-note-sticky', async: true, fn: (tokens, q) => searchNotes(q) },
+        { key: 'investment', label: 'Investment Analysis', icon: 'fa-chart-line', fn: (tokens) => searchInvestments(tokens) },
+        { key: 'goals', label: 'Goals', icon: 'fa-flag-checkered', fn: (tokens) => searchGoals(tokens) },
+        { key: 'deals', label: 'Deal Diary', icon: 'fa-handshake', fn: (tokens) => searchDeals(tokens) }
+    ];
+    const PER_GROUP_LIMIT = 6;
+
+    async function runSearch(query) {
+        const mySeq = ++seq;
+        const q = query.trim();
+        if (!q) { renderHint(); return; }
+        const tokens = fold(q).split(/\s+/).filter(Boolean);
+
+        const groupResults = await Promise.all(GROUPS.map(async (g) => {
+            try {
+                const raw = g.async ? await g.fn(tokens, q) : g.fn(tokens, q);
+                const list = (raw || []).sort((a, b) => b.score - a.score).slice(0, PER_GROUP_LIMIT);
+                return { group: g, list };
+            } catch (e) { return { group: g, list: [] }; }
+        }));
+
+        if (mySeq !== seq) return; // a newer keystroke already started a fresher search
+        renderResults(q, groupResults.filter(r => r.list.length));
+    }
+
+    function renderHint() {
+        resultsEl.innerHTML = '<div id="gsHint">Type to search skills, courses, resources, notes, investment analysis, goals and deal diary — all at once.</div>';
+        items = []; active = -1; footerCount.textContent = '';
+    }
+
+    function renderResults(query, groupResults) {
+        items = [];
+        if (!groupResults.length) {
+            resultsEl.innerHTML = '<div id="gsEmpty">😕 No results for “' + escHtml(query) + '”</div>';
+            active = -1; footerCount.textContent = '';
+            return;
+        }
+        let html = '', total = 0;
+        groupResults.forEach(({ group, list }) => {
+            total += list.length;
+            html += '<div class="gs-group"><div class="gs-group-label">' + escHtml(group.label) + ' · ' + list.length + '</div>';
+            list.forEach((r, i) => {
+                const idx = items.length;
+                items.push(r);
+                html += '<div class="gs-item" data-idx="' + idx + '">'
+                    + '<div class="gs-item-icon"><i class="fa-solid ' + group.icon + '"></i></div>'
+                    + '<div class="gs-item-body">'
+                    + '<div class="gs-item-title">' + highlight(r.title, query) + '</div>'
+                    + (r.sub ? '<div class="gs-item-sub">' + escHtml(r.sub) + '</div>' : '')
+                    + '</div></div>';
+            });
+            html += '</div>';
+        });
+        resultsEl.innerHTML = html;
+        footerCount.textContent = total + (total === 1 ? ' result' : ' results');
+        setActive(0);
+        resultsEl.querySelectorAll('.gs-item').forEach(node => {
+            node.addEventListener('mousemove', () => setActive(+node.dataset.idx, false));
+            node.addEventListener('click', () => runItem(+node.dataset.idx));
+        });
+    }
+
+    function setActive(i, scroll) {
+        if (!items.length) { active = -1; return; }
+        active = Math.max(0, Math.min(items.length - 1, i));
+        resultsEl.querySelectorAll('.gs-item').forEach(node => {
+            const on = +node.dataset.idx === active;
+            node.classList.toggle('gs-active', on);
+            if (on && scroll !== false) node.scrollIntoView({ block: 'nearest' });
+        });
+    }
+
+    function runItem(i) {
+        const it = items[i];
+        if (!it) return;
+        if (it.run.constructor.name === 'AsyncFunction') { it.run(); return; } // handles its own close (Notes needs the vault open first)
+        closeGS();
+        it.run();
+    }
+
+    function openGS() {
+        lastFocus = document.activeElement;
+        overlay.classList.add('gs-on');
+        document.body.style.overflow = 'hidden';
+        input.value = '';
+        renderHint();
+        setTimeout(() => input.focus(), 10);
+    }
+    function closeGS() {
+        overlay.classList.remove('gs-on');
+        document.body.style.overflow = '';
+        if (lastFocus && document.contains(lastFocus)) { try { lastFocus.focus(); } catch (e) {} }
+        lastFocus = null;
+    }
+
+    fab.addEventListener('click', openGS);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeGS(); });
+
+    input.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => runSearch(input.value), 110);
+    });
+    input.addEventListener('keydown', (e) => {
+        e.stopPropagation();   // modal: nothing behind the overlay should react to keys
+        if (e.isComposing || e.keyCode === 229) return;   // IME composing (e.g. Vietnamese Telex)
+        if (e.key === 'Escape') { e.preventDefault(); closeGS(); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(active + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(active - 1); }
+        else if (e.key === 'Enter') { e.preventDefault(); if (active >= 0) runItem(active); }
+    });
+
+    // Global Ctrl/⌘+K — steps aside whenever the Notes Vault overlay is already open, so
+    // its own in-vault command palette (also Ctrl/⌘+K) keeps working exactly as before.
+    document.addEventListener('keydown', (e) => {
+        const mod = e.ctrlKey || e.metaKey;
+        if (!mod || e.altKey || e.key.toLowerCase() !== 'k') return;
+        const nvOpen = document.getElementById('nvOverlay')?.classList.contains('nv-on');
+        if (nvOpen) return;
+        e.preventDefault();
+        if (overlay.classList.contains('gs-on')) closeGS(); else openGS();
     });
 })();
 </script>
