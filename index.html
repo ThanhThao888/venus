@@ -35223,6 +35223,24 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 }
 .nv-prose a.nv-wikilink.nv-wikilink-new:hover { color: var(--text-dark); border-color: var(--text-muted); }
 
+/* ═════════════ Footnotes: "[^1]" refs + "[^1]: text" definitions ═════════════ */
+.nv-fnref a {
+    display: inline-block; padding: 0 3px; color: var(--primary-dark); font-weight: 700;
+    text-decoration: none; scroll-margin-top: 60px;
+}
+.nv-fnref a:hover { text-decoration: underline; }
+.nv-footnotes { margin-top: 2.4em; font-family: var(--nv-sans); font-size: 0.86rem; color: var(--text-dark); }
+.nv-footnotes hr { border: 0; height: 1px; margin: 0 0 1.1em; background: var(--border-color); }
+.nv-footnotes ol { margin: 0; padding-left: 1.4em; }
+.nv-footnotes li { margin: 0 0 0.5em; line-height: 1.6; scroll-margin-top: 60px; }
+.nv-fn-body { color: var(--text-muted); }
+.nv-fn-body p { display: inline; margin: 0; }
+.nv-fn-back {
+    display: inline-flex; align-items: center; justify-content: center; width: 1.3em; height: 1.3em;
+    margin-left: 3px; border-radius: 5px; color: var(--primary-dark); text-decoration: none; font-size: 0.85em;
+}
+.nv-fn-back:hover { background: rgba(var(--primary-rgb), 0.15); }
+
 /* ── Links tab (outgoing links + backlinks) ── */
 .nv-lk-hint { margin: 0 0 12px; font-size: 0.8rem; line-height: 1.55; color: var(--text-muted); }
 .nv-lk { list-style: none; margin: 0 0 20px; padding: 0; }
@@ -35756,6 +35774,8 @@ kbd {
                         <button class="nv-tb" type="button" data-cmd="callout" data-tip="Callout"><i class="fa-solid fa-circle-exclamation"></i></button>
                         <button class="nv-tb" type="button" data-cmd="hr" data-tip="Divider"><i class="fa-solid fa-minus"></i></button>
                         <button class="nv-tb" type="button" data-cmd="clear" data-tip="Clear formatting"><i class="fa-solid fa-eraser"></i></button>
+                        <span class="nv-tsep" aria-hidden="true"></span>
+                        <button class="nv-tb" type="button" data-cmd="extract" data-tip="Extract selection to new note"><i class="fa-solid fa-scissors"></i></button>
                     </div>
                     <div class="nv-menuwrap" hidden>
                         <button class="nv-tb" id="nvToolsMore" type="button" title="More formatting" aria-label="More formatting" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>
@@ -36894,16 +36914,222 @@ kbd {
         });
     }
 
+    /* ═════════════ Frontmatter: "---\n…\n---" header at the very start of a note ═════════════
+       Obsidian-style. Read mode always hides the block (stripped before markdown parsing,
+       below); the raw block is left untouched in the note's own markdown/Edit mode. Pasting
+       one into a blank note also pre-fills Folder/Tags/Title — see applyFrontmatterFill(),
+       wired up from onEditorPaste. */
+    const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+    function stripYamlQuotes(s) {
+        s = String(s == null ? '' : s).trim();
+        if (s.length >= 2 && ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'"))) {
+            return s.slice(1, -1);
+        }
+        return s;
+    }
+    // Minimal YAML reader: flat "key: value" pairs, inline "[a, b]" lists, and block lists
+    // ("key:" followed by indented "- item" lines). Enough for the properties Obsidian and
+    // this app actually write; not a general-purpose YAML parser.
+    function parseYamlBlock(block) {
+        const lines = block.split(/\r?\n/);
+        const data = {};
+        for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(/^([A-Za-z0-9_-]+):[ \t]*(.*)$/);
+            if (!m) continue;
+            const key = m[1].toLowerCase();
+            const rest = m[2].trim();
+            if (!rest) {
+                const items = [];
+                let j = i + 1;
+                while (j < lines.length && /^\s*-\s+/.test(lines[j])) { items.push(stripYamlQuotes(lines[j].replace(/^\s*-\s+/, ''))); j++; }
+                if (items.length) { data[key] = items; i = j - 1; }
+                continue;
+            }
+            if (rest[0] === '[' && rest[rest.length - 1] === ']') {
+                data[key] = rest.slice(1, -1).split(',').map(stripYamlQuotes).filter(Boolean);
+            } else {
+                data[key] = stripYamlQuotes(rest);
+            }
+        }
+        return data;
+    }
+    // Splits a note's markdown into { body, data }: body has the frontmatter block removed
+    // (used to keep it out of Read mode, and out of re-exported .md files); data is a
+    // normalised { title?, type?, tags? } or null when there's no recognised block.
+    function extractFrontmatter(md) {
+        const m = md.match(FRONTMATTER_RE);
+        if (!m) return { body: md, data: null };
+        const raw = parseYamlBlock(m[1]);
+        const data = {};
+        if (raw.title) data.title = String(Array.isArray(raw.title) ? raw.title[0] : raw.title).trim();
+        const folderVal = raw.type || raw.folder;
+        if (folderVal) data.type = String(Array.isArray(folderVal) ? folderVal[0] : folderVal).trim();
+        if (raw.tags) {
+            const arr = Array.isArray(raw.tags) ? raw.tags : String(raw.tags).split(',');
+            const tags = arr.map((t) => normTag(t)).filter(Boolean);
+            if (tags.length) data.tags = tags;
+        }
+        return { body: md.slice(m[0].length), data: Object.keys(data).length ? data : null };
+    }
+    // Pasting an Obsidian-style note into a blank one pre-fills Folder/Tags/Title from its
+    // frontmatter — never overwrites a field the note already has, only fills what's empty.
+    function applyFrontmatterFill(pastedText) {
+        const n = S.note;
+        if (!n) return;
+        const { data } = extractFrontmatter(pastedText);
+        if (!data) return;
+        let changed = false;
+        if (data.title && !n.title.trim()) {
+            n.title = data.title;
+            if (el.title) { el.title.value = n.title; fitTitle(); }
+            changed = true;
+        }
+        if (data.type && normType(n.type) === 'General') {
+            n.type = data.type;
+            if (el.folderIn) el.folderIn.value = normType(n.type);
+            changed = true;
+        }
+        if (data.tags && data.tags.length && !n.tags.length) {
+            n.tags = data.tags.slice();
+            changed = true;
+        }
+        if (changed) { renderTagChips(); renderDocMeta(); markDirty(); toast('Filled in Folder/Tags from the pasted frontmatter.'); }
+    }
+
+    /* ═════════════ Footnotes: "[^1]" refs + "[^1]: text" definitions ═════════════
+       marked has no footnote syntax of its own, so definitions are pulled out of the raw
+       markdown before parsing (extractFootnoteDefs — skips fenced code, keeps indented
+       continuation lines), and the "[^id]" references left in the parsed HTML are turned
+       into numbered, linked superscripts afterwards (renderFootnotes), numbered in the
+       order they're first referenced. Ids with no matching reference in the text are
+       silently dropped, same as unreferenced link definitions. */
+    function extractFootnoteDefs(md) {
+        const lines = md.split('\n');
+        const defs = new Map();      // id -> array of raw markdown lines
+        const bodyLines = [];
+        let inFence = false, fenceCh = '', fenceLen = 0;
+        let curId = null;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const fm = line.match(/^\s*(`{3,}|~{3,})/);
+            if (fm) {
+                if (!inFence) { inFence = true; fenceCh = fm[1][0]; fenceLen = fm[1].length; }
+                else if (fm[1][0] === fenceCh && fm[1].length >= fenceLen) { inFence = false; }
+                bodyLines.push(line);
+                curId = null;
+                continue;
+            }
+            if (!inFence) {
+                const dm = line.match(/^\[\^([^\]\s]+)\]:[ \t]?(.*)$/);
+                if (dm) {
+                    curId = dm[1];
+                    if (!defs.has(curId)) defs.set(curId, []);
+                    defs.get(curId).push(dm[2]);
+                    continue;
+                }
+                if (curId !== null) {
+                    if (/^(\t| {2,})/.test(line)) { defs.get(curId).push(line.replace(/^(\t| {1,})/, '')); continue; }
+                    if (line.trim() === '' && i + 1 < lines.length && /^(\t| {2,})/.test(lines[i + 1])) { defs.get(curId).push(''); continue; }
+                    curId = null;
+                }
+            }
+            bodyLines.push(line);
+        }
+        const out = new Map();
+        defs.forEach((arr, id) => { const text = arr.join('\n').trim(); if (text) out.set(id, text); });
+        return { body: bodyLines.join('\n'), defs: out };
+    }
+    const FOOTNOTE_REF_RE = /\[\^([^\]\s]+)\]/g;
+    function renderFootnotes(root, defs) {
+        if (!defs || !defs.size) return;
+        const order = [];                 // ids, in first-reference order
+        const numberOf = new Map();
+        const gotFirstAnchor = new Set();
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node.nodeValue || node.nodeValue.indexOf('[^') === -1) return NodeFilter.FILTER_REJECT;
+                for (let p = node.parentNode; p && p !== root; p = p.parentNode) {
+                    if (p.nodeName === 'CODE' || p.nodeName === 'PRE' || p.nodeName === 'A') return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const nodes = [];
+        let cur;
+        while ((cur = walker.nextNode())) nodes.push(cur);
+        nodes.forEach((node) => {
+            const text = node.nodeValue;
+            FOOTNOTE_REF_RE.lastIndex = 0;
+            let m, last = 0, hit = false;
+            const frag = document.createDocumentFragment();
+            while ((m = FOOTNOTE_REF_RE.exec(text))) {
+                const id = m[1];
+                if (!defs.has(id)) continue;
+                hit = true;
+                if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+                if (!numberOf.has(id)) { numberOf.set(id, numberOf.size + 1); order.push(id); }
+                const n = numberOf.get(id);
+                const sup = document.createElement('sup');
+                sup.className = 'nv-fnref';
+                const a = document.createElement('a');
+                a.href = '#nv-fn-' + n;
+                a.textContent = String(n);
+                a.title = 'Jump to footnote ' + n;
+                if (!gotFirstAnchor.has(id)) { a.id = 'nv-fnref-' + n; gotFirstAnchor.add(id); }
+                sup.appendChild(a);
+                frag.appendChild(sup);
+                last = m.index + m[0].length;
+            }
+            if (!hit) return;
+            if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+            node.parentNode.replaceChild(frag, node);
+        });
+        if (!order.length) return;
+        const section = document.createElement('section');
+        section.className = 'nv-footnotes';
+        section.appendChild(document.createElement('hr'));
+        const ol = document.createElement('ol');
+        order.forEach((id, i) => {
+            const n = i + 1;
+            const li = document.createElement('li');
+            li.id = 'nv-fn-' + n;
+            const raw = defs.get(id) || '';
+            let bodyHtml;
+            try {
+                bodyHtml = window.marked ? (window.marked.parseInline ? window.marked.parseInline(raw, { gfm: true }) : window.marked.parse(raw, { gfm: true })) : esc(raw);
+            } catch (e) { bodyHtml = esc(raw); }
+            if (window.DOMPurify) bodyHtml = DOMPurify.sanitize(bodyHtml, { FORBID_TAGS: ['style'] });
+            const span = document.createElement('span');
+            span.className = 'nv-fn-body';
+            span.innerHTML = bodyHtml;
+            span.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+            const back = document.createElement('a');
+            back.href = '#nv-fnref-' + n;
+            back.className = 'nv-fn-back';
+            back.title = 'Back to text';
+            back.setAttribute('aria-label', 'Back to reference ' + n);
+            back.innerHTML = '<i class="fa-solid fa-turn-up" aria-hidden="true"></i>';
+            li.appendChild(span);
+            li.appendChild(document.createTextNode(' '));
+            li.appendChild(back);
+            ol.appendChild(li);
+        });
+        section.appendChild(ol);
+        root.appendChild(section);
+    }
+
     /* ═════════════ Markdown → reading view ═════════════ */
     function renderInto(target, md, interactive) {
         if (!md.trim()) {
             target.innerHTML = '<p class="nv-blank">Nothing here yet — switch to Edit and start writing.</p>';
             return;
         }
+        const afterFm = extractFrontmatter(md).body;            // frontmatter never shows in Read mode
+        const { body: forMarked, defs: footnoteDefs } = extractFootnoteDefs(afterFm);
         let html;
         try {
             const opts = { gfm: true, breaks: true };   // single newline = line break (Obsidian default; good for transcripts)
-            html = window.marked ? (window.marked.parse ? window.marked.parse(md, opts) : window.marked(md, opts)) : null;
+            html = window.marked ? (window.marked.parse ? window.marked.parse(forMarked, opts) : window.marked(forMarked, opts)) : null;
         } catch (e) { console.warn('Notes Vault markdown error:', e); html = null; }
         if (html == null || !window.DOMPurify) {
             // No renderer/sanitiser available: show plain text rather than inject unsanitised HTML.
@@ -36935,6 +37161,10 @@ kbd {
             if (interactive !== false) cb.disabled = false;
         });
         tpl.content.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+        // Footnote refs/backlinks are added after the pass above so they keep plain in-page
+        // "#id" navigation (no target="_blank", which would open a blank new tab instead of
+        // scrolling) — they're same-document jumps, not external links.
+        renderFootnotes(tpl.content, footnoteDefs);
         target.replaceChildren(tpl.content);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
     }
@@ -37650,8 +37880,13 @@ kbd {
             'created: ' + new Date(n.createdAt).toISOString(),
             'updated: ' + new Date(n.updatedAt).toISOString(),
             '---', '', ''].join('\n');
-        const hasH1 = /^\s*#\s/.test(n.markdown);
-        return fm + ((n.title && !hasH1) ? '# ' + n.title + '\n\n' : '') + n.markdown;
+        // If the note's own markdown already starts with a pasted "---…---" block (e.g. an
+        // Obsidian note copied in as-is), drop it here — its fields were already folded into
+        // title/type/tags when it was pasted (see applyFrontmatterFill), so keeping it would
+        // just export two frontmatter blocks back to back.
+        const body = extractFrontmatter(n.markdown).body;
+        const hasH1 = /^\s*#\s/.test(body);
+        return fm + ((n.title && !hasH1) ? '# ' + n.title + '\n\n' : '') + body;
     }
     /* ───────── Save straight to disk (File System Access API) ─────────
        "Save .md to disk…" opens the OS save dialog and writes the note there right away — no
@@ -38224,6 +38459,51 @@ kbd {
         checkWlTrigger();
     }
 
+    /* ── Extract selection → new note ──────────────────────────────────────
+       Turns a highlighted chunk of the current note into its own note, and
+       drops "See [[Title]]" in its place — the fast path for splitting a long
+       dump note into smaller, linkable, atomic ones. If the selection's first
+       non-blank line is a heading, that becomes the new note's title (and is
+       dropped from its body, since the title already carries it); otherwise
+       the first line is used as the title and stays in the body. */
+    function extractSelectionToNote() {
+        if (!S.note) return;
+        const ta = el.src, s = ta.selectionStart, e = ta.selectionEnd;
+        if (s === e || !ta.value.slice(s, e).trim()) { flash('Select some text first to extract it into a new note'); return; }
+        const lines = ta.value.slice(s, e).replace(/\r\n/g, '\n').split('\n');
+        let i = lines.findIndex((l) => l.trim());
+        if (i === -1) i = 0;
+        const h = /^\s{0,3}(#{1,6})[ \t]+(.*?)\s*#*\s*$/.exec(lines[i]);
+        let title;
+        if (h) {
+            title = h[2].trim();
+            lines.splice(i, 1);
+            while (lines.length && !lines[0].trim()) lines.shift();
+        } else {
+            title = lines[i].trim().slice(0, 80);
+        }
+        while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+        title = title || 'Untitled note';
+        const newId = uid();
+        const finalTitle = dedupeTitle(title, newId);
+        const now = Date.now();
+        const child = {
+            id: newId, title: finalTitle, markdown: lines.join('\n'),
+            type: normType(S.note.type), tags: [], pinned: false, createdAt: now, updatedAt: now
+        };
+        dbPut(child).then(() => {
+            S.notes.push(child);
+            const link = 'See [[' + finalTitle + ']]';
+            replaceRange(s, e, link, s, s + link.length);
+            renderSide();
+            renderDatalists();
+            toast('Extracted to “' + finalTitle + '”', 'Open', () => openNote(newId));
+        }).catch((err) => {
+            console.error('Notes Vault: extract to note failed', err);
+            flash('Couldn’t create the note — try again');
+        });
+    }
+
     const CMD = {
         undo: () => { el.src.focus(); document.execCommand('undo'); },
         redo: () => { el.src.focus(); document.execCommand('redo'); },
@@ -38232,7 +38512,8 @@ kbd {
         h1: () => setHeading(1), h2: () => setHeading(2), h3: () => setHeading(3),
         ul: () => setList('ul'), ol: () => setList('ol'), task: () => setList('task'),
         quote: toggleQuote, link: insertLink, wikilink: insertWikilink, codeblock: toggleCodeBlock,
-        table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting
+        table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting,
+        extract: extractSelectionToNote
     };
     function runCmd(name) {
         if (S.mode !== 'edit' || !CMD[name]) return;
@@ -38474,6 +38755,13 @@ kbd {
         if (isLoneUrl && !ta.value.trim()) {
             e.preventDefault();
             captureSource(t);
+            return;
+        }
+        // Pasting an Obsidian-style "---…---" note into an empty note pre-fills Folder/Tags/
+        // Title from its frontmatter. Default paste isn't prevented — the block stays in the
+        // note's own markdown/Edit mode, it's only hidden from Read mode (see renderInto).
+        if (!ta.value.trim() && FRONTMATTER_RE.test(t)) {
+            setTimeout(() => applyFrontmatterFill(t), 0);
         }
     }
 
@@ -38778,7 +39066,8 @@ kbd {
                     ['strike', 'strikethrough', 'Strikethrough', ['mod', 'shift', 'X']], ['code', 'code', 'Inline code', ['mod', '`']],
                     ['ul', 'list-ul', 'Bulleted list'], ['ol', 'list-ol', 'Numbered list'], ['task', 'list-check', 'Checklist'],
                     ['quote', 'quote-left', 'Quote'], ['codeblock', 'file-code', 'Code block'], ['table', 'table', 'Table'],
-                    ['callout', 'circle-exclamation', 'Callout'], ['hr', 'minus', 'Divider'], ['link', 'link', 'Insert link', ['mod', 'K']]]
+                    ['callout', 'circle-exclamation', 'Callout'], ['hr', 'minus', 'Divider'], ['link', 'link', 'Insert link', ['mod', 'K']],
+                    ['extract', 'scissors', 'Extract selection to new note']]
                     .forEach(([c, ic, lb, keys]) => add('Format', 'fmt-' + c, ic, lb, () => runCmd(c), { more: true, keys, kw: 'format markdown insert' }));
             }
         }
