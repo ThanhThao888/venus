@@ -35424,6 +35424,7 @@ kbd {
             <div class="nv-menuwrap">
                 <button class="nv-ib" id="nvGear" type="button" title="Backup &amp; storage" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-gear"></i></button>
                 <div class="nv-menu nv-up" id="nvGearMenu" role="menu">
+                    <button class="nv-act" role="menuitem" data-gear="exportmd"><i class="fa-solid fa-folder-tree"></i> Export notes as .md files…</button>
                     <button class="nv-act" role="menuitem" data-gear="export"><i class="fa-solid fa-download"></i> Export backup (JSON)</button>
                     <button class="nv-act" role="menuitem" data-gear="import"><i class="fa-solid fa-upload"></i> Import backup…</button>
                     <button class="nv-act" role="menuitem" data-gear="persist"><i class="fa-solid fa-shield-halved"></i> Protect from browser cleanup</button>
@@ -35613,9 +35614,10 @@ kbd {
        Deleting a note moves it to Trash (a deletedAt stamp on the same record).
     ═════════════════════════════════════════════════════════════ */
     const DB_NAME = 'FinanceTrackerVaultDB';
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
     const STORE = 'notes';
     const DB_REV = 'revisions';
+    const DB_LINKS = 'fileLinks';
     const TRASH_MS = 30 * 864e5;          // Trash keeps a note for 30 days
     const REV_EVERY = 10 * 60 * 1000;     // at most one automatic version per 10 minutes of writing
     const REV_KEEP = 60;                  // versions kept per note (oldest are dropped first)
@@ -35644,6 +35646,7 @@ kbd {
         fmap: new Map(), tmap: new Map(),
         focus: false, fs: 1, wd: 1,
         trash: [],                     // notes in Trash (S.notes only ever holds live notes)
+        fileLinks: new Map(),          // noteId → { handle, name, linkedAt } — see "File links" below
         base: null, edited: false, editStart: 0,      // what the open note looked like when opened
         viewRev: null, revPrev: 'read', revs: [],     // version being previewed / previous mode / loaded versions
         toastTimer: null, toastAct: null,
@@ -35673,6 +35676,9 @@ kbd {
                 if (!db.objectStoreNames.contains(DB_REV)) {
                     const rs = db.createObjectStore(DB_REV, { keyPath: 'id' });
                     rs.createIndex('noteAt', ['noteId', 'savedAt']);
+                }
+                if (!db.objectStoreNames.contains(DB_LINKS)) {
+                    db.createObjectStore(DB_LINKS, { keyPath: 'id' });   // note id → { handle, name, linkedAt }
                 }
             };
             req.onsuccess = () => {
@@ -35715,6 +35721,68 @@ kbd {
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
+    }
+
+    /* ───────── File links: "keep linked to this file" ─────────
+       A note can remember a FileSystemFileHandle it was saved to (Save .md to disk…), so a
+       later "Save changes to file" writes straight back to that same file, no dialog. Chromium
+       can structured-clone a handle into IndexedDB, so the link survives a reload; Firefox/Safari
+       don't support the File System Access API at all, so linking is simply unavailable there. */
+    const FS_SUPPORTED = typeof window.showSaveFilePicker === 'function';
+    async function dbPutLink(rec) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_LINKS, 'readwrite');
+            tx.objectStore(DB_LINKS).put(rec);
+            tx.oncomplete = () => resolve(rec);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function dbDeleteLink(id) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_LINKS, 'readwrite');
+            tx.objectStore(DB_LINKS).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function dbGetAllLinks() {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_LINKS).objectStore(DB_LINKS).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function loadAllLinks() {
+        if (!FS_SUPPORTED) { S.fileLinks = new Map(); return; }
+        try { S.fileLinks = new Map((await dbGetAllLinks()).map((r) => [r.id, r])); }
+        catch (e) { console.warn('Notes Vault: could not load file links', e); S.fileLinks = new Map(); }
+    }
+    async function verifyWritePermission(handle) {
+        const opts = { mode: 'readwrite' };
+        try {
+            if ((await handle.queryPermission(opts)) === 'granted') return true;
+            if ((await handle.requestPermission(opts)) === 'granted') return true;
+        } catch (e) { /* handle may be stale — treat as not granted */ }
+        return false;
+    }
+    async function writeToHandle(handle, content) {
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+    }
+    // Create the link (from a fresh Save As) or refresh it after a successful write.
+    async function setLinkedFile(noteId, handle) {
+        const rec = { id: noteId, handle, name: handle.name, linkedAt: Date.now() };
+        S.fileLinks.set(noteId, rec);
+        try { await dbPutLink(rec); } catch (e) { console.warn('Notes Vault: could not remember file link', e); }
+        return rec;
+    }
+    async function clearLinkedFile(noteId) {
+        S.fileLinks.delete(noteId);
+        try { await dbDeleteLink(noteId); } catch (e) { /* ignore */ }
     }
 
     /* ───────── Small helpers ───────── */
@@ -36457,9 +36525,11 @@ kbd {
     function renderDocMeta() {
         const n = S.note;
         if (!n) return;
+        const link = S.fileLinks.get(n.id);
         el.docMeta.innerHTML =
             `<span class="nv-folder-pill"><i class="fa-solid fa-${iconFor(n.type)}"></i>${esc(normType(n.type))}</span>`
             + n.tags.map((t) => `<span>#${esc(t)}</span>`).join('')
+            + (link ? `<span class="nv-folder-pill" title="Linked — “Save changes to file” writes here"><i class="fa-solid fa-link"></i>${esc(link.name)}</span>` : '')
             + '<span class="nv-grow"></span>'
             + `<span title="${esc(fmtFull(n.updatedAt))}">${S.persisted ? 'Edited ' + esc(fmtRel(n.updatedAt)) : 'Not saved yet'}</span>`;
     }
@@ -36493,15 +36563,26 @@ kbd {
 
     function actionList() {
         const n = S.note;
-        return [
+        const linked = FS_SUPPORTED ? S.fileLinks.get(n.id) : null;
+        const list = [
             { id: 'pin', icon: 'star', label: n.pinned ? 'Unpin note' : 'Pin note' },
             { id: 'dup', icon: 'copy', label: 'Duplicate' },
-            { id: 'copy', icon: 'clipboard', label: 'Copy Markdown' },
+            { id: 'copy', icon: 'clipboard', label: 'Copy Markdown' }
+        ];
+        if (linked) {
+            list.push({ id: 'savefsupdate', icon: 'floppy-disk', label: 'Save changes to file' });
+            list.push({ id: 'savefs', icon: 'file-export', label: 'Save As .md…' });
+            list.push({ id: 'unlinkfs', icon: 'link-slash', label: 'Unlink from file' });
+        } else {
+            list.push({ id: 'savefs', icon: 'floppy-disk', label: FS_SUPPORTED ? 'Save .md to disk…' : 'Save .md (download)' });
+        }
+        list.push(
             { id: 'md', icon: 'file-arrow-down', label: 'Export .md' },
             { id: 'txt', icon: 'file-lines', label: 'Export .txt' },
             { id: 'hist', icon: 'clock-rotate-left', label: 'Version history' },
             { id: 'del', icon: 'trash', label: 'Move to Trash', danger: true }
-        ];
+        );
+        return list;
     }
     function renderActions() {
         if (!S.note) return;
@@ -36510,6 +36591,7 @@ kbd {
         el.actions.innerHTML = html;
         el.docMenu.innerHTML = html;
     }
+
 
     function fillDoc() {
         const n = S.note;
@@ -37062,6 +37144,92 @@ kbd {
         const hasH1 = /^\s*#\s/.test(n.markdown);
         return fm + ((n.title && !hasH1) ? '# ' + n.title + '\n\n' : '') + n.markdown;
     }
+    /* ───────── Save straight to disk (File System Access API) ─────────
+       "Save .md to disk…" opens the OS save dialog and writes the note there right away — no
+       separate export-then-drag step. The chosen file becomes linked to the note, so a later
+       "Save changes to file" (or Ctrl/Cmd+Shift+S) writes back to the same file silently, and
+       "Overwrite existing file" happens naturally by picking the same file again in the dialog.
+       Falls back to a normal download in browsers without the API (Firefox, Safari). */
+    async function saveNoteAsFile(n) {
+        if (!FS_SUPPORTED) {
+            download(toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
+            flash('Your browser can’t save straight to a file — downloaded instead');
+            return null;
+        }
+        let handle;
+        try {
+            handle = await window.showSaveFilePicker({
+                suggestedName: slugify(n.title) + '.md',
+                types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
+            });
+        } catch (e) { return null; }                      // user cancelled the dialog
+        try {
+            await writeToHandle(handle, toMarkdownFile(n));
+            await setLinkedFile(n.id, handle);
+            if (S.note && S.note.id === n.id) { renderDocMeta(); renderActions(); }
+            flash('Saved to ' + handle.name);
+            return handle;
+        } catch (e) {
+            console.error('Notes Vault: could not save file', e);
+            flash('Couldn’t save that file');
+            return null;
+        }
+    }
+    // Writes to the file this note is already linked to. No dialog — this is the "keep this
+    // note synced to a real .md file on disk" button. Falls back to Save As if never linked,
+    // or if the link has gone stale (file moved/deleted/renamed, or permission was revoked).
+    async function saveNoteToLinkedFile(n) {
+        const rec = S.fileLinks.get(n.id);
+        if (!rec) return saveNoteAsFile(n);
+        if (!(await verifyWritePermission(rec.handle))) {
+            flash('Permission needed — choose Save .md to relink');
+            return null;
+        }
+        try {
+            await writeToHandle(rec.handle, toMarkdownFile(n));
+            rec.linkedAt = Date.now();
+            try { await dbPutLink(rec); } catch (e) { /* best-effort refresh of the timestamp */ }
+            if (S.note && S.note.id === n.id) renderDocMeta();
+            flash('Saved to ' + rec.name);
+            return rec.handle;
+        } catch (e) {
+            console.error('Notes Vault: could not write to linked file', e);
+            flash('Couldn’t write to the linked file — it may have moved. Choose Save .md to relink.');
+            return null;
+        }
+    }
+    async function unlinkNoteFile(n) {
+        await clearLinkedFile(n.id);
+        if (S.note && S.note.id === n.id) { renderDocMeta(); renderActions(); }
+        flash('Unlinked from file');
+    }
+    // Bulk export: writes every note currently in `list` as its own .md file into a folder the
+    // user picks. Used for "export current folder" and "export search results" alike — both are
+    // just whatever filterNotes() is showing right now, so no separate selection UI is needed.
+    async function exportNotesToFolder(list, label) {
+        if (!list.length) { flash('Nothing to export here'); return; }
+        if (!FS_SUPPORTED) {
+            list.forEach((n) => download(toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown'));
+            flash('Your browser can’t save to a folder — downloaded ' + list.length + ' files instead');
+            return;
+        }
+        let dir;
+        try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+        catch (e) { return; }                              // user cancelled
+        const used = new Set();
+        let ok = 0;
+        for (const n of list) {
+            let name = slugify(n.title) + '.md', i = 2;
+            while (used.has(name)) { name = slugify(n.title) + '-' + i + '.md'; i++; }   // two notes, same title
+            used.add(name);
+            try {
+                const fh = await dir.getFileHandle(name, { create: true });
+                await writeToHandle(fh, toMarkdownFile(n));
+                ok++;
+            } catch (e) { console.error('Notes Vault: could not export', n.title, e); }
+        }
+        flash('Exported ' + ok + ' of ' + list.length + (label ? ' notes (' + label + ')' : ' notes'));
+    }
     async function copyText(t) {
         try { await navigator.clipboard.writeText(t); return true; }
         catch (e) {
@@ -37165,6 +37333,14 @@ kbd {
             flash('Duplicated');
         } else if (id === 'copy') {
             flash((await copyText(n.markdown)) ? 'Markdown copied' : 'Couldn’t copy — select the text in Edit mode instead');
+        } else if (id === 'savefs') {
+            await flushSave();
+            await saveNoteAsFile(n);
+        } else if (id === 'savefsupdate') {
+            await flushSave();
+            await saveNoteToLinkedFile(n);
+        } else if (id === 'unlinkfs') {
+            await unlinkNoteFile(n);
         } else if (id === 'md') {
             await flushSave();
             download(toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
@@ -37181,6 +37357,14 @@ kbd {
     }
 
     /* ── Backup / restore / persistence ── */
+    // "Export folder" and "Export selected notes" are really the same action: whatever the
+    // sidebar is currently showing — a single folder, a tag, search results, or all notes —
+    // exported as one real .md file per note into a folder on disk.
+    async function exportCurrentView() {
+        await flushSave();
+        const list = filterNotes(qTokens());
+        await exportNotesToFolder(list, el.libTitle ? el.libTitle.textContent : '');
+    }
     async function exportAllJson() {
         const { notes } = await getBackupData();
         const payload = { app: 'FinanceTracker-NotesVault', exportedAt: new Date().toISOString(), notes };
@@ -37812,7 +37996,7 @@ kbd {
         S.sideOpen = false; S.note = null; S.dirty = false;
         showLibrary();
         revLast.clear();
-        try { await loadAll(); await purgeExpired(); } catch (e) { console.error('Notes Vault could not open its database:', e); S.notes = []; S.trash = []; }
+        try { await loadAll(); await purgeExpired(); await loadAllLinks(); } catch (e) { console.error('Notes Vault could not open its database:', e); S.notes = []; S.trash = []; }
         renderAll();
         updateStorage();
         el.app.focus();
@@ -37971,6 +38155,13 @@ kbd {
             add(T, 'info', 'circle-info', 'Show note info', () => showInspector('info'), { kw: 'details words characters created updated', more: true });
             add(T, 'dup', 'copy', 'Duplicate note', () => runAction('dup'), { kw: 'copy clone' });
             add(T, 'copy', 'clipboard', 'Copy Markdown', () => runAction('copy'), { kw: 'clipboard' });
+            if (S.fileLinks.get(n.id)) {
+                add(T, 'savefsupdate', 'floppy-disk', 'Save changes to file', () => runAction('savefsupdate'), { kw: 'sync write disk obsidian', keys: ['mod', 'shift', 'S'] });
+                add(T, 'savefs', 'file-export', 'Save As .md…', () => runAction('savefs'), { kw: 'save disk file location', more: true });
+                add(T, 'unlinkfs', 'link-slash', 'Unlink from file', () => runAction('unlinkfs'), { kw: 'unlink disconnect', more: true });
+            } else {
+                add(T, 'savefs', 'floppy-disk', FS_SUPPORTED ? 'Save .md to disk…' : 'Save .md (download)', () => runAction('savefs'), { kw: 'save disk file location obsidian', keys: ['mod', 'shift', 'S'] });
+            }
             add(T, 'md', 'file-arrow-down', 'Export as .md', () => runAction('md'), { kw: 'download markdown obsidian' });
             add(T, 'txt', 'file-lines', 'Export as .txt', () => runAction('txt'), { kw: 'download text plain', more: true });
             add(T, 'back', 'arrow-left', 'Back to notes', leaveDoc, { kw: 'close library list', keys: ['esc'] });
@@ -37989,6 +38180,7 @@ kbd {
         add(V, 'new', 'plus', 'New note', newNote, { kw: 'create write blank add' });
         add(V, 'search', 'magnifying-glass', 'Search notes', focusSearch, { kw: 'find filter', keys: ['/'] });
         if (window.BrainDump && document.getElementById('bdPanel')) add(V, 'bd', 'brain', 'Open Brain Dump', openBrainDump, { kw: 'inbox capture tracker thoughts' });
+        add(V, 'exportmd', 'folder-tree', 'Export notes as .md files…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
         add(V, 'exp', 'download', 'Export backup (JSON)', exportAllJson, { kw: 'backup save download all' });
         add(V, 'imp', 'upload', 'Import backup…', () => el.importFile.click(), { kw: 'backup restore load json', more: true });
         add(V, 'persist', 'shield-alt', 'Protect from browser cleanup', requestPersist, { kw: 'storage persistent', more: true });
@@ -38462,7 +38654,8 @@ kbd {
             const b = e.target.closest('[data-gear]');
             if (!b) return;
             closeMenus();
-            if (b.dataset.gear === 'export') exportAllJson();
+            if (b.dataset.gear === 'exportmd') exportCurrentView();
+            else if (b.dataset.gear === 'export') exportAllJson();
             else if (b.dataset.gear === 'import') el.importFile.click();
             else if (b.dataset.gear === 'persist') requestPersist();
         });
@@ -38484,6 +38677,9 @@ kbd {
             } else if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F') && S.note) {
                 e.preventDefault();
                 toggleFocus();
+            } else if (mod && e.shiftKey && (e.key === 's' || e.key === 'S') && S.note) {
+                e.preventDefault();
+                flushSave().then(() => runAction(S.fileLinks.get(S.note.id) ? 'savefsupdate' : 'savefs'));
             } else if (mod && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
                 flushSave().then(() => { if (S.note && !S.dirty) flash('Saved'); });
