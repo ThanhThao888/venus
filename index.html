@@ -36474,12 +36474,18 @@ kbd {
         });
         highlightCode(tpl.content);
         convertCallouts(tpl.content);
-        // GFM task checkboxes ("- [ ] …") come out of marked as disabled inputs — leave them
-        // disabled while previewing an old revision (read-only), otherwise make them clickable;
-        // the click handler on el.read does the actual toggling + writes back to the source.
-        if (interactive !== false) {
-            tpl.content.querySelectorAll('li > input[type="checkbox"]').forEach((cb) => { cb.disabled = false; });
-        }
+        // GFM task checkboxes ("- [ ] …") come out of marked as disabled <input>s. The
+        // `checked` HTML attribute always survives (marked writes it, DOMPurify keeps it),
+        // but some browsers don't reliably carry the *live* `.checked` property through a
+        // <template>'s inert content being adopted into the real document — every box then
+        // renders unchecked no matter what the source says. Force it back from the attribute
+        // every time, regardless of browser quirks. Also leave boxes disabled while previewing
+        // an old revision (read-only); otherwise make them clickable — the click handler on
+        // el.read does the actual toggling + writes back to the source.
+        tpl.content.querySelectorAll('li > input[type="checkbox"]').forEach((cb) => {
+            cb.checked = cb.hasAttribute('checked');
+            if (interactive !== false) cb.disabled = false;
+        });
         tpl.content.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
         target.replaceChildren(tpl.content);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
@@ -37295,10 +37301,50 @@ kbd {
 
     /* ── Backup / restore / persistence ── */
     async function exportAllJson() {
-        await flushSave();
-        const notes = await dbGetAll();
+        const { notes } = await getBackupData();
         const payload = { app: 'FinanceTracker-NotesVault', exportedAt: new Date().toISOString(), notes };
         download(JSON.stringify(payload, null, 2), 'notes-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json');
+    }
+    // The raw notes (IndexedDB), flushed and ready to embed in any backup file — used both by
+    // this module's own Export button and by the app-wide "Data Management" full backup, which
+    // otherwise only ever sees localStorage and would silently miss every note.
+    async function getBackupData() {
+        await flushSave();
+        const notes = await dbGetAll();
+        return { notes };
+    }
+    // Same merge rule either way: a note already here newer than the one in the backup wins,
+    // so importing an old file can never clobber more recent edits.
+    async function restoreNotesList(list, opts = {}) {
+        if (!Array.isArray(list) || !list.length) return { added: 0, updated: 0, skipped: 0 };
+        await flushSave();
+        const existing = new Map(S.notes.concat(S.trash).map((n) => [n.id, n]));
+        let added = 0, updated = 0, skipped = 0;
+        for (const raw of list) {
+            if (!raw || typeof raw.markdown !== 'string') continue;
+            const inc = normalizeNote({
+                id: raw.id || uid(), title: raw.title, markdown: raw.markdown, type: raw.type,
+                tags: raw.tags, pinned: raw.pinned, createdAt: raw.createdAt, updatedAt: raw.updatedAt, deletedAt: raw.deletedAt
+            });
+            const ex = existing.get(inc.id);
+            if (ex && ex.updatedAt > inc.updatedAt) { skipped++; continue; }   // never overwrite a newer note with an older backup
+            await dbPut(inc);
+            if (ex) updated++; else added++;
+        }
+        if (!opts.silent) {
+            await loadAll();
+            if (S.note) { const again = S.notes.find((n) => n.id === S.note.id); if (again) S.note = again; }
+            renderAll();
+            updateStorage();
+        }
+        return { added, updated, skipped };
+    }
+    // Entry point for the app-wide "Data Management" import: a full backup JSON carries a
+    // notesVault field alongside the localStorage dump; that page reloads right after restoring,
+    // so there is no UI here worth refreshing — just get the notes into IndexedDB.
+    async function restoreFromBackup(payload) {
+        const list = payload && Array.isArray(payload.notes) ? payload.notes : [];
+        return restoreNotesList(list, { silent: true });
     }
     function importJson(file) {
         if (!file) return;
@@ -37308,24 +37354,7 @@ kbd {
                 const data = JSON.parse(e.target.result);
                 const list = Array.isArray(data) ? data : (data.notes || []);
                 if (!Array.isArray(list) || !list.length) { alert('No notes found in that file.'); return; }
-                await flushSave();
-                const existing = new Map(S.notes.concat(S.trash).map((n) => [n.id, n]));
-                let added = 0, updated = 0, skipped = 0;
-                for (const raw of list) {
-                    if (!raw || typeof raw.markdown !== 'string') continue;
-                    const inc = normalizeNote({
-                        id: raw.id || uid(), title: raw.title, markdown: raw.markdown, type: raw.type,
-                        tags: raw.tags, pinned: raw.pinned, createdAt: raw.createdAt, updatedAt: raw.updatedAt, deletedAt: raw.deletedAt
-                    });
-                    const ex = existing.get(inc.id);
-                    if (ex && ex.updatedAt > inc.updatedAt) { skipped++; continue; }   // never overwrite a newer note with an older backup
-                    await dbPut(inc);
-                    if (ex) updated++; else added++;
-                }
-                await loadAll();
-                if (S.note) { const again = S.notes.find((n) => n.id === S.note.id); if (again) S.note = again; }
-                renderAll();
-                updateStorage();
+                const { added, updated, skipped } = await restoreNotesList(list);
                 alert('Imported ' + (added + updated) + ' note(s)' + (skipped ? ' — ' + skipped + ' skipped because a newer version is already here.' : '.'));
             } catch (err) {
                 console.error(err);
@@ -38888,6 +38917,7 @@ kbd {
         toggle, open, close, newNote, openNote,
         renderList: () => { if (S.open) renderAll(); },
         exportAllJson, importJson, requestPersist,
+        getBackupData, restoreFromBackup,
         quickCapture: openCapture
     };
 })();
@@ -68932,25 +68962,34 @@ window.fcRenderTagChips = fcRenderTagChips;
             return size;
         }
 
-        // ✅ Gom toàn bộ localStorage (trừ các key bị loại) thành 1 object backup chuẩn.
-        function buildFullBackupObject(extraMeta = {}) {
+        // ✅ Gom toàn bộ localStorage (trừ các key bị loại) + toàn bộ note trong Notes Vault
+        // (một IndexedDB riêng, KHÔNG nằm trong localStorage nên phải lấy riêng) thành 1 object backup chuẩn.
+        async function buildFullBackupObject(extraMeta = {}) {
             const raw = {};
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (FULLBACKUP_EXCLUDE_KEYS.includes(key)) continue;
                 raw[key] = localStorage.getItem(key);
             }
+            let notesVault = null;
+            try {
+                if (window.NotesVault && typeof window.NotesVault.getBackupData === 'function') {
+                    notesVault = await window.NotesVault.getBackupData();
+                }
+            } catch (e) { console.error('Notes Vault backup failed:', e); }
             return {
                 __meta: {
                     app: "Finance Career Skills Tracker",
                     exportDate: new Date().toISOString(),
-                    version: "3.1-full-backup",
+                    version: "3.2-full-backup",
                     keyCount: Object.keys(raw).length,
+                    notesVaultCount: notesVault ? notesVault.notes.length : 0,
                     excludes: FULLBACKUP_EXCLUDE_KEYS,
                     ...extraMeta
                 },
                 resourceStats: (typeof getResourceStats === 'function') ? getResourceStats() : null,
-                data: raw
+                data: raw,
+                notesVault   // { notes: [...] } from Notes Vault's IndexedDB, or null if the vault script hasn't loaded
             };
         }
 
@@ -68967,15 +69006,17 @@ window.fcRenderTagChips = fcRenderTagChips;
             URL.revokeObjectURL(url);
         }
 
-        function exportProgress() {
+        async function exportProgress() {
             try {
                 // ✅ FULL BACKUP — quét TOÀN BỘ localStorage, không liệt kê tay
                 // từng key. Nhờ vậy mọi tính năng mới thêm sau này (Brain Dump, Deadlines,
                 // Daily Plan, Launchpad...) tự động được backup, không cần sửa code nữa.
-                const backup = buildFullBackupObject();
+                // Đồng thời gom cả note trong Notes Vault (IndexedDB riêng) vào cùng 1 file.
+                const backup = await buildFullBackupObject();
                 downloadBackupObject(backup, 'finance-skills-tracker-FULLBACKUP');
+                const noteMsg = backup.__meta.notesVaultCount ? `, ${backup.__meta.notesVaultCount} note (Notes Vault)` : '';
                 showNotification(
-                    `✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu!`,
+                    `✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu${noteMsg}!`,
                     'success'
                 );
             } catch (err) {
@@ -68987,8 +69028,8 @@ window.fcRenderTagChips = fcRenderTagChips;
         // ✅ FIX 1: tự động tải 1 bản backup "an toàn" của dữ liệu HIỆN TẠI ngay
         // trước khi import ghi đè — để luôn có đường lùi nếu import sau đó hỏng
         // (sai file, quota lỗi giữa chừng...).
-        function downloadPreImportSafetyBackup() {
-            const backup = buildFullBackupObject({
+        async function downloadPreImportSafetyBackup() {
+            const backup = await buildFullBackupObject({
                 note: "AUTO SAFETY BACKUP — tạo tự động ngay trước khi import ghi đè dữ liệu."
             });
             downloadBackupObject(backup, 'finance-skills-tracker-PREIMPORT-SAFETY');
@@ -69045,8 +69086,9 @@ window.fcRenderTagChips = fcRenderTagChips;
                         if (!proceedAnyway) { event.target.value = ''; return; }
                     }
 
+                    const noteCount = (isFullBackup && parsed.notesVault && Array.isArray(parsed.notesVault.notes)) ? parsed.notesVault.notes.length : 0;
                     const ok = await skConfirm(
-                        `Sắp khôi phục ${keys.length} mục dữ liệu từ file backup.\n` +
+                        `Sắp khôi phục ${keys.length} mục dữ liệu` + (noteCount ? ` + ${noteCount} note (Notes Vault)` : '') + ` từ file backup.\n` +
                         `Dữ liệu hiện tại trong app sẽ bị GHI ĐÈ bởi dữ liệu trong file.\n` +
                         `Một bản backup an toàn của dữ liệu HIỆN TẠI sẽ tự động tải về trước khi ghi đè.\n` +
                         `Tiếp tục?`,
@@ -69055,7 +69097,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     if (!ok) { event.target.value = ''; return; }
 
                     // ✅ FIX 1: auto-backup dữ liệu hiện tại trước khi ghi đè bất cứ gì.
-                    downloadPreImportSafetyBackup();
+                    await downloadPreImportSafetyBackup();
 
                     let restored = 0;
                     const failed = [];
@@ -69085,7 +69127,21 @@ window.fcRenderTagChips = fcRenderTagChips;
                         return;
                     }
 
-                    showNotification(`✅ Đã khôi phục ${restored} mục. Đang tải lại trang...`, 'success');
+                    // Notes Vault sống trong IndexedDB riêng, không nằm trong các key localStorage
+                    // ở trên — nếu file backup có mang theo notesVault (bản export mới), khôi phục
+                    // nốt phần đó vào đây trước khi reload.
+                    let noteMsg = '';
+                    if (isFullBackup && parsed.notesVault && window.NotesVault && typeof window.NotesVault.restoreFromBackup === 'function') {
+                        try {
+                            const { added, updated } = await window.NotesVault.restoreFromBackup(parsed.notesVault);
+                            if (added + updated > 0) noteMsg = `, ${added + updated} note (Notes Vault)`;
+                        } catch (e) {
+                            console.error('Notes Vault restore failed:', e);
+                            noteMsg = ' (⚠️ note trong Notes Vault khôi phục lỗi, xem console)';
+                        }
+                    }
+
+                    showNotification(`✅ Đã khôi phục ${restored} mục${noteMsg}. Đang tải lại trang...`, 'success');
 
                     // Reload để mọi phần của app đọc lại dữ liệu mới từ localStorage —
                     // an toàn hơn nhiều so với việc tự tay đồng bộ từng biến JS trong bộ nhớ.
