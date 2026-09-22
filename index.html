@@ -36002,6 +36002,7 @@ kbd {
             </div>
         </div>
         <input type="file" id="nvImportFile" accept="application/json,.json" hidden>
+        <input type="file" id="nvAttachInput" accept="image/*" multiple hidden>
     </aside>
 
     <!-- ── Main: library ⇄ document ── -->
@@ -36143,6 +36144,7 @@ kbd {
                         <button class="nv-tb" type="button" data-cmd="quote" data-tip="Quote" aria-pressed="false"><i class="fa-solid fa-quote-left"></i></button>
                         <button class="nv-tb" type="button" data-cmd="link" data-tip="Link"><i class="fa-solid fa-link"></i></button>
                         <button class="nv-tb nv-tb-txt" type="button" data-cmd="wikilink" data-tip="Link to note">[[ ]]</button>
+                        <button class="nv-tb" type="button" data-cmd="image" data-tip="Image"><i class="fa-solid fa-image"></i></button>
                         <span class="nv-tsep" aria-hidden="true"></span>
                         <button class="nv-tb" type="button" data-cmd="codeblock" data-tip="Code block"><i class="fa-solid fa-file-code"></i></button>
                         <button class="nv-tb" type="button" data-cmd="table" data-tip="Table"><i class="fa-solid fa-table"></i></button>
@@ -36387,7 +36389,7 @@ kbd {
     const SAVE_DELAY = 700;
     // A backup is only "full" if it carries every IndexedDB store the vault actually uses —
     // notes alone silently drops version history and file links. Bumped if that shape changes.
-    const BACKUP_SCHEMA = 1;
+    const BACKUP_SCHEMA = 2;   // v2 adds `attachments` (base64 image blobs) — see getBackupData
     // FileSystemFileHandle can't survive JSON (structured-clone only), so a restored file link
     // can't reopen the real file — this remembers just enough (name + when) to show a
     // "needs relinking" hint, keyed by noteId. Lives in localStorage, not IndexedDB: it is a
@@ -36552,9 +36554,12 @@ kbd {
     /* ───────── Attachments: blob store + reference counts ─────────
        Two stores: `attachments` holds the actual Blob records (content-addressed by SHA-256,
        so pasting the same image twice — even into different notes — reuses one row), and
-       `attachmentRefs` holds which live note ids currently reference each attachment id, kept
-       up to date by syncAttachmentRefs() on every save. Garbage collection (pruneOrphanAttachments)
-       then just looks for refs with an empty notes list — no need to scan every note's markdown. */
+       `attachmentRefs` holds which live note ids AND which stored version-history (revision)
+       ids currently reference each attachment id, kept up to date by syncAttachmentRefs() on
+       every save and by snapshot()/revDeleteKeys() for revisions. Garbage collection
+       (pruneOrphanAttachments) only deletes an attachment once BOTH lists are empty — a note
+       can delete an image from its current text while an older revision still needs it, and
+       that revision must be able to render until it's itself pruned or the note is purged. */
     async function dbPutAttachment(rec) {
         const db = await openDb();
         return new Promise((resolve, reject) => {
@@ -36628,6 +36633,14 @@ kbd {
         return new Promise((resolve, reject) => {
             const req = db.transaction(DB_ATTACH_REFS).objectStore(DB_ATTACH_REFS).getAll();
             req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function dbGetRevision(id) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_REV).objectStore(DB_REV).get(id);
+            req.onsuccess = () => resolve(req.result || null);
             req.onerror = () => reject(req.error);
         });
     }
@@ -37022,6 +37035,22 @@ kbd {
         const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
         return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
     }
+    // Blob <-> base64, used only to embed attachment images inside the JSON backup (see
+    // getBackupData / restoreAttachmentsList below). Chunked so a large screenshot's bytes
+    // don't blow the call stack via String.fromCharCode.apply(null, hugeArray).
+    async function blobToBase64(blob) {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        let binary = '';
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+        return btoa(binary);
+    }
+    function base64ToBlob(b64, mime) {
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new Blob([bytes], { type: mime || 'application/octet-stream' });
+    }
 
     async function ingestAttachment(file) {
         if (!file || !/^image\//.test(file.type)) throw attachError('Only images can be attached right now.');
@@ -37056,6 +37085,25 @@ kbd {
         while ((m = ATTACH_REF_RE.exec(markdown))) ids.add(m[1]);
         return ids;
     }
+    // Adds/removes one referrer id (a note id or a revision id) from one attachment's refs
+    // row, in the given list ('notes' or 'revisions'). Every place that adds or drops a
+    // reference — live note edits, revision snapshots, revision pruning — funnels through
+    // these two so the two lists never drift out of sync with each other's shape.
+    async function addAttachmentRef(attId, kind, refId) {
+        const rec = (await dbGetAttachmentRefs(attId)) || { id: attId, notes: [], revisions: [] };
+        if (!rec.notes) rec.notes = [];
+        if (!rec.revisions) rec.revisions = [];
+        if (!rec[kind].includes(refId)) rec[kind].push(refId);
+        await dbPutAttachmentRefs(rec);
+    }
+    async function removeAttachmentRef(attId, kind, refId) {
+        const rec = await dbGetAttachmentRefs(attId);
+        if (!rec) return;
+        if (!rec.notes) rec.notes = [];
+        if (!rec.revisions) rec.revisions = [];
+        rec[kind] = rec[kind].filter((x) => x !== refId);
+        await dbPutAttachmentRefs(rec);
+    }
     // Diffs a note's current attachment references against what was last synced for it, and
     // only touches the attachmentRefs rows that actually changed. Called from flushSave, so it
     // runs on every persisted edit — a note that never had attachments never touches this store.
@@ -37065,18 +37113,21 @@ kbd {
         if (nextIds.size === prevIds.size && [...nextIds].every((id) => prevIds.has(id))) return;
         const added = [...nextIds].filter((id) => !prevIds.has(id));
         const removed = [...prevIds].filter((id) => !nextIds.has(id));
-        for (const id of added) {
-            const rec = (await dbGetAttachmentRefs(id)) || { id, notes: [] };
-            if (!rec.notes.includes(noteId)) rec.notes.push(noteId);
-            await dbPutAttachmentRefs(rec);
-        }
-        for (const id of removed) {
-            const rec = await dbGetAttachmentRefs(id);
-            if (!rec) continue;
-            rec.notes = rec.notes.filter((n) => n !== noteId);
-            await dbPutAttachmentRefs(rec);
-        }
+        for (const id of added) await addAttachmentRef(id, 'notes', noteId);
+        for (const id of removed) await removeAttachmentRef(id, 'notes', noteId);
         S.noteAttachRefCache.set(noteId, nextIds);
+    }
+    // Mirrors syncAttachmentRefs but for version-history rows: called once a revision has
+    // actually been written (from snapshot()), so every attachment it pictures stays "in use"
+    // even after the live note's markdown moves on or drops the image entirely.
+    async function addRevisionAttachmentRefs(revId, markdown) {
+        for (const id of extractAttachmentIds(markdown)) await addAttachmentRef(id, 'revisions', revId).catch(() => {});
+    }
+    // Called just before a revision row is physically deleted (old-version pruning, restore's
+    // "before-restore" cap, or wiping a note's whole history) so its attachments can go back to
+    // being unreferenced once nothing — no live note, no other revision — needs them anymore.
+    async function releaseRevisionAttachments(revId, markdown) {
+        for (const id of extractAttachmentIds(markdown)) await removeAttachmentRef(id, 'revisions', revId).catch(() => {});
     }
     // Called when a note is permanently erased (purge / empty trash — NOT the ordinary
     // move-to-Trash, since a trashed note can still be restored with its images intact).
@@ -37084,21 +37135,16 @@ kbd {
         const ids = S.noteAttachRefCache.get(noteId);
         S.noteAttachRefCache.delete(noteId);
         if (!ids || !ids.size) return;
-        for (const id of ids) {
-            const rec = await dbGetAttachmentRefs(id).catch(() => null);
-            if (!rec) continue;
-            rec.notes = rec.notes.filter((n) => n !== noteId);
-            await dbPutAttachmentRefs(rec).catch(() => {});
-        }
+        for (const id of ids) await removeAttachmentRef(id, 'notes', noteId).catch(() => {});
     }
-    // Deletes every attachment whose refs row exists but lists no live notes. Manual/on-demand
-    // (wired to a button in Manage storage) rather than automatic, so nothing is ever deleted
-    // without the person asking for it.
+    // Deletes every attachment whose refs row exists but lists no live notes AND no stored
+    // revisions. Manual/on-demand (wired to a button in Manage storage) rather than automatic,
+    // so nothing is ever deleted without the person asking for it.
     async function pruneOrphanAttachments() {
         const refs = await dbGetAllAttachmentRefs();
         let freed = 0, count = 0;
         for (const r of refs) {
-            if (r.notes && r.notes.length) continue;
+            if ((r.notes && r.notes.length) || (r.revisions && r.revisions.length)) continue;
             const rec = await dbGetAttachment(r.id).catch(() => null);
             if (rec) freed += rec.size || 0;
             await dbDeleteAttachment(r.id).catch(() => {});
@@ -37109,12 +37155,16 @@ kbd {
     }
 
     /* ═════════════ Storage Manager v2: Images / Orphans / Largest / Optimize ═════════════ */
-    // Every stored attachment joined with how many live notes currently reference it — the
-    // single query behind the Images tab (sort/filter happen client-side on this list).
+    // Every stored attachment joined with how many live notes AND how many stored revisions
+    // currently reference it — the single query behind the Images tab (sort/filter happen
+    // client-side on this list). An attachment is only truly unused when both are empty.
     async function getAttachmentsOverview() {
         const [atts, refs] = await Promise.all([dbGetAllAttachments(), dbGetAllAttachmentRefs()]);
-        const refMap = new Map(refs.map((r) => [r.id, r.notes || []]));
-        return atts.map((rec) => ({ rec, noteIds: refMap.get(rec.id) || [] }));
+        const refMap = new Map(refs.map((r) => [r.id, r]));
+        return atts.map((rec) => {
+            const r = refMap.get(rec.id);
+            return { rec, noteIds: (r && r.notes) || [], revIds: (r && r.revisions) || [] };
+        });
     }
     // Re-compresses any *in-use* attachment that predates the current WebP/size settings
     // (e.g. the rare PNG fallback, or a max-dimension that's since been tightened). Orphans are
@@ -37158,14 +37208,26 @@ kbd {
                 }
                 await dbPut(note).catch(() => {});
             }
-            const targetRefs = (await dbGetAttachmentRefs(target.id)) || { id: target.id, notes: [] };
+            const targetRefs = (await dbGetAttachmentRefs(target.id)) || { id: target.id, notes: [], revisions: [] };
+            if (!targetRefs.notes) targetRefs.notes = [];
+            if (!targetRefs.revisions) targetRefs.revisions = [];
             for (const noteId of noteIds) if (!targetRefs.notes.includes(noteId)) targetRefs.notes.push(noteId);
             await dbPutAttachmentRefs(targetRefs);
             S.noteAttachRefCache.forEach((set) => { if (set.has(rec.id)) { set.delete(rec.id); set.add(target.id); } });
 
-            freed += Math.max(0, rec.size - encoded.blob.size);
-            await dbDeleteAttachment(rec.id).catch(() => {});
-            await dbDeleteAttachmentRefs(rec.id).catch(() => {});
+            // Every live note now points at the new (re-encoded) id, but a stored revision is an
+            // immutable snapshot and is never rewritten — if one still pictures rec.id by its
+            // original attachment://, the old blob has to stay put until that revision is itself
+            // pruned. Only drop it here once nothing, note or revision, references it any more.
+            const oldRefs = await dbGetAttachmentRefs(rec.id).catch(() => null);
+            const oldRevIds = (oldRefs && oldRefs.revisions) || [];
+            if (oldRevIds.length) {
+                await dbPutAttachmentRefs({ id: rec.id, notes: [], revisions: oldRevIds });
+            } else {
+                freed += Math.max(0, rec.size - encoded.blob.size);
+                await dbDeleteAttachment(rec.id).catch(() => {});
+                await dbDeleteAttachmentRefs(rec.id).catch(() => {});
+            }
             changed++;
         }
         if (S.note && S.mode !== 'edit') renderInto(el.read, S.note.markdown);   // picks up any swapped attachment ids
@@ -37590,6 +37652,13 @@ kbd {
     }
     async function revDeleteKeys(keys) {
         if (!keys.length) return;
+        // Read each revision's markdown before it disappears so its attachment refs can be
+        // released — otherwise an image only pictured in an older/trimmed revision would keep
+        // pointing at a "revisions" ref that's about to become unreachable, silently leaking it.
+        try {
+            const recs = await Promise.all(keys.map((k) => dbGetRevision(k).catch(() => null)));
+            for (const rec of recs) if (rec) await releaseRevisionAttachments(rec.id, rec.markdown);
+        } catch (e) { /* best-effort — worst case a ref lingers until the next prune, never data loss */ }
         const db = await openDb();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(DB_REV, 'readwrite');
@@ -37647,6 +37716,7 @@ kbd {
                 words: (md.match(/\S+/g) || []).length, chars: md.length, sig, label: opts.label || ''
             };
             await revPut(rec);
+            await addRevisionAttachmentRefs(rec.id, md);
             revLast.set(src.id, { at: savedAt, sig });
             await revPrune(src.id, md.length);
             if (S.note && S.note.id === src.id) renderHistory();
@@ -38466,10 +38536,12 @@ kbd {
         const dims = rec.width && rec.height ? rec.width + '\u00d7' + rec.height + ' \u00b7 ' : '';
         let usageLine = '';
         if (context === 'manager') {
-            const n = opts.noteCount || 0;
-            usageLine = n ? (' \u00b7 Used in ' + n + (n === 1 ? ' note' : ' notes')) : ' \u00b7 Unused';
+            const n = opts.noteCount || 0, rv = opts.revCount || 0;
+            if (n) usageLine = ' \u00b7 Used in ' + n + (n === 1 ? ' note' : ' notes');
+            else if (rv) usageLine = ' \u00b7 In version history only';
+            else usageLine = ' \u00b7 Unused';
         }
-        const canDelete = context === 'note' || (context === 'manager' && !opts.noteCount);
+        const canDelete = context === 'note' || (context === 'manager' && !opts.noteCount && !opts.revCount);
         menu.innerHTML =
             '<div class="nv-attach-meta">' + esc(dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || 'image') + usageLine) + '</div>'
             + '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>'
@@ -39860,7 +39932,7 @@ kbd {
         const backup = await getBackupData();
         const payload = {
             app: 'FinanceTracker-NotesVault', schema: BACKUP_SCHEMA, exportedAt: new Date().toISOString(),
-            notes: backup.notes, revisions: backup.revisions, fileLinks: backup.fileLinks
+            notes: backup.notes, revisions: backup.revisions, fileLinks: backup.fileLinks, attachments: backup.attachments
         };
         download(JSON.stringify(payload, null, 2), 'notes-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json');
     }
@@ -39877,13 +39949,30 @@ kbd {
     //     would just produce "{}" silently. Only what's actually useful to restore — the file's
     //     name and when it was linked — is kept; restoreFileLinksList turns that into a
     //     "needs relinking" hint rather than a fake, broken link.
+    //   · attachments — every stored image Blob, base64-encoded. Without this, a note's
+    //     Markdown (`attachment://att_xxx`) survives a restore but the picture itself doesn't —
+    //     looks like a complete backup, renders as a broken image the day you actually restore
+    //     it on a fresh browser/device. Every attachment currently in the store is included
+    //     (not just ones a live note references), so an image only pictured in an older
+    //     revision is preserved too.
     async function getBackupData() {
         await flushSave();
         const notes = await dbGetAll();
         const revisions = await dbGetAllRevisions().catch((e) => { console.warn('Notes Vault: could not back up version history', e); return []; });
         const rawLinks = await dbGetAllLinks().catch((e) => { console.warn('Notes Vault: could not back up file links', e); return []; });
         const fileLinks = rawLinks.map((r) => ({ noteId: r.id, name: r.name || '', linkedAt: r.linkedAt || 0 }));
-        return { schema: BACKUP_SCHEMA, notes, revisions, fileLinks };
+        const attRecs = await dbGetAllAttachments().catch((e) => { console.warn('Notes Vault: could not back up attachments', e); return []; });
+        const attachments = [];
+        for (const rec of attRecs) {
+            try {
+                attachments.push({
+                    id: rec.id, hash: rec.hash, mime: rec.mime, size: rec.size,
+                    width: rec.width, height: rec.height, createdAt: rec.createdAt,
+                    dataB64: await blobToBase64(rec.blob)
+                });
+            } catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
+        }
+        return { schema: BACKUP_SCHEMA, notes, revisions, fileLinks, attachments };
     }
     // Same merge rule either way: a note already here newer than the one in the backup wins,
     // so importing an old file can never clobber more recent edits.
@@ -39911,6 +40000,11 @@ kbd {
             const ex = existing.get(inc.id);
             if (ex && ex.updatedAt > inc.updatedAt) { skipped++; continue; }   // never overwrite a newer note with an older backup
             await dbPut(inc);
+            // A restored note is written straight to IndexedDB (dbPut), bypassing flushSave —
+            // which is normally what calls syncAttachmentRefs. Do it here too, or a restored
+            // note's images stay untracked as "in use" until the note happens to be opened and
+            // edited, and could get swept up by "Clean up unused attachments" in the meantime.
+            syncAttachmentRefs(inc.id, inc.markdown).catch((e) => console.warn('Notes Vault: attachment ref sync failed', e));
             if (ex) updated++; else added++;
         }
         if (!opts.silent) {
@@ -39939,7 +40033,7 @@ kbd {
                 title: raw.title || '', markdown: raw.markdown,
                 words: +raw.words || 0, chars: +raw.chars || raw.markdown.length, sig: raw.sig || '', label: raw.label || ''
             };
-            try { await revPut(rec); added++; } catch (e) { console.warn('Notes Vault: could not restore a version', e); }
+            try { await revPut(rec); added++; await addRevisionAttachmentRefs(rec.id, rec.markdown); } catch (e) { console.warn('Notes Vault: could not restore a version', e); }
         }
         revLast.clear();
         return { added };
@@ -39959,10 +40053,37 @@ kbd {
         }
         return { added };
     }
+    // Restores attachments embedded in a backup (see getBackupData). Content-addressed by id
+    // (which is derived from the image's hash), so a blob already present locally — the common
+    // case when re-importing your own backup, or restoring onto a device that already has some
+    // of the same screenshots — is left alone rather than re-written. Doesn't touch
+    // attachmentRefs itself: restoreNotesList/restoreRevisionsList register the "in use" refs
+    // once the notes/revisions that point at these ids are restored.
+    async function restoreAttachmentsList(list) {
+        if (!Array.isArray(list) || !list.length) return { added: 0 };
+        let added = 0;
+        for (const raw of list) {
+            if (!raw || !raw.id || !raw.dataB64) continue;
+            try {
+                const existing = await dbGetAttachment(raw.id);
+                if (existing) continue;
+                const blob = base64ToBlob(raw.dataB64, raw.mime);
+                const rec = {
+                    id: raw.id, hash: raw.hash || raw.id, blob, mime: raw.mime || blob.type,
+                    size: +raw.size || blob.size, width: +raw.width || 0, height: +raw.height || 0,
+                    createdAt: +raw.createdAt || Date.now()
+                };
+                await dbPutAttachment(rec);
+                added++;
+            } catch (e) { console.warn('Notes Vault: could not restore an attachment', raw && raw.id, e); }
+        }
+        return { added };
+    }
     // Entry point for the app-wide "Data Management" import: a full backup JSON carries a
     // notesVault field alongside the localStorage dump; that page reloads right after restoring,
     // so there is no UI here worth refreshing — just get everything into IndexedDB/localStorage.
     async function restoreFromBackup(payload) {
+        try { await restoreAttachmentsList(payload && payload.attachments); } catch (e) { console.warn('Notes Vault: attachment restore skipped', e); }
         const list = payload && Array.isArray(payload.notes) ? payload.notes : [];
         const result = await restoreNotesList(list, { silent: true });
         try { await restoreRevisionsList(payload && payload.revisions); } catch (e) { console.warn('Notes Vault: version history restore skipped', e); }
@@ -39977,12 +40098,14 @@ kbd {
                 const data = JSON.parse(e.target.result);
                 const list = Array.isArray(data) ? data : (data.notes || []);
                 if (!Array.isArray(list) || !list.length) { alert('No notes found in that file.'); return; }
+                const attResult = await restoreAttachmentsList(data.attachments).catch(() => ({ added: 0 }));
                 const { added, updated, skipped } = await restoreNotesList(list);
                 const revResult = await restoreRevisionsList(data.revisions).catch(() => ({ added: 0 }));
                 await restoreFileLinksList(data.fileLinks).catch(() => ({ added: 0 }));
                 if (S.note) renderDocMeta();
                 const revMsg = revResult.added ? ' + ' + revResult.added + ' version' + (revResult.added === 1 ? '' : 's') + ' of history' : '';
-                alert('Imported ' + (added + updated) + ' note(s)' + revMsg + (skipped ? ' — ' + skipped + ' skipped because a newer version is already here.' : '.'));
+                const imgMsg = attResult.added ? ' + ' + attResult.added + ' image' + (attResult.added === 1 ? '' : 's') : '';
+                alert('Imported ' + (added + updated) + ' note(s)' + revMsg + imgMsg + (skipped ? ' — ' + skipped + ' skipped because a newer version is already here.' : '.'));
             } catch (err) {
                 console.error(err);
                 alert('Could not read that file — is it a Notes Vault JSON backup?');
@@ -40305,7 +40428,9 @@ kbd {
         strike: () => toggleInline('strike'), code: () => toggleInline('code'),
         h1: () => setHeading(1), h2: () => setHeading(2), h3: () => setHeading(3),
         ul: () => setList('ul'), ol: () => setList('ol'), task: () => setList('task'),
-        quote: toggleQuote, link: insertLink, wikilink: insertWikilink, codeblock: toggleCodeBlock,
+        quote: toggleQuote, link: insertLink, wikilink: insertWikilink,
+        image: () => { if (el.attachInput) el.attachInput.click(); },
+        codeblock: toggleCodeBlock,
         table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting,
         extract: extractSelectionToNote
     };
@@ -40545,12 +40670,38 @@ kbd {
         }
         return files;
     }
+    // Fallback for screenshot tools / browsers that don't put the image into the paste
+    // event's DataTransfer the way getImageFilesFromClipboard() expects. Reads the live
+    // system clipboard directly. Only ever tried when the event-based check finds nothing —
+    // the native `paste` event stays the primary, first-choice path.
+    async function tryClipboardReadImage() {
+        if (!navigator.clipboard || !navigator.clipboard.read) return [];
+        try {
+            const items = await navigator.clipboard.read();
+            const files = [];
+            for (const item of items) {
+                const type = item.types.find((t) => /^image\//.test(t));
+                if (!type) continue;
+                const blob = await item.getType(type);
+                const ext = (type.split('/')[1] || 'png').split('+')[0];
+                files.push(new File([blob], 'pasted-image.' + ext, { type }));
+            }
+            return files;
+        } catch (e) {
+            return [];   // permission denied, nothing image-shaped on the clipboard, or unsupported — fail silently
+        }
+    }
     // Runs a pasted/dropped image through the attachment pipeline, showing an inline
     // "Uploading…" placeholder while it works so the caret position isn't left guessing.
+    // Each job gets a unique placeholder token (rather than a fixed literal string) so that
+    // pasting several images in a row — or while a previous one is still encoding — can never
+    // have its indexOf() match land on the wrong placeholder.
+    let attachJobSeq = 0;
     async function insertAttachments(files) {
         const ta = el.src;
         for (const file of files) {
-            const placeholder = '![Uploading…]()';
+            const jobId = 'j' + (++attachJobSeq) + Date.now().toString(36);
+            const placeholder = '![Uploading…](attachment-pending:' + jobId + ')';
             const s = ta.selectionStart, en = ta.selectionEnd;
             replaceRange(s, en, placeholder, s + placeholder.length);
             markDirty();
@@ -40569,11 +40720,22 @@ kbd {
             if (err) toast(err.message || 'Could not attach that image.');
         }
     }
-    function onEditorPaste(e) {
+    async function onEditorPaste(e) {
         const ta = el.src, s = ta.selectionStart, en = ta.selectionEnd;
         const imgFiles = getImageFilesFromClipboard(e.clipboardData);
         if (imgFiles.length) { e.preventDefault(); insertAttachments(imgFiles); return; }
         const t = ((e.clipboardData && e.clipboardData.getData('text/plain')) || '').trim();
+        // Nothing usable in the DataTransfer synchronously, but it's flagged as carrying a
+        // file with no text alongside it — the shape a screenshot tool leaves when it doesn't
+        // populate DataTransfer.items the way we expect. Worth the async Clipboard API fallback.
+        const filesHint = e.clipboardData && Array.from(e.clipboardData.types || []).includes('Files');
+        if (!t && filesHint) {
+            e.preventDefault();
+            const imgs = await tryClipboardReadImage();
+            if (imgs.length) insertAttachments(imgs);
+            else toast('Couldn’t read that image from the clipboard.');
+            return;
+        }
         const isLoneUrl = /^https?:\/\/\S+$/.test(t);
         // Paste a URL over selected words → [words](url)
         if (s !== en) {
@@ -41334,7 +41496,7 @@ kbd {
         return items;
     }
     function storImgCardHtml(it) {
-        const unused = !it.noteIds.length;
+        const unused = !it.noteIds.length && !it.revIds.length;
         return '<button type="button" class="nv-stor-imgcard">'
             + '<span class="nv-stor-imgthumb-wrap"><img class="nv-stor-imgthumb" alt="" loading="lazy"></span>'
             + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
@@ -41369,7 +41531,7 @@ kbd {
             const img = card.querySelector('img');
             if (img) img.src = url;
             card.addEventListener('click', () => {
-                openAttachMenu(it.rec, card, { context: 'manager', noteCount: it.noteIds.length, onDeleted: renderStorImages });
+                openAttachMenu(it.rec, card, { context: 'manager', noteCount: it.noteIds.length, revCount: it.revIds.length, onDeleted: renderStorImages });
             });
         });
     }
@@ -41393,8 +41555,8 @@ kbd {
         }
         applyStorImageSort(items);
         const totalBytes = items.reduce((s, it) => s + (it.rec.size || 0), 0);
-        const unusedCount = items.filter((it) => !it.noteIds.length).length;
-        const filtered = S.stor.imgFilter === 'unused' ? items.filter((it) => !it.noteIds.length) : items;
+        const unusedCount = items.filter((it) => !it.noteIds.length && !it.revIds.length).length;
+        const filtered = S.stor.imgFilter === 'unused' ? items.filter((it) => !it.noteIds.length && !it.revIds.length) : items;
         const summary = '<p class="nv-stor-note" style="margin-top:0;">' + items.length + (items.length === 1 ? ' image' : ' images') + ' \u00b7 ' + fmtBytes(totalBytes) + ' total' + (unusedCount ? ' \u00b7 ' + unusedCount + ' unused' : '') + '</p>';
         const cards = filtered.length ? filtered.map(storImgCardHtml).join('') : '';
         el.storBody.innerHTML = storImagesToolbarHtml() + summary
@@ -41545,7 +41707,7 @@ kbd {
         el = {
             fab: $('nvFab'), overlay: $('nvOverlay'), app: $('nvApp'), scrim: $('nvScrim'),
             side: $('nvSide'), sideScroll: $('nvSideScroll'), search: $('nvSearch'), clear: $('nvClear'),
-            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'),
+            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), attachInput: $('nvAttachInput'),
             lib: $('nvLib'), libScroll: $('nvLibScroll'), libTitle: $('nvLibTitle'), libSub: $('nvLibSub'), list: $('nvList'),
             docView: $('nvDocView'), docScroll: $('nvDocScroll'), title: $('nvTitle'), docMeta: $('nvDocMeta'),
             progress: $('nvProgress'), progressFill: $('nvProgressFill'),
@@ -41727,6 +41889,13 @@ kbd {
             e.preventDefault();
             insertAttachments(files);   // inserts at the current selection — dropping doesn't move the caret in a plain <textarea>
         });
+        if (el.attachInput) {
+            el.attachInput.addEventListener('change', () => {
+                const files = Array.from(el.attachInput.files || []);
+                if (files.length) insertAttachments(files);
+                el.attachInput.value = '';   // reset so picking the same file twice still fires 'change'
+            });
+        }
         ['keyup', 'mouseup', 'input', 'focus'].forEach((ev) => el.src.addEventListener(ev, () => { refreshToolbar(); checkWlTrigger(); }));
         el.src.addEventListener('blur', () => setTimeout(closeWlPopup, 150));   // delayed so a click on the popup still registers first
         if (el.wlPop) {
