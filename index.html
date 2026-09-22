@@ -40730,7 +40730,7 @@ kbd {
         S.dup.prevFocus = document.activeElement;
         el.dupScrim.hidden = false;
         el.dup.hidden = false;
-        el.dupClose.focus();
+        el.dupClose.focus({ preventScroll: true });
         await scanDuplicates();
     }
     function closeDupModal() {
@@ -40919,7 +40919,7 @@ kbd {
         S.stor.prevFocus = document.activeElement;
         el.storScrim.hidden = false;
         el.stor.hidden = false;
-        el.storClose.focus();
+        el.storClose.focus({ preventScroll: true });
         el.storBody.innerHTML = '<div class="nv-dup-loading">Checking storage…</div>';
         await renderStorBody();
     }
@@ -77667,46 +77667,36 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 })();
 </script>
 
-<!-- ═════════════ iOS "lệch" fix: reset a stuck Safari zoom ═════════════
-     The 16px input font-size rule (added earlier) stops Safari from
-     triggering a NEW zoom when you focus a small-font field, but it can't
-     undo one that's already in effect — if the page was zoomed in before
-     that fix ran, or a pinch-zoom happens to still be active, leaving a
-     field zooms the page back out visually but Safari's internal scale
-     sometimes doesn't reset to exactly 1.0. The layout is then rendered
-     correctly, just slightly zoomed and panned, which shows up as text
-     clipped on the left edge everywhere (labels losing their first letter,
-     panels looking shifted) — this is the same "lệch" symptom, not a CSS
-     positioning bug. Pinch-zoom itself is left alone (the viewport meta
-     still allows it, on purpose, for accessibility); this only clears the
-     specific case where zoom is left over after typing. -->
+<!-- ═════════════ iOS "lệch" fix v2: the real cause ═════════════
+     Not a zoom bug — pinch/drag doing nothing was the tell. On phones
+     (≤480px) a separate rule sets `html, body { overflow-x: hidden }`.
+     Several modals (Storage manager, Find duplicates, …) call
+     `someButton.focus()` right after they appear, so keyboard/screen-reader
+     users land on the close button. Without `{ preventScroll: true }`,
+     Safari can nudge the page's horizontal scroll position to "reveal" the
+     focused element — and because overflow-x is hidden, there is no
+     scrollbar or touch gesture left to drag it back with. That's the exact
+     symptom: every label missing its first few letters, unfixable by pinch
+     or pan. The direct triggers are now fixed with `preventScroll: true`;
+     this script is a safety net that catches any other case (any other
+     .focus() call, or a future one) by snapping horizontal scroll back to 0
+     shortly after any element gains focus, or when the app returns to the
+     foreground. It never touches vertical scroll. -->
 <script>
 (function () {
-    var vpMeta = document.querySelector('meta[name="viewport"]');
-    if (!vpMeta) return;
-    var original = vpMeta.getAttribute('content');
-    var resetting = false;
-    function resetIOSZoom() {
-        if (resetting) return;
-        resetting = true;
-        vpMeta.setAttribute('content', original + ', maximum-scale=1.0');
-        setTimeout(function () {
-            vpMeta.setAttribute('content', original);
-            resetting = false;
-        }, 80);
-    }
-    // The trigger is always "a text field just gave up focus" — this fires
-    // for every input/textarea/select in the app, in every modal, in every
-    // subsystem, without needing a separate hook in each one of them.
-    document.addEventListener('focusout', function (e) {
-        var t = e.target;
-        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
-            setTimeout(resetIOSZoom, 50);
+    function resetHorizontalScroll() {
+        if (window.scrollX || document.documentElement.scrollLeft || document.body.scrollLeft) {
+            window.scrollTo(0, window.scrollY);
+            document.documentElement.scrollLeft = 0;
+            document.body.scrollLeft = 0;
         }
+    }
+    document.addEventListener('focusin', function () {
+        requestAnimationFrame(resetHorizontalScroll);
+        setTimeout(resetHorizontalScroll, 60);
     }, true);
-    // Also covers returning to the tab/app after it was backgrounded mid-zoom.
     document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'visible') setTimeout(resetIOSZoom, 50);
+        if (document.visibilityState === 'visible') resetHorizontalScroll();
     });
 })();
 </script>
