@@ -35153,6 +35153,32 @@ window.DBP={
 .nv-stor-note { margin: 14px 0 0; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
 .nv-stor-unsupported { padding: 24px 4px; text-align: center; color: var(--text-muted); font-size: 0.88rem; }
 .nv-stor-unsupported i { font-size: 1.4rem; display: block; margin-bottom: 10px; color: var(--primary); }
+
+/* Storage manager v2: tabs + Images browser (largest/newest/orphans) */
+.nv-stor-tabs { display: flex; gap: 2px; margin-left: 10px; }
+.nv-stor-tab {
+    padding: 6px 12px; border: 0; border-radius: 999px; background: none;
+    color: var(--text-muted); font-size: 0.82rem; font-weight: 600; cursor: pointer;
+}
+.nv-stor-tab:hover { background: var(--nv-hover); color: var(--text-dark); }
+.nv-stor-tab.nv-cur { background: var(--nv-active); color: var(--primary-dark); }
+.nv-stor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 4px; }
+.nv-stor-select, .nv-stor-check { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); }
+.nv-stor-select select { font-size: 0.82rem; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark); }
+.nv-stor-imggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 12px; }
+.nv-stor-imgcard {
+    position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 0;
+    padding: 0; border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden;
+    background: var(--bg-light); cursor: pointer; text-align: left;
+}
+.nv-stor-imgcard:hover { border-color: var(--primary); }
+.nv-stor-imgthumb-wrap { aspect-ratio: 1 / 1; display: block; background: var(--bg-light); }
+.nv-stor-imgthumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+.nv-stor-imgmeta { padding: 4px 6px; font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-badge-unused {
+    position: absolute; top: 5px; left: 5px; padding: 2px 6px; border-radius: 999px;
+    background: rgba(192, 54, 74, 0.85); color: #fff; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em;
+}
 .nv-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 0.77rem; color: var(--text-muted); white-space: nowrap; }
 .nv-row-acts { position: relative; z-index: 2; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
 .nv-row:hover .nv-row-acts, .nv-row:focus-within .nv-row-acts { opacity: 1; }
@@ -36104,6 +36130,10 @@ kbd {
     <div class="nv-stor" id="nvStor" role="dialog" aria-modal="true" aria-label="Storage" hidden>
         <div class="nv-stor-bar">
             <span class="nv-stor-bartitle"><i class="fa-solid fa-database" aria-hidden="true"></i> Storage</span>
+            <div class="nv-stor-tabs" role="tablist">
+                <button class="nv-stor-tab" data-stor-tab="overview" type="button" role="tab">Overview</button>
+                <button class="nv-stor-tab" data-stor-tab="images" type="button" role="tab">Images</button>
+            </div>
             <span class="nv-grow"></span>
             <button class="nv-btn nv-btn-ghost" id="nvStorRefresh" type="button"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
             <button class="nv-ib" id="nvStorClose" type="button" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
@@ -36252,7 +36282,7 @@ kbd {
             compareKey: null,             // pair key currently shown in the Compare view, or null for the list
             prevFocus: null
         },
-        stor: { open: false, prevFocus: null },   // Manage storage panel
+        stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', objectUrls: [] },   // Manage storage panel
         storageStats: null,                       // last getVaultStorageStats() result, cached for the compact indicator + panel
         noteAttachRefCache: new Map(),            // noteId → Set(attachment id) last synced to attachmentRefs — lets flushSave diff cheaply
         attachObjectUrls: []                      // blob: URLs handed to <img> in the current Read view, revoked on the next render
@@ -36695,6 +36725,33 @@ kbd {
 
     function attachError(message) { const e = new Error(message); e.__attach = true; return e; }
 
+    // Decode + resize (never upscale) + WebP-compress. Shared by ingestAttachment (from a File)
+    // and optimizeAttachments (re-encoding an already-stored Blob), so both paths always produce
+    // bit-for-bit the same kind of output for the same settings.
+    async function encodeAttachmentImage(source) {
+        const bitmap = source instanceof ImageBitmap ? source : await createImageBitmap(source);
+        const scale = Math.min(1, ATTACH_MAX_DIM / Math.max(bitmap.width, bitmap.height));
+        const outW = Math.max(1, Math.round(bitmap.width * scale));
+        const outH = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = outW; canvas.height = outH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bitmap, 0, 0, outW, outH);
+        if (bitmap.close) bitmap.close();
+        let blob = await new Promise((res) => canvas.toBlob(res, 'image/webp', ATTACH_WEBP_QUALITY));
+        let mime = 'image/webp';
+        if (!blob) {   // WebP encoding unsupported (rare) — fall back to whatever the canvas can produce
+            blob = await new Promise((res) => canvas.toBlob(res));
+            mime = blob ? blob.type : 'image/png';
+        }
+        if (!blob) return null;
+        return { blob, mime, width: outW, height: outH };
+    }
+    async function hashBlob(blob) {
+        const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+        return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
     async function ingestAttachment(file) {
         if (!file || !/^image\//.test(file.type)) throw attachError('Only images can be attached right now.');
         if (file.size > ATTACH_MAX_SOURCE_BYTES) throw attachError('That image is too large to attach (25\u202fMB limit).');
@@ -36706,33 +36763,14 @@ kbd {
             if (health.blockAttachments) throw attachError('Storage is almost full — free up space before attaching images.');
         } catch (e) { if (e && e.__attach) throw e; /* stats call itself failing shouldn't block a paste */ }
 
-        const bitmap = await createImageBitmap(file).catch(() => null);
-        if (!bitmap) throw attachError('Could not read that image.');
+        const encoded = await encodeAttachmentImage(file).catch(() => null);
+        if (!encoded) throw attachError('Could not read or encode that image.');
 
-        const scale = Math.min(1, ATTACH_MAX_DIM / Math.max(bitmap.width, bitmap.height));
-        const outW = Math.max(1, Math.round(bitmap.width * scale));
-        const outH = Math.max(1, Math.round(bitmap.height * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = outW; canvas.height = outH;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(bitmap, 0, 0, outW, outH);
-        if (bitmap.close) bitmap.close();
-
-        let blob = await new Promise((res) => canvas.toBlob(res, 'image/webp', ATTACH_WEBP_QUALITY));
-        let mime = 'image/webp';
-        if (!blob) {   // WebP encoding unsupported (rare) — fall back to the original mime type
-            blob = await new Promise((res) => canvas.toBlob(res, file.type || 'image/png'));
-            mime = blob ? blob.type : (file.type || 'image/png');
-        }
-        if (!blob) throw attachError('Could not encode that image.');
-
-        const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
-        const hash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
-
+        const hash = await hashBlob(encoded.blob);
         const existing = await dbFindAttachmentByHash(hash);
         if (existing) return existing;
 
-        const rec = { id: 'att_' + hash.slice(0, 24), hash, blob, mime, size: blob.size, width: outW, height: outH, createdAt: Date.now() };
+        const rec = { id: 'att_' + hash.slice(0, 24), hash, blob: encoded.blob, mime: encoded.mime, size: encoded.blob.size, width: encoded.width, height: encoded.height, createdAt: Date.now() };
         await dbPutAttachment(rec);
         return rec;
     }
@@ -36797,6 +36835,70 @@ kbd {
             count++;
         }
         return { count, freed };
+    }
+
+    /* ═════════════ Storage Manager v2: Images / Orphans / Largest / Optimize ═════════════ */
+    // Every stored attachment joined with how many live notes currently reference it — the
+    // single query behind the Images tab (sort/filter happen client-side on this list).
+    async function getAttachmentsOverview() {
+        const [atts, refs] = await Promise.all([dbGetAllAttachments(), dbGetAllAttachmentRefs()]);
+        const refMap = new Map(refs.map((r) => [r.id, r.notes || []]));
+        return atts.map((rec) => ({ rec, noteIds: refMap.get(rec.id) || [] }));
+    }
+    // Re-compresses any *in-use* attachment that predates the current WebP/size settings
+    // (e.g. the rare PNG fallback, or a max-dimension that's since been tightened). Orphans are
+    // skipped on purpose — "Clean up unused attachments" is the right tool for those, since an
+    // unused image is worth deleting outright rather than spending time shrinking it.
+    async function optimizeAttachments() {
+        const atts = await dbGetAllAttachments();
+        const refs = await dbGetAllAttachmentRefs();
+        const refMap = new Map(refs.map((r) => [r.id, r]));
+        let changed = 0, freed = 0;
+        for (const rec of atts) {
+            const stale = rec.mime !== 'image/webp' || Math.max(rec.width || 0, rec.height || 0) > ATTACH_MAX_DIM;
+            if (!stale) continue;
+            const refRec = refMap.get(rec.id);
+            const noteIds = (refRec && refRec.notes) || [];
+            if (!noteIds.length) continue;
+
+            let encoded;
+            try { encoded = await encodeAttachmentImage(rec.blob); } catch (e) { continue; }
+            if (!encoded || encoded.blob.size >= rec.size) continue;   // only keep the result if it's actually smaller
+            const hash = await hashBlob(encoded.blob);
+            if (hash === rec.hash) continue;                          // re-encoding produced identical bytes — nothing to do
+
+            let target = await dbFindAttachmentByHash(hash);
+            if (!target) {
+                target = { id: 'att_' + hash.slice(0, 24), hash, blob: encoded.blob, mime: encoded.mime, size: encoded.blob.size, width: encoded.width, height: encoded.height, createdAt: rec.createdAt };
+                await dbPutAttachment(target);
+            }
+            // Point every referencing note's markdown at the new id before dropping the old record.
+            for (const noteId of noteIds) {
+                let note = S.notes.find((x) => x.id === noteId) || (S.note && S.note.id === noteId ? S.note : null);
+                if (!note) { try { note = (await dbGetAll()).find((x) => x.id === noteId) || null; } catch (e) { note = null; } }
+                if (!note) continue;
+                const re = new RegExp('attachment://' + rec.id + '(?=[\\s)])', 'g');
+                const newMd = note.markdown.replace(re, 'attachment://' + target.id);
+                if (newMd === note.markdown) continue;
+                note.markdown = newMd;
+                if (S.note && S.note.id === note.id) {
+                    S.note.markdown = newMd;
+                    if (el.src && S.mode === 'edit') el.src.value = newMd;
+                }
+                await dbPut(note).catch(() => {});
+            }
+            const targetRefs = (await dbGetAttachmentRefs(target.id)) || { id: target.id, notes: [] };
+            for (const noteId of noteIds) if (!targetRefs.notes.includes(noteId)) targetRefs.notes.push(noteId);
+            await dbPutAttachmentRefs(targetRefs);
+            S.noteAttachRefCache.forEach((set) => { if (set.has(rec.id)) { set.delete(rec.id); set.add(target.id); } });
+
+            freed += Math.max(0, rec.size - encoded.blob.size);
+            await dbDeleteAttachment(rec.id).catch(() => {});
+            await dbDeleteAttachmentRefs(rec.id).catch(() => {});
+            changed++;
+        }
+        if (S.note && S.mode !== 'edit') renderInto(el.read, S.note.markdown);   // picks up any swapped attachment ids
+        return { changed, freed };
     }
 
     const FOLDER_ICONS = [
@@ -37998,18 +38100,26 @@ kbd {
             attachMenuOutsideHandler = null;
         }
     }
-    function openAttachMenu(rec, imgEl) {
+    function openAttachMenu(rec, imgEl, opts) {
+        opts = opts || {};
+        const context = opts.context || 'note';
         closeAttachMenu();
         const menu = document.createElement('div');
         menu.className = 'nv-attach-menu nv-open';
         menu.setAttribute('role', 'menu');
         const dims = rec.width && rec.height ? rec.width + '\u00d7' + rec.height + ' \u00b7 ' : '';
+        let usageLine = '';
+        if (context === 'manager') {
+            const n = opts.noteCount || 0;
+            usageLine = n ? (' \u00b7 Used in ' + n + (n === 1 ? ' note' : ' notes')) : ' \u00b7 Unused';
+        }
+        const canDelete = context === 'note' || (context === 'manager' && !opts.noteCount);
         menu.innerHTML =
-            '<div class="nv-attach-meta">' + esc(dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || 'image')) + '</div>'
+            '<div class="nv-attach-meta">' + esc(dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || 'image') + usageLine) + '</div>'
             + '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>'
             + '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>'
             + '<button type="button" class="nv-act" data-act="save"><i class="fa-solid fa-download" aria-hidden="true"></i> Save as…</button>'
-            + '<button type="button" class="nv-act nv-danger" data-act="delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>';
+            + (canDelete ? '<button type="button" class="nv-act nv-danger" data-act="delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>' : '');
         document.body.appendChild(menu);
         const r = imgEl.getBoundingClientRect();
         const top = Math.min(window.innerHeight - menu.offsetHeight - 8, r.bottom + 6);
@@ -38039,6 +38149,12 @@ kbd {
                 a.href = url; a.download = rec.id + '.' + ext;
                 document.body.appendChild(a); a.click(); a.remove();
                 setTimeout(() => URL.revokeObjectURL(url), 2000);
+            } else if (act === 'delete' && context === 'manager') {
+                if (!confirm('Delete this unused image permanently? This cannot be undone.')) return;
+                await dbDeleteAttachment(rec.id).catch(() => {});
+                await dbDeleteAttachmentRefs(rec.id).catch(() => {});
+                flash('Image deleted');
+                if (opts.onDeleted) opts.onDeleted();
             } else if (act === 'delete') {
                 if (!confirm('Remove this image from the note? The file stays stored until Storage → Clean up unused attachments is run, in case you undo.')) return;
                 if (S.note && S.mode === 'edit') {
@@ -40579,8 +40695,26 @@ kbd {
         const val = bytes ? (isEstimate ? '~' : '') + fmtBytes(bytes) : '—';
         return '<div class="nv-stor-row"><span>' + esc(label) + '</span><span>' + val + '</span></div>';
     }
+    function updateStorTabsUI() {
+        if (!el.stor) return;
+        el.stor.querySelectorAll('[data-stor-tab]').forEach((b) => {
+            const active = b.dataset.storTab === S.stor.tab;
+            b.classList.toggle('nv-cur', active);
+            b.setAttribute('aria-selected', String(active));
+        });
+    }
+    function switchStorTab(tab) {
+        if (S.stor.tab === tab) return;
+        S.stor.tab = tab;
+        renderStorBody();
+    }
     async function renderStorBody() {
         if (!el.storBody) return;
+        updateStorTabsUI();
+        if (S.stor.tab === 'images') return renderStorImages();
+        return renderStorOverview();
+    }
+    async function renderStorOverview() {
         let stats;
         try { stats = await getVaultStorageStats(); S.storageStats = stats; }
         catch (e) { console.warn('Notes Vault: storage stats failed', e); stats = null; }
@@ -40611,9 +40745,12 @@ kbd {
             + storRowHtml('Other app data', stats.localStorage.bytes, true)
             + '</div>'
             + '<p class="nv-stor-note">Notes and version history are estimated from record size — browsers don\'t expose an exact per-store figure. Attachments are exact, since every stored image carries a real byte size.</p>'
-            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorPrune" style="margin-top:2px;"><i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments</button>';
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorPrune"><i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments</button>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorOptimize" style="margin-top:8px;"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimize images</button>';
         const pruneBtn = $('nvStorPrune');
         if (pruneBtn) pruneBtn.onclick = onPruneAttachmentsClick;
+        const optBtn = $('nvStorOptimize');
+        if (optBtn) optBtn.onclick = onOptimizeAttachmentsClick;
     }
     async function onPruneAttachmentsClick() {
         const btn = $('nvStorPrune');
@@ -40628,6 +40765,101 @@ kbd {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments'; }
         }
     }
+    async function onOptimizeAttachmentsClick() {
+        const btn = $('nvStorOptimize');
+        if (btn) { btn.disabled = true; btn.textContent = 'Optimizing…'; }
+        try {
+            const { changed, freed } = await optimizeAttachments();
+            flash(changed ? 'Re-compressed ' + changed + (changed === 1 ? ' image' : ' images') + ' — freed ' + fmtBytes(freed) : 'Every image is already optimized');
+            await renderStorBody();
+        } catch (e) {
+            console.warn('Notes Vault: optimize attachments failed', e);
+            flash('Couldn’t optimize images');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimize images'; }
+        }
+    }
+
+    /* ── Images tab: browse every stored attachment (sort by size/date, filter to unused) ── */
+    function revokeStorObjectUrls() {
+        S.stor.objectUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } });
+        S.stor.objectUrls = [];
+    }
+    function applyStorImageSort(items) {
+        if (S.stor.imgSort === 'new') items.sort((a, b) => b.rec.createdAt - a.rec.createdAt);
+        else if (S.stor.imgSort === 'old') items.sort((a, b) => a.rec.createdAt - b.rec.createdAt);
+        else items.sort((a, b) => b.rec.size - a.rec.size);   // 'size' — largest first, the default
+        return items;
+    }
+    function storImgCardHtml(it) {
+        const unused = !it.noteIds.length;
+        return '<button type="button" class="nv-stor-imgcard">'
+            + '<span class="nv-stor-imgthumb-wrap"><img class="nv-stor-imgthumb" alt="" loading="lazy"></span>'
+            + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
+            + '<span class="nv-stor-imgmeta">' + esc(fmtBytes(it.rec.size)) + '</span>'
+            + '</button>';
+    }
+    function storImagesToolbarHtml() {
+        return '<div class="nv-stor-toolbar">'
+            + '<label class="nv-stor-select"><span>Sort</span><select id="nvStorImgSort">'
+            + '<option value="size"' + (S.stor.imgSort === 'size' ? ' selected' : '') + '>Largest first</option>'
+            + '<option value="new"' + (S.stor.imgSort === 'new' ? ' selected' : '') + '>Newest first</option>'
+            + '<option value="old"' + (S.stor.imgSort === 'old' ? ' selected' : '') + '>Oldest first</option>'
+            + '</select></label>'
+            + '<label class="nv-stor-check"><input type="checkbox" id="nvStorImgUnused"' + (S.stor.imgFilter === 'unused' ? ' checked' : '') + '> Unused only</label>'
+            + '</div>';
+    }
+    function wireStorImagesToolbar() {
+        const sortSel = $('nvStorImgSort');
+        if (sortSel) sortSel.addEventListener('change', () => { S.stor.imgSort = sortSel.value; renderStorImages(); });
+        const unusedChk = $('nvStorImgUnused');
+        if (unusedChk) unusedChk.addEventListener('change', () => { S.stor.imgFilter = unusedChk.checked ? 'unused' : 'all'; renderStorImages(); });
+    }
+    async function hydrateStorImageThumbs(items) {
+        const grid = $('nvStorImgGrid');
+        if (!grid) return;
+        const cards = Array.from(grid.children);
+        items.forEach((it, i) => {
+            const card = cards[i];
+            if (!card) return;
+            const url = URL.createObjectURL(it.rec.blob);
+            S.stor.objectUrls.push(url);
+            const img = card.querySelector('img');
+            if (img) img.src = url;
+            card.addEventListener('click', () => {
+                openAttachMenu(it.rec, card, { context: 'manager', noteCount: it.noteIds.length, onDeleted: renderStorImages });
+            });
+        });
+    }
+    async function renderStorImages() {
+        revokeStorObjectUrls();
+        el.storBody.innerHTML = storImagesToolbarHtml() + '<div class="nv-dup-loading">Loading images…</div>';
+        wireStorImagesToolbar();
+        let items;
+        try { items = await getAttachmentsOverview(); }
+        catch (e) {
+            console.warn('Notes Vault: could not load attachments', e);
+            el.storBody.innerHTML = storImagesToolbarHtml() + '<div class="nv-stor-unsupported">Couldn’t load attachments.</div>';
+            wireStorImagesToolbar();
+            return;
+        }
+        if (S.stor.tab !== 'images') return;   // the panel moved on while this was loading
+        if (!items.length) {
+            el.storBody.innerHTML = storImagesToolbarHtml() + '<div class="nv-stor-unsupported"><i class="fa-regular fa-images" aria-hidden="true"></i>No images attached to any note yet.</div>';
+            wireStorImagesToolbar();
+            return;
+        }
+        applyStorImageSort(items);
+        const totalBytes = items.reduce((s, it) => s + (it.rec.size || 0), 0);
+        const unusedCount = items.filter((it) => !it.noteIds.length).length;
+        const filtered = S.stor.imgFilter === 'unused' ? items.filter((it) => !it.noteIds.length) : items;
+        const summary = '<p class="nv-stor-note" style="margin-top:0;">' + items.length + (items.length === 1 ? ' image' : ' images') + ' \u00b7 ' + fmtBytes(totalBytes) + ' total' + (unusedCount ? ' \u00b7 ' + unusedCount + ' unused' : '') + '</p>';
+        const cards = filtered.length ? filtered.map(storImgCardHtml).join('') : '';
+        el.storBody.innerHTML = storImagesToolbarHtml() + summary
+            + (filtered.length ? '<div class="nv-stor-imggrid" id="nvStorImgGrid">' + cards + '</div>' : '<div class="nv-stor-unsupported">No unused images — nice and tidy.</div>');
+        wireStorImagesToolbar();
+        await hydrateStorImageThumbs(filtered);
+    }
+
     async function openStorModal() {
         if (!S.open || !el.stor) return;
         closeMenus();
@@ -40644,6 +40876,7 @@ kbd {
         S.stor.open = false;
         el.stor.hidden = true;
         el.storScrim.hidden = true;
+        revokeStorObjectUrls();
         const f = S.stor.prevFocus; S.stor.prevFocus = null;
         refocus(f);
     }
@@ -41088,6 +41321,7 @@ kbd {
         el.storClose.addEventListener('click', closeStorModal);
         el.storScrim.addEventListener('click', closeStorModal);
         el.storRefresh.addEventListener('click', renderStorBody);
+        el.stor.querySelectorAll('[data-stor-tab]').forEach((b) => b.addEventListener('click', () => switchStorTab(b.dataset.storTab)));
 
         // sort menu
         el.sortBtn.addEventListener('click', () => toggleMenu(el.sortBtn, el.sortMenu));
