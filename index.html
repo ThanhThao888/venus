@@ -39735,9 +39735,13 @@ kbd {
         if (!Gr.nodes.length) return;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const nd of Gr.nodes) { minX = Math.min(minX, nd.x); maxX = Math.max(maxX, nd.x); minY = Math.min(minY, nd.y); maxY = Math.max(maxY, nd.y); }
-        const gw = Math.max(60, maxX - minX), gh = Math.max(60, maxY - minY), pad = 70;
+        const gw = Math.max(40, maxX - minX), gh = Math.max(40, maxY - minY), pad = 56;
         const sx = (Gr.w - pad * 2) / gw, sy = (Gr.h - pad * 2) / gh;
-        Gr.scale = Math.min(1.6, Math.max(0.15, Math.min(sx, sy)));
+        // A handful of nodes can end up clustered in a small box — let the view zoom in
+        // further to fill the canvas rather than leaving most of it empty. Only truly
+        // spread-out graphs are capped at 1.6x so labels stay comfortable to read.
+        const cap = Gr.nodes.length <= 8 ? 3 : 1.6;
+        Gr.scale = Math.min(cap, Math.max(0.15, Math.min(sx, sy)));
         Gr.tx = -((minX + maxX) / 2) * Gr.scale;
         Gr.ty = -((minY + maxY) / 2) * Gr.scale;
         updateZoomLabel();
