@@ -816,6 +816,25 @@
             gap: 10px;
         }
 
+        .skill-note-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            background: var(--bg-light);
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .skill-note-badge:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
         .time-input {
             width: 70px;
             padding: 8px 10px;
@@ -23825,6 +23844,30 @@ body.dark-mode .dlt-fg textarea {
     filter(c){ curFilter = c; render(); },
     search(v){ curSearch = v || ''; render(); },
     navigate: navigateToItem,
+    // Notes Vault → Daily Planner link: called whenever a note's Deadline field changes.
+    // Upserts (by sourceNoteId, never duplicates) a lightweight reminder item so a deadline
+    // set on a note actually shows up in the planner; clearing the date removes it again.
+    syncNoteDeadline({ noteId, title, date, skillName, careerTitle }) {
+        const idx = manualList.findIndex(m => m.sourceNoteId === noteId);
+        if (!date) {
+            if (idx !== -1) { manualList.splice(idx, 1); persist(); render(); }
+            return;
+        }
+        const noteLine = skillName
+            ? `Linked note — ${skillName}${careerTitle ? ' (' + careerTitle + ')' : ''}`
+            : 'From Notes Vault';
+        const base = {
+            name: title ? `📝 ${title}` : '📝 Untitled note',
+            date, time: '', category: '📝 Note', priority: 'medium',
+            note: noteLine, link: '', roadmapTrack: '', roadmapSkillId: '',
+            repeatType: 'none', repeatCustomDays: null, checklist: [],
+            sourceNoteId: noteId
+        };
+        if (idx !== -1) manualList[idx] = Object.assign({}, manualList[idx], base, { id: manualList[idx].id });
+        else manualList.push(Object.assign({ id: 'nv-' + noteId }, base));
+        persist();
+        render();
+    },
     openModal() {
       editingId = null;
       document.getElementById('dltModalTitle').innerHTML = `<svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-pin"/></svg> New Deadline`;
@@ -35192,6 +35235,17 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     background: var(--bg-white); color: var(--text-dark); font: inherit; outline: none;
 }
 #nvOverlay .nv-field input:focus, #nvOverlay .nv-tagbox:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16); }
+.nv-linkskill { display: flex; flex-direction: column; gap: 6px; }
+.nv-linkskill select {
+    width: 100%; padding: 7px 8px; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+    background: var(--bg-white); color: var(--text-dark); font-size: 0.83rem; font-family: inherit;
+}
+.nv-linkskill select:disabled { opacity: 0.55; cursor: not-allowed; }
+.nv-linkskill select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16); }
+.nv-skill-pill { cursor: pointer; border: none; font: inherit; }
+.nv-skill-pill:hover { filter: brightness(0.94); text-decoration: underline; }
+.nv-folder-pill.nv-skill-pill-dead { cursor: default; opacity: 0.6; }
+.nv-folder-pill.nv-skill-pill-dead:hover { filter: none; text-decoration: none; }
 .nv-tagbox { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 5px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-white); }
 #nvOverlay .nv-tagbox input { flex: 1; min-width: 70px; width: auto; padding: 3px 5px; border: 0; border-radius: 0; box-shadow: none !important; background: none; }
 .nv-t {
@@ -35819,6 +35873,15 @@ kbd {
                 <label class="nv-lbl" for="nvTagIn">Tags</label>
                 <div class="nv-tagbox" id="nvTagBox"><input type="text" id="nvTagIn" list="nvTagList" autocomplete="off" placeholder="Add tag" aria-label="Add tag"><datalist id="nvTagList"></datalist></div>
             </div>
+            <div class="nv-field nv-stack">
+                <label class="nv-lbl" for="nvLinkedCareer">Linked skill</label>
+                <div class="nv-linkskill">
+                    <select id="nvLinkedCareer" aria-label="Career/track"><option value="">No career selected</option></select>
+                    <select id="nvLinkedSkill" aria-label="Skill" disabled><option value="">No skill selected</option></select>
+                </div>
+            </div>
+            <div class="nv-field"><label class="nv-lbl" for="nvCourse">Course</label><div><input type="text" id="nvCourse" autocomplete="off" placeholder="e.g. MIT 14.13"></div></div>
+            <div class="nv-field"><label class="nv-lbl" for="nvDeadline">Deadline</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div></div>
             <div class="nv-field"><span class="nv-lbl">Created</span><div class="nv-val" id="nvCreated">—</div></div>
             <div class="nv-field"><span class="nv-lbl">Updated</span><div class="nv-val" id="nvUpdated">—</div></div>
             <div class="nv-field"><span class="nv-lbl">Words</span><div class="nv-val" id="nvWords">0</div></div>
@@ -36145,6 +36208,13 @@ kbd {
         n.deletedAt = +n.deletedAt || 0;      // 0 = live note, otherwise the moment it went to Trash
         n.createdAt = +n.createdAt || Date.now();
         n.updatedAt = +n.updatedAt || n.createdAt;
+        // Tracker link (Note ↔ Skill): linkedCareer is a key in the global skillsData map,
+        // linkedSkill must match a skill's exact `name` string within that career. course/
+        // deadline are free-form and don't need to resolve against anything.
+        n.linkedCareer = typeof n.linkedCareer === 'string' ? n.linkedCareer : '';
+        n.linkedSkill = typeof n.linkedSkill === 'string' ? n.linkedSkill : '';
+        n.course = typeof n.course === 'string' ? n.course : '';
+        n.deadline = typeof n.deadline === 'string' ? n.deadline : '';
         return n;
     }
 
@@ -36211,6 +36281,13 @@ kbd {
         return d.getFullYear() === now.getFullYear() ? base : base + ' ' + d.getFullYear();
     }
     const fmtFull = (ts) => { const d = new Date(ts); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', ' + clock(ts); };
+    // Deadline is stored as a plain "YYYY-MM-DD" (no time-of-day, no timezone conversion —
+    // parsing it as local midnight the way fmtFull/clock would could roll it back a day).
+    const nvFmtDate = (dateStr) => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+        if (!m) return dateStr || '';
+        return String(+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
+    };
     function fmtBytes(b) {
         if (b < 1048576) return Math.max(1, Math.round(b / 1024)) + ' KB';
         if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
@@ -36651,6 +36728,30 @@ kbd {
         S.notes = all.filter((n) => !n.deletedAt);
         S.trash = all.filter((n) => n.deletedAt);
     }
+    // Tracker → Notes direction of the link: "how many notes point at each skill?" Reads
+    // straight from IndexedDB (not S.notes) so it works even before the user has ever
+    // opened the Notes Vault overlay in this session — Tracker can call it on page load.
+    // Shape: { [careerKey]: { [skillName]: count } }.
+    async function getLinkCounts() {
+        try {
+            const all = await dbGetAll();
+            const counts = {};
+            for (const raw of all) {
+                if (raw.deletedAt) continue;                       // trashed notes don't count
+                const career = raw.linkedCareer, skill = raw.linkedSkill;
+                if (!career || !skill) continue;
+                if (!counts[career]) counts[career] = {};
+                counts[career][skill] = (counts[career][skill] || 0) + 1;
+            }
+            return counts;
+        } catch (e) { console.warn('Notes Vault: could not compute skill link counts', e); return {}; }
+    }
+    // Opens the overlay straight into "notes linked to this one skill" — the click target
+    // for the Tracker-side badge (see nvApplySkillNoteBadges in the Tracker script).
+    async function openForSkill(career, skillName) {
+        await open();
+        await setScope('skill', { career, skill: skillName });
+    }
     async function purgeExpired() {                  // Trash empties itself after 30 days
         try {
             const cutoff = Date.now() - TRASH_MS;
@@ -36692,6 +36793,7 @@ kbd {
         else if (kind === 'pinned') list = S.notes.filter((n) => n.pinned);
         else if (kind === 'folder') list = S.notes.filter((n) => typeKey(n.type) === value);
         else if (kind === 'tag') list = S.notes.filter((n) => n.tags.some((t) => t.toLowerCase() === value));
+        else if (kind === 'skill') list = S.notes.filter((n) => n.linkedCareer === value.career && n.linkedSkill === value.skill);
         else list = S.notes.slice();
         if (active) list = list.filter(passesFilters);
         return sortList(list);
@@ -36772,6 +36874,10 @@ kbd {
         if (sc.kind === 'pinned') return ['Pinned', `${count} ${pl}${fx}`];
         if (sc.kind === 'folder') return [(S.fmap.get(sc.value) || {}).label || 'Folder', `${count} ${pl}${fx}`];
         if (sc.kind === 'tag') return ['#' + ((S.tmap.get(sc.value) || {}).label || sc.value), `${count} ${pl}${fx}`];
+        if (sc.kind === 'skill') {
+            const careerTitle = (typeof skillsData !== 'undefined' && skillsData[sc.value.career]) ? skillsData[sc.value.career].title : sc.value.career;
+            return [sc.value.skill, `${count} ${pl} linked · ${careerTitle}${fx}`];
+        }
         return ['All notes', `${count} ${pl}${fx}`];
     }
 
@@ -36785,7 +36891,7 @@ kbd {
         if (!S.notes.length) {
             return `<div class="nv-empty"><i class="fa-solid fa-feather"></i><strong>Your vault is empty</strong>Paste a prompt, transcript or study note. Everything is saved as Markdown on this device, with no length limit.<br><button type="button" class="nv-btn nv-btn-primary" data-new><i class="fa-solid fa-plus"></i> New note</button></div>`;
         }
-        const msg = { recent: 'Nothing has been edited in the last 7 days.', pinned: 'Pin a note and it will stay at the top of your vault.' }[S.scope.kind] || 'There are no notes here yet.';
+        const msg = { recent: 'Nothing has been edited in the last 7 days.', pinned: 'Pin a note and it will stay at the top of your vault.', skill: 'No notes are linked to this skill yet — open a note, use “Linked skill” in the Info panel.' }[S.scope.kind] || 'There are no notes here yet.';
         return `<div class="nv-empty"><i class="fa-solid fa-feather"></i><strong>Nothing here</strong>${msg}</div>`;
     }
 
@@ -36917,8 +37023,10 @@ kbd {
     /* ═════════════ Frontmatter: "---\n…\n---" header at the very start of a note ═════════════
        Obsidian-style. Read mode always hides the block (stripped before markdown parsing,
        below); the raw block is left untouched in the note's own markdown/Edit mode. Pasting
-       one into a blank note also pre-fills Folder/Tags/Title — see applyFrontmatterFill(),
-       wired up from onEditorPaste. */
+       one into a blank note also pre-fills Folder/Tags/Title/Course/Deadline/Linked skill —
+       see applyFrontmatterFill(), wired up from onEditorPaste. Recognised keys: title, type
+       (or folder), tags, course, deadline (YYYY-MM-DD), career (a skillsData key) and skill
+       (matched against skillsData — see findSkillMatch). */
     const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
     function stripYamlQuotes(s) {
         s = String(s == null ? '' : s).trim();
@@ -36953,9 +37061,36 @@ kbd {
         }
         return data;
     }
+    // Best-effort resolver for a frontmatter `skill:` field against the live skillsData —
+    // an exact skill name typed by hand won't always match verbatim, so this only ever
+    // auto-fills when there's exactly one unambiguous hit; anything looser is left for the
+    // person to pick by hand in the Linked skill dropdown instead of silently guessing wrong.
+    function findSkillMatch(skillName, careerHint) {
+        if (typeof skillsData === 'undefined') return null;
+        const norm = (s) => String(s || '').trim().toLowerCase();
+        const target = norm(skillName);
+        if (!target) return null;
+        const searchCareer = (key) => {
+            const c = skillsData[key];
+            if (!c) return null;
+            for (const cat of Object.values(c.categories || {})) {
+                for (const sk of cat.skills || []) {
+                    if (norm(sk.name) === target) return { career: key, skill: sk.name };
+                }
+            }
+            return null;
+        };
+        if (careerHint && skillsData[careerHint]) {
+            const hit = searchCareer(careerHint);
+            if (hit) return hit;
+        }
+        const matches = Object.keys(skillsData).map(searchCareer).filter(Boolean);
+        return matches.length === 1 ? matches[0] : null;
+    }
     // Splits a note's markdown into { body, data }: body has the frontmatter block removed
     // (used to keep it out of Read mode, and out of re-exported .md files); data is a
-    // normalised { title?, type?, tags? } or null when there's no recognised block.
+    // normalised { title?, type?, tags?, career?, skill?, course?, deadline? } or null when
+    // there's no recognised block.
     function extractFrontmatter(md) {
         const m = md.match(FRONTMATTER_RE);
         if (!m) return { body: md, data: null };
@@ -36969,10 +37104,18 @@ kbd {
             const tags = arr.map((t) => normTag(t)).filter(Boolean);
             if (tags.length) data.tags = tags;
         }
+        if (raw.career) data.career = String(Array.isArray(raw.career) ? raw.career[0] : raw.career).trim();
+        if (raw.skill) data.skill = String(Array.isArray(raw.skill) ? raw.skill[0] : raw.skill).trim();
+        if (raw.course) data.course = String(Array.isArray(raw.course) ? raw.course[0] : raw.course).trim();
+        if (raw.deadline) {
+            const dl = String(Array.isArray(raw.deadline) ? raw.deadline[0] : raw.deadline).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dl)) data.deadline = dl;   // only ISO dates — anything else is ambiguous to parse safely
+        }
         return { body: md.slice(m[0].length), data: Object.keys(data).length ? data : null };
     }
-    // Pasting an Obsidian-style note into a blank one pre-fills Folder/Tags/Title from its
-    // frontmatter — never overwrites a field the note already has, only fills what's empty.
+    // Pasting an Obsidian-style note into a blank one pre-fills Folder/Tags/Title, and now
+    // also Course/Deadline/Linked skill, from its frontmatter — never overwrites a field the
+    // note already has, only fills what's empty.
     function applyFrontmatterFill(pastedText) {
         const n = S.note;
         if (!n) return;
@@ -36993,7 +37136,30 @@ kbd {
             n.tags = data.tags.slice();
             changed = true;
         }
-        if (changed) { renderTagChips(); renderDocMeta(); markDirty(); toast('Filled in Folder/Tags from the pasted frontmatter.'); }
+        if (data.course && !n.course) {
+            n.course = data.course;
+            if (el.course) el.course.value = n.course;
+            changed = true;
+        }
+        if (data.deadline && !n.deadline) {
+            n.deadline = data.deadline;
+            if (el.deadline) el.deadline.value = n.deadline;
+            changed = true;
+        }
+        if ((data.skill || data.career) && !n.linkedSkill) {
+            const hit = data.skill ? findSkillMatch(data.skill, data.career) : null;
+            if (hit) {
+                n.linkedCareer = hit.career;
+                n.linkedSkill = hit.skill;
+                nvPopulateCareerOptions();
+                if (el.linkedCareer) el.linkedCareer.value = n.linkedCareer;
+                nvPopulateSkillOptions();
+                if (el.linkedSkill) el.linkedSkill.value = n.linkedSkill;
+                changed = true;
+                if (window.nvRefreshSkillBadges) window.nvRefreshSkillBadges();
+            }
+        }
+        if (changed) { renderTagChips(); renderDocMeta(); markDirty(); toast('Filled in note details from the pasted frontmatter.'); }
     }
 
     /* ═════════════ Footnotes: "[^1]" refs + "[^1]: text" definitions ═════════════
@@ -37251,6 +37417,43 @@ kbd {
         t.style.height = t.scrollHeight + 'px';
     }
 
+    // Does n.linkedSkill still exist under n.linkedCareer in the current skillsData? A skill
+    // can get renamed/removed from the tracker after a note already links to it, so the chip
+    // needs to degrade gracefully instead of pointing at nothing.
+    function nvLinkedSkillLive(n) {
+        if (!n.linkedCareer || !n.linkedSkill || typeof skillsData === 'undefined') return false;
+        const career = skillsData[n.linkedCareer];
+        if (!career) return false;
+        return Object.values(career.categories || {}).some((cat) =>
+            (cat.skills || []).some((sk) => sk.name === n.linkedSkill));
+    }
+    function renderSkillLinkPill(n) {
+        if (!n.linkedCareer || !n.linkedSkill) return '';
+        const live = nvLinkedSkillLive(n);
+        const careerTitle = (typeof skillsData !== 'undefined' && skillsData[n.linkedCareer]) ? skillsData[n.linkedCareer].title : n.linkedCareer;
+        if (!live) {
+            return `<span class="nv-folder-pill nv-skill-pill-dead" title="“${esc(n.linkedSkill)}” no longer exists in the Tracker"><i class="fa-solid fa-link-slash"></i>${esc(n.linkedSkill)}</span>`;
+        }
+        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(n.linkedSkill)}” in Tracker — ${esc(careerTitle)}" onclick="window.jumpFromNoteToSkill('${esc(n.linkedCareer)}', '${esc(n.linkedSkill).replace(/'/g, "&#39;")}')"><i class="fa-solid fa-bullseye"></i>${esc(n.linkedSkill)}</button>`;
+    }
+    // Notes Vault → Daily Planner: keeps a note's Deadline mirrored as a reminder item in
+    // DLT (window.DLT.syncNoteDeadline upserts/removes by note id — see that function for
+    // the other half). Called after every successful save, so title/skill-name edits and
+    // clearing the date all stay in sync without a dedicated listener per field. A no-op
+    // if the planner script hasn't loaded yet or the note has never had a deadline.
+    function nvSyncPlannerDeadline(n) {
+        if (!n || typeof window.DLT === 'undefined' || typeof window.DLT.syncNoteDeadline !== 'function') return;
+        const careerTitle = (n.linkedCareer && typeof skillsData !== 'undefined' && skillsData[n.linkedCareer])
+            ? skillsData[n.linkedCareer].title : '';
+        window.DLT.syncNoteDeadline({
+            noteId: n.id,
+            title: (n.title || '').trim(),
+            date: n.deletedAt ? '' : (n.deadline || ''),   // in Trash (or no deadline) → remove the reminder
+            skillName: n.linkedSkill || '',
+            careerTitle
+        });
+    }
+
     function renderDocMeta() {
         const n = S.note;
         if (!n) return;
@@ -37259,6 +37462,9 @@ kbd {
             `<span class="nv-folder-pill"><i class="fa-solid fa-${iconFor(n.type)}"></i>${esc(normType(n.type))}</span>`
             + n.tags.map((t) => `<span>#${esc(t)}</span>`).join('')
             + (link ? `<span class="nv-folder-pill" title="Linked — “Save changes to file” writes here"><i class="fa-solid fa-link"></i>${esc(link.name)}</span>` : '')
+            + renderSkillLinkPill(n)
+            + (n.course ? `<span title="Course"><i class="fa-solid fa-book" aria-hidden="true"></i> ${esc(n.course)}</span>` : '')
+            + (n.deadline ? `<span title="Deadline"><i class="fa-solid fa-calendar" aria-hidden="true"></i> ${esc(nvFmtDate(n.deadline))}</span>` : '')
             + '<span class="nv-grow"></span>'
             + `<span title="${esc(fmtFull(n.updatedAt))}">${S.persisted ? 'Edited ' + esc(fmtRel(n.updatedAt)) : 'Not saved yet'}</span>`;
     }
@@ -37322,6 +37528,43 @@ kbd {
     }
 
 
+    /* ───────── Tracker link: Career/Skill dropdowns (Info panel) ─────────
+       `skillsData` is a top-level `const` declared in a later, separate <script> tag on
+       this page. Classic (non-module) scripts share one global lexical scope, so by the
+       time these run (on user interaction, well after the whole page has parsed) it's
+       already defined — same assumption the Resource↔Skill linker elsewhere relies on. */
+    function nvPopulateCareerOptions() {
+        if (!el.linkedCareer) return;
+        const current = el.linkedCareer.value;
+        if (typeof skillsData === 'undefined') {
+            el.linkedCareer.innerHTML = '<option value="">No career selected</option>';
+            return;
+        }
+        el.linkedCareer.innerHTML = '<option value="">No career selected</option>' +
+            Object.keys(skillsData).map((key) =>
+                `<option value="${esc(key)}">${esc(skillsData[key].title || key)}</option>`
+            ).join('');
+        el.linkedCareer.value = current;
+    }
+    function nvPopulateSkillOptions() {
+        if (!el.linkedCareer || !el.linkedSkill) return;
+        const career = el.linkedCareer.value;
+        if (!career || typeof skillsData === 'undefined' || !skillsData[career]) {
+            el.linkedSkill.innerHTML = '<option value="">No skill selected</option>';
+            el.linkedSkill.disabled = true;
+            return;
+        }
+        el.linkedSkill.disabled = false;
+        const categories = skillsData[career].categories || {};
+        let html = '<option value="">No skill selected</option>';
+        Object.entries(categories).forEach(([catName, cat]) => {
+            html += `<optgroup label="${esc(catName)}">`;
+            (cat.skills || []).forEach((sk) => { html += `<option value="${esc(sk.name)}">${esc(sk.name)}</option>`; });
+            html += '</optgroup>';
+        });
+        el.linkedSkill.innerHTML = html;
+    }
+
     function fillDoc() {
         const n = S.note;
         S.viewRev = null; el.revBar.hidden = true; el.title.readOnly = false;   // never carry a version preview over to another note
@@ -37329,6 +37572,12 @@ kbd {
         el.src.value = n.markdown;
         el.folderIn.value = normType(n.type);
         el.tagIn.value = '';
+        nvPopulateCareerOptions();
+        if (el.linkedCareer) el.linkedCareer.value = n.linkedCareer || '';
+        nvPopulateSkillOptions();
+        if (el.linkedSkill) el.linkedSkill.value = n.linkedSkill || '';
+        if (el.course) el.course.value = n.course || '';
+        if (el.deadline) el.deadline.value = n.deadline || '';
         renderTagChips();
         renderDocMeta();
         renderActions();
@@ -37849,6 +38098,7 @@ kbd {
             renderSide();
             renderDatalists();
             await autoSnapshot(n);
+            nvSyncPlannerDeadline(n);
         } catch (e) {
             console.error('Notes Vault save failed:', e);
             S.dirty = true;
@@ -38001,6 +38251,7 @@ kbd {
         n.deletedAt = Date.now();
         try { await dbPut(n); }
         catch (e) { n.deletedAt = 0; console.error('Notes Vault: could not move to Trash', e); flash('Couldn’t move that note to Trash'); return false; }
+        nvSyncPlannerDeadline(n);   // clears any planner reminder while the note is in Trash
         S.notes = S.notes.filter((x) => x.id !== id);
         S.trash.push(n);
         if (isOpen) { exitRevView(); clearTimeout(S.saveTimer); S.dirty = false; S.note = null; showLibrary(); }
@@ -38016,6 +38267,7 @@ kbd {
         n.deletedAt = 0;
         try { await dbPut(n); }
         catch (e) { n.deletedAt = was; console.error('Notes Vault: could not restore', e); flash('Couldn’t restore that note'); return; }
+        nvSyncPlannerDeadline(n);   // re-adds the planner reminder if the note still has a deadline
         S.trash = S.trash.filter((x) => x.id !== id);
         S.notes.push(n);
         renderAll();
@@ -39424,6 +39676,7 @@ kbd {
             moreBtn: $('nvMoreBtn'), docMenu: $('nvDocMenu'), inspBtn: $('nvInspBtn'), focusBtn: $('nvFocusBtn'), fsDown: $('nvFsDown'), fsUp: $('nvFsUp'), widthBtn: $('nvWidthBtn'),
             insp: $('nvInsp'), tabInfo: $('nvTabInfo'), tabOutline: $('nvTabOutline'), paneInfo: $('nvPaneInfo'), paneOutline: $('nvPaneOutline'),
             folderIn: $('nvFolderIn'), folderList: $('nvFolderList'), tagBox: $('nvTagBox'), tagIn: $('nvTagIn'), tagList: $('nvTagList'),
+            linkedCareer: $('nvLinkedCareer'), linkedSkill: $('nvLinkedSkill'), course: $('nvCourse'), deadline: $('nvDeadline'),
             created: $('nvCreated'), updated: $('nvUpdated'), words: $('nvWords'), chars: $('nvChars'), readTime: $('nvReadTime'),
             actions: $('nvActions'), outline: $('nvOutline'),
             tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
@@ -39629,6 +39882,35 @@ kbd {
             markDirty();
         });
         el.folderIn.addEventListener('blur', () => { if (S.note) el.folderIn.value = normType(S.note.type); });
+
+        if (el.linkedCareer) el.linkedCareer.addEventListener('change', () => {
+            if (!S.note) return;
+            S.note.linkedCareer = el.linkedCareer.value;
+            S.note.linkedSkill = '';           // career changed → old skill choice no longer applies
+            nvPopulateSkillOptions();
+            renderDocMeta();
+            markDirty();
+            if (window.nvRefreshSkillBadges) window.nvRefreshSkillBadges();
+        });
+        if (el.linkedSkill) el.linkedSkill.addEventListener('change', () => {
+            if (!S.note) return;
+            S.note.linkedSkill = el.linkedSkill.value;
+            renderDocMeta();
+            markDirty();
+            if (window.nvRefreshSkillBadges) window.nvRefreshSkillBadges();
+        });
+        if (el.course) el.course.addEventListener('input', () => {
+            if (!S.note) return;
+            S.note.course = el.course.value;
+            renderDocMeta();
+            markDirty();
+        });
+        if (el.deadline) el.deadline.addEventListener('change', () => {
+            if (!S.note) return;
+            S.note.deadline = el.deadline.value;
+            renderDocMeta();
+            markDirty();
+        });
 
         const addTags = (str) => {
             const n = S.note;
@@ -40251,7 +40533,8 @@ kbd {
         toggle, open, close, newNote, openNote,
         renderList: () => { if (S.open) renderAll(); },
         exportAllJson, importJson, requestPersist,
-        getBackupData, restoreFromBackup
+        getBackupData, restoreFromBackup,
+        getLinkCounts, openForSkill
     };
 })();
 </script>
@@ -44536,7 +44819,52 @@ kbd {
                     }
                 });
             });
+            nvApplySkillNoteBadges(career);
         }
+
+        // Note-count badge on each skill row, sourced from Notes Vault's per-skill link
+        // counts (see NotesVault.getLinkCounts). Runs after loadSkills has finished
+        // building the DOM since the count lookup is async (reads Notes Vault's IndexedDB)
+        // while loadSkills itself stays synchronous. Safe to call repeatedly — it just
+        // adds/updates/removes one small badge button per already-rendered .skill-item.
+        async function nvApplySkillNoteBadges(career) {
+            if (!window.NotesVault || typeof window.NotesVault.getLinkCounts !== 'function') return;
+            let counts;
+            try { counts = await window.NotesVault.getLinkCounts(); } catch (e) { return; }
+            const careerCounts = counts[career] || {};
+            document.querySelectorAll(`#skillsContainer .skill-item[data-career="${CSS.escape(career)}"]`).forEach((item) => {
+                const skillName = item.dataset.skillName;
+                const count = careerCounts[skillName] || 0;
+                const controls = item.querySelector('.skill-controls');
+                if (!controls) return;
+                let badge = controls.querySelector('.skill-note-badge');
+                if (count > 0) {
+                    if (!badge) {
+                        badge = document.createElement('button');
+                        badge.type = 'button';
+                        badge.className = 'skill-note-badge';
+                        badge.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (window.NotesVault && window.NotesVault.openForSkill) window.NotesVault.openForSkill(career, skillName);
+                        });
+                        controls.insertBefore(badge, controls.firstChild);
+                    }
+                    badge.title = `${count} note${count === 1 ? '' : 's'} linked — open in Notes Vault`;
+                    badge.innerHTML = `<i class="fa-solid fa-note-sticky"></i> ${count}`;
+                } else if (badge) {
+                    badge.remove();
+                }
+            });
+        }
+
+        // Cross-module refresh hook: Notes Vault calls this (if present) right after the
+        // user changes a note's Linked skill, so the Tracker badge updates immediately
+        // instead of waiting for the next career switch to re-render.
+        window.nvRefreshSkillBadges = function () {
+            if (typeof currentCareer !== 'undefined' && currentCareer && currentCareer !== 'mastery') {
+                nvApplySkillNoteBadges(currentCareer);
+            }
+        };
 
         function renderSkills(career) {
             const container = document.getElementById('skillsContainer');
@@ -75719,6 +76047,39 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
         if (input) input.value = '';
         if (panel) { panel.classList.remove('open'); panel.innerHTML = ''; }
         if (clearBtn) clearBtn.style.display = 'none';
+    };
+
+    // Entry point for the Note ↔ Tracker link (Notes Vault "Linked skill" pill, see the
+    // nv-skill-pill onclick handler). Notes Vault is a full-screen overlay sitting on top
+    // of the Tracker, so this has one extra job jumpToSkillResult doesn't: closing that
+    // overlay first, then doing the exact same select-career → expand → scroll → flash
+    // sequence once the underlying Tracker page is actually visible again.
+    window.jumpFromNoteToSkill = function (career, skillName) {
+        if (window.NotesVault && typeof window.NotesVault.close === 'function') window.NotesVault.close();
+        setTimeout(() => {
+            if (typeof selectCareer === 'function') selectCareer(career);
+            setTimeout(() => {
+                const items = document.querySelectorAll(`#skillsContainer .skill-item[data-career="${CSS.escape(career)}"]`);
+                let target = null;
+                items.forEach(node => { if (!target && node.dataset.skillName === skillName) target = node; });
+                if (!target) return;
+
+                const categoryDiv = target.closest('.skill-category');
+                if (categoryDiv) {
+                    const skillsList = categoryDiv.querySelector('.skills-list');
+                    const header = categoryDiv.querySelector('.category-header');
+                    if (skillsList && skillsList.classList.contains('collapsed') && typeof toggleCategory === 'function') {
+                        toggleCategory(header);
+                    }
+                }
+
+                setTimeout(() => {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    target.classList.add('skill-highlight-flash');
+                    setTimeout(() => target.classList.remove('skill-highlight-flash'), 2000);
+                }, 150);
+            }, 180);
+        }, 260); // let the overlay's close animation finish before scrolling the page under it
     };
 
     // Switches to the matched career, expands its category if collapsed,
