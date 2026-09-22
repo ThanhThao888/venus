@@ -36440,6 +36440,7 @@ kbd {
         stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', objectUrls: [] },   // Manage storage panel
         storageStats: null,                       // last getVaultStorageStats() result, cached for the compact indicator + panel
         noteAttachRefCache: new Map(),            // noteId → Set(attachment id) last synced to attachmentRefs — lets flushSave diff cheaply
+        attachmentCache: new Map(),               // attachment id → last-known-good record for the current session
         attachObjectUrls: []                      // blob: URLs handed to <img> in the current Read view, revoked on the next render
     };
     let el = null;
@@ -36582,7 +36583,7 @@ kbd {
         return new Promise((resolve, reject) => {
             const tx = db.transaction(DB_ATTACH, 'readwrite');
             tx.objectStore(DB_ATTACH).delete(id);
-            tx.oncomplete = () => resolve();
+            tx.oncomplete = () => { S.attachmentCache.delete(id); resolve(); };
             tx.onerror = () => reject(tx.error);
         });
     }
@@ -36986,6 +36987,12 @@ kbd {
         if (percent > 70) return { level: 'normal', label: 'Normal', blockAttachments: false };
         return { level: 'healthy', label: 'Healthy', blockAttachments: false };
     }
+    function noteAttachmentOriginWarning() {
+        if (location.protocol !== 'file:' || !el || !el.toastTxt) return;
+        console.warn('Notes Vault: attachments use IndexedDB. file:// origins are browser-dependent; use a local HTTP server for reliable persistent storage.');
+        setTimeout(() => toast('Attachments use browser storage. For reliable persistence, open this HTML through localhost rather than file://.'), 250);
+    }
+
     function storageHealthMessage(percent, health) {
         switch (health.level) {
             case 'warning': return 'Storage ' + percent + '% — consider exporting a backup.';
@@ -37068,11 +37075,30 @@ kbd {
 
         const hash = await hashBlob(encoded.blob);
         const existing = await dbFindAttachmentByHash(hash);
-        if (existing) return existing;
+        if (existing) {
+            // A stale/corrupt row must not be treated as a valid dedupe hit. Verify that the
+            // actual Blob survived IndexedDB structured-cloning before reusing the record.
+            if (existing.blob instanceof Blob && existing.blob.size > 0) {
+                S.attachmentCache.set(existing.id, existing);
+                return existing;
+            }
+            await dbDeleteAttachment(existing.id).catch(() => {});
+            await dbDeleteAttachmentRefs(existing.id).catch(() => {});
+            S.attachmentCache.delete(existing.id);
+        }
 
         const rec = { id: 'att_' + hash.slice(0, 24), hash, blob: encoded.blob, mime: encoded.mime, size: encoded.blob.size, width: encoded.width, height: encoded.height, createdAt: Date.now() };
         await dbPutAttachment(rec);
-        return rec;
+        // Critical integrity check: do not put an attachment:// reference into the note unless
+        // the browser can immediately read the Blob back. This turns a silent broken image into
+        // a useful storage error and also catches browser/origin-specific IndexedDB failures.
+        const verified = await dbGetAttachment(rec.id);
+        if (!verified || !(verified.blob instanceof Blob) || verified.blob.size <= 0) {
+            await dbDeleteAttachment(rec.id).catch(() => {});
+            throw attachError('The image could not be read back from browser storage. If this app is opened as a local file (file://), open it from a local web server instead.');
+        }
+        S.attachmentCache.set(rec.id, verified);
+        return verified;
     }
 
     /* ═════════════ Attachments: reference counting ═════════════ */
@@ -37193,6 +37219,7 @@ kbd {
                 target = { id: 'att_' + hash.slice(0, 24), hash, blob: encoded.blob, mime: encoded.mime, size: encoded.blob.size, width: encoded.width, height: encoded.height, createdAt: rec.createdAt };
                 await dbPutAttachment(target);
             }
+            S.attachmentCache.set(target.id, target);
             // Point every referencing note's markdown at the new id before dropping the old record.
             for (const noteId of noteIds) {
                 let note = S.notes.find((x) => x.id === noteId) || (S.note && S.note.id === noteId ? S.note : null);
@@ -38498,15 +38525,29 @@ kbd {
         for (const img of imgs) {
             const id = img.getAttribute('src').slice('attachment://'.length);
             img.removeAttribute('src');
-            let rec = null;
-            try { rec = await dbGetAttachment(id); } catch (e) { /* treated as missing below */ }
-            if (!target.isConnected) return;   // the view moved on while this lookup was in flight
+            let rec = S.attachmentCache.get(id) || null;
             if (!rec) {
+                try { rec = await dbGetAttachment(id); } catch (e) { /* try session cache below */ }
+            }
+            if (!target.isConnected) return;   // the view moved on while this lookup was in flight
+            if (!rec || !(rec.blob instanceof Blob) || rec.blob.size <= 0) {
+                // One last cache check covers the common case where the attachment was just
+                // inserted and a browser is slow/inconsistent about the follow-up IndexedDB read.
+                rec = S.attachmentCache.get(id) || null;
+            }
+            if (!rec || !(rec.blob instanceof Blob) || rec.blob.size <= 0) {
                 img.setAttribute('data-nv-attach-missing', '');
                 img.alt = (img.alt || 'image') + ' (attachment no longer available)';
                 continue;
             }
-            const url = URL.createObjectURL(rec.blob);
+            S.attachmentCache.set(id, rec);
+            let url;
+            try { url = URL.createObjectURL(rec.blob); }
+            catch (e) {
+                img.setAttribute('data-nv-attach-missing', '');
+                img.alt = (img.alt || 'image') + ' (attachment could not be opened)';
+                continue;
+            }
             S.attachObjectUrls.push(url);
             img.src = url;
             img.setAttribute('data-nv-attach', id);
@@ -40136,6 +40177,7 @@ kbd {
                     createdAt: +raw.createdAt || Date.now()
                 };
                 await dbPutAttachment(rec);
+                S.attachmentCache.set(rec.id, rec);
                 added++;
             } catch (e) { console.warn('Notes Vault: could not restore an attachment', raw && raw.id, e); }
         }
@@ -41803,6 +41845,8 @@ kbd {
             storScrim: $('nvStorScrim'), stor: $('nvStor'), storClose: $('nvStorClose'), storRefresh: $('nvStorRefresh'), storBody: $('nvStorBody'),
             renScrim: $('nvRenScrim'), ren: $('nvRen'), renBody: $('nvRenBody'), renUpdate: $('nvRenUpdate'), renOnly: $('nvRenOnly'), renCancel: $('nvRenCancel')
         };
+
+        noteAttachmentOriginWarning();
 
         // open / close / new
         el.overlay.addEventListener('click', (e) => {
