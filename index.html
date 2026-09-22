@@ -2954,6 +2954,16 @@
             animation: skillHighlightPulse 2s ease;
             border-radius: var(--radius-lg);
         }
+        /* Same flash, for jumping to a resource from a Notes Vault resource pill */
+        .resource-card.resource-highlight-flash {
+            animation: skillHighlightPulse 2s ease;
+            border-radius: var(--radius-lg);
+        }
+        /* Same flash, for jumping to an Investment Analysis from a Notes Vault analysis pill */
+        .ia-card.analysis-highlight-flash {
+            animation: skillHighlightPulse 2s ease;
+            border-radius: var(--radius-lg);
+        }
         @keyframes skillHighlightPulse {
             0%   { box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.55); background: var(--primary-light); }
             70%  { box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.55); background: var(--primary-light); }
@@ -11560,6 +11570,29 @@
         }
         .rc-actions-primary .rc-icon-btn .btn-icon { font-size: 0.88rem; }
 
+        /* Note-count badge on a Resource card (Resource Library ↔ Notes Vault link) —
+           same pill styling as .course-note-badge, sitting as the first child of
+           .rc-actions-primary alongside the Start/Complete/Progress buttons. */
+        .resource-note-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            background: var(--bg-light);
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+        .resource-note-badge:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
         .rc-icon-group {
             display: flex;
             align-items: center;
@@ -11807,6 +11840,29 @@
             padding: 5px 12px;
             font-size: 0.76rem;
             border-radius: 999px;
+        }
+
+        /* Note-count badge on an Investment Analysis card (Investment Analysis ↔ Notes
+           Vault link) — same pill styling as .course-note-badge/.resource-note-badge,
+           sitting as the first child of .finance-card-actions before Edit/Delete. */
+        .analysis-note-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            background: var(--bg-light);
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            margin-right: auto;
+        }
+        .analysis-note-badge:hover {
+            border-color: var(--primary);
+            color: var(--primary);
         }
 
         /* ===== END INVESTMENT ANALYSES ===== */
@@ -36115,6 +36171,8 @@ kbd {
                 </div>
             </div>
             <div class="nv-field"><label class="nv-lbl" for="nvCourse">Course</label><div class="nv-combo"><input type="text" id="nvCourse" autocomplete="off" placeholder="e.g. MIT 14.13"><ul class="nv-combo-pop" id="nvCoursePop" role="listbox" aria-label="Course suggestions" hidden></ul></div></div>
+            <div class="nv-field"><label class="nv-lbl" for="nvResource">Resource</label><div class="nv-combo"><input type="text" id="nvResource" autocomplete="off" placeholder="e.g. CFA Institute — FSA"><ul class="nv-combo-pop" id="nvResourcePop" role="listbox" aria-label="Resource suggestions" hidden></ul></div></div>
+            <div class="nv-field"><label class="nv-lbl" for="nvAnalysis">Analysis</label><div class="nv-combo"><input type="text" id="nvAnalysis" autocomplete="off" placeholder="e.g. VCB DCF Thesis"><ul class="nv-combo-pop" id="nvAnalysisPop" role="listbox" aria-label="Analysis suggestions" hidden></ul></div></div>
             <div class="nv-field"><label class="nv-lbl" for="nvDeadline">Deadline</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div></div>
             <div class="nv-field"><span class="nv-lbl">Created</span><div class="nv-val" id="nvCreated">—</div></div>
             <div class="nv-field"><span class="nv-lbl">Updated</span><div class="nv-val" id="nvUpdated">—</div></div>
@@ -36618,6 +36676,19 @@ kbd {
         // in the Courses tracker, linkedCourseId holds that course's id — see resolveCourseLink
         // and the CoursesAPI bridge (window.CoursesAPI, exposed by the Tracker script).
         n.linkedCourseId = typeof n.linkedCourseId === 'string' ? n.linkedCourseId : '';
+        // Resource link (Note ↔ Resource Library): same pattern as course — `resource` is a
+        // free-form text label (kept for graceful degradation if the resource is later
+        // deleted), and linkedResourceId holds the real id when it matches an entry in the
+        // global `resourceLibrary` array. See resolveResourceLink / nvLinkedResourceLive.
+        n.resource = typeof n.resource === 'string' ? n.resource : '';
+        n.linkedResourceId = typeof n.linkedResourceId === 'string' ? n.linkedResourceId : '';
+        // Investment Analysis link (Note ↔ Investment Analysis): same pattern again —
+        // `analysis` is a free-form text label (kept for graceful degradation if the
+        // analysis is later deleted), and linkedAnalysisId holds the real id when it
+        // matches an entry in the global `investmentAnalyses` array. See
+        // resolveAnalysisLink / nvLinkedAnalysisLive.
+        n.analysis = typeof n.analysis === 'string' ? n.analysis : '';
+        n.linkedAnalysisId = typeof n.linkedAnalysisId === 'string' ? n.linkedAnalysisId : '';
         return n;
     }
 
@@ -37513,6 +37584,58 @@ kbd {
         await open();
         await setScope('course', { id: courseId, title: courseTitle || '', career: career || '' });
     }
+    // Resource-side counterpart of getLinkCounts/getCourseLinkCounts: "how many notes
+    // point at each resource?" Shape: { [resourceId]: count }. Same direct-IndexedDB read
+    // so the Resource Library can call it on page load, before the Notes Vault overlay
+    // has ever been opened.
+    async function getResourceLinkCounts() {
+        try {
+            const all = await dbGetAll();
+            const counts = {};
+            for (const raw of all) {
+                if (raw.deletedAt) continue;
+                const id = raw.linkedResourceId;
+                if (!id) continue;
+                counts[id] = (counts[id] || 0) + 1;
+            }
+            return counts;
+        } catch (e) { console.warn('Notes Vault: could not compute resource link counts', e); return {}; }
+    }
+    // Opens the overlay straight into "notes linked to this one resource" — the click
+    // target for the Resource Library's Notes badge (see nvApplyResourceNoteBadges).
+    // Looks the title up itself from the global resourceLibrary so callers only need to
+    // pass the id.
+    async function openForResource(resourceId) {
+        const r = (typeof resourceLibrary !== 'undefined') ? resourceLibrary.find((x) => x.id == resourceId) : null;
+        await open();
+        await setScope('resource', { id: resourceId, title: r ? r.title : '' });
+    }
+    // Analysis-side counterpart of getLinkCounts/getResourceLinkCounts: "how many notes
+    // point at each Investment Analysis entry?" Shape: { [analysisId]: count }. Same
+    // direct-IndexedDB read so the Investment Analysis tracker can call it on page load,
+    // before the Notes Vault overlay has ever been opened.
+    async function getAnalysisLinkCounts() {
+        try {
+            const all = await dbGetAll();
+            const counts = {};
+            for (const raw of all) {
+                if (raw.deletedAt) continue;
+                const id = raw.linkedAnalysisId;
+                if (!id) continue;
+                counts[id] = (counts[id] || 0) + 1;
+            }
+            return counts;
+        } catch (e) { console.warn('Notes Vault: could not compute analysis link counts', e); return {}; }
+    }
+    // Opens the overlay straight into "notes linked to this one Investment Analysis" — the
+    // click target for the Investment Analysis tracker's Notes badge (see
+    // nvApplyAnalysisNoteBadges). Looks the title up itself from the global
+    // investmentAnalyses array so callers only need to pass the id.
+    async function openForAnalysis(analysisId) {
+        const a = (typeof investmentAnalyses !== 'undefined') ? investmentAnalyses.find((x) => x.id == analysisId) : null;
+        await open();
+        await setScope('analysis', { id: analysisId, title: a ? a.title : '' });
+    }
     async function purgeExpired() {                  // Trash empties itself after 30 days
         try {
             const cutoff = Date.now() - TRASH_MS;
@@ -37556,6 +37679,8 @@ kbd {
         else if (kind === 'tag') list = S.notes.filter((n) => n.tags.some((t) => t.toLowerCase() === value));
         else if (kind === 'skill') list = S.notes.filter((n) => n.linkedCareer === value.career && n.linkedSkill === value.skill);
         else if (kind === 'course') list = S.notes.filter((n) => n.linkedCourseId === value.id);
+        else if (kind === 'resource') list = S.notes.filter((n) => n.linkedResourceId === value.id);
+        else if (kind === 'analysis') list = S.notes.filter((n) => n.linkedAnalysisId === value.id);
         else list = S.notes.slice();
         if (active) list = list.filter(passesFilters);
         return sortList(list);
@@ -37642,6 +37767,9 @@ kbd {
             const careerTitle = (typeof skillsData !== 'undefined' && skillsData[sc.value.career]) ? skillsData[sc.value.career].title : sc.value.career;
             return [sc.value.skill, `${count} ${pl} linked · ${careerTitle}${fx}`];
         }
+        if (sc.kind === 'course') return [sc.value.title || 'Course', `${count} ${pl} linked${fx}`];
+        if (sc.kind === 'resource') return [sc.value.title || 'Resource', `${count} ${pl} linked${fx}`];
+        if (sc.kind === 'analysis') return [sc.value.title || 'Analysis', `${count} ${pl} linked${fx}`];
         return ['All notes', `${count} ${pl}${fx}`];
     }
 
@@ -37655,7 +37783,7 @@ kbd {
         if (!S.notes.length) {
             return `<div class="nv-empty"><i class="fa-solid fa-feather"></i><strong>Your vault is empty</strong>Paste a prompt, transcript or study note. Everything is saved as Markdown on this device, with no length limit.<br><button type="button" class="nv-btn nv-btn-primary" data-new><i class="fa-solid fa-plus"></i> New note</button></div>`;
         }
-        const msg = { recent: 'Nothing has been edited in the last 7 days.', pinned: 'Pin a note and it will stay at the top of your vault.', skill: 'No notes are linked to this skill yet — open a note, use “Linked skill” in the Info panel.', course: 'No notes are linked to this course yet — “+ New note” here creates one already linked, or set “Course” in any note’s Info panel.' }[S.scope.kind] || 'There are no notes here yet.';
+        const msg = { recent: 'Nothing has been edited in the last 7 days.', pinned: 'Pin a note and it will stay at the top of your vault.', skill: 'No notes are linked to this skill yet — open a note, use “Linked skill” in the Info panel.', course: 'No notes are linked to this course yet — “+ New note” here creates one already linked, or set “Course” in any note’s Info panel.', resource: 'No notes are linked to this resource yet — “+ New note” here creates one already linked, or set “Resource” in any note’s Info panel.', analysis: 'No notes are linked to this analysis yet — “+ New note” here creates one already linked, or set “Analysis” in any note’s Info panel.' }[S.scope.kind] || 'There are no notes here yet.';
         return `<div class="nv-empty"><i class="fa-solid fa-feather"></i><strong>Nothing here</strong>${msg}</div>`;
     }
 
@@ -38358,6 +38486,55 @@ kbd {
         const hit = courses.find((c) => String(c.title || '').trim().toLowerCase() === target);
         return hit || null;
     }
+    // Resource-side counterpart of nvLinkedCourseLive — degrades gracefully to a dead-link
+    // pill if the resource was deleted from the Resource Library after a note linked to it.
+    function nvLinkedResourceLive(n) {
+        if (!n.linkedResourceId || typeof resourceLibrary === 'undefined') return null;
+        return resourceLibrary.find((r) => r.id == n.linkedResourceId) || null;
+    }
+    function renderResourceLinkPill(n) {
+        if (!n.linkedResourceId) return '';
+        const resource = nvLinkedResourceLive(n);
+        if (!resource) {
+            return `<span class="nv-folder-pill nv-skill-pill-dead" title="This resource no longer exists in the Resource Library"><i class="fa-solid fa-link-slash"></i>${esc(n.resource || 'Resource')}</span>`;
+        }
+        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(resource.title)}” in the Resource Library" onclick="window.jumpFromNoteToResource('${esc(resource.id)}')"><i class="fa-solid fa-book-open"></i>${esc(resource.title)}</button>`;
+    }
+    // Best-effort resolver for the free-text Resource field against the live Resource
+    // Library — same philosophy as resolveCourseLink: only auto-link on an exact,
+    // unambiguous title match (case-insensitive), otherwise leave it as plain text.
+    function resolveResourceLink(text) {
+        if (typeof resourceLibrary === 'undefined') return null;
+        const target = String(text || '').trim().toLowerCase();
+        if (!target) return null;
+        const hit = resourceLibrary.find((r) => String(r.title || '').trim().toLowerCase() === target);
+        return hit || null;
+    }
+    // Analysis-side counterpart of nvLinkedResourceLive — degrades gracefully to a
+    // dead-link pill if the analysis was deleted from the Investment Analysis tracker
+    // after a note linked to it.
+    function nvLinkedAnalysisLive(n) {
+        if (!n.linkedAnalysisId || typeof investmentAnalyses === 'undefined') return null;
+        return investmentAnalyses.find((a) => a.id == n.linkedAnalysisId) || null;
+    }
+    function renderAnalysisLinkPill(n) {
+        if (!n.linkedAnalysisId) return '';
+        const analysis = nvLinkedAnalysisLive(n);
+        if (!analysis) {
+            return `<span class="nv-folder-pill nv-skill-pill-dead" title="This analysis no longer exists in Investment Analysis"><i class="fa-solid fa-link-slash"></i>${esc(n.analysis || 'Analysis')}</span>`;
+        }
+        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(analysis.title)}” in Investment Analysis" onclick="window.jumpFromNoteToAnalysis('${esc(analysis.id)}')"><i class="fa-solid fa-chart-line"></i>${esc(analysis.title)}</button>`;
+    }
+    // Best-effort resolver for the free-text Analysis field against the live Investment
+    // Analysis tracker — same philosophy as resolveResourceLink: only auto-link on an
+    // exact, unambiguous title match (case-insensitive), otherwise leave it as plain text.
+    function resolveAnalysisLink(text) {
+        if (typeof investmentAnalyses === 'undefined') return null;
+        const target = String(text || '').trim().toLowerCase();
+        if (!target) return null;
+        const hit = investmentAnalyses.find((a) => String(a.title || '').trim().toLowerCase() === target);
+        return hit || null;
+    }
     // Notes Vault → Daily Planner: keeps a note's Deadline mirrored as a reminder item in
     // DLT (window.DLT.syncNoteDeadline upserts/removes by note id — see that function for
     // the other half). Called after every successful save, so title/skill-name edits and
@@ -38388,6 +38565,8 @@ kbd {
             + (pendingRelink ? `<span class="nv-relink-pill" title="Restored from a backup — the file handle itself can't be backed up, so this note needs to be pointed at the file again"><i class="fa-solid fa-triangle-exclamation"></i> Needs relinking${pendingRelink.name ? ': ' + esc(pendingRelink.name) : ''}</span>` : '')
             + renderSkillLinkPill(n)
             + (n.linkedCourseId ? renderCourseLinkPill(n) : (n.course ? `<span title="Course"><i class="fa-solid fa-book" aria-hidden="true"></i> ${esc(n.course)}</span>` : ''))
+            + (n.linkedResourceId ? renderResourceLinkPill(n) : (n.resource ? `<span title="Resource"><i class="fa-solid fa-book-open" aria-hidden="true"></i> ${esc(n.resource)}</span>` : ''))
+            + (n.linkedAnalysisId ? renderAnalysisLinkPill(n) : (n.analysis ? `<span title="Analysis"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> ${esc(n.analysis)}</span>` : ''))
             + (n.deadline ? `<span title="Deadline"><i class="fa-solid fa-calendar" aria-hidden="true"></i> ${esc(nvFmtDate(n.deadline))}</span>` : '')
             + '<span class="nv-grow"></span>'
             + `<span title="${esc(fmtFull(n.updatedAt))}">${S.persisted ? 'Edited ' + esc(fmtRel(n.updatedAt)) : 'Not saved yet'}</span>`;
@@ -38425,6 +38604,10 @@ kbd {
         // picking one exactly is what makes resolveCourseLink() auto-link it (see the
         // nvCourse input listener). typeof-guarded since `courses` lives in a later script.
         S.courseOpts = (typeof courses !== 'undefined') ? courses.map((c) => c.title) : [];
+        // Same idea for the Resource field, sourced from the Resource Library.
+        S.resourceOpts = (typeof resourceLibrary !== 'undefined') ? resourceLibrary.map((r) => r.title) : [];
+        // Same idea for the Analysis field, sourced from Investment Analysis.
+        S.analysisOpts = (typeof investmentAnalyses !== 'undefined') ? investmentAnalyses.map((a) => a.title) : [];
     }
 
     function actionList() {
@@ -38511,6 +38694,8 @@ kbd {
         nvPopulateSkillOptions();
         if (el.linkedSkill) el.linkedSkill.value = n.linkedSkill || '';
         if (el.course) el.course.value = n.course || '';
+        if (el.resource) el.resource.value = n.resource || '';
+        if (el.analysis) el.analysis.value = n.analysis || '';
         if (el.deadline) el.deadline.value = n.deadline || '';
         renderTagChips();
         renderDocMeta();
@@ -38697,6 +38882,18 @@ kbd {
             note.linkedCourseId = sc.value.id;
             note.course = sc.value.title || '';
             if (sc.value.career) note.linkedCareer = sc.value.career;
+        }
+        // "+ New note" while scoped to a resource (via the Resource Library's Notes
+        // badge) pre-links it right away, same as the course case above.
+        if (sc.kind === 'resource' && sc.value && sc.value.id) {
+            note.linkedResourceId = sc.value.id;
+            note.resource = sc.value.title || '';
+        }
+        // "+ New note" while scoped to an Investment Analysis (via that tracker's Notes
+        // badge) pre-links it right away, same as the course/resource cases above.
+        if (sc.kind === 'analysis' && sc.value && sc.value.id) {
+            note.linkedAnalysisId = sc.value.id;
+            note.analysis = sc.value.title || '';
         }
         S.note = note; S.persisted = false; S.dirty = false;
         S.edited = false; S.editStart = 0; S.base = null;
@@ -41062,7 +41259,7 @@ kbd {
             moreBtn: $('nvMoreBtn'), docMenu: $('nvDocMenu'), inspBtn: $('nvInspBtn'), focusBtn: $('nvFocusBtn'), fsDown: $('nvFsDown'), fsUp: $('nvFsUp'), widthBtn: $('nvWidthBtn'),
             insp: $('nvInsp'), tabInfo: $('nvTabInfo'), tabOutline: $('nvTabOutline'), paneInfo: $('nvPaneInfo'), paneOutline: $('nvPaneOutline'),
             folderIn: $('nvFolderIn'), folderPop: $('nvFolderPop'), tagBox: $('nvTagBox'), tagIn: $('nvTagIn'), tagPop: $('nvTagPop'),
-            linkedCareer: $('nvLinkedCareer'), linkedSkill: $('nvLinkedSkill'), course: $('nvCourse'), coursePop: $('nvCoursePop'), deadline: $('nvDeadline'),
+            linkedCareer: $('nvLinkedCareer'), linkedSkill: $('nvLinkedSkill'), course: $('nvCourse'), coursePop: $('nvCoursePop'), resource: $('nvResource'), resourcePop: $('nvResourcePop'), analysis: $('nvAnalysis'), analysisPop: $('nvAnalysisPop'), deadline: $('nvDeadline'),
             created: $('nvCreated'), updated: $('nvUpdated'), words: $('nvWords'), chars: $('nvChars'), readTime: $('nvReadTime'),
             actions: $('nvActions'), outline: $('nvOutline'),
             tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
@@ -41305,6 +41502,26 @@ kbd {
             if (window.nvRefreshCourseBadges) window.nvRefreshCourseBadges();
         });
         attachCombo(el.course, el.coursePop, { getOptions: () => S.courseOpts || [] });
+        if (el.resource) el.resource.addEventListener('input', () => {
+            if (!S.note) return;
+            S.note.resource = el.resource.value;
+            const hit = resolveResourceLink(el.resource.value);
+            S.note.linkedResourceId = hit ? hit.id : '';
+            renderDocMeta();
+            markDirty();
+            if (window.nvRefreshResourceBadges) window.nvRefreshResourceBadges();
+        });
+        attachCombo(el.resource, el.resourcePop, { getOptions: () => S.resourceOpts || [] });
+        if (el.analysis) el.analysis.addEventListener('input', () => {
+            if (!S.note) return;
+            S.note.analysis = el.analysis.value;
+            const hit = resolveAnalysisLink(el.analysis.value);
+            S.note.linkedAnalysisId = hit ? hit.id : '';
+            renderDocMeta();
+            markDirty();
+            if (window.nvRefreshAnalysisBadges) window.nvRefreshAnalysisBadges();
+        });
+        attachCombo(el.analysis, el.analysisPop, { getOptions: () => S.analysisOpts || [] });
         if (el.deadline) el.deadline.addEventListener('change', () => {
             if (!S.note) return;
             S.note.deadline = el.deadline.value;
@@ -41953,6 +42170,8 @@ kbd {
         getBackupData, restoreFromBackup,
         getLinkCounts, openForSkill,
         getCourseLinkCounts, openForCourse,
+        getResourceLinkCounts, openForResource,
+        getAnalysisLinkCounts, openForAnalysis,
         getVaultStorageStats, getStorageHealth
     };
 })();
@@ -67649,6 +67868,7 @@ function saveDailyStudyData() {
                 .sort((a, b) => new Date(b.date) - new Date(a.date)) 
                 .map(analysis => renderAnalysisCard(analysis))
                 .join('');
+            nvApplyAnalysisNoteBadges();
         }
 
 
@@ -67745,7 +67965,7 @@ function saveDailyStudyData() {
                 </div>` : '';
 
             return `
-                <div class="finance-card ia-card" style="border-left:4px solid ${cardColor};">
+                <div class="finance-card ia-card" data-id="${analysis.id}" style="border-left:4px solid ${cardColor};">
                     <div class="finance-card-header">
                         <div style="flex:1;min-width:0;">
                             <div class="finance-card-title">${analysis.title}</div>
@@ -67774,6 +67994,71 @@ function saveDailyStudyData() {
                     </div>
                 </div>`;
         }
+
+        // Note-count badge on each Investment Analysis card, sourced from Notes Vault's
+        // per-analysis link counts (see NotesVault.getAnalysisLinkCounts). Mirrors
+        // nvApplyResourceNoteBadges in the Resource Library script — runs after
+        // renderAnalysisCards has finished building the DOM since the count lookup is
+        // async (reads Notes Vault's IndexedDB). Safe to call repeatedly.
+        async function nvApplyAnalysisNoteBadges() {
+            if (!window.NotesVault || typeof window.NotesVault.getAnalysisLinkCounts !== 'function') return;
+            let counts;
+            try { counts = await window.NotesVault.getAnalysisLinkCounts(); } catch (e) { return; }
+            document.querySelectorAll('#analysisCardsContainer .ia-card[data-id]').forEach((item) => {
+                const analysisId = item.dataset.id;
+                const count = counts[analysisId] || 0;
+                const actions = item.querySelector('.finance-card-actions');
+                if (!actions) return;
+                let badge = actions.querySelector('.analysis-note-badge');
+                if (count > 0) {
+                    if (!badge) {
+                        badge = document.createElement('button');
+                        badge.type = 'button';
+                        badge.className = 'analysis-note-badge';
+                        badge.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (window.NotesVault && window.NotesVault.openForAnalysis) {
+                                window.NotesVault.openForAnalysis(analysisId);
+                            }
+                        });
+                        actions.insertBefore(badge, actions.firstChild);
+                    }
+                    badge.title = `${count} note${count === 1 ? '' : 's'} linked — open in Notes Vault`;
+                    badge.innerHTML = `<i class="fa-solid fa-note-sticky"></i> ${count}`;
+                } else if (badge) {
+                    badge.remove();
+                }
+            });
+        }
+
+        // Cross-module refresh hook: Notes Vault calls this (if present) right after the
+        // user changes a note's Analysis, so the card badge updates immediately instead of
+        // waiting for the next renderAnalysisCards() pass. Mirrors window.nvRefreshResourceBadges.
+        window.nvRefreshAnalysisBadges = function () {
+            nvApplyAnalysisNoteBadges();
+        };
+
+        // Entry point for the Note ↔ Investment Analysis link (Notes Vault analysis pill,
+        // see renderAnalysisLinkPill's onclick). Closes the Notes Vault overlay first (it
+        // sits on top of the page), then expands the Investment Analysis sidebar card if
+        // collapsed → scroll → flash, once the underlying page is visible again. Mirrors
+        // window.jumpFromNoteToResource.
+        window.jumpFromNoteToAnalysis = function (analysisId) {
+            if (window.NotesVault && typeof window.NotesVault.close === 'function') window.NotesVault.close();
+            setTimeout(() => {
+                const body = document.getElementById('investmentAnalysesBody');
+                if (body && body.style.display === 'none' && typeof toggleInvestmentAnalyses === 'function') toggleInvestmentAnalyses();
+                setTimeout(() => {
+                    const target = document.querySelector(`#analysisCardsContainer .ia-card[data-id="${CSS.escape(analysisId)}"]`);
+                    if (!target) return;
+                    setTimeout(() => {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        target.classList.add('analysis-highlight-flash');
+                        setTimeout(() => target.classList.remove('analysis-highlight-flash'), 2000);
+                    }, 150);
+                }, 180);
+            }, 260);
+        };
 
 
         let saveQueue = [];
@@ -70435,6 +70720,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 container.innerHTML = resources
                     .map(resource => renderResourceCard(resource, isQueue))
                     .join('');
+                nvApplyResourceNoteBadges();
                 return;
             }
 
@@ -70476,7 +70762,73 @@ window.fcRenderTagChips = fcRenderTagChips;
                 </div>`;
                 return header + groupResources.map(resource => renderResourceCard(resource, isQueue)).join('');
             }).join('');
+            nvApplyResourceNoteBadges();
         }
+
+        // Note-count badge on each resource card, sourced from Notes Vault's per-resource
+        // link counts (see NotesVault.getResourceLinkCounts). Mirrors nvApplyCourseNoteBadges
+        // in the Courses tracker script — runs after renderResourceCards has finished
+        // building the DOM since the count lookup is async (reads Notes Vault's IndexedDB).
+        // Safe to call repeatedly.
+        async function nvApplyResourceNoteBadges() {
+            if (!window.NotesVault || typeof window.NotesVault.getResourceLinkCounts !== 'function') return;
+            let counts;
+            try { counts = await window.NotesVault.getResourceLinkCounts(); } catch (e) { return; }
+            document.querySelectorAll('#resourceCardsContainer .resource-card[data-id]').forEach((item) => {
+                const resourceId = item.dataset.id;
+                const count = counts[resourceId] || 0;
+                const actions = item.querySelector('.rc-actions-primary');
+                if (!actions) return;
+                let badge = actions.querySelector('.resource-note-badge');
+                if (count > 0) {
+                    if (!badge) {
+                        badge = document.createElement('button');
+                        badge.type = 'button';
+                        badge.className = 'resource-note-badge';
+                        badge.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (window.NotesVault && window.NotesVault.openForResource) {
+                                window.NotesVault.openForResource(resourceId);
+                            }
+                        });
+                        actions.insertBefore(badge, actions.firstChild);
+                    }
+                    badge.title = `${count} note${count === 1 ? '' : 's'} linked — open in Notes Vault`;
+                    badge.innerHTML = `<i class="fa-solid fa-note-sticky"></i> ${count}`;
+                } else if (badge) {
+                    badge.remove();
+                }
+            });
+        }
+
+        // Cross-module refresh hook: Notes Vault calls this (if present) right after the
+        // user changes a note's Resource, so the card badge updates immediately instead of
+        // waiting for the next renderResourceCards() pass. Mirrors window.nvRefreshCourseBadges.
+        window.nvRefreshResourceBadges = function () {
+            nvApplyResourceNoteBadges();
+        };
+
+        // Entry point for the Note ↔ Resource Library link (Notes Vault resource pill, see
+        // renderResourceLinkPill's onclick). Closes the Notes Vault overlay first (it sits on
+        // top of the page), then expands the Resource Library sidebar card if collapsed →
+        // scroll → flash, once the underlying page is visible again. Resource Library isn't
+        // gated by a career tab the way Skills/Courses are, so there's no selectCareer step.
+        // Mirrors window.jumpFromNoteToCourse.
+        window.jumpFromNoteToResource = function (resourceId) {
+            if (window.NotesVault && typeof window.NotesVault.close === 'function') window.NotesVault.close();
+            setTimeout(() => {
+                if (typeof expandResourceLibrary === 'function') expandResourceLibrary();
+                setTimeout(() => {
+                    const target = document.querySelector(`#resourceCardsContainer .resource-card[data-id="${CSS.escape(resourceId)}"]`);
+                    if (!target) return;
+                    setTimeout(() => {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        target.classList.add('resource-highlight-flash');
+                        setTimeout(() => target.classList.remove('resource-highlight-flash'), 2000);
+                    }, 150);
+                }, 180);
+            }, 260);
+        };
 
         // ===== ADD RESOURCE FRICTION REDUCERS (Group 3, item 10-12) =====
         let resourceTitleTouched = false; // true once the user manually edits Title (stops auto-fill)
@@ -71051,7 +71403,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             ].filter(Boolean).join('');
 
             return `
-                <div class="finance-card resource-card" style="border-left: 4px solid ${cardColor}; ${isQueue ? 'display:flex; align-items:stretch; gap:8px;' : ''}" ${dragAttrs}>
+                <div class="finance-card resource-card" data-id="${resource.id}" style="border-left: 4px solid ${cardColor}; ${isQueue ? 'display:flex; align-items:stretch; gap:8px;' : ''}" ${dragAttrs}>
                     ${queueControlsHTML}
                     ${bulkCheckboxHTML}
                     <div style="flex:1; min-width:0;">
