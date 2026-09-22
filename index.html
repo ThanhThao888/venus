@@ -35525,6 +35525,15 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-lk-back-snip { font-size: 0.76rem; line-height: 1.45; color: var(--text-muted); white-space: normal; }
 .nv-lk-count { font-weight: 400; color: var(--text-muted); }
 
+/* ── Context tab (entity links + related notes) ── */
+.nv-lk-item-dead {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 9px; margin-bottom: 2px;
+    border-radius: 8px; color: var(--text-muted); font-size: 0.83rem; opacity: 0.65; cursor: default;
+}
+.nv-lk-item-dead > i { flex-shrink: 0; width: 14px; text-align: center; font-size: 0.78rem; }
+.nv-lk-item-dead span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-ctx-empty { font-size: 0.84rem; line-height: 1.6; color: var(--text-muted); padding: 4px 0 0; }
+
 /* ── [[ ]] autocomplete popup in the editor ── */
 .nv-wl-pop {
     position: fixed; z-index: 4000; list-style: none; margin: 0; padding: 4px;
@@ -36174,6 +36183,7 @@ kbd {
             <button class="nv-tab" role="tab" id="nvTabInfo" data-tab="info" aria-selected="true" type="button">Info</button>
             <button class="nv-tab" role="tab" id="nvTabOutline" data-tab="outline" aria-selected="false" type="button">Outline</button>
             <button class="nv-tab" role="tab" id="nvTabLinks" data-tab="links" aria-selected="false" type="button">Links</button>
+            <button class="nv-tab" role="tab" id="nvTabContext" data-tab="context" aria-selected="false" type="button">Context</button>
             <button class="nv-tab" role="tab" id="nvTabHistory" data-tab="history" aria-selected="false" type="button">History</button>
         </div>
         <div class="nv-insp-body" id="nvPaneInfo" role="tabpanel" aria-labelledby="nvTabInfo">
@@ -36220,6 +36230,10 @@ kbd {
             <ul class="nv-lk" id="nvLinksOut"></ul>
             <div class="nv-side-h">Linked from <span class="nv-lk-count" id="nvBacklinkCount"></span></div>
             <ul class="nv-lk" id="nvLinksBack"></ul>
+        </div>
+        <div class="nv-insp-body" id="nvPaneContext" role="tabpanel" aria-labelledby="nvTabContext" hidden>
+            <p class="nv-lk-hint">Where this note sits in your vault — the Tracker/Courses/Resource/Analysis/Deal entries it's linked to, and other notes that share one of those links.</p>
+            <div id="nvContext"></div>
         </div>
         <div class="nv-insp-body" id="nvPaneHistory" role="tabpanel" aria-labelledby="nvTabHistory" hidden>
             <p class="nv-hist-note">Earlier versions of this note are kept automatically, about every 10 minutes while you write and whenever you leave the note.</p>
@@ -36724,8 +36738,107 @@ kbd {
         // the global `dealDiary` array. See resolveDealLink / nvLinkedDealLive.
         n.deal = typeof n.deal === 'string' ? n.deal : '';
         n.linkedDealId = typeof n.linkedDealId === 'string' ? n.linkedDealId : '';
+        // Unified links[] view — always rebuilt from the legacy fields above, so the two can
+        // never drift out of sync. See EntityLinks below: it's the single place that knows how
+        // to read/write an "entity link" (skill/course/resource/analysis/deal, and any type
+        // added later), while the legacy per-type fields keep working underneath as the
+        // on-disk shape — nothing that reads them directly (YAML export, backups, the Tracker/
+        // Courses/Resource/Analysis/Deal bridges) has to change.
+        rebuildLinksFromLegacy(n);
         return n;
     }
+    // Rebuilds n.links from the legacy per-type fields — the legacy fields are the source of
+    // truth on disk; links[] is a derived, always-fresh view over them. Called from
+    // normalizeNote (on every load) and from EntityLinks.link/unlink (so links[] updates
+    // immediately in-session, without waiting for a reload).
+    function rebuildLinksFromLegacy(n) {
+        const links = [];
+        if (n.linkedSkill) links.push({ type: 'skill', id: n.linkedSkill, career: n.linkedCareer || '' });
+        if (n.linkedCourseId) links.push({ type: 'course', id: n.linkedCourseId });
+        if (n.linkedResourceId) links.push({ type: 'resource', id: n.linkedResourceId });
+        if (n.linkedAnalysisId) links.push({ type: 'analysis', id: n.linkedAnalysisId });
+        if (n.linkedDealId) links.push({ type: 'deal', id: n.linkedDealId });
+        n.links = links;
+        return n;
+    }
+    // Writes an entity link's legacy fields — the one place per type that knows which
+    // flat field(s) that type maps to. `skill` is composite (career + skill name); a skill
+    // unlink deliberately leaves linkedCareer alone (picking a career without a skill yet is
+    // valid mid-edit state — see the linkedCareer change handler below).
+    function syncLegacyLink(note, type, id, meta) {
+        if (type === 'skill') {
+            note.linkedSkill = id || '';
+            if (id && meta && meta.career) note.linkedCareer = meta.career;
+            return;
+        }
+        const field = { course: 'linkedCourseId', resource: 'linkedResourceId', analysis: 'linkedAnalysisId', deal: 'linkedDealId' }[type];
+        if (field) note[field] = id || '';
+    }
+    /* ───────── EntityLinks: the one API for note ↔ other-entity links ─────────
+       Replaces the old pattern of bolting on a new `linkedXId` field (plus its own resolver,
+       pill renderer, dropdown wiring, and count function) every time a new linkable entity
+       type shows up. A link is `{ type, id, ...meta }` living in note.links; today's five
+       types (skill/course/resource/analysis/deal) are single-value (one link per type per
+       note), so `link()` replaces any existing entry of that type — getLinked() still returns
+       an array so a future multi-valued type (e.g. multiple linked Projects) needs no API
+       change, just a registry entry (see RESOLVERS below) and its own pill renderer.
+       Legacy per-type fields (linkedCourseId, etc.) are kept in lockstep by syncLegacyLink, so
+       nothing else in the app — YAML export, backups, the Tracker/Courses/Resource/Analysis/
+       Deal "badge" bridges — needs to change to keep working. */
+    const EntityLinks = {
+        TYPES: ['skill', 'course', 'resource', 'analysis', 'deal'],
+        // Sets (or, with a falsy id, clears) the single link of `type` on `note`. `meta` carries
+        // type-specific extra context — currently just { career } for `skill`.
+        link(note, type, id, meta = {}) {
+            if (!note) return note;
+            syncLegacyLink(note, type, id, meta);
+            rebuildLinksFromLegacy(note);
+            return note;
+        },
+        unlink(note, type) { return this.link(note, type, ''); },
+        getLinked(note, type) {
+            return (note && Array.isArray(note.links) ? note.links : []).filter((l) => l.type === type);
+        },
+        getEntry(note, type) { return this.getLinked(note, type)[0] || null; },
+        getId(note, type) { const e = this.getEntry(note, type); return e ? e.id : ''; },
+        has(note, type, id) { return this.getLinked(note, type).some((l) => l.id === id); },
+        count(note) { return (note && Array.isArray(note.links)) ? note.links.length : 0; },
+        // Same lookup as getId, but for a raw IndexedDB record that may predate normalizeNote
+        // (used by the getXLinkCounts family, which reads straight from the DB so the other
+        // trackers can ask "how many notes link to me?" before the Notes Vault overlay has
+        // ever been opened in this session). Read-only — never mutates the raw record.
+        idFromRaw(raw, type) {
+            if (Array.isArray(raw.links)) {
+                const hit = raw.links.find((l) => l.type === type);
+                if (hit) return hit.id;
+            }
+            const field = { skill: 'linkedSkill', course: 'linkedCourseId', resource: 'linkedResourceId', analysis: 'linkedAnalysisId', deal: 'linkedDealId' }[type];
+            return (field && raw[field]) || '';
+        },
+        // Resolves a link to its live entity in the relevant global array/map, or null if the
+        // linked entity was since deleted/renamed. Registry so adding a new type later means
+        // adding one entry here, not a new bespoke resolver function.
+        resolve(note, type) {
+            const entry = this.getEntry(note, type);
+            if (!entry) return null;
+            const r = EntityLinks.RESOLVERS[type];
+            return r ? r(entry, note) : null;
+        },
+        RESOLVERS: {
+            skill: (entry) => {
+                if (typeof skillsData === 'undefined') return null;
+                const career = skillsData[entry.career];
+                if (!career) return null;
+                const found = Object.values(career.categories || {}).some((cat) =>
+                    (cat.skills || []).some((sk) => sk.name === entry.id));
+                return found ? { id: entry.id, career: entry.career, name: entry.id } : null;
+            },
+            course: (entry) => (typeof courses !== 'undefined') ? (courses.find((c) => c.id === entry.id) || null) : null,
+            resource: (entry) => (typeof resourceLibrary !== 'undefined') ? (resourceLibrary.find((r) => r.id == entry.id) || null) : null,
+            analysis: (entry) => (typeof investmentAnalyses !== 'undefined') ? (investmentAnalyses.find((a) => a.id == entry.id) || null) : null,
+            deal: (entry) => (typeof dealDiary !== 'undefined') ? (dealDiary.find((d) => d.id == entry.id) || null) : null
+        }
+    };
 
     /* ───────── Content detection (drives the Type filter, the Contains-X checkboxes,
        and Sort-by-word-count) — cheap regex checks, no markdown parsing needed. ───────── */
@@ -37583,7 +37696,8 @@ kbd {
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;                       // trashed notes don't count
-                const career = raw.linkedCareer, skill = raw.linkedSkill;
+                const skill = EntityLinks.idFromRaw(raw, 'skill');
+                const career = raw.linkedCareer;
                 if (!career || !skill) continue;
                 if (!counts[career]) counts[career] = {};
                 counts[career][skill] = (counts[career][skill] || 0) + 1;
@@ -37606,7 +37720,7 @@ kbd {
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = raw.linkedCourseId;
+                const id = EntityLinks.idFromRaw(raw, 'course');
                 if (!id) continue;
                 counts[id] = (counts[id] || 0) + 1;
             }
@@ -37629,7 +37743,7 @@ kbd {
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = raw.linkedResourceId;
+                const id = EntityLinks.idFromRaw(raw, 'resource');
                 if (!id) continue;
                 counts[id] = (counts[id] || 0) + 1;
             }
@@ -37655,7 +37769,7 @@ kbd {
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = raw.linkedAnalysisId;
+                const id = EntityLinks.idFromRaw(raw, 'analysis');
                 if (!id) continue;
                 counts[id] = (counts[id] || 0) + 1;
             }
@@ -37681,7 +37795,7 @@ kbd {
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = raw.linkedDealId;
+                const id = EntityLinks.idFromRaw(raw, 'deal');
                 if (!id) continue;
                 counts[id] = (counts[id] || 0) + 1;
             }
@@ -37738,11 +37852,11 @@ kbd {
         else if (kind === 'pinned') list = S.notes.filter((n) => n.pinned);
         else if (kind === 'folder') list = S.notes.filter((n) => typeKey(n.type) === value);
         else if (kind === 'tag') list = S.notes.filter((n) => n.tags.some((t) => t.toLowerCase() === value));
-        else if (kind === 'skill') list = S.notes.filter((n) => n.linkedCareer === value.career && n.linkedSkill === value.skill);
-        else if (kind === 'course') list = S.notes.filter((n) => n.linkedCourseId === value.id);
-        else if (kind === 'resource') list = S.notes.filter((n) => n.linkedResourceId === value.id);
-        else if (kind === 'analysis') list = S.notes.filter((n) => n.linkedAnalysisId === value.id);
-        else if (kind === 'deal') list = S.notes.filter((n) => n.linkedDealId === value.id);
+        else if (kind === 'skill') list = S.notes.filter((n) => n.linkedCareer === value.career && EntityLinks.has(n, 'skill', value.skill));
+        else if (kind === 'course') list = S.notes.filter((n) => EntityLinks.has(n, 'course', value.id));
+        else if (kind === 'resource') list = S.notes.filter((n) => EntityLinks.has(n, 'resource', value.id));
+        else if (kind === 'analysis') list = S.notes.filter((n) => EntityLinks.has(n, 'analysis', value.id));
+        else if (kind === 'deal') list = S.notes.filter((n) => EntityLinks.has(n, 'deal', value.id));
         else list = S.notes.slice();
         if (active) list = list.filter(passesFilters);
         return sortList(list);
@@ -38107,11 +38221,10 @@ kbd {
             if (el.deadline) el.deadline.value = n.deadline;
             changed = true;
         }
-        if ((data.skill || data.career) && !n.linkedSkill) {
+        if ((data.skill || data.career) && !EntityLinks.getId(n, 'skill')) {
             const hit = data.skill ? findSkillMatch(data.skill, data.career) : null;
             if (hit) {
-                n.linkedCareer = hit.career;
-                n.linkedSkill = hit.skill;
+                EntityLinks.link(n, 'skill', hit.skill, { career: hit.career });
                 nvPopulateCareerOptions();
                 if (el.linkedCareer) el.linkedCareer.value = n.linkedCareer;
                 nvPopulateSkillOptions();
@@ -38509,30 +38622,26 @@ kbd {
     // can get renamed/removed from the tracker after a note already links to it, so the chip
     // needs to degrade gracefully instead of pointing at nothing.
     function nvLinkedSkillLive(n) {
-        if (!n.linkedCareer || !n.linkedSkill || typeof skillsData === 'undefined') return false;
-        const career = skillsData[n.linkedCareer];
-        if (!career) return false;
-        return Object.values(career.categories || {}).some((cat) =>
-            (cat.skills || []).some((sk) => sk.name === n.linkedSkill));
+        return !!EntityLinks.resolve(n, 'skill');
     }
     function renderSkillLinkPill(n) {
-        if (!n.linkedCareer || !n.linkedSkill) return '';
+        const skillName = EntityLinks.getId(n, 'skill');
+        if (!n.linkedCareer || !skillName) return '';
         const live = nvLinkedSkillLive(n);
         const careerTitle = (typeof skillsData !== 'undefined' && skillsData[n.linkedCareer]) ? skillsData[n.linkedCareer].title : n.linkedCareer;
         if (!live) {
-            return `<span class="nv-folder-pill nv-skill-pill-dead" title="“${esc(n.linkedSkill)}” no longer exists in the Tracker"><i class="fa-solid fa-link-slash"></i>${esc(n.linkedSkill)}</span>`;
+            return `<span class="nv-folder-pill nv-skill-pill-dead" title="“${esc(skillName)}” no longer exists in the Tracker"><i class="fa-solid fa-link-slash"></i>${esc(skillName)}</span>`;
         }
-        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(n.linkedSkill)}” in Tracker — ${esc(careerTitle)}" onclick="window.jumpFromNoteToSkill('${esc(n.linkedCareer)}', '${esc(n.linkedSkill).replace(/'/g, "&#39;")}')"><i class="fa-solid fa-bullseye"></i>${esc(n.linkedSkill)}</button>`;
+        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(skillName)}” in Tracker — ${esc(careerTitle)}" onclick="window.jumpFromNoteToSkill('${esc(n.linkedCareer)}', '${esc(skillName).replace(/'/g, "&#39;")}')"><i class="fa-solid fa-bullseye"></i>${esc(skillName)}</button>`;
     }
     // Does n.linkedCourseId still exist in the Courses tracker? A course can be deleted
     // after a note already links to it, so the chip needs to degrade gracefully instead
     // of pointing at nothing — same idea as nvLinkedSkillLive above.
     function nvLinkedCourseLive(n) {
-        if (!n.linkedCourseId || typeof courses === 'undefined') return null;
-        return courses.find((c) => c.id === n.linkedCourseId) || null;
+        return EntityLinks.resolve(n, 'course');
     }
     function renderCourseLinkPill(n) {
-        if (!n.linkedCourseId) return '';
+        if (!EntityLinks.getId(n, 'course')) return '';
         const course = nvLinkedCourseLive(n);
         if (!course) {
             return `<span class="nv-folder-pill nv-skill-pill-dead" title="This course no longer exists in the Courses tracker"><i class="fa-solid fa-link-slash"></i>${esc(n.course || 'Course')}</span>`;
@@ -38552,11 +38661,10 @@ kbd {
     // Resource-side counterpart of nvLinkedCourseLive — degrades gracefully to a dead-link
     // pill if the resource was deleted from the Resource Library after a note linked to it.
     function nvLinkedResourceLive(n) {
-        if (!n.linkedResourceId || typeof resourceLibrary === 'undefined') return null;
-        return resourceLibrary.find((r) => r.id == n.linkedResourceId) || null;
+        return EntityLinks.resolve(n, 'resource');
     }
     function renderResourceLinkPill(n) {
-        if (!n.linkedResourceId) return '';
+        if (!EntityLinks.getId(n, 'resource')) return '';
         const resource = nvLinkedResourceLive(n);
         if (!resource) {
             return `<span class="nv-folder-pill nv-skill-pill-dead" title="This resource no longer exists in the Resource Library"><i class="fa-solid fa-link-slash"></i>${esc(n.resource || 'Resource')}</span>`;
@@ -38577,11 +38685,10 @@ kbd {
     // dead-link pill if the analysis was deleted from the Investment Analysis tracker
     // after a note linked to it.
     function nvLinkedAnalysisLive(n) {
-        if (!n.linkedAnalysisId || typeof investmentAnalyses === 'undefined') return null;
-        return investmentAnalyses.find((a) => a.id == n.linkedAnalysisId) || null;
+        return EntityLinks.resolve(n, 'analysis');
     }
     function renderAnalysisLinkPill(n) {
-        if (!n.linkedAnalysisId) return '';
+        if (!EntityLinks.getId(n, 'analysis')) return '';
         const analysis = nvLinkedAnalysisLive(n);
         if (!analysis) {
             return `<span class="nv-folder-pill nv-skill-pill-dead" title="This analysis no longer exists in Investment Analysis"><i class="fa-solid fa-link-slash"></i>${esc(n.analysis || 'Analysis')}</span>`;
@@ -38602,11 +38709,10 @@ kbd {
     // dead-link pill if the deal was deleted from the Deal Diary after a note
     // linked to it.
     function nvLinkedDealLive(n) {
-        if (!n.linkedDealId || typeof dealDiary === 'undefined') return null;
-        return dealDiary.find((d) => d.id == n.linkedDealId) || null;
+        return EntityLinks.resolve(n, 'deal');
     }
     function renderDealLinkPill(n) {
-        if (!n.linkedDealId) return '';
+        if (!EntityLinks.getId(n, 'deal')) return '';
         const deal = nvLinkedDealLive(n);
         if (!deal) {
             return `<span class="nv-folder-pill nv-skill-pill-dead" title="This deal no longer exists in Deal Diary"><i class="fa-solid fa-link-slash"></i>${esc(n.deal || 'Deal')}</span>`;
@@ -38652,10 +38758,10 @@ kbd {
             + (link ? `<span class="nv-folder-pill" title="Linked — “Save changes to file” writes here"><i class="fa-solid fa-link"></i>${esc(link.name)}</span>` : '')
             + (pendingRelink ? `<span class="nv-relink-pill" title="Restored from a backup — the file handle itself can't be backed up, so this note needs to be pointed at the file again"><i class="fa-solid fa-triangle-exclamation"></i> Needs relinking${pendingRelink.name ? ': ' + esc(pendingRelink.name) : ''}</span>` : '')
             + renderSkillLinkPill(n)
-            + (n.linkedCourseId ? renderCourseLinkPill(n) : (n.course ? `<span title="Course"><i class="fa-solid fa-book" aria-hidden="true"></i> ${esc(n.course)}</span>` : ''))
-            + (n.linkedResourceId ? renderResourceLinkPill(n) : (n.resource ? `<span title="Resource"><i class="fa-solid fa-book-open" aria-hidden="true"></i> ${esc(n.resource)}</span>` : ''))
-            + (n.linkedAnalysisId ? renderAnalysisLinkPill(n) : (n.analysis ? `<span title="Analysis"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> ${esc(n.analysis)}</span>` : ''))
-            + (n.linkedDealId ? renderDealLinkPill(n) : (n.deal ? `<span title="Deal"><i class="fa-solid fa-handshake" aria-hidden="true"></i> ${esc(n.deal)}</span>` : ''))
+            + (EntityLinks.getId(n, 'course') ? renderCourseLinkPill(n) : (n.course ? `<span title="Course"><i class="fa-solid fa-book" aria-hidden="true"></i> ${esc(n.course)}</span>` : ''))
+            + (EntityLinks.getId(n, 'resource') ? renderResourceLinkPill(n) : (n.resource ? `<span title="Resource"><i class="fa-solid fa-book-open" aria-hidden="true"></i> ${esc(n.resource)}</span>` : ''))
+            + (EntityLinks.getId(n, 'analysis') ? renderAnalysisLinkPill(n) : (n.analysis ? `<span title="Analysis"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> ${esc(n.analysis)}</span>` : ''))
+            + (EntityLinks.getId(n, 'deal') ? renderDealLinkPill(n) : (n.deal ? `<span title="Deal"><i class="fa-solid fa-handshake" aria-hidden="true"></i> ${esc(n.deal)}</span>` : ''))
             + (n.deadline ? `<span title="Deadline"><i class="fa-solid fa-calendar" aria-hidden="true"></i> ${esc(nvFmtDate(n.deadline))}</span>` : '')
             + '<span class="nv-grow"></span>'
             + `<span title="${esc(fmtFull(n.updatedAt))}">${S.persisted ? 'Edited ' + esc(fmtRel(n.updatedAt)) : 'Not saved yet'}</span>`;
@@ -38798,6 +38904,7 @@ kbd {
         refreshStats();
         renderHistory();
         renderLinksPane();
+        renderContextPane();
     }
 
     function refreshStats() {
@@ -38844,6 +38951,7 @@ kbd {
             refreshStats();
             if (S.mode === 'edit') renderOutline();
             renderLinksPane();
+            renderContextPane();
         }, 250);
     }
 
@@ -38877,6 +38985,7 @@ kbd {
         fitTitle();
         renderOutline();
         renderLinksPane();
+        renderContextPane();
         if (edit) refreshToolbar();
         if (edit && focus) el.src.focus();
         updateProgress();
@@ -38971,26 +39080,26 @@ kbd {
         // "+ New note" while scoped to a course (via Courses tracker's note badge) pre-links
         // it right away, instead of leaving the person to set Course by hand afterwards.
         if (sc.kind === 'course' && sc.value && sc.value.id) {
-            note.linkedCourseId = sc.value.id;
+            EntityLinks.link(note, 'course', sc.value.id);
             note.course = sc.value.title || '';
             if (sc.value.career) note.linkedCareer = sc.value.career;
         }
         // "+ New note" while scoped to a resource (via the Resource Library's Notes
         // badge) pre-links it right away, same as the course case above.
         if (sc.kind === 'resource' && sc.value && sc.value.id) {
-            note.linkedResourceId = sc.value.id;
+            EntityLinks.link(note, 'resource', sc.value.id);
             note.resource = sc.value.title || '';
         }
         // "+ New note" while scoped to an Investment Analysis (via that tracker's Notes
         // badge) pre-links it right away, same as the course/resource cases above.
         if (sc.kind === 'analysis' && sc.value && sc.value.id) {
-            note.linkedAnalysisId = sc.value.id;
+            EntityLinks.link(note, 'analysis', sc.value.id);
             note.analysis = sc.value.title || '';
         }
         // "+ New note" while scoped to a Deal Diary entry (via that tracker's Notes
         // badge) pre-links it right away, same as the course/resource/analysis cases above.
         if (sc.kind === 'deal' && sc.value && sc.value.id) {
-            note.linkedDealId = sc.value.id;
+            EntityLinks.link(note, 'deal', sc.value.id);
             note.deal = sc.value.title || '';
         }
         S.note = note; S.persisted = false; S.dirty = false;
@@ -39207,6 +39316,87 @@ kbd {
                 <span class="nv-lk-back-snip">${esc(b.snippet)}</span>
             </button></li>`).join('')
             : '<li class="nv-ol-empty">No other notes link here yet. Once one does, it will show up here automatically.</li>';
+    }
+
+    /* ═════════════ Context pane: "where does this note sit in the vault?" ═════════════
+       Two parts, both built on EntityLinks (see normalizeNote):
+       1. The entity links section (Skill/Course/Resource/Analysis/Deal) — one row per type
+          the note is actually linked to, jumping straight to that entry in its own tracker.
+          A link whose target was since deleted/renamed shows as a dead row (same graceful-
+          degradation idea as the doc-meta pills), instead of just disappearing.
+       2. Related notes — other live notes that share at least one of those same entity
+          links (e.g. two notes both linked to the "Financial Statement Analysis" skill),
+          ranked by how many links they share, then by how recently they were touched. This
+          is deliberately a different relation than the Links tab's backlinks (explicit
+          [[wikilinks]]) — it surfaces notes nobody thought to cross-link, because they sit
+          under the same course/skill/deal without saying so. */
+    const CONTEXT_TYPE_META = {
+        skill: { label: 'Skill', icon: 'fa-bullseye' },
+        course: { label: 'Course', icon: 'fa-book' },
+        resource: { label: 'Resource', icon: 'fa-book-open' },
+        analysis: { label: 'Investment analysis', icon: 'fa-chart-line' },
+        deal: { label: 'Deal', icon: 'fa-handshake' }
+    };
+    // Display text for a resolved (still-live) linked entity.
+    function contextLiveLabel(type, live) {
+        if (type === 'skill') return live.name;
+        if (type === 'deal') return live.dealName;
+        return live.title;
+    }
+    // Display text when the link is dead (target renamed/deleted) — falls back to whatever
+    // free-text label the note itself is still carrying (entry.id for skill, since a skill
+    // "link" has no separate free-text field), same source the old per-type pill used.
+    function contextDeadLabel(type, n, entry) {
+        if (type === 'skill') return entry.id;
+        return n[type] || (CONTEXT_TYPE_META[type].label);
+    }
+    // Other live notes that share at least one entity link with `n`. Ranked by number of
+    // shared links (most-relevant first), then by recency. Capped so a heavily-linked skill
+    // (e.g. "Financial Modeling") doesn't turn this into a second copy of the whole vault.
+    function computeRelatedNotes(n, limit) {
+        const mine = (n.links || []).map((l) => l.type + '::' + l.id);
+        if (!mine.length) return [];
+        const mineSet = new Set(mine);
+        const scored = [];
+        for (const other of S.notes) {
+            if (other.id === n.id) continue;
+            let shared = 0;
+            for (const l of (other.links || [])) if (mineSet.has(l.type + '::' + l.id)) shared++;
+            if (shared) scored.push({ note: other, shared });
+        }
+        scored.sort((a, b) => (b.shared - a.shared) || (b.note.updatedAt - a.note.updatedAt));
+        return scored.slice(0, limit || 8);
+    }
+    function contextEntityRowHtml(type, entry, n) {
+        const meta = CONTEXT_TYPE_META[type];
+        const live = EntityLinks.resolve(n, type);
+        if (!live) {
+            const label = contextDeadLabel(type, n, entry);
+            return `<li><span class="nv-lk-item-dead" title="No longer exists"><i class="fa-solid fa-link-slash" aria-hidden="true"></i><span>${esc(label)}</span></span></li>`;
+        }
+        const label = contextLiveLabel(type, live);
+        return `<li><button type="button" class="nv-lk-item" data-ctx-jump="${esc(type)}"><i class="fa-solid ${meta.icon}" aria-hidden="true"></i><span>${esc(label)}</span></button></li>`;
+    }
+    function renderContextPane() {
+        if (!S.note || !S.inspOpen || S.inspTab !== 'context') return;
+        const n = S.note;
+        const linkedTypes = EntityLinks.TYPES.filter((t) => EntityLinks.getEntry(n, t));
+        const related = computeRelatedNotes(n);
+        if (!linkedTypes.length && !related.length) {
+            el.context.innerHTML = '<p class="nv-ctx-empty">This note isn\'t connected to anything yet. Link a skill, course, resource, analysis or deal in the Info tab, or add a <code>[[wikilink]]</code> to another note.</p>';
+            return;
+        }
+        let html = '';
+        if (linkedTypes.length) {
+            html += linkedTypes.map((type) => {
+                const entry = EntityLinks.getEntry(n, type);
+                return `<div class="nv-side-h">${esc(CONTEXT_TYPE_META[type].label)}</div><ul class="nv-lk">${contextEntityRowHtml(type, entry, n)}</ul>`;
+            }).join('');
+        }
+        if (related.length) {
+            html += `<div class="nv-side-h">Related notes</div><ul class="nv-lk">${related.map((r) => linkRowHtml('', r.note)).join('')}</ul>`;
+        }
+        el.context.innerHTML = html;
     }
     function scrollSrcTo(off) {
         const ta = el.src, cs = getComputedStyle(ta);
@@ -39707,12 +39897,16 @@ kbd {
             const inc = normalizeNote({
                 id: raw.id || uid(), title: raw.title, markdown: raw.markdown, type: raw.type,
                 tags: raw.tags, pinned: raw.pinned, createdAt: raw.createdAt, updatedAt: raw.updatedAt, deletedAt: raw.deletedAt,
-                // These four ride along on the note record itself, so a backup that only kept
-                // the fields above would quietly un-link every note from its skill/course/
-                // deadline on restore — same "looks fine, data's actually gone" shape as the
-                // revisions/fileLinks gap above.
+                // These ride along on the note record itself, so a backup that only kept the
+                // fields above would quietly un-link every note from its skill/course/resource/
+                // analysis/deal/deadline on restore — same "looks fine, data's actually gone"
+                // shape as the revisions/fileLinks gap above. (normalizeNote rebuilds n.links
+                // from these legacy fields, so restoring the legacy fields is all that's needed.)
                 linkedCareer: raw.linkedCareer, linkedSkill: raw.linkedSkill,
-                course: raw.course, deadline: raw.deadline, linkedCourseId: raw.linkedCourseId
+                course: raw.course, deadline: raw.deadline, linkedCourseId: raw.linkedCourseId,
+                resource: raw.resource, linkedResourceId: raw.linkedResourceId,
+                analysis: raw.analysis, linkedAnalysisId: raw.linkedAnalysisId,
+                deal: raw.deal, linkedDealId: raw.linkedDealId
             });
             const ex = existing.get(inc.id);
             if (ex && ex.updatedAt > inc.updatedAt) { skipped++; continue; }   // never overwrite a newer note with an older backup
@@ -40485,16 +40679,18 @@ kbd {
         applyLayout();
         renderOutline();
         renderLinksPane();
+        renderContextPane();
         renderHistory();
     }
     function setInspTab(tab) {
         S.inspTab = tab;
-        [['info', el.tabInfo, el.paneInfo], ['outline', el.tabOutline, el.paneOutline], ['links', el.tabLinks, el.paneLinks], ['history', el.tabHistory, el.paneHistory]].forEach(([k, t, p]) => {
+        [['info', el.tabInfo, el.paneInfo], ['outline', el.tabOutline, el.paneOutline], ['links', el.tabLinks, el.paneLinks], ['context', el.tabContext, el.paneContext], ['history', el.tabHistory, el.paneHistory]].forEach(([k, t, p]) => {
             t.setAttribute('aria-selected', String(k === tab));
             p.hidden = k !== tab;
         });
         renderOutline();
         renderLinksPane();
+        renderContextPane();
         renderHistory();
     }
     async function setScope(kind, value) {
@@ -41362,6 +41558,7 @@ kbd {
             actions: $('nvActions'), outline: $('nvOutline'),
             tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
             tabLinks: $('nvTabLinks'), paneLinks: $('nvPaneLinks'), linksOut: $('nvLinksOut'), linksBack: $('nvLinksBack'), backlinkCount: $('nvBacklinkCount'),
+            tabContext: $('nvTabContext'), paneContext: $('nvPaneContext'), context: $('nvContext'),
             wlPop: $('nvWlPop'),
             tabStrip: $('nvTabStrip'),
             saveVersion: $('nvSaveVersion'), histClear: $('nvHistClear'),
@@ -41544,6 +41741,7 @@ kbd {
         el.tabInfo.addEventListener('click', () => setInspTab('info'));
         el.tabOutline.addEventListener('click', () => setInspTab('outline'));
         el.tabLinks.addEventListener('click', () => setInspTab('links'));
+        el.tabContext.addEventListener('click', () => setInspTab('context'));
         el.tabHistory.addEventListener('click', () => setInspTab('history'));
         // Links tab: open the target note, or create it (for an unresolved outgoing link).
         [el.linksOut, el.linksBack].forEach((box) => box.addEventListener('click', (e) => {
@@ -41552,6 +41750,22 @@ kbd {
             if (b.dataset.open) openNote(b.dataset.open);
             else openOrCreateByTitle(b.dataset.create);
         }));
+        // Context tab: open a related note, or jump to a linked entity in its own tracker
+        // (same window.jumpFromNoteToX bridges the doc-meta pills already use).
+        el.context.addEventListener('click', (e) => {
+            const openBtn = e.target.closest('[data-open]');
+            if (openBtn) { openNote(openBtn.dataset.open); return; }
+            const jumpBtn = e.target.closest('[data-ctx-jump]');
+            if (!jumpBtn || !S.note) return;
+            const type = jumpBtn.dataset.ctxJump;
+            const entry = EntityLinks.getEntry(S.note, type);
+            if (!entry) return;
+            if (type === 'skill' && window.jumpFromNoteToSkill) window.jumpFromNoteToSkill(entry.career, entry.id);
+            else if (type === 'course' && window.jumpFromNoteToCourse) window.jumpFromNoteToCourse(entry.id);
+            else if (type === 'resource' && window.jumpFromNoteToResource) window.jumpFromNoteToResource(entry.id);
+            else if (type === 'analysis' && window.jumpFromNoteToAnalysis) window.jumpFromNoteToAnalysis(entry.id);
+            else if (type === 'deal' && window.jumpFromNoteToDeal) window.jumpFromNoteToDeal(entry.id);
+        });
         el.histList.addEventListener('click', (e) => {
             const b = e.target.closest('[data-rev]');
             if (!b) return;
@@ -41577,16 +41791,18 @@ kbd {
         if (el.linkedCareer) el.linkedCareer.addEventListener('change', () => {
             if (!S.note) return;
             S.note.linkedCareer = el.linkedCareer.value;
-            S.note.linkedSkill = '';           // career changed → old skill choice no longer applies
+            EntityLinks.unlink(S.note, 'skill');           // career changed → old skill choice no longer applies
             nvPopulateSkillOptions();
             renderDocMeta();
+            renderContextPane();
             markDirty();
             if (window.nvRefreshSkillBadges) window.nvRefreshSkillBadges();
         });
         if (el.linkedSkill) el.linkedSkill.addEventListener('change', () => {
             if (!S.note) return;
-            S.note.linkedSkill = el.linkedSkill.value;
+            EntityLinks.link(S.note, 'skill', el.linkedSkill.value, { career: S.note.linkedCareer });
             renderDocMeta();
+            renderContextPane();
             markDirty();
             if (window.nvRefreshSkillBadges) window.nvRefreshSkillBadges();
         });
@@ -41594,8 +41810,9 @@ kbd {
             if (!S.note) return;
             S.note.course = el.course.value;
             const hit = resolveCourseLink(el.course.value);
-            S.note.linkedCourseId = hit ? hit.id : '';
+            EntityLinks.link(S.note, 'course', hit ? hit.id : '');
             renderDocMeta();
+            renderContextPane();
             markDirty();
             if (window.nvRefreshCourseBadges) window.nvRefreshCourseBadges();
         });
@@ -41604,8 +41821,9 @@ kbd {
             if (!S.note) return;
             S.note.resource = el.resource.value;
             const hit = resolveResourceLink(el.resource.value);
-            S.note.linkedResourceId = hit ? hit.id : '';
+            EntityLinks.link(S.note, 'resource', hit ? hit.id : '');
             renderDocMeta();
+            renderContextPane();
             markDirty();
             if (window.nvRefreshResourceBadges) window.nvRefreshResourceBadges();
         });
@@ -41614,8 +41832,9 @@ kbd {
             if (!S.note) return;
             S.note.analysis = el.analysis.value;
             const hit = resolveAnalysisLink(el.analysis.value);
-            S.note.linkedAnalysisId = hit ? hit.id : '';
+            EntityLinks.link(S.note, 'analysis', hit ? hit.id : '');
             renderDocMeta();
+            renderContextPane();
             markDirty();
             if (window.nvRefreshAnalysisBadges) window.nvRefreshAnalysisBadges();
         });
@@ -41624,8 +41843,9 @@ kbd {
             if (!S.note) return;
             S.note.deal = el.deal.value;
             const hit = resolveDealLink(el.deal.value);
-            S.note.linkedDealId = hit ? hit.id : '';
+            EntityLinks.link(S.note, 'deal', hit ? hit.id : '');
             renderDocMeta();
+            renderContextPane();
             markDirty();
             if (window.nvRefreshDealBadges) window.nvRefreshDealBadges();
         });
