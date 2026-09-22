@@ -35609,6 +35609,23 @@ kbd {
 .nv-dup-cmp-scroll { padding: 12px 14px; overflow-y: auto; font-size: 0.85rem; font-family: var(--nv-serif); color: var(--text-dark); }
 .nv-dup-cmp-scroll p:first-child { margin-top: 0; }
 
+/* ═════════════ Safe rename: "N notes link here" confirm ═════════════ */
+.nv-ren-scrim { position: absolute; inset: 0; z-index: 70; background: rgba(40, 20, 32, 0.45); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.nv-ren {
+    width: min(94%, 420px); max-height: 80%; overflow-y: auto;
+    background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: 0 28px 70px -20px rgba(74, 50, 64, 0.55), 0 4px 18px rgba(201, 125, 150, 0.2);
+    padding: 22px 22px 18px; font-family: var(--nv-sans);
+}
+.nv-ren-icon { display: flex; justify-content: center; margin-bottom: 12px; color: var(--primary); font-size: 1.7rem; }
+.nv-ren-title { font-family: var(--nv-display); font-weight: 700; font-size: 1.05rem; color: var(--text-dark); text-align: center; margin: 0 0 8px; }
+.nv-ren-body { font-size: 0.86rem; color: var(--text-muted); text-align: center; line-height: 1.55; margin: 0 0 18px; }
+.nv-ren-body strong { color: var(--text-dark); }
+.nv-ren-count { display: block; margin-top: 8px; font-weight: 700; color: var(--primary-dark); }
+.nv-ren-acts { display: flex; flex-direction: column; gap: 8px; }
+.nv-ren-acts .nv-btn { width: 100%; padding: 10px 14px; justify-content: center; }
+.nv-ren-acts .nv-ren-cancel { margin-top: 4px; }
+
 /* ═════════════ Graph view ═════════════ */
 .nvg-scrim { position: absolute; inset: 0; z-index: 60; background: rgba(40, 20, 32, 0.4); }
 .nvg {
@@ -36022,6 +36039,20 @@ kbd {
         <div class="nv-dup-body" id="nvDupBody"></div>
     </div>
 
+    <!-- ── Safe rename: shown when a title change would break other notes' [[wikilinks]] ── -->
+    <div class="nv-ren-scrim" id="nvRenScrim" hidden>
+        <div class="nv-ren" id="nvRen" role="dialog" aria-modal="true" aria-label="Rename note">
+            <div class="nv-ren-icon"><i class="fa-solid fa-link" aria-hidden="true"></i></div>
+            <h3 class="nv-ren-title">Rename note?</h3>
+            <p class="nv-ren-body" id="nvRenBody"></p>
+            <div class="nv-ren-acts">
+                <button class="nv-btn nv-btn-primary" type="button" id="nvRenUpdate">Rename &amp; update links</button>
+                <button class="nv-btn" type="button" id="nvRenOnly">Rename only</button>
+                <button class="nv-btn nv-btn-ghost nv-ren-cancel" type="button" id="nvRenCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Graph view: force-directed map of notes, tags & links ── -->
     <div class="nvg-scrim" id="nvGraphScrim" hidden></div>
     <div class="nvg" id="nvGraph" role="dialog" aria-modal="true" aria-label="Graph view" hidden>
@@ -36125,6 +36156,7 @@ kbd {
         trash: [],                     // notes in Trash (S.notes only ever holds live notes)
         fileLinks: new Map(),          // noteId → { handle, name, linkedAt } — see "File links" below
         base: null, edited: false, editStart: 0,      // what the open note looked like when opened
+        renamePrompted: false,                        // guards against a second "Rename note?" dialog stacking on the first
         viewRev: null, revPrev: 'read', revs: [],     // version being previewed / previous mode / loaded versions
         toastTimer: null, toastAct: null,
         saveState: 'idle', savedAt: 0,
@@ -36648,6 +36680,74 @@ kbd {
         }
         out.sort((a, b) => b.note.updatedAt - a.note.updatedAt);
         return out;
+    }
+
+    /* ═════════════ Safe rename ═════════════
+       Wikilinks resolve by title (see above), so renaming a note is silent data loss for
+       every other note that still says [[Old Title]] — that link simply stops resolving.
+       Before a title change is persisted (flushSave), we check whether any other live note
+       links to the OLD title; if so we ask, Obsidian-style, whether to rewrite those links
+       to the new title, leave them (now-broken) as-is, or cancel the rename outright. */
+    function findBacklinksToTitle(title, excludeId) {
+        const key = fold(String(title || '').trim());
+        if (!key) return [];
+        const out = [];
+        for (const n of S.notes) {
+            if (n.id === excludeId || n.deletedAt) continue;
+            const hits = extractWikilinks(n.markdown).filter((l) => fold(l.title) === key);
+            if (hits.length) out.push({ note: n, count: hits.length });
+        }
+        out.sort((a, b) => b.note.updatedAt - a.note.updatedAt);
+        return out;
+    }
+    // Rewrites every [[Old Title]] / [[Old Title|Alias]] occurrence in the given target notes
+    // to the new title (alias text is preserved), then persists each changed note.
+    async function renameLinksAcrossVault(oldTitle, newTitle, excludeId, backlinks) {
+        const key = fold(String(oldTitle || '').trim());
+        if (!key) return 0;
+        const targets = backlinks || findBacklinksToTitle(oldTitle, excludeId);
+        let updated = 0;
+        for (const { note: n } of targets) {
+            const hits = extractWikilinks(n.markdown).filter((l) => fold(l.title) === key);
+            if (!hits.length) continue;
+            let md = n.markdown;
+            hits.sort((a, b) => b.index - a.index).forEach((h) => {
+                const repl = h.alias ? ('[[' + newTitle + '|' + h.alias + ']]') : ('[[' + newTitle + ']]');
+                md = md.slice(0, h.index) + repl + md.slice(h.index + h.len);
+            });
+            n.markdown = md;
+            n.updatedAt = Date.now();
+            foldCache.delete(n.id);
+            try { await dbPut(n); updated++; }
+            catch (e) { console.error('Notes Vault: failed updating link in', n.id, e); }
+        }
+        return updated;
+    }
+    // Promise-based "Rename note?" dialog. Resolves to 'update' | 'keep' | 'cancel'.
+    function showRenameDialog(oldTitle, newTitle, backlinks) {
+        return new Promise((resolve) => {
+            if (!el || !el.renScrim) { resolve('keep'); return; }   // DOM not ready — fail safe, don't block the save
+            const n = backlinks.length;
+            el.renBody.innerHTML = esc(n) + ' ' + (n === 1 ? 'note' : 'notes') + ' link' + (n === 1 ? 's' : '') +
+                ' to “<strong>' + esc(oldTitle) + '</strong>”.<span class="nv-ren-count">Rename to “' + esc(newTitle) + '”?</span>';
+            el.renScrim.hidden = false;
+            const prevFocus = document.activeElement;
+            function finish(choice) {
+                el.renUpdate.onclick = null; el.renOnly.onclick = null; el.renCancel.onclick = null;
+                el.renScrim.onclick = null;
+                document.removeEventListener('keydown', onKey);
+                el.renScrim.hidden = true;
+                if (prevFocus && prevFocus.focus) prevFocus.focus();
+                resolve(choice);
+            }
+            function onKey(e) { if (e.key === 'Escape') finish('cancel'); }
+            el.renUpdate.onclick = () => finish('update');
+            el.renOnly.onclick = () => finish('keep');
+            el.renCancel.onclick = () => finish('cancel');
+            el.renScrim.onclick = (e) => { if (e.target === el.renScrim) finish('cancel'); };
+            document.addEventListener('keydown', onKey);
+            el.renUpdate.focus();
+        });
     }
     function searchSnippet(n, tokens) {
         const f = getFold(n);
@@ -38225,6 +38325,35 @@ kbd {
             S.dirty = false; setSave('idle'); return;
         }
         S.dirty = false;
+        // Safe rename: if the title changed since the note was opened and other live notes
+        // link to the OLD title, ask before persisting — a silent title change would turn
+        // every [[Old Title]] elsewhere into a dead link with no way to tell which notes broke.
+        if (n.title.trim() && S.base && S.base.id === n.id && !S.renamePrompted) {
+            const oldTitle = (S.base.title || '').trim();
+            const newTitle = n.title.trim();
+            if (oldTitle && fold(oldTitle) !== fold(newTitle)) {
+                const backlinks = findBacklinksToTitle(oldTitle, n.id);
+                if (backlinks.length) {
+                    S.renamePrompted = true;
+                    const choice = await showRenameDialog(oldTitle, newTitle, backlinks);
+                    S.renamePrompted = false;
+                    if (choice === 'cancel') {
+                        n.title = oldTitle;
+                        if (S.note === n && el.title) { el.title.value = oldTitle; fitTitle(); }
+                    } else {
+                        if (choice === 'update') {
+                            const count = await renameLinksAcrossVault(oldTitle, newTitle, n.id, backlinks);
+                            renderSide(); renderLibrary();
+                            if (S.note === n) renderLinksPane();
+                            flash(count + (count === 1 ? ' link updated' : ' links updated'));
+                        }
+                        S.base.title = newTitle;
+                    }
+                } else {
+                    S.base.title = newTitle;
+                }
+            }
+        }
         if (n.title.trim()) {
             const renamed = dedupeTitle(n.title, n.id);
             if (renamed !== n.title.trim()) {
@@ -38239,6 +38368,9 @@ kbd {
             await captureOriginal(n);
             await dbPut(n);
             if (!S.persisted) { S.persisted = true; if (!S.notes.includes(n)) S.notes.push(n); }
+            // A note keeps no "base title" to compare against until it's first persisted; once
+            // it exists, later renames in the same session need something to diff against too.
+            if (S.note === n && (!S.base || S.base.id !== n.id)) S.base = { id: n.id, title: n.title, markdown: n.markdown, updatedAt: n.updatedAt };
             S.savedAt = n.updatedAt;
             if (S.note === n) {
                 if (!S.dirty) setSave('saved');
@@ -39956,7 +40088,8 @@ kbd {
             palOpen: $('nvPalOpen'), palKeyHint: $('nvPalKeyHint'),
             palScrim: $('nvPalScrim'), pal: $('nvPal'), palIn: $('nvPalIn'), palChip: $('nvPalChip'),
             palList: $('nvPalList'), palLive: $('nvPalLive'), palFoot: $('nvPalFoot'),
-            dupScrim: $('nvDupScrim'), dup: $('nvDup'), dupClose: $('nvDupClose'), dupRescan: $('nvDupRescan'), dupBody: $('nvDupBody')
+            dupScrim: $('nvDupScrim'), dup: $('nvDup'), dupClose: $('nvDupClose'), dupRescan: $('nvDupRescan'), dupBody: $('nvDupBody'),
+            renScrim: $('nvRenScrim'), ren: $('nvRen'), renBody: $('nvRenBody'), renUpdate: $('nvRenUpdate'), renOnly: $('nvRenOnly'), renCancel: $('nvRenCancel')
         };
 
         // open / close / new
