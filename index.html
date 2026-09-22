@@ -35003,6 +35003,23 @@ window.DBP={
 .nv-act:hover { background: var(--nv-hover); }
 .nv-act.nv-danger, .nv-act.nv-danger > i { color: var(--nv-danger); }
 
+/* ═════════════ Attachments (images pasted/dropped into a note) ═════════════
+   Rendered <img> in Read mode gets a hover affordance; clicking opens a small
+   fixed-position popover ("Open image externally") — see openAttachMenu(). */
+.nv-prose img[data-nv-attach] { cursor: zoom-in; transition: filter 0.12s ease; border-radius: 10px; }
+.nv-prose img[data-nv-attach]:hover { filter: brightness(0.94); }
+.nv-prose img[data-nv-attach-missing] { cursor: default; opacity: 0.55; }
+.nv-attach-menu {
+    position: fixed; z-index: 60; min-width: 200px; max-width: 260px;
+    padding: 6px; border-radius: 12px; display: none;
+    background: var(--bg-white); border: 1px solid var(--border-color); box-shadow: var(--shadow-lg);
+}
+.nv-attach-menu.nv-open { display: block; }
+.nv-attach-meta {
+    padding: 8px 10px 6px; font-size: 0.76rem; color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color); margin-bottom: 4px; word-break: break-word;
+}
+
 /* ═════════════ Sort menu (checkmark radio list) ═════════════ */
 .nv-sort-chk { opacity: 0; }
 .nv-sort-opt[aria-checked="true"] { color: var(--primary-dark); font-weight: 600; }
@@ -36171,10 +36188,12 @@ kbd {
        Deleting a note moves it to Trash (a deletedAt stamp on the same record).
     ═════════════════════════════════════════════════════════════ */
     const DB_NAME = 'FinanceTrackerVaultDB';
-    const DB_VERSION = 3;
+    const DB_VERSION = 4;
     const STORE = 'notes';
     const DB_REV = 'revisions';
     const DB_LINKS = 'fileLinks';
+    const DB_ATTACH = 'attachments';       // id → { id, hash, blob, mime, size, width, height, createdAt }
+    const DB_ATTACH_REFS = 'attachmentRefs'; // attachment id → { id, notes: [noteId, …] } — refcount without scanning markdown
     const TRASH_MS = 30 * 864e5;          // Trash keeps a note for 30 days
     const REV_EVERY = 10 * 60 * 1000;     // at most one automatic version per 10 minutes of writing
     const REV_KEEP = 60;                  // versions kept per note (oldest are dropped first)
@@ -36234,7 +36253,9 @@ kbd {
             prevFocus: null
         },
         stor: { open: false, prevFocus: null },   // Manage storage panel
-        storageStats: null                        // last getVaultStorageStats() result, cached for the compact indicator + panel
+        storageStats: null,                       // last getVaultStorageStats() result, cached for the compact indicator + panel
+        noteAttachRefCache: new Map(),            // noteId → Set(attachment id) last synced to attachmentRefs — lets flushSave diff cheaply
+        attachObjectUrls: []                      // blob: URLs handed to <img> in the current Read view, revoked on the next render
     };
     let el = null;
 
@@ -36261,6 +36282,13 @@ kbd {
                 }
                 if (!db.objectStoreNames.contains(DB_LINKS)) {
                     db.createObjectStore(DB_LINKS, { keyPath: 'id' });   // note id → { handle, name, linkedAt }
+                }
+                if (!db.objectStoreNames.contains(DB_ATTACH)) {
+                    const as = db.createObjectStore(DB_ATTACH, { keyPath: 'id' });
+                    as.createIndex('hash', 'hash');   // dedupe: same compressed bytes → same record, no matter how many notes paste it
+                }
+                if (!db.objectStoreNames.contains(DB_ATTACH_REFS)) {
+                    db.createObjectStore(DB_ATTACH_REFS, { keyPath: 'id' });   // id = attachment id
                 }
             };
             req.onsuccess = () => {
@@ -36337,6 +36365,90 @@ kbd {
             req.onerror = () => reject(req.error);
         });
     }
+
+    /* ───────── Attachments: blob store + reference counts ─────────
+       Two stores: `attachments` holds the actual Blob records (content-addressed by SHA-256,
+       so pasting the same image twice — even into different notes — reuses one row), and
+       `attachmentRefs` holds which live note ids currently reference each attachment id, kept
+       up to date by syncAttachmentRefs() on every save. Garbage collection (pruneOrphanAttachments)
+       then just looks for refs with an empty notes list — no need to scan every note's markdown. */
+    async function dbPutAttachment(rec) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_ATTACH, 'readwrite');
+            tx.objectStore(DB_ATTACH).put(rec);
+            tx.oncomplete = () => resolve(rec);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function dbGetAttachment(id) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_ATTACH).objectStore(DB_ATTACH).get(id);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function dbDeleteAttachment(id) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_ATTACH, 'readwrite');
+            tx.objectStore(DB_ATTACH).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function dbGetAllAttachments() {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_ATTACH).objectStore(DB_ATTACH).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function dbFindAttachmentByHash(hash) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_ATTACH).objectStore(DB_ATTACH).index('hash').get(hash);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function dbGetAttachmentRefs(id) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_ATTACH_REFS).objectStore(DB_ATTACH_REFS).get(id);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function dbPutAttachmentRefs(rec) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_ATTACH_REFS, 'readwrite');
+            tx.objectStore(DB_ATTACH_REFS).put(rec);
+            tx.oncomplete = () => resolve(rec);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function dbDeleteAttachmentRefs(id) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_ATTACH_REFS, 'readwrite');
+            tx.objectStore(DB_ATTACH_REFS).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function dbGetAllAttachmentRefs() {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(DB_ATTACH_REFS).objectStore(DB_ATTACH_REFS).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
     async function loadAllLinks() {
         if (!FS_SUPPORTED) { S.fileLinks = new Map(); return; }
         try { S.fileLinks = new Map((await dbGetAllLinks()).map((r) => [r.id, r])); }
@@ -36536,7 +36648,9 @@ kbd {
         catch (e) { console.warn('Notes Vault: could not estimate notes size', e); }
         try { revisionsBytes = (await dbGetAllRevisions()).reduce((sum, r) => sum + roughSize(r), 0); }
         catch (e) { console.warn('Notes Vault: could not estimate version-history size', e); }
-        const attachmentsBytes = 0;   // wired up once the attachments store lands — see comment above
+        let attachmentsBytes = 0;
+        try { attachmentsBytes = (await dbGetAllAttachments()).reduce((sum, a) => sum + (a.size || 0), 0); }   // exact — every Blob carries a real .size
+        catch (e) { console.warn('Notes Vault: could not size attachments', e); }
         const estimatedBytes = notesBytes + revisionsBytes + attachmentsBytes + lsBytes;
         const percent = browser.supported && browser.quota ? Math.min(100, Math.round((browser.usage / browser.quota) * 100)) : 0;
         const freeBytes = browser.supported && browser.quota ? Math.max(0, browser.quota - browser.usage) : 0;
@@ -36567,6 +36681,122 @@ kbd {
             case 'near-full': return 'Storage ' + percent + '% — back up soon, space is nearly gone.';
             default: return 'Storage ' + percent + '%';
         }
+    }
+
+    /* ═════════════ Attachments: ingest pipeline ═════════════
+       Paste → validate → resize (never upscale) → WebP-compress → SHA-256 the compressed
+       bytes → dedupe against the `attachments` store by hash → save Blob → caller wires up
+       an `attachment://<id>` markdown reference. Keeping the record itself tiny (no note ids,
+       no extra metadata) means the dedupe key and the stored bytes are the same object — a
+       second paste of an already-seen image is a single indexed lookup, not a new row. */
+    const ATTACH_MAX_DIM = 1600;                      // px, longest side — plenty for reading on any screen
+    const ATTACH_MAX_SOURCE_BYTES = 25 * 1024 * 1024; // reject absurdly large pastes before even decoding them
+    const ATTACH_WEBP_QUALITY = 0.82;
+
+    function attachError(message) { const e = new Error(message); e.__attach = true; return e; }
+
+    async function ingestAttachment(file) {
+        if (!file || !/^image\//.test(file.type)) throw attachError('Only images can be attached right now.');
+        if (file.size > ATTACH_MAX_SOURCE_BYTES) throw attachError('That image is too large to attach (25\u202fMB limit).');
+
+        // Storage guard — checked here (not just in the UI) so drag/drop and paste both respect it.
+        try {
+            const stats = await getVaultStorageStats();
+            const health = getStorageHealth(stats.totals.percent);
+            if (health.blockAttachments) throw attachError('Storage is almost full — free up space before attaching images.');
+        } catch (e) { if (e && e.__attach) throw e; /* stats call itself failing shouldn't block a paste */ }
+
+        const bitmap = await createImageBitmap(file).catch(() => null);
+        if (!bitmap) throw attachError('Could not read that image.');
+
+        const scale = Math.min(1, ATTACH_MAX_DIM / Math.max(bitmap.width, bitmap.height));
+        const outW = Math.max(1, Math.round(bitmap.width * scale));
+        const outH = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = outW; canvas.height = outH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bitmap, 0, 0, outW, outH);
+        if (bitmap.close) bitmap.close();
+
+        let blob = await new Promise((res) => canvas.toBlob(res, 'image/webp', ATTACH_WEBP_QUALITY));
+        let mime = 'image/webp';
+        if (!blob) {   // WebP encoding unsupported (rare) — fall back to the original mime type
+            blob = await new Promise((res) => canvas.toBlob(res, file.type || 'image/png'));
+            mime = blob ? blob.type : (file.type || 'image/png');
+        }
+        if (!blob) throw attachError('Could not encode that image.');
+
+        const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+        const hash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+        const existing = await dbFindAttachmentByHash(hash);
+        if (existing) return existing;
+
+        const rec = { id: 'att_' + hash.slice(0, 24), hash, blob, mime, size: blob.size, width: outW, height: outH, createdAt: Date.now() };
+        await dbPutAttachment(rec);
+        return rec;
+    }
+
+    /* ═════════════ Attachments: reference counting ═════════════ */
+    const ATTACH_REF_RE = /attachment:\/\/([a-zA-Z0-9_-]+)/g;
+    function extractAttachmentIds(markdown) {
+        const ids = new Set();
+        if (!markdown) return ids;
+        ATTACH_REF_RE.lastIndex = 0;
+        let m;
+        while ((m = ATTACH_REF_RE.exec(markdown))) ids.add(m[1]);
+        return ids;
+    }
+    // Diffs a note's current attachment references against what was last synced for it, and
+    // only touches the attachmentRefs rows that actually changed. Called from flushSave, so it
+    // runs on every persisted edit — a note that never had attachments never touches this store.
+    async function syncAttachmentRefs(noteId, markdown) {
+        const nextIds = extractAttachmentIds(markdown);
+        const prevIds = S.noteAttachRefCache.get(noteId) || new Set();
+        if (nextIds.size === prevIds.size && [...nextIds].every((id) => prevIds.has(id))) return;
+        const added = [...nextIds].filter((id) => !prevIds.has(id));
+        const removed = [...prevIds].filter((id) => !nextIds.has(id));
+        for (const id of added) {
+            const rec = (await dbGetAttachmentRefs(id)) || { id, notes: [] };
+            if (!rec.notes.includes(noteId)) rec.notes.push(noteId);
+            await dbPutAttachmentRefs(rec);
+        }
+        for (const id of removed) {
+            const rec = await dbGetAttachmentRefs(id);
+            if (!rec) continue;
+            rec.notes = rec.notes.filter((n) => n !== noteId);
+            await dbPutAttachmentRefs(rec);
+        }
+        S.noteAttachRefCache.set(noteId, nextIds);
+    }
+    // Called when a note is permanently erased (purge / empty trash — NOT the ordinary
+    // move-to-Trash, since a trashed note can still be restored with its images intact).
+    async function releaseNoteAttachments(noteId) {
+        const ids = S.noteAttachRefCache.get(noteId);
+        S.noteAttachRefCache.delete(noteId);
+        if (!ids || !ids.size) return;
+        for (const id of ids) {
+            const rec = await dbGetAttachmentRefs(id).catch(() => null);
+            if (!rec) continue;
+            rec.notes = rec.notes.filter((n) => n !== noteId);
+            await dbPutAttachmentRefs(rec).catch(() => {});
+        }
+    }
+    // Deletes every attachment whose refs row exists but lists no live notes. Manual/on-demand
+    // (wired to a button in Manage storage) rather than automatic, so nothing is ever deleted
+    // without the person asking for it.
+    async function pruneOrphanAttachments() {
+        const refs = await dbGetAllAttachmentRefs();
+        let freed = 0, count = 0;
+        for (const r of refs) {
+            if (r.notes && r.notes.length) continue;
+            const rec = await dbGetAttachment(r.id).catch(() => null);
+            if (rec) freed += rec.size || 0;
+            await dbDeleteAttachment(r.id).catch(() => {});
+            await dbDeleteAttachmentRefs(r.id).catch(() => {});
+            count++;
+        }
+        return { count, freed };
     }
 
     const FOLDER_ICONS = [
@@ -37688,7 +37918,14 @@ kbd {
             target.innerHTML = '<pre style="white-space:pre-wrap">' + esc(md) + '</pre>';
             return;
         }
-        html = DOMPurify.sanitize(html, { FORBID_TAGS: ['style'] });
+        // DOMPurify's default ALLOWED_URI_REGEXP only accepts a small whitelist of protocols
+        // (http, https, mailto, …) in src/href — "attachment:" isn't in it, so an attached
+        // image's src would otherwise get silently stripped. Extend the same default regex
+        // rather than replacing it, so nothing else about link sanitisation changes.
+        html = DOMPurify.sanitize(html, {
+            FORBID_TAGS: ['style'],
+            ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|attachment):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+        });
         const tpl = document.createElement('template');
         tpl.innerHTML = html;
         linkifyWikilinks(tpl.content);
@@ -37719,6 +37956,112 @@ kbd {
         renderFootnotes(tpl.content, footnoteDefs);
         target.replaceChildren(tpl.content);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
+        resolveAttachments(target);
+    }
+
+    // Swaps every <img src="attachment://ID"> left over from marked/DOMPurify for a real
+    // blob: URL read out of the attachments store, and wires the click-to-open popover.
+    // Object URLs from the *previous* render are revoked first — nothing here is cached
+    // across renders, since the note being shown can change at any time.
+    async function resolveAttachments(target) {
+        S.attachObjectUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } });
+        S.attachObjectUrls = [];
+        const imgs = Array.from(target.querySelectorAll('img[src^="attachment://"]'));
+        for (const img of imgs) {
+            const id = img.getAttribute('src').slice('attachment://'.length);
+            img.removeAttribute('src');
+            let rec = null;
+            try { rec = await dbGetAttachment(id); } catch (e) { /* treated as missing below */ }
+            if (!target.isConnected) return;   // the view moved on while this lookup was in flight
+            if (!rec) {
+                img.setAttribute('data-nv-attach-missing', '');
+                img.alt = (img.alt || 'image') + ' (attachment no longer available)';
+                continue;
+            }
+            const url = URL.createObjectURL(rec.blob);
+            S.attachObjectUrls.push(url);
+            img.src = url;
+            img.setAttribute('data-nv-attach', id);
+            img.addEventListener('click', (e) => { e.preventDefault(); openAttachMenu(rec, img); });
+        }
+    }
+
+    /* ── "Open image externally" — a tiny fixed-position popover, not an editor ── */
+    let attachMenuEl = null, attachMenuOutsideHandler = null;
+    function closeAttachMenu() {
+        if (!attachMenuEl) return;
+        attachMenuEl.remove();
+        attachMenuEl = null;
+        if (attachMenuOutsideHandler) {
+            document.removeEventListener('pointerdown', attachMenuOutsideHandler, true);
+            document.removeEventListener('keydown', attachMenuOutsideHandler, true);
+            attachMenuOutsideHandler = null;
+        }
+    }
+    function openAttachMenu(rec, imgEl) {
+        closeAttachMenu();
+        const menu = document.createElement('div');
+        menu.className = 'nv-attach-menu nv-open';
+        menu.setAttribute('role', 'menu');
+        const dims = rec.width && rec.height ? rec.width + '\u00d7' + rec.height + ' \u00b7 ' : '';
+        menu.innerHTML =
+            '<div class="nv-attach-meta">' + esc(dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || 'image')) + '</div>'
+            + '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>'
+            + '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>'
+            + '<button type="button" class="nv-act" data-act="save"><i class="fa-solid fa-download" aria-hidden="true"></i> Save as…</button>'
+            + '<button type="button" class="nv-act nv-danger" data-act="delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>';
+        document.body.appendChild(menu);
+        const r = imgEl.getBoundingClientRect();
+        const top = Math.min(window.innerHeight - menu.offsetHeight - 8, r.bottom + 6);
+        const left = Math.min(window.innerWidth - menu.offsetWidth - 8, r.left);
+        menu.style.top = Math.max(8, top) + 'px';
+        menu.style.left = Math.max(8, left) + 'px';
+        menu.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-act]');
+            if (!btn) return;
+            const act = btn.getAttribute('data-act');
+            closeAttachMenu();
+            if (act === 'open') {
+                const url = URL.createObjectURL(rec.blob);
+                window.open(url, '_blank', 'noopener');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } else if (act === 'copy') {
+                try {
+                    if (navigator.clipboard && window.ClipboardItem) {
+                        await navigator.clipboard.write([new ClipboardItem({ [rec.mime]: rec.blob })]);
+                        flash('Image copied');
+                    } else { flash('Copy isn’t supported in this browser'); }
+                } catch (err) { flash('Couldn’t copy that image'); }
+            } else if (act === 'save') {
+                const ext = (rec.mime && rec.mime.split('/')[1]) || 'webp';
+                const url = URL.createObjectURL(rec.blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = rec.id + '.' + ext;
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 2000);
+            } else if (act === 'delete') {
+                if (!confirm('Remove this image from the note? The file stays stored until Storage → Clean up unused attachments is run, in case you undo.')) return;
+                if (S.note && S.mode === 'edit') {
+                    const md = S.note.markdown.replace(new RegExp('!\\[[^\\]]*\\]\\(attachment://' + rec.id + '\\)'), '');
+                    S.note.markdown = md;
+                    if (el.src) el.src.value = md;
+                    markDirty();
+                    renderInto(el.read, md);
+                    toast('Image removed from the note');
+                } else {
+                    imgEl.remove();
+                }
+            }
+        });
+        setTimeout(() => {
+            attachMenuOutsideHandler = (e) => {
+                if (e.type === 'keydown' && e.key !== 'Escape') return;
+                if (e.type === 'pointerdown' && menu.contains(e.target)) return;
+                closeAttachMenu();
+            };
+            document.addEventListener('pointerdown', attachMenuOutsideHandler, true);
+            document.addEventListener('keydown', attachMenuOutsideHandler, true);
+        }, 0);
     }
 
     // Syntax-highlight fenced code blocks (```js, ```py, …) with highlight.js, and tag each
@@ -38547,6 +38890,7 @@ kbd {
         try {
             await captureOriginal(n);
             await dbPut(n);
+            syncAttachmentRefs(n.id, n.markdown).catch((e) => console.warn('Notes Vault: attachment ref sync failed', e));
             if (!S.persisted) { S.persisted = true; if (!S.notes.includes(n)) S.notes.push(n); }
             // A note keeps no "base title" to compare against until it's first persisted; once
             // it exists, later renames in the same session need something to diff against too.
@@ -38749,6 +39093,7 @@ kbd {
         await dbDelete(id);
         try { await revDeleteForNote(id); } catch (e) { /* history is best-effort */ }
         try { await clearLinkedFile(id); } catch (e) { /* ignore */ }
+        try { await releaseNoteAttachments(id); } catch (e) { /* attachments become orphans, catchable by "Clean up unused" */ }
         clearPendingRelink(id);
         S.trash = S.trash.filter((x) => x.id !== id);
         foldCache.delete(id);
@@ -38764,6 +39109,7 @@ kbd {
             await dbDelete(n.id);
             try { await revDeleteForNote(n.id); } catch (e) { /* history is best-effort */ }
             try { await clearLinkedFile(n.id); } catch (e) { /* ignore */ }
+            try { await releaseNoteAttachments(n.id); } catch (e) { /* attachments become orphans, catchable by "Clean up unused" */ }
             clearPendingRelink(n.id);
             foldCache.delete(n.id);
         }
@@ -39529,8 +39875,47 @@ kbd {
         } catch (e) { /* offline, blocked by CORS, or timed out — the domain-based guess stands */ }
     }
 
+    function getImageFilesFromClipboard(cd) {
+        if (!cd) return [];
+        const files = [];
+        if (cd.files && cd.files.length) {
+            for (const f of cd.files) if (/^image\//.test(f.type)) files.push(f);
+        }
+        if (!files.length && cd.items && cd.items.length) {
+            for (const it of cd.items) {
+                if (it.kind === 'file' && /^image\//.test(it.type)) { const f = it.getAsFile(); if (f) files.push(f); }
+            }
+        }
+        return files;
+    }
+    // Runs a pasted/dropped image through the attachment pipeline, showing an inline
+    // "Uploading…" placeholder while it works so the caret position isn't left guessing.
+    async function insertAttachments(files) {
+        const ta = el.src;
+        for (const file of files) {
+            const placeholder = '![Uploading…]()';
+            const s = ta.selectionStart, en = ta.selectionEnd;
+            replaceRange(s, en, placeholder, s + placeholder.length);
+            markDirty();
+            let md, err;
+            try {
+                const rec = await ingestAttachment(file);
+                const alt = (file.name || 'image').replace(/\.[a-z0-9]+$/i, '').trim() || 'image';
+                md = '![' + alt + '](attachment://' + rec.id + ')';
+            } catch (e) {
+                err = e; md = '';
+            }
+            const idx = ta.value.indexOf(placeholder);
+            if (idx !== -1) replaceRange(idx, idx + placeholder.length, md, idx + md.length);
+            else if (md) { const p = ta.selectionStart; replaceRange(p, p, md, p + md.length); }
+            markDirty();
+            if (err) toast(err.message || 'Could not attach that image.');
+        }
+    }
     function onEditorPaste(e) {
         const ta = el.src, s = ta.selectionStart, en = ta.selectionEnd;
+        const imgFiles = getImageFilesFromClipboard(e.clipboardData);
+        if (imgFiles.length) { e.preventDefault(); insertAttachments(imgFiles); return; }
         const t = ((e.clipboardData && e.clipboardData.getData('text/plain')) || '').trim();
         const isLoneUrl = /^https?:\/\/\S+$/.test(t);
         // Paste a URL over selected words → [words](url)
@@ -40202,10 +40587,10 @@ kbd {
         if (!stats || !stats.browser.supported || !stats.browser.quota) {
             el.storBody.innerHTML =
                 '<div class="nv-stor-unsupported"><i class="fa-solid fa-database" aria-hidden="true"></i>This browser doesn\'t report overall storage usage, but here\'s what the vault itself holds.</div>'
-                + '<div class="nv-stor-section"><div class="nv-stor-section-title">Vault (estimated)</div>'
+                + '<div class="nv-stor-section"><div class="nv-stor-section-title">Vault</div>'
                 + storRowHtml('Notes', stats ? stats.vault.notesBytes : 0, true)
                 + storRowHtml('Version history', stats ? stats.vault.revisionsBytes : 0, true)
-                + storRowHtml('Attachments', stats ? stats.vault.attachmentsBytes : 0, true)
+                + storRowHtml('Attachments', stats ? stats.vault.attachmentsBytes : 0, false)
                 + '</div>';
             return;
         }
@@ -40217,15 +40602,31 @@ kbd {
             '<div class="nv-stor-meter" data-level="' + esc(health.level) + '"><div class="nv-stor-meter-fill" style="width:' + Math.max(2, pct) + '%"></div></div>'
             + '<div class="nv-stor-headline">' + pct + '% used — ' + esc(fmtBytes(stats.browser.usage)) + ' of ' + esc(fmtBytes(stats.browser.quota)) + '</div>'
             + '<p class="nv-stor-msg' + msgClass + '">' + esc(msg) + '</p>'
-            + '<div class="nv-stor-section"><div class="nv-stor-section-title">Vault (estimated)</div>'
+            + '<div class="nv-stor-section"><div class="nv-stor-section-title">Vault</div>'
             + storRowHtml('Notes', stats.vault.notesBytes, true)
             + storRowHtml('Version history', stats.vault.revisionsBytes, true)
-            + storRowHtml('Attachments', stats.vault.attachmentsBytes, true)
+            + storRowHtml('Attachments', stats.vault.attachmentsBytes, false)
             + '</div>'
             + '<div class="nv-stor-section"><div class="nv-stor-section-title">Everything else in this app</div>'
             + storRowHtml('Other app data', stats.localStorage.bytes, true)
             + '</div>'
-            + '<p class="nv-stor-note">Notes and version history are estimated from record size — browsers don\'t expose an exact per-store figure. Attachments (once added) will be exact.</p>';
+            + '<p class="nv-stor-note">Notes and version history are estimated from record size — browsers don\'t expose an exact per-store figure. Attachments are exact, since every stored image carries a real byte size.</p>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorPrune" style="margin-top:2px;"><i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments</button>';
+        const pruneBtn = $('nvStorPrune');
+        if (pruneBtn) pruneBtn.onclick = onPruneAttachmentsClick;
+    }
+    async function onPruneAttachmentsClick() {
+        const btn = $('nvStorPrune');
+        if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+        try {
+            const { count, freed } = await pruneOrphanAttachments();
+            flash(count ? 'Removed ' + count + (count === 1 ? ' unused image' : ' unused images') + ' — freed ' + fmtBytes(freed) : 'No unused attachments found');
+            await renderStorBody();
+        } catch (e) {
+            console.warn('Notes Vault: prune attachments failed', e);
+            flash('Couldn’t clean up attachments');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments'; }
+        }
     }
     async function openStorModal() {
         if (!S.open || !el.stor) return;
@@ -40542,6 +40943,13 @@ kbd {
         });
         el.src.addEventListener('keydown', onEditorKey);
         el.src.addEventListener('paste', onEditorPaste);
+        el.src.addEventListener('dragover', (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) e.preventDefault(); });
+        el.src.addEventListener('drop', (e) => {
+            const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files).filter((f) => /^image\//.test(f.type)) : [];
+            if (!files.length) return;
+            e.preventDefault();
+            insertAttachments(files);   // inserts at the current selection — dropping doesn't move the caret in a plain <textarea>
+        });
         ['keyup', 'mouseup', 'input', 'focus'].forEach((ev) => el.src.addEventListener(ev, () => { refreshToolbar(); checkWlTrigger(); }));
         el.src.addEventListener('blur', () => setTimeout(closeWlPopup, 150));   // delayed so a click on the popup still registers first
         if (el.wlPop) {
