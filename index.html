@@ -8669,6 +8669,7 @@
             max-width: calc(100vw - 40px);
             height: 320px;
             max-height: calc(100vh - 120px);
+            max-height: calc(100dvh - 120px);
             background: linear-gradient(155deg, #fff8fa 0%, #fdeef4 55%, #fbe8f3 100%);
             border: 1px solid rgba(219, 113, 175, 0.22);
             border-radius: 16px;
@@ -35818,6 +35819,57 @@ kbd {
     .nvg-side { position: absolute; right: 0; top: 0; bottom: 0; width: min(84vw, 320px); z-index: 5; transform: translateX(100%); transition: transform 0.2s ease; box-shadow: -10px 0 24px rgba(74,50,64,0.14); }
     .nvg-side.nvg-side-open { transform: none; }
     .nvg-title p, .nvg-search { display: none; }
+}
+
+/* ═════════════ iOS polish — vault dropdowns become bottom sheets ═════════════
+   .nv-menu (gear / sort / filter / doc / tools) and .nv-attach-menu (the
+   image Open/Copy/Save/Delete popover) are corner dropdowns on desktop.
+   On a phone, a menu pinned to wherever you happened to tap is awkward to
+   reach one-handed. Below this width they become full-width sheets that
+   slide up from the bottom instead — same markup, same JS, no logic changes.
+   !important on position/inset is required only because openAttachMenu()
+   sets an inline top/left in JS for its desktop placement; these rules
+   simply take priority over that inline style at phone widths. */
+@media (max-width: 640px) {
+    .nv-menu, .nv-attach-menu {
+        position: fixed !important;
+        top: auto !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+        width: 100% !important; max-width: 100% !important; min-width: 0 !important;
+        max-height: min(72vh, 72dvh);
+        overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+        border-radius: 18px 18px 0 0; border-width: 1px 0 0 0;
+        padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+        box-shadow: 0 -10px 30px rgba(74, 50, 64, 0.2);
+        animation: nvSheetUp 0.16s ease-out;
+    }
+    /* the "flip upward" variant used when a menu button sits near the bottom
+       of the screen collapses to the exact same sheet — there's no "up" left
+       to flip to once the menu already owns the bottom edge. */
+    .nv-menu.nv-up { top: auto !important; bottom: 0 !important; left: 0 !important; }
+    .nv-attach-meta { padding: 4px 6px 10px; }
+    /* Apple's 44pt minimum tap target, for every row inside these sheets. */
+    .nv-act { min-height: 44px; padding: 10px 10px; font-size: 0.92rem; }
+    .nv-act > i { font-size: 0.9rem; }
+}
+@keyframes nvSheetUp {
+    from { transform: translateY(12%); opacity: 0.4; }
+    to { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .nv-menu, .nv-attach-menu { animation: none; }
+}
+
+/* Storage Manager, full-screen on a phone (see the 620px rule above): clear
+   the Dynamic Island / notch at the top and the home-indicator bar at the
+   bottom, and give every row and tab a real touch target. */
+@media (max-width: 620px) {
+    .nv-stor-bar { padding-top: calc(12px + env(safe-area-inset-top)); }
+    .nv-stor-body { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+    .nv-stor-tab { min-height: 36px; padding: 8px 14px; }
+    .nv-stor-row { min-height: 44px; }
+    .nv-stor-imgcard { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    .nv-ib { width: 40px; height: 40px; }
+    .nv-row-acts .nv-ib { width: 36px; height: 36px; }
 }
 
 </style>
@@ -75323,6 +75375,53 @@ Here is my current progress summary:
   input[type="search"], input[type="tel"], input[type="datetime-local"] {
     font-size: 16px !important;
   }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   iOS NATIVE FEEL — ONE GLOBAL LAYER, APPLIES TO EVERY MODAL/PANEL/MENU
+   ═════════════════════════════════════════════════════════════════════════
+   This app has ~20 independent modal systems (vault, wellness, deep-work
+   tasks, deals, books, calendar, sleep…), each with its own CSS. Restyling
+   every one by hand would mean touching dozens of unrelated blocks for the
+   same handful of fixes. Instead this section targets them by their shared
+   *naming convention* (modal/panel/sheet/menu/overlay/scroll/body/list, any
+   case) with properties that are inert unless the element actually needs
+   them — so it's safe to apply broadly and doesn't require re-testing every
+   subsystem individually. Nothing here changes colors, sizing, or layout;
+   it only changes how touch input behaves. */
+
+/* Real bounce/deceleration + no scroll-chaining, wherever something scrolls. */
+[class*="scroll" i], [class*="body" i], [class*="list" i],
+[class*="modal" i], [class*="panel" i], [class*="sheet" i],
+[class*="menu" i], [class*="overlay" i],
+[id*="scroll" i], [id*="body" i], [id*="modal" i],
+[id*="panel" i], [id*="sheet" i], [id*="menu" i], [id*="overlay" i] {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+/* The page itself shouldn't rubber-band/bounce past its own top or bottom —
+   that "whole page slides" feel reads as a website, not an app. */
+html, body { overscroll-behavior-y: none; }
+body { min-height: 100vh; min-height: 100dvh; }
+
+/* No gray flash on tap, no 300ms tap delay, no double-tap-to-zoom on
+   anything meant to be pressed — while leaving pinch-zoom (set to allowed
+   in the viewport meta tag) untouched everywhere else. */
+button, a, [role="button"], summary,
+input[type="button"], input[type="submit"], input[type="reset"] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+/* No text-selection bubble or long-press callout menu on controls — those
+   are for reading content, not for buttons. Note text, inputs, and anything
+   marked selectable on purpose are deliberately left alone. */
+button, [role="button"], summary,
+input[type="button"], input[type="submit"], input[type="reset"] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 </style>
 <!-- SVG sprite: Lucide icons (ISC License) — semantic icons replacing emoji in the Daily Planning Ritual popups -->
