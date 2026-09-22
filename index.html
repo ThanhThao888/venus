@@ -34842,11 +34842,25 @@ window.DBP={
     line-height: 1.45;
 }
 .dark-mode #nvOverlay {
+    /* Scoped, softer "deep plum" dark palette for the Vault only — a bit lighter and
+       less saturated than the host page's dark-mode tokens, so the card reads as a
+       warm charcoal instead of near-black, and the pink accent doesn't glare. */
+    --bg-white: #241c28;
+    --bg-light: #1b1420;
+    --border-color: #3c3040;
+    --text-dark: #ece4ec;
+    --text-muted: #a99bab;
+    --primary: #e2a0bf;
+    --primary-dark: #f0c4da;
+    --primary-light: #40303c;
+    --primary-rgb: 226, 160, 191;
     --nv-btn-bg: var(--primary);
     --nv-btn-ink: #2a1420;
     --nv-danger: #ff8a98;
     --nv-ok: #6fd0a3;
-    background: rgba(8, 4, 8, 0.66);
+    --glass-bg: rgba(36, 28, 40, 0.78);
+    --glass-border: rgba(226, 160, 191, 0.20);
+    background: rgba(10, 6, 12, 0.6);
 }
 #nvOverlay.nv-on { display: flex; }
 #nvOverlay [hidden] { display: none !important; }
@@ -35353,6 +35367,20 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-wl-pop li.nv-wl-hint { cursor: default; color: var(--text-muted); font-size: 0.72rem; padding: 6px 10px 3px; white-space: normal; }
 .nv-wl-pop li.nv-wl-hint:hover { background: none; }
 
+/* ── Themed suggestion combobox — replaces native <datalist> popups (Folder, Tags,
+   Course, filter Tag) which render with unstyled browser/OS chrome and looked
+   glaringly out of place, especially in dark mode. Same visual language as .nv-wl-pop. ── */
+.nv-combo { position: relative; }
+.nv-combo-pop {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 45;
+    list-style: none; margin: 0; padding: 4px;
+    max-height: 220px; overflow-y: auto;
+    background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+}
+.nv-combo-opt { padding: 7px 10px; border-radius: 7px; font-size: 0.84rem; color: var(--text-dark); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-combo-opt:hover, .nv-combo-opt.nv-combo-sel { background: var(--nv-active); }
+
 /* ═════════════ Status bar ═════════════ */
 .nv-status {
     grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 14px;
@@ -35750,8 +35778,10 @@ kbd {
                         </div>
                         <div class="nv-ffield">
                             <label for="nvFTag">Tag</label>
-                            <input type="text" id="nvFTag" list="nvFTagList" autocomplete="off" spellcheck="false" placeholder="e.g. accounting, cfa">
-                            <datalist id="nvFTagList"></datalist>
+                            <div class="nv-combo">
+                                <input type="text" id="nvFTag" autocomplete="off" spellcheck="false" placeholder="e.g. accounting, cfa">
+                                <ul class="nv-combo-pop" id="nvFTagPop" role="listbox" aria-label="Tag suggestions" hidden></ul>
+                            </div>
                         </div>
                         <div class="nv-ffield">
                             <label for="nvFCreated">Created</label>
@@ -35894,11 +35924,17 @@ kbd {
         <div class="nv-insp-body" id="nvPaneInfo" role="tabpanel" aria-labelledby="nvTabInfo">
             <div class="nv-field">
                 <label class="nv-lbl" for="nvFolderIn">Folder</label>
-                <div><input type="text" id="nvFolderIn" list="nvFolderList" autocomplete="off" placeholder="General"><datalist id="nvFolderList"></datalist></div>
+                <div class="nv-combo">
+                    <input type="text" id="nvFolderIn" autocomplete="off" placeholder="General">
+                    <ul class="nv-combo-pop" id="nvFolderPop" role="listbox" aria-label="Folder suggestions" hidden></ul>
+                </div>
             </div>
             <div class="nv-field nv-stack">
                 <label class="nv-lbl" for="nvTagIn">Tags</label>
-                <div class="nv-tagbox" id="nvTagBox"><input type="text" id="nvTagIn" list="nvTagList" autocomplete="off" placeholder="Add tag" aria-label="Add tag"><datalist id="nvTagList"></datalist></div>
+                <div class="nv-combo">
+                    <div class="nv-tagbox" id="nvTagBox"><input type="text" id="nvTagIn" autocomplete="off" placeholder="Add tag" aria-label="Add tag"></div>
+                    <ul class="nv-combo-pop" id="nvTagPop" role="listbox" aria-label="Tag suggestions" hidden></ul>
+                </div>
             </div>
             <div class="nv-field nv-stack">
                 <label class="nv-lbl" for="nvLinkedCareer">Linked skill</label>
@@ -35907,7 +35943,7 @@ kbd {
                     <select id="nvLinkedSkill" aria-label="Skill" disabled><option value="">No skill selected</option></select>
                 </div>
             </div>
-            <div class="nv-field"><label class="nv-lbl" for="nvCourse">Course</label><div><input type="text" id="nvCourse" list="nvCourseList" autocomplete="off" placeholder="e.g. MIT 14.13"><datalist id="nvCourseList"></datalist></div></div>
+            <div class="nv-field"><label class="nv-lbl" for="nvCourse">Course</label><div class="nv-combo"><input type="text" id="nvCourse" autocomplete="off" placeholder="e.g. MIT 14.13"><ul class="nv-combo-pop" id="nvCoursePop" role="listbox" aria-label="Course suggestions" hidden></ul></div></div>
             <div class="nv-field"><label class="nv-lbl" for="nvDeadline">Deadline</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div></div>
             <div class="nv-field"><span class="nv-lbl">Created</span><div class="nv-val" id="nvCreated">—</div></div>
             <div class="nv-field"><span class="nv-lbl">Updated</span><div class="nv-val" id="nvUpdated">—</div></div>
@@ -36866,7 +36902,9 @@ kbd {
         el.fFolder.innerHTML = '<option value="">Any folder</option>' + fl.map(([k, f]) => `<option value="${esc(k)}">${esc(f.label)}</option>`).join('');
         if (fl.some(([k]) => k === cur)) el.fFolder.value = cur;
         const tl = [...S.tmap.values()].sort((a, b) => a.label.localeCompare(b.label));
-        el.fTagList.innerHTML = tl.map((g) => `<option value="${esc(g.label)}">`).join('');
+        // Feeds both the filter panel's Tag combo and the note-info Tags combo (attachCombo) —
+        // this runs more often than renderDatalists(), so it's the freshest source.
+        S.tagOpts = tl.map((g) => g.label);
     }
 
     function renderSide() {
@@ -37574,14 +37612,15 @@ kbd {
             folders.set(typeKey(n.type), normType(n.type));
             n.tags.forEach((t) => tags.set(t.toLowerCase(), t));
         });
-        el.folderList.innerHTML = [...folders.values()].sort().map((l) => `<option value="${esc(l)}"></option>`).join('');
-        el.tagList.innerHTML = [...tags.values()].sort().map((l) => `<option value="${esc(l)}"></option>`).join('');
+        // Feeds the themed .nv-combo suggestion popups (Folder / Tags / filter Tag) —
+        // see attachCombo(). Kept as plain arrays rather than a native <datalist> so the
+        // dropdown can be styled to match the app instead of showing bare browser chrome.
+        S.folderOpts = [...folders.values()].sort();
+        S.tagOpts = [...tags.values()].sort();
         // Suggests real Courses-tracker titles as the person types in the Course field —
         // picking one exactly is what makes resolveCourseLink() auto-link it (see the
         // nvCourse input listener). typeof-guarded since `courses` lives in a later script.
-        if (el.courseList && typeof courses !== 'undefined') {
-            el.courseList.innerHTML = courses.map((c) => `<option value="${esc(c.title)}"></option>`).join('');
-        }
+        S.courseOpts = (typeof courses !== 'undefined') ? courses.map((c) => c.title) : [];
     }
 
     function actionList() {
@@ -39764,6 +39803,66 @@ kbd {
         }
     }
 
+    /* ── Themed replacement for native <datalist> suggestion popups (.nv-combo-pop). Wires
+       an input to a filtered, clickable, keyboard-navigable dropdown of options.
+       opts: { getOptions(): string[], multi (comma-separated field), onPick(value),
+       enterPicks (default true — set false when the input already has its own Enter
+       behaviour, e.g. the tag box) }. ── */
+    function attachCombo(input, popEl, opts) {
+        if (!input || !popEl) return;
+        const { getOptions, multi = false, onPick, enterPicks = true } = opts;
+        let items = [], sel = -1;
+        const query = () => {
+            const v = input.value;
+            return (multi ? v.slice(v.lastIndexOf(',') + 1) : v).trim().toLowerCase();
+        };
+        const close = () => { popEl.hidden = true; popEl.innerHTML = ''; items = []; sel = -1; };
+        const render = () => {
+            const q = query();
+            const all = (getOptions() || []).filter((v) => v && v.toLowerCase() !== q);
+            items = (q ? all.filter((v) => v.toLowerCase().includes(q)) : all).slice(0, 8);
+            if (!items.length) { close(); return; }
+            sel = -1;
+            popEl.innerHTML = items.map((v, i) => `<li class="nv-combo-opt" data-i="${i}" role="option">${esc(v)}</li>`).join('');
+            popEl.hidden = false;
+        };
+        const move = (d) => {
+            if (!items.length) return;
+            sel = (sel + d + items.length) % items.length;
+            [...popEl.children].forEach((li, i) => li.classList.toggle('nv-combo-sel', i === sel));
+            popEl.children[sel] && popEl.children[sel].scrollIntoView({ block: 'nearest' });
+        };
+        const pick = (i) => {
+            const v = items[i];
+            if (v == null) return;
+            close();
+            if (onPick) { onPick(v); return; }
+            if (multi) {
+                const raw = input.value, cut = raw.lastIndexOf(',');
+                input.value = (cut >= 0 ? raw.slice(0, cut + 1) + ' ' : '') + v;
+            } else {
+                input.value = v;
+            }
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+        };
+        input.addEventListener('input', render);
+        input.addEventListener('focus', render);
+        input.addEventListener('keydown', (e) => {
+            if (popEl.hidden) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+            else if (e.key === 'Escape') { close(); }
+            else if (e.key === 'Enter' && enterPicks && sel >= 0) { e.preventDefault(); pick(sel); }
+        });
+        popEl.addEventListener('mousedown', (e) => e.preventDefault());  // don't steal focus before the click lands
+        popEl.addEventListener('click', (e) => {
+            const li = e.target.closest('.nv-combo-opt');
+            if (li) pick(+li.dataset.i);
+        });
+        input.addEventListener('blur', () => { setTimeout(close, 120); });
+    }
+
     /* ═════════════ Wiring ═════════════ */
     function init() {
         el = {
@@ -39776,8 +39875,8 @@ kbd {
             read: $('nvRead'), src: $('nvSrc'), modeRead: $('nvModeRead'), modeEdit: $('nvModeEdit'),
             moreBtn: $('nvMoreBtn'), docMenu: $('nvDocMenu'), inspBtn: $('nvInspBtn'), focusBtn: $('nvFocusBtn'), fsDown: $('nvFsDown'), fsUp: $('nvFsUp'), widthBtn: $('nvWidthBtn'),
             insp: $('nvInsp'), tabInfo: $('nvTabInfo'), tabOutline: $('nvTabOutline'), paneInfo: $('nvPaneInfo'), paneOutline: $('nvPaneOutline'),
-            folderIn: $('nvFolderIn'), folderList: $('nvFolderList'), tagBox: $('nvTagBox'), tagIn: $('nvTagIn'), tagList: $('nvTagList'),
-            linkedCareer: $('nvLinkedCareer'), linkedSkill: $('nvLinkedSkill'), course: $('nvCourse'), courseList: $('nvCourseList'), deadline: $('nvDeadline'),
+            folderIn: $('nvFolderIn'), folderPop: $('nvFolderPop'), tagBox: $('nvTagBox'), tagIn: $('nvTagIn'), tagPop: $('nvTagPop'),
+            linkedCareer: $('nvLinkedCareer'), linkedSkill: $('nvLinkedSkill'), course: $('nvCourse'), coursePop: $('nvCoursePop'), deadline: $('nvDeadline'),
             created: $('nvCreated'), updated: $('nvUpdated'), words: $('nvWords'), chars: $('nvChars'), readTime: $('nvReadTime'),
             actions: $('nvActions'), outline: $('nvOutline'),
             tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
@@ -39789,7 +39888,7 @@ kbd {
             emptyTrash: $('nvEmptyTrash'), toast: $('nvToast'), toastTxt: $('nvToastTxt'), toastBtn: $('nvToastBtn'),
             sortBtn: $('nvSortBtn'), sortMenu: $('nvSortMenu'),
             filterBtn: $('nvFilterBtn'), filterMenu: $('nvFilterMenu'), filterDot: $('nvFilterDot'),
-            fType: $('nvFType'), fFolder: $('nvFFolder'), fTag: $('nvFTag'), fTagList: $('nvFTagList'),
+            fType: $('nvFType'), fFolder: $('nvFFolder'), fTag: $('nvFTag'), fTagPop: $('nvFTagPop'),
             fCreated: $('nvFCreated'), fUpdated: $('nvFUpdated'),
             fChecklist: $('nvFChecklist'), fCode: $('nvFCode'), fLink: $('nvFLink'), fPinned: $('nvFPinned'),
             filterClear: $('nvFilterClear'),
@@ -39983,6 +40082,7 @@ kbd {
             markDirty();
         });
         el.folderIn.addEventListener('blur', () => { if (S.note) el.folderIn.value = normType(S.note.type); });
+        attachCombo(el.folderIn, el.folderPop, { getOptions: () => S.folderOpts || [] });
 
         if (el.linkedCareer) el.linkedCareer.addEventListener('change', () => {
             if (!S.note) return;
@@ -40009,6 +40109,7 @@ kbd {
             markDirty();
             if (window.nvRefreshCourseBadges) window.nvRefreshCourseBadges();
         });
+        attachCombo(el.course, el.coursePop, { getOptions: () => S.courseOpts || [] });
         if (el.deadline) el.deadline.addEventListener('change', () => {
             if (!S.note) return;
             S.note.deadline = el.deadline.value;
@@ -40027,6 +40128,14 @@ kbd {
             }
             if (added) { renderTagChips(); renderDocMeta(); markDirty(); }
         };
+        // enterPicks: false — Enter/comma already commit the typed tag below; a click on a
+        // suggestion commits it immediately via onPick instead of just filling the text.
+        attachCombo(el.tagIn, el.tagPop, {
+            getOptions: () => S.tagOpts || [],
+            multi: true,
+            enterPicks: false,
+            onPick: (v) => { addTags(v); el.tagIn.value = ''; el.tagIn.focus(); }
+        });
         el.tagIn.addEventListener('keydown', (e) => {
             if ((e.key === 'Enter' || e.key === ',') && el.tagIn.value.trim()) {
                 e.preventDefault(); addTags(el.tagIn.value); el.tagIn.value = '';
@@ -40090,6 +40199,7 @@ kbd {
                 applyFilterChange();
             }, 200);
         });
+        attachCombo(el.fTag, el.fTagPop, { getOptions: () => S.tagOpts || [], multi: true });
         el.fCreated.addEventListener('change', () => { S.filters.createdDays = el.fCreated.value; applyFilterChange(); });
         el.fUpdated.addEventListener('change', () => { S.filters.updatedDays = el.fUpdated.value; applyFilterChange(); });
         el.fChecklist.addEventListener('change', () => { S.filters.checklist = el.fChecklist.checked; applyFilterChange(); });
