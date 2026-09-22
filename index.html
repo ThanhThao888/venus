@@ -2964,6 +2964,11 @@
             animation: skillHighlightPulse 2s ease;
             border-radius: var(--radius-lg);
         }
+        /* Same flash, for jumping to a Deal Diary entry from a Notes Vault deal pill */
+        .dd-card.deal-highlight-flash {
+            animation: skillHighlightPulse 2s ease;
+            border-radius: var(--radius-lg);
+        }
         @keyframes skillHighlightPulse {
             0%   { box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.55); background: var(--primary-light); }
             70%  { box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.55); background: var(--primary-light); }
@@ -12027,6 +12032,29 @@
             padding: 5px 12px;
             font-size: 0.76rem;
             border-radius: 999px;
+        }
+
+        /* Note-count badge on a Deal Diary card (Deal Diary ↔ Notes Vault link) —
+           same pill styling as .analysis-note-badge/.resource-note-badge, sitting as
+           the first child of .finance-card-actions before Edit/Delete. */
+        .deal-note-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            background: var(--bg-light);
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            margin-right: auto;
+        }
+        .deal-note-badge:hover {
+            border-color: var(--primary);
+            color: var(--primary);
         }
 
         /* ===== END DEAL DIARY ===== */
@@ -36173,6 +36201,7 @@ kbd {
             <div class="nv-field"><label class="nv-lbl" for="nvCourse">Course</label><div class="nv-combo"><input type="text" id="nvCourse" autocomplete="off" placeholder="e.g. MIT 14.13"><ul class="nv-combo-pop" id="nvCoursePop" role="listbox" aria-label="Course suggestions" hidden></ul></div></div>
             <div class="nv-field"><label class="nv-lbl" for="nvResource">Resource</label><div class="nv-combo"><input type="text" id="nvResource" autocomplete="off" placeholder="e.g. CFA Institute — FSA"><ul class="nv-combo-pop" id="nvResourcePop" role="listbox" aria-label="Resource suggestions" hidden></ul></div></div>
             <div class="nv-field"><label class="nv-lbl" for="nvAnalysis">Analysis</label><div class="nv-combo"><input type="text" id="nvAnalysis" autocomplete="off" placeholder="e.g. VCB DCF Thesis"><ul class="nv-combo-pop" id="nvAnalysisPop" role="listbox" aria-label="Analysis suggestions" hidden></ul></div></div>
+            <div class="nv-field"><label class="nv-lbl" for="nvDeal">Deal</label><div class="nv-combo"><input type="text" id="nvDeal" autocomplete="off" placeholder="e.g. VCB/FPT Merger"><ul class="nv-combo-pop" id="nvDealPop" role="listbox" aria-label="Deal suggestions" hidden></ul></div></div>
             <div class="nv-field"><label class="nv-lbl" for="nvDeadline">Deadline</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div></div>
             <div class="nv-field"><span class="nv-lbl">Created</span><div class="nv-val" id="nvCreated">—</div></div>
             <div class="nv-field"><span class="nv-lbl">Updated</span><div class="nv-val" id="nvUpdated">—</div></div>
@@ -36689,6 +36718,12 @@ kbd {
         // resolveAnalysisLink / nvLinkedAnalysisLive.
         n.analysis = typeof n.analysis === 'string' ? n.analysis : '';
         n.linkedAnalysisId = typeof n.linkedAnalysisId === 'string' ? n.linkedAnalysisId : '';
+        // Deal Diary link (Note ↔ Deal Diary): same pattern again — `deal` is a
+        // free-form text label (kept for graceful degradation if the deal is later
+        // deleted), and linkedDealId holds the real id when it matches an entry in
+        // the global `dealDiary` array. See resolveDealLink / nvLinkedDealLive.
+        n.deal = typeof n.deal === 'string' ? n.deal : '';
+        n.linkedDealId = typeof n.linkedDealId === 'string' ? n.linkedDealId : '';
         return n;
     }
 
@@ -37636,6 +37671,32 @@ kbd {
         await open();
         await setScope('analysis', { id: analysisId, title: a ? a.title : '' });
     }
+    // Deal-side counterpart of getAnalysisLinkCounts: "how many notes point at each
+    // Deal Diary entry?" Shape: { [dealId]: count }. Same direct-IndexedDB read so
+    // the Deal Diary tracker can call it on page load, before the Notes Vault
+    // overlay has ever been opened.
+    async function getDealLinkCounts() {
+        try {
+            const all = await dbGetAll();
+            const counts = {};
+            for (const raw of all) {
+                if (raw.deletedAt) continue;
+                const id = raw.linkedDealId;
+                if (!id) continue;
+                counts[id] = (counts[id] || 0) + 1;
+            }
+            return counts;
+        } catch (e) { console.warn('Notes Vault: could not compute deal link counts', e); return {}; }
+    }
+    // Opens the overlay straight into "notes linked to this one Deal Diary entry" —
+    // the click target for the Deal Diary's Notes badge (see nvApplyDealNoteBadges).
+    // Looks the title up itself from the global dealDiary array so callers only
+    // need to pass the id.
+    async function openForDeal(dealId) {
+        const d = (typeof dealDiary !== 'undefined') ? dealDiary.find((x) => x.id == dealId) : null;
+        await open();
+        await setScope('deal', { id: dealId, title: d ? d.dealName : '' });
+    }
     async function purgeExpired() {                  // Trash empties itself after 30 days
         try {
             const cutoff = Date.now() - TRASH_MS;
@@ -37681,6 +37742,7 @@ kbd {
         else if (kind === 'course') list = S.notes.filter((n) => n.linkedCourseId === value.id);
         else if (kind === 'resource') list = S.notes.filter((n) => n.linkedResourceId === value.id);
         else if (kind === 'analysis') list = S.notes.filter((n) => n.linkedAnalysisId === value.id);
+        else if (kind === 'deal') list = S.notes.filter((n) => n.linkedDealId === value.id);
         else list = S.notes.slice();
         if (active) list = list.filter(passesFilters);
         return sortList(list);
@@ -37770,6 +37832,7 @@ kbd {
         if (sc.kind === 'course') return [sc.value.title || 'Course', `${count} ${pl} linked${fx}`];
         if (sc.kind === 'resource') return [sc.value.title || 'Resource', `${count} ${pl} linked${fx}`];
         if (sc.kind === 'analysis') return [sc.value.title || 'Analysis', `${count} ${pl} linked${fx}`];
+        if (sc.kind === 'deal') return [sc.value.title || 'Deal', `${count} ${pl} linked${fx}`];
         return ['All notes', `${count} ${pl}${fx}`];
     }
 
@@ -37783,7 +37846,7 @@ kbd {
         if (!S.notes.length) {
             return `<div class="nv-empty"><i class="fa-solid fa-feather"></i><strong>Your vault is empty</strong>Paste a prompt, transcript or study note. Everything is saved as Markdown on this device, with no length limit.<br><button type="button" class="nv-btn nv-btn-primary" data-new><i class="fa-solid fa-plus"></i> New note</button></div>`;
         }
-        const msg = { recent: 'Nothing has been edited in the last 7 days.', pinned: 'Pin a note and it will stay at the top of your vault.', skill: 'No notes are linked to this skill yet — open a note, use “Linked skill” in the Info panel.', course: 'No notes are linked to this course yet — “+ New note” here creates one already linked, or set “Course” in any note’s Info panel.', resource: 'No notes are linked to this resource yet — “+ New note” here creates one already linked, or set “Resource” in any note’s Info panel.', analysis: 'No notes are linked to this analysis yet — “+ New note” here creates one already linked, or set “Analysis” in any note’s Info panel.' }[S.scope.kind] || 'There are no notes here yet.';
+        const msg = { recent: 'Nothing has been edited in the last 7 days.', pinned: 'Pin a note and it will stay at the top of your vault.', skill: 'No notes are linked to this skill yet — open a note, use “Linked skill” in the Info panel.', course: 'No notes are linked to this course yet — “+ New note” here creates one already linked, or set “Course” in any note’s Info panel.', resource: 'No notes are linked to this resource yet — “+ New note” here creates one already linked, or set “Resource” in any note’s Info panel.', analysis: 'No notes are linked to this analysis yet — “+ New note” here creates one already linked, or set “Analysis” in any note’s Info panel.', deal: 'No notes are linked to this deal yet — “+ New note” here creates one already linked, or set “Deal” in any note’s Info panel.' }[S.scope.kind] || 'There are no notes here yet.';
         return `<div class="nv-empty"><i class="fa-solid fa-feather"></i><strong>Nothing here</strong>${msg}</div>`;
     }
 
@@ -38535,6 +38598,31 @@ kbd {
         const hit = investmentAnalyses.find((a) => String(a.title || '').trim().toLowerCase() === target);
         return hit || null;
     }
+    // Deal-side counterpart of nvLinkedAnalysisLive — degrades gracefully to a
+    // dead-link pill if the deal was deleted from the Deal Diary after a note
+    // linked to it.
+    function nvLinkedDealLive(n) {
+        if (!n.linkedDealId || typeof dealDiary === 'undefined') return null;
+        return dealDiary.find((d) => d.id == n.linkedDealId) || null;
+    }
+    function renderDealLinkPill(n) {
+        if (!n.linkedDealId) return '';
+        const deal = nvLinkedDealLive(n);
+        if (!deal) {
+            return `<span class="nv-folder-pill nv-skill-pill-dead" title="This deal no longer exists in Deal Diary"><i class="fa-solid fa-link-slash"></i>${esc(n.deal || 'Deal')}</span>`;
+        }
+        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(deal.dealName)}” in Deal Diary" onclick="window.jumpFromNoteToDeal('${esc(deal.id)}')"><i class="fa-solid fa-handshake"></i>${esc(deal.dealName)}</button>`;
+    }
+    // Best-effort resolver for the free-text Deal field against the live Deal
+    // Diary — same philosophy as resolveAnalysisLink: only auto-link on an exact,
+    // unambiguous name match (case-insensitive), otherwise leave it as plain text.
+    function resolveDealLink(text) {
+        if (typeof dealDiary === 'undefined') return null;
+        const target = String(text || '').trim().toLowerCase();
+        if (!target) return null;
+        const hit = dealDiary.find((d) => String(d.dealName || '').trim().toLowerCase() === target);
+        return hit || null;
+    }
     // Notes Vault → Daily Planner: keeps a note's Deadline mirrored as a reminder item in
     // DLT (window.DLT.syncNoteDeadline upserts/removes by note id — see that function for
     // the other half). Called after every successful save, so title/skill-name edits and
@@ -38567,6 +38655,7 @@ kbd {
             + (n.linkedCourseId ? renderCourseLinkPill(n) : (n.course ? `<span title="Course"><i class="fa-solid fa-book" aria-hidden="true"></i> ${esc(n.course)}</span>` : ''))
             + (n.linkedResourceId ? renderResourceLinkPill(n) : (n.resource ? `<span title="Resource"><i class="fa-solid fa-book-open" aria-hidden="true"></i> ${esc(n.resource)}</span>` : ''))
             + (n.linkedAnalysisId ? renderAnalysisLinkPill(n) : (n.analysis ? `<span title="Analysis"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> ${esc(n.analysis)}</span>` : ''))
+            + (n.linkedDealId ? renderDealLinkPill(n) : (n.deal ? `<span title="Deal"><i class="fa-solid fa-handshake" aria-hidden="true"></i> ${esc(n.deal)}</span>` : ''))
             + (n.deadline ? `<span title="Deadline"><i class="fa-solid fa-calendar" aria-hidden="true"></i> ${esc(nvFmtDate(n.deadline))}</span>` : '')
             + '<span class="nv-grow"></span>'
             + `<span title="${esc(fmtFull(n.updatedAt))}">${S.persisted ? 'Edited ' + esc(fmtRel(n.updatedAt)) : 'Not saved yet'}</span>`;
@@ -38608,6 +38697,8 @@ kbd {
         S.resourceOpts = (typeof resourceLibrary !== 'undefined') ? resourceLibrary.map((r) => r.title) : [];
         // Same idea for the Analysis field, sourced from Investment Analysis.
         S.analysisOpts = (typeof investmentAnalyses !== 'undefined') ? investmentAnalyses.map((a) => a.title) : [];
+        // Same idea for the Deal field, sourced from Deal Diary.
+        S.dealOpts = (typeof dealDiary !== 'undefined') ? dealDiary.map((d) => d.dealName) : [];
     }
 
     function actionList() {
@@ -38696,6 +38787,7 @@ kbd {
         if (el.course) el.course.value = n.course || '';
         if (el.resource) el.resource.value = n.resource || '';
         if (el.analysis) el.analysis.value = n.analysis || '';
+        if (el.deal) el.deal.value = n.deal || '';
         if (el.deadline) el.deadline.value = n.deadline || '';
         renderTagChips();
         renderDocMeta();
@@ -38894,6 +38986,12 @@ kbd {
         if (sc.kind === 'analysis' && sc.value && sc.value.id) {
             note.linkedAnalysisId = sc.value.id;
             note.analysis = sc.value.title || '';
+        }
+        // "+ New note" while scoped to a Deal Diary entry (via that tracker's Notes
+        // badge) pre-links it right away, same as the course/resource/analysis cases above.
+        if (sc.kind === 'deal' && sc.value && sc.value.id) {
+            note.linkedDealId = sc.value.id;
+            note.deal = sc.value.title || '';
         }
         S.note = note; S.persisted = false; S.dirty = false;
         S.edited = false; S.editStart = 0; S.base = null;
@@ -41259,7 +41357,7 @@ kbd {
             moreBtn: $('nvMoreBtn'), docMenu: $('nvDocMenu'), inspBtn: $('nvInspBtn'), focusBtn: $('nvFocusBtn'), fsDown: $('nvFsDown'), fsUp: $('nvFsUp'), widthBtn: $('nvWidthBtn'),
             insp: $('nvInsp'), tabInfo: $('nvTabInfo'), tabOutline: $('nvTabOutline'), paneInfo: $('nvPaneInfo'), paneOutline: $('nvPaneOutline'),
             folderIn: $('nvFolderIn'), folderPop: $('nvFolderPop'), tagBox: $('nvTagBox'), tagIn: $('nvTagIn'), tagPop: $('nvTagPop'),
-            linkedCareer: $('nvLinkedCareer'), linkedSkill: $('nvLinkedSkill'), course: $('nvCourse'), coursePop: $('nvCoursePop'), resource: $('nvResource'), resourcePop: $('nvResourcePop'), analysis: $('nvAnalysis'), analysisPop: $('nvAnalysisPop'), deadline: $('nvDeadline'),
+            linkedCareer: $('nvLinkedCareer'), linkedSkill: $('nvLinkedSkill'), course: $('nvCourse'), coursePop: $('nvCoursePop'), resource: $('nvResource'), resourcePop: $('nvResourcePop'), analysis: $('nvAnalysis'), analysisPop: $('nvAnalysisPop'), deal: $('nvDeal'), dealPop: $('nvDealPop'), deadline: $('nvDeadline'),
             created: $('nvCreated'), updated: $('nvUpdated'), words: $('nvWords'), chars: $('nvChars'), readTime: $('nvReadTime'),
             actions: $('nvActions'), outline: $('nvOutline'),
             tabHistory: $('nvTabHistory'), paneHistory: $('nvPaneHistory'), histList: $('nvHistList'),
@@ -41522,6 +41620,16 @@ kbd {
             if (window.nvRefreshAnalysisBadges) window.nvRefreshAnalysisBadges();
         });
         attachCombo(el.analysis, el.analysisPop, { getOptions: () => S.analysisOpts || [] });
+        if (el.deal) el.deal.addEventListener('input', () => {
+            if (!S.note) return;
+            S.note.deal = el.deal.value;
+            const hit = resolveDealLink(el.deal.value);
+            S.note.linkedDealId = hit ? hit.id : '';
+            renderDocMeta();
+            markDirty();
+            if (window.nvRefreshDealBadges) window.nvRefreshDealBadges();
+        });
+        attachCombo(el.deal, el.dealPop, { getOptions: () => S.dealOpts || [] });
         if (el.deadline) el.deadline.addEventListener('change', () => {
             if (!S.note) return;
             S.note.deadline = el.deadline.value;
@@ -42172,6 +42280,7 @@ kbd {
         getCourseLinkCounts, openForCourse,
         getResourceLinkCounts, openForResource,
         getAnalysisLinkCounts, openForAnalysis,
+        getDealLinkCounts, openForDeal,
         getVaultStorageStats, getStorageHealth
     };
 })();
@@ -68374,6 +68483,7 @@ function saveDailyStudyData() {
                 .sort((a, b) => new Date(b.date) - new Date(a.date)) 
                 .map(deal => renderDealCard(deal))
                 .join('');
+            nvApplyDealNoteBadges();
         }
 
 
@@ -68440,7 +68550,7 @@ function saveDailyStudyData() {
                 </div>` : '';
 
             return `
-                <div class="finance-card dd-card" style="border-left:4px solid ${cardColor};">
+                <div class="finance-card dd-card" data-id="${deal.id}" style="border-left:4px solid ${cardColor};">
                     <div class="finance-card-header">
                         <div style="flex:1;min-width:0;">
                             <div class="finance-card-title">${deal.dealName}</div>
@@ -68464,6 +68574,71 @@ function saveDailyStudyData() {
                     </div>
                 </div>`;
         }
+
+        // Note-count badge on each Deal Diary card, sourced from Notes Vault's
+        // per-deal link counts (see NotesVault.getDealLinkCounts). Mirrors
+        // nvApplyAnalysisNoteBadges — runs after renderDealCards has finished
+        // building the DOM since the count lookup is async (reads Notes Vault's
+        // IndexedDB). Safe to call repeatedly.
+        async function nvApplyDealNoteBadges() {
+            if (!window.NotesVault || typeof window.NotesVault.getDealLinkCounts !== 'function') return;
+            let counts;
+            try { counts = await window.NotesVault.getDealLinkCounts(); } catch (e) { return; }
+            document.querySelectorAll('#dealCardsContainer .dd-card[data-id]').forEach((item) => {
+                const dealId = item.dataset.id;
+                const count = counts[dealId] || 0;
+                const actions = item.querySelector('.finance-card-actions');
+                if (!actions) return;
+                let badge = actions.querySelector('.deal-note-badge');
+                if (count > 0) {
+                    if (!badge) {
+                        badge = document.createElement('button');
+                        badge.type = 'button';
+                        badge.className = 'deal-note-badge';
+                        badge.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (window.NotesVault && window.NotesVault.openForDeal) {
+                                window.NotesVault.openForDeal(dealId);
+                            }
+                        });
+                        actions.insertBefore(badge, actions.firstChild);
+                    }
+                    badge.title = `${count} note${count === 1 ? '' : 's'} linked — open in Notes Vault`;
+                    badge.innerHTML = `<i class="fa-solid fa-note-sticky"></i> ${count}`;
+                } else if (badge) {
+                    badge.remove();
+                }
+            });
+        }
+
+        // Cross-module refresh hook: Notes Vault calls this (if present) right after the
+        // user changes a note's Deal, so the card badge updates immediately instead of
+        // waiting for the next renderDealCards() pass. Mirrors window.nvRefreshAnalysisBadges.
+        window.nvRefreshDealBadges = function () {
+            nvApplyDealNoteBadges();
+        };
+
+        // Entry point for the Note ↔ Deal Diary link (Notes Vault deal pill, see
+        // renderDealLinkPill's onclick). Closes the Notes Vault overlay first (it sits
+        // on top of the page), then expands the Deal Diary sidebar card if collapsed →
+        // scroll → flash, once the underlying page is visible again. Mirrors
+        // window.jumpFromNoteToAnalysis.
+        window.jumpFromNoteToDeal = function (dealId) {
+            if (window.NotesVault && typeof window.NotesVault.close === 'function') window.NotesVault.close();
+            setTimeout(() => {
+                const body = document.getElementById('dealDiaryBody');
+                if (body && body.style.display === 'none' && typeof toggleDealDiary === 'function') toggleDealDiary();
+                setTimeout(() => {
+                    const target = document.querySelector(`#dealCardsContainer .dd-card[data-id="${CSS.escape(dealId)}"]`);
+                    if (!target) return;
+                    setTimeout(() => {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        target.classList.add('deal-highlight-flash');
+                        setTimeout(() => target.classList.remove('deal-highlight-flash'), 2000);
+                    }, 150);
+                }, 180);
+            }, 260);
+        };
 
 
 
