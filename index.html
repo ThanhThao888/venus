@@ -36535,6 +36535,7 @@ kbd {
             <input class="nv-pal-in" id="nvPalIn" type="text" autocomplete="off" spellcheck="false"
                    role="combobox" aria-expanded="true" aria-controls="nvPalList" aria-autocomplete="list" aria-label="Type a command or search notes">
             <span class="nv-pal-chip" id="nvPalChip" hidden></span>
+            <button class="nv-ib" id="nvPalClose" type="button" title="Close (Esc)" aria-label="Close command palette"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="nv-pal-list" id="nvPalList" role="listbox" aria-label="Results"></div>
         <div class="nv-pal-live" id="nvPalLive" aria-live="polite"></div>
@@ -42459,7 +42460,7 @@ kbd {
             tools: $('nvTools'), toolsScroll: $('nvToolsScroll'), toolsMore: $('nvToolsMore'), toolsMenu: $('nvToolsMenu'),
             save: $('nvSave'), saveTxt: $('nvSaveTxt'), statRight: $('nvStatRight'),
             palOpen: $('nvPalOpen'), palKeyHint: $('nvPalKeyHint'),
-            palScrim: $('nvPalScrim'), pal: $('nvPal'), palIn: $('nvPalIn'), palChip: $('nvPalChip'),
+            palScrim: $('nvPalScrim'), pal: $('nvPal'), palIn: $('nvPalIn'), palChip: $('nvPalChip'), palClose: $('nvPalClose'),
             palList: $('nvPalList'), palLive: $('nvPalLive'), palFoot: $('nvPalFoot'),
             dupScrim: $('nvDupScrim'), dup: $('nvDup'), dupClose: $('nvDupClose'), dupRescan: $('nvDupRescan'), dupBody: $('nvDupBody'),
             storScrim: $('nvStorScrim'), stor: $('nvStor'), storClose: $('nvStorClose'), storRefresh: $('nvStorRefresh'), storBody: $('nvStorBody'),
@@ -42947,6 +42948,7 @@ kbd {
         // ── command palette ──
         el.palKeyHint.textContent = keyText(['mod', 'K']);
         el.palOpen.addEventListener('click', openPalette);
+        el.palClose.addEventListener('click', () => closePalette());
         el.palScrim.addEventListener('click', () => closePalette());
         el.palIn.addEventListener('keydown', palKey);
         el.palIn.addEventListener('input', () => {
@@ -70624,7 +70626,11 @@ let sessionTimerInterval = null;
     if (window.MathJax) return;
     window.MathJax = {
         tex: {
-            inlineMath: [['$', '$'], ['\\(', '\\)']],
+            // Single $ ... $ removed as an inline-math delimiter: it collides with plain
+            // currency amounts (e.g. "$100 thay vì $99.87"), which MathJax was reading as
+            // one inline equation — swallowing the words between and stripping both "$"
+            // signs. Use \( ... \) for inline math instead; "$" now always stays literal.
+            inlineMath: [['\\(', '\\)']],
             displayMath: [['$$', '$$'], ['\\[', '\\]']]
         },
         svg: { fontCache: 'global' }
