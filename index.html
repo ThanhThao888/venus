@@ -29915,13 +29915,14 @@ window.DBP={
                 </div>
             </div>
 
-            <!-- Sleep Heatmap — "GitHub contribution" style, 3 tháng gần nhất. Bar chart hợp
+            <!-- Sleep Heatmap — "GitHub contribution" style, 1 năm gần nhất. Bar chart hợp
                  để soi chi tiết 7-30 đêm, nhưng muốn thấy pattern dài hơi (đi ngủ thất
-                 thường theo tuần/tháng) thì ô vuông đậm-nhạt gọn hơn nhiều so với kéo dài
-                 trục X của bar chart. -->
+                 thường theo tuần/tháng/mùa) thì ô vuông đậm-nhạt gọn hơn nhiều so với kéo dài
+                 trục X của bar chart. ~53 tuần → lưới rộng hơn khung card, container cha đã có
+                 overflow-x:auto nên tự cuộn ngang, không cần đổi cellSize. -->
             <div style="margin: 0 0 20px;">
                 <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:8px;">
-                    <svg class="icon-svg" aria-hidden="true"><use href="#icon-calendar"></use></svg> Sleep Heatmap <span style="font-weight:400;">(3 tháng gần nhất)</span>
+                    <svg class="icon-svg" aria-hidden="true"><use href="#icon-calendar"></use></svg> Sleep Heatmap
                 </div>
                 <div style="margin:0; padding:14px 14px 10px; overflow-x:auto; background:var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                     <div id="sleepHeatmapGrid" style="display:inline-block; min-width:100%;"></div>
@@ -37245,11 +37246,66 @@ kbd {
     }
     // Called when a note is permanently erased (purge / empty trash — NOT the ordinary
     // move-to-Trash, since a trashed note can still be restored with its images intact).
-    async function releaseNoteAttachments(noteId) {
-        const ids = S.noteAttachRefCache.get(noteId);
+    // Deliberately does NOT trust S.noteAttachRefCache alone: the cache is per-session and only
+    // gets populated as notes are opened/edited, so a note deleted forever right after a page
+    // reload (cache empty) — or purged from Trash in a session where it was never opened — would
+    // otherwise leave its attachmentRefs rows still pointing at a noteId that no longer exists.
+    // That doesn't lose the image, but it does keep it invisible to pruneOrphanAttachments
+    // forever (an "orphan logic" row: refs a note, but that note is gone). Instead this always
+    // re-derives the ids from source: the note's own markdown (when the caller has it) plus a
+    // scan of attachmentRefs for any row that still lists this noteId — so it's correct no
+    // matter how many reloads happened in between. Only runs on permanent delete, so the scan
+    // never touches the hot path (ordinary edits still go through the cheap cache-diffed
+    // syncAttachmentRefs).
+    async function releaseNoteAttachments(noteId, markdown) {
         S.noteAttachRefCache.delete(noteId);
-        if (!ids || !ids.size) return;
+        const ids = new Set();
+        if (typeof markdown === 'string') for (const id of extractAttachmentIds(markdown)) ids.add(id);
+        try {
+            const allRefs = await dbGetAllAttachmentRefs();
+            for (const r of allRefs) if (r.notes && r.notes.includes(noteId)) ids.add(r.id);
+        } catch (e) { /* best-effort — markdown-derived ids above still get released */ }
+        if (!ids.size) return;
         for (const id of ids) await removeAttachmentRef(id, 'notes', noteId).catch(() => {});
+    }
+    // Recomputes attachmentRefs from scratch by scanning every live note's markdown and every
+    // stored revision's markdown, then reconciling that against what's currently on disk. This
+    // is the repair tool for reference drift accumulated across app versions/sessions (stale
+    // cache reads, an interrupted import, etc.) rather than something that runs automatically —
+    // wired to a "Rebuild index" action in Manage storage, on demand only.
+    async function rebuildAttachmentRefs() {
+        const [notes, revisions, existingRefs] = await Promise.all([
+            dbGetAll(), dbGetAllRevisions(), dbGetAllAttachmentRefs()
+        ]);
+        const wanted = new Map();   // attachment id → { notes: Set, revisions: Set }
+        const touch = (attId, kind, refId) => {
+            let e = wanted.get(attId);
+            if (!e) { e = { notes: new Set(), revisions: new Set() }; wanted.set(attId, e); }
+            e[kind].add(refId);
+        };
+        for (const n of notes) for (const id of extractAttachmentIds(n.markdown)) touch(id, 'notes', n.id);
+        for (const r of revisions) for (const id of extractAttachmentIds(r.markdown)) touch(id, 'revisions', r.id);
+
+        const existingMap = new Map(existingRefs.map((r) => [r.id, r]));
+        const allIds = new Set([...wanted.keys(), ...existingMap.keys()]);
+        let repaired = 0;
+        for (const attId of allIds) {
+            const want = wanted.get(attId) || { notes: new Set(), revisions: new Set() };
+            const have = existingMap.get(attId) || { notes: [], revisions: [] };
+            const wantNotes = [...want.notes].sort();
+            const wantRevs = [...want.revisions].sort();
+            const haveNotes = (have.notes || []).slice().sort();
+            const haveRevs = (have.revisions || []).slice().sort();
+            const same = wantNotes.length === haveNotes.length && wantNotes.every((v, i) => v === haveNotes[i])
+                      && wantRevs.length === haveRevs.length && wantRevs.every((v, i) => v === haveRevs[i]);
+            if (same) continue;
+            await dbPutAttachmentRefs({ id: attId, notes: wantNotes, revisions: wantRevs });
+            repaired++;
+        }
+        // The cache now reflects on-disk truth for every note just scanned, so subsequent
+        // ordinary edits diff against reality instead of whatever the old cache assumed.
+        for (const n of notes) S.noteAttachRefCache.set(n.id, extractAttachmentIds(n.markdown));
+        return { repaired, attachments: allIds.size };
     }
     // Deletes every attachment whose refs row exists but lists no live notes AND no stored
     // revisions. Manual/on-demand (wired to a button in Manage storage) rather than automatic,
@@ -40221,7 +40277,7 @@ kbd {
         await dbDelete(id);
         try { await revDeleteForNote(id); } catch (e) { /* history is best-effort */ }
         try { await clearLinkedFile(id); } catch (e) { /* ignore */ }
-        try { await releaseNoteAttachments(id); } catch (e) { /* attachments become orphans, catchable by "Clean up unused" */ }
+        try { await releaseNoteAttachments(id, n.markdown); } catch (e) { /* attachments become orphans, catchable by "Clean up unused" */ }
         clearPendingRelink(id);
         S.trash = S.trash.filter((x) => x.id !== id);
         foldCache.delete(id);
@@ -40237,7 +40293,7 @@ kbd {
             await dbDelete(n.id);
             try { await revDeleteForNote(n.id); } catch (e) { /* history is best-effort */ }
             try { await clearLinkedFile(n.id); } catch (e) { /* ignore */ }
-            try { await releaseNoteAttachments(n.id); } catch (e) { /* attachments become orphans, catchable by "Clean up unused" */ }
+            try { await releaseNoteAttachments(n.id, n.markdown); } catch (e) { /* attachments become orphans, catchable by "Clean up unused" */ }
             clearPendingRelink(n.id);
             foldCache.delete(n.id);
         }
@@ -40407,7 +40463,12 @@ kbd {
             // which is normally what calls syncAttachmentRefs. Do it here too, or a restored
             // note's images stay untracked as "in use" until the note happens to be opened and
             // edited, and could get swept up by "Clean up unused attachments" in the meantime.
-            syncAttachmentRefs(inc.id, inc.markdown).catch((e) => console.warn('Notes Vault: attachment ref sync failed', e));
+            // Awaited (not fire-and-forget): restoreNotesList can restore many notes in a row,
+            // and a backup with lots of images made this a real race — without the await, the
+            // ref index could still be mid-write for an earlier note when the import finished
+            // and the UI reported done. Awaiting means the index is guaranteed consistent by the
+            // time this function's promise resolves.
+            try { await syncAttachmentRefs(inc.id, inc.markdown); } catch (e) { console.warn('Notes Vault: attachment ref sync failed', e); }
             if (ex) updated++; else added++;
         }
         if (!opts.silent) {
@@ -41896,11 +41957,14 @@ kbd {
             + '</div>'
             + '<p class="nv-stor-note">Notes and version history are estimated from record size — browsers don\'t expose an exact per-store figure. Attachments are exact, since every stored image carries a real byte size.</p>'
             + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorPrune"><i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments</button>'
-            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorOptimize" style="margin-top:8px;"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimize images</button>';
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorOptimize" style="margin-top:8px;"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimize images</button>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorRebuild" style="margin-top:8px;"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Rebuild index</button>';
         const pruneBtn = $('nvStorPrune');
         if (pruneBtn) pruneBtn.onclick = onPruneAttachmentsClick;
         const optBtn = $('nvStorOptimize');
         if (optBtn) optBtn.onclick = onOptimizeAttachmentsClick;
+        const rebuildBtn = $('nvStorRebuild');
+        if (rebuildBtn) rebuildBtn.onclick = onRebuildAttachmentRefsClick;
     }
     async function onPruneAttachmentsClick() {
         const btn = $('nvStorPrune');
@@ -41926,6 +41990,21 @@ kbd {
             console.warn('Notes Vault: optimize attachments failed', e);
             flash('Couldn’t optimize images');
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimize images'; }
+        }
+    }
+    // Re-scans every note + revision and rewrites attachmentRefs to match reality. A repair
+    // tool for drift, not a routine action — never runs on its own, only from this button.
+    async function onRebuildAttachmentRefsClick() {
+        const btn = $('nvStorRebuild');
+        if (btn) { btn.disabled = true; btn.textContent = 'Rebuilding…'; }
+        try {
+            const { repaired } = await rebuildAttachmentRefs();
+            flash(repaired ? 'Repaired ' + repaired + (repaired === 1 ? ' attachment reference' : ' attachment references') : 'Attachment index was already consistent');
+            await renderStorBody();
+        } catch (e) {
+            console.warn('Notes Vault: rebuild attachment refs failed', e);
+            flash('Couldn’t rebuild the attachment index');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Rebuild index'; }
         }
     }
 
@@ -56022,6 +56101,16 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSleepChart();
             showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-target"></use></svg> Sleep goal set to ${v}h`, 'info');
         }
+        // Mục tiêu ngủ "đúng" cho MỘT đêm cụ thể: ưu tiên snapshot đã lưu trên chính session đó
+        // (session.targetAtDate — ghi lúc lưu, xem 2 nơi tạo session literal), fallback về
+        // getSleepGoal() hiện tại cho session cũ hơn (lưu trước khi field này tồn tại) hoặc khi
+        // không truyền session nào. Dùng hàm này ở bất kỳ đâu chấm điểm MỘT ĐÊM CỤ THỂ trong
+        // quá khứ (heatmap, điểm thời lượng theo ngày) — không dùng cho Sleep Debt, vì sổ nợ chỉ
+        // nhìn 14 đêm gần nhất nên goal đổi giữa chừng là rủi ro thấp và cố ý giữ đơn giản.
+        function sessionGoal(session) {
+            const g = session && session.targetAtDate;
+            return (typeof g === 'number' && !isNaN(g) && g >= 4 && g <= 12) ? g : getSleepGoal();
+        }
 
         // Luôn trả về danh sách phiên ngủ sắp theo thời gian bắt đầu (fix lỗi
         // thứ tự sai khi thêm/sửa session thủ công không theo đúng thứ tự đã lưu)
@@ -58086,7 +58175,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 manual: false,
                 sol: null, // hỏi lại hồi tưởng ngay bên dưới, xem openQuickSleepNoteModal()
                 quality: 0,
-                notes: ''
+                notes: '',
+                // Snapshot mục tiêu ngủ TẠI THỜI ĐIỂM đêm này được lưu — không đọc lại
+                // getSleepGoal() mỗi lần hiển thị, vì mục tiêu có thể đổi sau đó (đổi việc,
+                // đổi nhịp sống…) và một đêm 6 tháng trước phải được chấm theo mục tiêu lúc
+                // đó, không phải mục tiêu hiện tại. Xem sessionGoal() bên dưới cho fallback
+                // khi đọc các session cũ được lưu trước khi field này tồn tại.
+                targetAtDate: getSleepGoal()
             };
 
             // Reset timer/UI state right away — saving is finalized once the
@@ -58715,7 +58810,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         screen: !!document.getElementById('manualSleepTagScreen')?.checked,
                         alcohol: !!document.getElementById('manualSleepTagAlcohol')?.checked
                     },
-                    auto_tags: computeAutoTags(start.getTime())
+                    auto_tags: computeAutoTags(start.getTime()),
+                    // Snapshot mục tiêu hiện tại — xem comment đầy đủ ở session literal của
+                    // "stop timer" phía trên. Lưu ý: với entry nhập tay cho một đêm QUÁ KHỨ,
+                    // đây là mục tiêu tại lúc BẤM LƯU, không phải mục tiêu thực sự có hiệu lực
+                    // vào đêm đó (app không giữ lịch sử thay đổi mục tiêu để tra ngược) — chấp
+                    // nhận được vì đây vẫn đúng hơn hẳn so với luôn áp mục tiêu-hiện-tại-lúc-xem.
+                    targetAtDate: getSleepGoal()
                 };
                 
                 // Add to sleep sessions
@@ -59763,7 +59864,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // tổng hợp giữa "ngủ có sát mục tiêu không" (duration) và "chất lượng tự chấm"
         // (quality, nếu có) — không phải chỉ số giờ đơn thuần, vì 10h ngủ (dư quá nhiều)
         // không nên đậm hơn 8h ngủ đúng mục tiêu.
-        const SLEEP_HEATMAP_DAYS = 90; // ~13 tuần ≈ 3 tháng
+        const SLEEP_HEATMAP_DAYS = 365; // 12 tháng ≈ 1 năm gần nhất
         const SLEEP_HEATMAP_ROWS = ['CN','T2','T3','T4','T5','T6','T7']; // Sun→Sat, đồng bộ thứ tự dùng ở nơi khác trong app
 
         function vnDateStrFromTs(ts) {
@@ -59776,18 +59877,74 @@ document.addEventListener('DOMContentLoaded', function() {
             sleepSessions.forEach(s => {
                 if (typeof s.start !== 'number' || typeof s.duration !== 'number') return;
                 const key = getSleepWakeDateVN(s); // đêm gán theo ngày thức dậy
-                if (!map[key]) map[key] = { duration: 0, qualities: [], sessions: [] };
+                if (!map[key]) map[key] = { duration: 0, qualities: [], sessions: [], targets: [] };
                 map[key].duration += s.duration;
                 if (s.quality) map[key].qualities.push(s.quality);
                 map[key].sessions.push(s);
+                // Target snapshot của từng session (targetAtDate nếu có, fallback goal hiện tại
+                // cho session cũ) — heatmap trải dài 1 năm nên KHÔNG được áp mục tiêu hiện tại
+                // ngược cho cả năm, xem sessionGoal() để biết lý do đầy đủ.
+                map[key].targets.push(sessionGoal(s));
             });
             return map;
         }
 
+        // ===== Sleep Duration Score — đường cong phi tuyến (piecewise elastic) =====
+        // Thay cho phạt tuyến tính đối xứng |duration-goal|/goal: cách cũ phạt "thiếu 1h" và
+        // "thừa 1h" như nhau, và phạt đều theo từng phút bất kể đang ở vùng nguy hiểm (4h) hay
+        // vùng vô hại (7h15). Thực tế sinh học (PVT/microsleep) là một đường cong: vùng sụp đổ
+        // nhận thức (ratio < 0.5, tương đương < 4h nếu mục tiêu 8h) tăng rất chậm từ 0; vùng
+        // thiếu ngủ cấp (0.5-0.75) hồi phục nhanh nhất theo mỗi % thêm vào — đây là nơi mỗi phút
+        // ngủ thêm "đáng giá" nhất; vùng tối ưu (0.9-1.15) gần như phẳng (7h15 hay 8h không khác
+        // biệt đáng kể về nhận thức); ngủ thừa (>1.15) bị chiết khấu nhẹ nhưng có sàn 75, không
+        // phạt nặng như thiếu ngủ. Liên tục tại mọi ranh giới vùng — không có bước nhảy điểm số
+        // khi actual đi ngang qua biên (đã verify bằng tay: 0.5→20, 0.75→65, 0.9→88, 1.15→100
+        // khớp ở cả hai phía của mỗi biên).
+        function calculateSleepDurationScore(actualMinutes, targetMinutes = 480) {
+            if (!actualMinutes || actualMinutes <= 0) return { score: 0, zone: 'CRITICAL', ratio: 0 };
+            const ratio = actualMinutes / targetMinutes;
+            let score, zone;
+            if (ratio < 0.5) {
+                score = (ratio / 0.5) * 20;
+                zone = 'CRITICAL';
+            } else if (ratio < 0.75) {
+                score = 20 + ((ratio - 0.5) / 0.25) * 45;
+                zone = 'INSUFFICIENT';
+            } else if (ratio < 0.9) {
+                score = 65 + ((ratio - 0.75) / 0.15) * 23;
+                zone = 'FAIR';
+            } else if (ratio <= 1.15) {
+                score = 88 + ((ratio - 0.9) / 0.25) * 12;
+                zone = 'OPTIMAL';
+            } else {
+                const excessHours = (actualMinutes - targetMinutes * 1.15) / 60;
+                score = Math.max(75, 100 - excessHours * 5);
+                zone = 'EXCESSIVE';
+            }
+            return { score: Math.round(score), zone, ratio: Math.round(ratio * 100) / 100 };
+        }
+
+        function sleepDurationScoreColor(score) {
+            if (score === null || score === undefined) return 'var(--text-muted)';
+            return score >= 88 ? '#10b981' : score >= 65 ? '#3b82f6' : score >= 20 ? '#f59e0b' : '#ef4444';
+        }
+
+        const SLEEP_DURATION_ZONE_LABEL = {
+            CRITICAL: 'Sụp đổ nhận thức', INSUFFICIENT: 'Thiếu ngủ cấp', FAIR: 'Thiếu nhẹ',
+            OPTIMAL: 'Tối ưu', EXCESSIVE: 'Ngủ thừa'
+        };
+
         // Điểm tổng hợp 0-1: 50% "sát mục tiêu giờ ngủ", 50% "chất lượng tự chấm" (nếu có
         // chấm điểm đêm đó); nếu chưa chấm điểm thì dùng 100% điểm thời lượng.
-        function heatmapCompositeScore(entry, goal) {
-            const durationScore = Math.max(0, 1 - Math.abs(entry.duration - goal) / goal);
+        // `fallbackGoal` chỉ dùng khi entry không có target snapshot nào (session cũ trước khi
+        // targetAtDate tồn tại) — ưu tiên số 1 luôn là mục tiêu THỰC SỰ có hiệu lực vào đêm đó
+        // (trung bình các session cùng ngày), không phải mục tiêu hiện tại đọc ngược lại cho cả
+        // 365 ngày. Đây chính là điểm "Target Drift" — xem sessionGoal().
+        function heatmapCompositeScore(entry, fallbackGoal) {
+            const goal = (entry.targets && entry.targets.length)
+                ? entry.targets.reduce((a, b) => a + b, 0) / entry.targets.length
+                : fallbackGoal;
+            const durationScore = calculateSleepDurationScore(entry.duration * 60, goal * 60).score / 100;
             const rated = entry.qualities.length > 0;
             const avgQuality = rated ? entry.qualities.reduce((a, b) => a + b, 0) / entry.qualities.length : null;
             const qualityScore = rated ? avgQuality / 5 : null;
@@ -60122,7 +60279,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     sleepTile('hourglass', MUTED, '—', 'Nợ ngủ (14đ)'),
                     sleepTile('zap', MUTED, '—', 'SE (7đ)'),
                     sleepTile('activity', MUTED, '—', 'Đều đặn (7đ)'),
-                    sleepTile('anchor', MUTED, '—', 'Anchor streak')
+                    sleepTile('anchor', MUTED, '—', 'Anchor streak'),
+                    sleepTile('target', MUTED, '—', 'Điểm thời lượng')
                 ].join('');
                 const wrap = document.getElementById('solTrendWrap');
                 if (wrap) wrap.style.display = 'none';
@@ -60190,6 +60348,30 @@ document.addEventListener('DOMContentLoaded', function() {
                     `Wake anchor: ${String(Math.floor(anchorInfo.anchorMin / 60)).padStart(2, '0')}:${String(Math.round(anchorInfo.anchorMin % 60)).padStart(2, '0')}`)
                 : sleepTile('anchor', MUTED, '—', 'Anchor streak (cần ≥3đ)');
 
+            // Điểm thời lượng (đường cong phi tuyến) — trung bình 7 đêm gần nhất, xem
+            // calculateSleepDurationScore() ở trên: phạt nặng thiếu ngủ nặng, gần như phẳng ở
+            // vùng tối ưu quanh mục tiêu, nhẹ tay hơn khi ngủ thừa. Bổ sung cho ô "TB N đêm"
+            // (giờ thô) bằng một con số phản ánh mức độ "an toàn về nhận thức" thay vì chỉ số giờ.
+            const durScores = last7.map(d => calculateSleepDurationScore(d.duration * 60, goal * 60));
+            const avgDurScore = durScores.length ? Math.round(durScores.reduce((a, b) => a + b.score, 0) / durScores.length) : null;
+            const durScoreZone = avgDurScore !== null ? durScores[durScores.length - 1].zone : null;
+            const durScoreBox = avgDurScore !== null
+                ? sleepTile('target', sleepDurationScoreColor(avgDurScore), `${avgDurScore}`, `Điểm thời lượng (${last7.length}đ)`,
+                    `Đường cong phi tuyến, không tuyến tính — đêm gần nhất: ${SLEEP_DURATION_ZONE_LABEL[durScoreZone] || ''}`)
+                : sleepTile('target', MUTED, '—', 'Điểm thời lượng');
+
+            row.innerHTML = [
+                sleepTile('moon', avgColor, `${avg7.toFixed(1)}h`, `TB ${last7.length} đêm`),
+                sleepTile('flame', streakColor === 'var(--primary)' ? '#ec4899' : streakColor, streak, 'Chuỗi đủ giấc'),
+                debtInfo.ok
+                    ? sleepTile('hourglass', debtInfo.level.color, `${debtInfo.debt.toFixed(1)}h`, `Nợ ngủ (${debtInfo.windowNights}đ)`, 'Sổ nợ 14 đêm gần nhất: thiếu thì cộng, ngủ dư thì trả dần')
+                    : sleepTile('hourglass', MUTED, '—', 'Nợ ngủ (cần ≥3đ)'),
+                seBox,
+                regBox,
+                anchorBox,
+                durScoreBox
+            ].join('');
+
             // Chúc mừng mỗi mốc 5 đêm, chỉ 1 lần/mốc (tránh spam toast mỗi lần render)
             if (anchorInfo && anchorInfo.streak > 0 && anchorInfo.streak % 5 === 0) {
                 const lastMilestone = parseInt(localStorage.getItem('sleepAnchorStreakMilestone') || '0', 10);
@@ -60200,17 +60382,6 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (anchorInfo && anchorInfo.streak === 0) {
                 localStorage.removeItem('sleepAnchorStreakMilestone'); // gãy chuỗi -> mốc tiếp theo sẽ được chúc mừng lại từ đầu
             }
-
-            row.innerHTML = [
-                sleepTile('moon', avgColor, `${avg7.toFixed(1)}h`, `TB ${last7.length} đêm`),
-                sleepTile('flame', streakColor === 'var(--primary)' ? '#ec4899' : streakColor, streak, 'Chuỗi đủ giấc'),
-                debtInfo.ok
-                    ? sleepTile('hourglass', debtInfo.level.color, `${debtInfo.debt.toFixed(1)}h`, `Nợ ngủ (${debtInfo.windowNights}đ)`, 'Sổ nợ 14 đêm gần nhất: thiếu thì cộng, ngủ dư thì trả dần')
-                    : sleepTile('hourglass', MUTED, '—', 'Nợ ngủ (cần ≥3đ)'),
-                seBox,
-                regBox,
-                anchorBox
-            ].join('');
 
             renderSolTrendChart();
             renderSleepDebtCard();
