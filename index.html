@@ -39948,7 +39948,16 @@ kbd {
             await captureOriginal(n);
             await dbPut(n);
             syncAttachmentRefs(n.id, n.markdown).catch((e) => console.warn('Notes Vault: attachment ref sync failed', e));
-            if (!S.persisted) { S.persisted = true; if (!S.notes.includes(n)) S.notes.push(n); }
+            if (!S.persisted) {
+                S.persisted = true;
+                if (!S.notes.includes(n)) S.notes.push(n);
+                // "+ New note" from a linkable entity (see newNote()) pre-links the note before
+                // it's ever saved — linkExistingNote/unlinkScopedNote both call
+                // afterEntityLinkChanged so their host tracker's badge updates live, but this
+                // first-save path never did, so the badge stayed stale until a full reload.
+                // Firing it here for whichever scope(s) the new note carries closes that gap.
+                LINKABLE_SCOPES.forEach((kind) => { if (EntityLinks.getId(n, kind)) afterEntityLinkChanged(kind); });
+            }
             // A note keeps no "base title" to compare against until it's first persisted; once
             // it exists, later renames in the same session need something to diff against too.
             if (S.note === n && (!S.base || S.base.id !== n.id)) S.base = { id: n.id, title: n.title, markdown: n.markdown, updatedAt: n.updatedAt };
