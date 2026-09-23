@@ -35250,6 +35250,18 @@ window.DBP={
 }
 .nv-relink-pill i { font-size: 0.7rem; }
 
+/* Density toggle: aria-pressed="true" on #nvDensityBtn == compact. State lives in
+   S.density, persisted to localStorage('nvDensity'), applied as [data-density] on
+   .nv-app. Comfortable (default) keeps the two-line snippet and current spacing;
+   Compact drops the snippet to one line and tightens padding so more rows fit
+   on screen, closer to a plain file list. See applyDensity()/toggleDensity(). */
+.nv-app[data-density="compact"] .nv-row { padding: 8px 14px; }
+.nv-app[data-density="compact"] .nv-row-title { font-size: 0.92rem; }
+.nv-app[data-density="compact"] .nv-row-snip { margin-top: 2px; -webkit-line-clamp: 1; }
+.nv-app[data-density="compact"] .nv-row-meta { margin-top: 4px; }
+.nv-app[data-density="compact"] .nv-row-side { gap: 3px; }
+#nvDensityBtn[aria-pressed="true"] i { color: var(--primary); }
+
 /* ═════════════ Storage manager ═════════════
    v1: read-only "where did it go" breakdown + a quota guard. No Clean/Optimize actions yet —
    those need the attachments store (real, exact byte sizes) to be worth building. */
@@ -35346,7 +35358,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     display: block; flex: 1; min-height: 0; width: 100%; resize: none; outline: none; tab-size: 4;
     border: 1px solid var(--border-color); border-radius: 12px; padding: 16px 18px;
     background: var(--bg-light); color: var(--text-dark);
-    font-family: var(--nv-mono); font-size: 1.02rem; line-height: 1.75;
+    font-family: var(--nv-mono); font-size: calc(var(--nv-fs, 1.0625rem) * 0.96); line-height: 1.75;
 }
 #nvOverlay .nv-src:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16); }
 .nv-src::placeholder { color: var(--text-muted); opacity: 0.75; }
@@ -35464,6 +35476,12 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-focusctl { align-items: center; gap: 2px; margin-right: 4px; padding-right: 8px; border-right: 1px solid var(--border-color); }
 .nv-focusctl .nv-ib { font-size: 0.8rem; font-weight: 700; }
 .nv-focusctl .nv-btn { padding: 5px 10px; font-size: 0.78rem; }
+/* Text-size group (A−/A+): lives in the main toolbar, not gated behind Focus mode —
+   see applyFontSize(). Same look as .nv-focusctl minus the visibility gate. */
+.nv-fsctl { display: flex; align-items: center; gap: 2px; margin-right: 4px; padding-right: 8px; border-right: 1px solid var(--border-color); }
+.nv-fsctl .nv-ib { font-size: 0.8rem; font-weight: 700; }
+.nv-fsctl .nv-ib:disabled { opacity: 0.35; cursor: default; }
+.nv-fsctl .nv-ib:disabled:hover { background: none; color: var(--text-muted); }
 @media (max-width: 900px) { .nv-app.nv-focus .nv-wide-only { display: none !important; } }
 
 /* ═════════════ Inspector ═════════════ */
@@ -35701,7 +35719,7 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
     }
     .nv-app.nv-side-open .nv-side { transform: none; }
     .nv-only-narrow { display: inline-flex !important; }
-    #nvSortBtn .nv-btn-label, #nvFilterBtn .nv-btn-label, #nvGraphBtn .nv-btn-label { display: none; }
+    #nvSortBtn .nv-btn-label, #nvFilterBtn .nv-btn-label, #nvGraphBtn .nv-btn-label, #nvDensityBtn .nv-btn-label { display: none; }
     .nv-filter-menu { position: fixed; left: 10px; right: 10px; top: auto; width: auto; min-width: 0; }
     .nv-lib-scroll { padding: 0 12px 32px; }
     .nv-lib-head { padding: 18px 10px 10px; }
@@ -36123,6 +36141,9 @@ kbd {
                         </div>
                     </div>
                 </div>
+                <button class="nv-btn nv-btn-ghost" id="nvDensityBtn" type="button" title="Density: Comfortable — click for Compact" aria-pressed="false">
+                    <i class="fa-solid fa-list"></i> <span class="nv-btn-label">Comfortable</span>
+                </button>
                 <button class="nv-btn nv-btn-ghost" id="nvGraphBtn" type="button" title="Graph view — see how your notes are linked" aria-haspopup="dialog" aria-expanded="false">
                     <i class="fa-solid fa-circle-nodes"></i> <span class="nv-btn-label">Graph</span>
                 </button>
@@ -36153,13 +36174,15 @@ kbd {
                     <button type="button" id="nvModeEdit" aria-pressed="false">Edit</button>
                 </div>
                 <span class="nv-grow"></span>
+                <div class="nv-fsctl" role="group" aria-label="Text size">
+                    <button class="nv-ib" id="nvFsDown" type="button" title="Smaller text" aria-label="Smaller text">A&minus;</button>
+                    <button class="nv-ib" id="nvFsUp" type="button" title="Larger text" aria-label="Larger text">A+</button>
+                </div>
                 <div class="nv-menuwrap">
                     <button class="nv-ib" id="nvMoreBtn" type="button" title="More actions" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>
                     <div class="nv-menu" id="nvDocMenu" role="menu"></div>
                 </div>
                 <div class="nv-focusctl nv-focus-only" role="group" aria-label="Reading settings">
-                    <button class="nv-ib" id="nvFsDown" type="button" title="Smaller text" aria-label="Smaller text">A&minus;</button>
-                    <button class="nv-ib" id="nvFsUp" type="button" title="Larger text" aria-label="Larger text">A+</button>
                     <button class="nv-btn nv-btn-ghost nv-wide-only" id="nvWidthBtn" type="button" title="Line width">Medium</button>
                 </div>
                 <button class="nv-ib" id="nvFocusBtn" type="button" title="Focus mode (Ctrl+Shift+F)" aria-label="Focus mode" aria-pressed="false"><i class="fa-solid fa-expand"></i></button>
@@ -36462,6 +36485,7 @@ kbd {
         notes: [],
         scope: { kind: 'all', value: '' },   // all | recent | pinned | folder | tag
         sort: 'updated',                     // updated | created | title | words — always applied except while searching (search keeps relevance order)
+        density: 'comfortable',              // comfortable | compact — list row density, see loadDensity/applyDensity
         filters: {                           // advanced filter panel — additive (AND) on top of the current scope/search
             type: '', folder: '', tags: [],    // tags: lowercased, all must match
             createdDays: '', updatedDays: '',  // '' | '7' | '30' | '90' | '365'
@@ -41116,6 +41140,31 @@ kbd {
         if (r && r.fs >= 0 && r.fs < FS_STEPS.length) S.fs = r.fs | 0;
         if (r && r.wd >= 0 && r.wd < WD_STEPS.length) S.wd = r.wd | 0;
     } catch (e) { /* ignore */ }
+    try {
+        const d = localStorage.getItem('nvDensity');
+        if (d === 'compact' || d === 'comfortable') S.density = d;
+    } catch (e) { /* ignore */ }
+    function applyDensity() {
+        const compact = S.density === 'compact';
+        el.app.dataset.density = S.density;
+        el.densityBtn.setAttribute('aria-pressed', String(compact));
+        el.densityBtn.title = compact ? 'Density: Compact — click for Comfortable' : 'Density: Comfortable — click for Compact';
+        el.densityBtn.querySelector('.nv-btn-label').textContent = compact ? 'Compact' : 'Comfortable';
+        el.densityBtn.querySelector('i').className = 'fa-solid fa-' + (compact ? 'table-list' : 'list');
+    }
+    function toggleDensity() {
+        S.density = S.density === 'compact' ? 'comfortable' : 'compact';
+        try { localStorage.setItem('nvDensity', S.density); } catch (e) { /* ignore */ }
+        applyDensity();
+    }
+    function applyFontSize() {
+        // Applied unconditionally (unlike --nv-w below) so text size works the same
+        // whether or not Focus mode is on, and reaches Edit mode too — .nv-src reads
+        // the same --nv-fs variable. See the A−/A+ buttons in the main doc toolbar.
+        el.app.style.setProperty('--nv-fs', FS_STEPS[S.fs] + 'rem');
+        el.fsDown.disabled = S.fs === 0;
+        el.fsUp.disabled = S.fs === FS_STEPS.length - 1;
+    }
     function applyFocus() {
         const on = S.focus;
         el.app.classList.toggle('nv-focus', on);
@@ -41125,17 +41174,13 @@ kbd {
         const ic = el.focusBtn.querySelector('i');
         if (ic) ic.className = 'fa-solid fa-' + (on ? 'compress' : 'expand');
         if (on) {
-            el.app.style.setProperty('--nv-fs', FS_STEPS[S.fs] + 'rem');
             el.app.style.setProperty('--nv-w', WD_STEPS[S.wd].w);
             el.app.style.setProperty('--nv-w-edit', WD_STEPS[S.wd].we);
         } else {
-            el.app.style.removeProperty('--nv-fs');
             el.app.style.removeProperty('--nv-w');
             el.app.style.removeProperty('--nv-w-edit');
         }
         el.widthBtn.textContent = WD_STEPS[S.wd].n;
-        el.fsDown.disabled = S.fs === 0;
-        el.fsUp.disabled = S.fs === FS_STEPS.length - 1;
         fitTitle();
         updateProgress();
     }
@@ -42069,7 +42114,7 @@ kbd {
             revBar: $('nvRevBar'), revTxt: $('nvRevTxt'), revBack: $('nvRevBack'), revRestore: $('nvRevRestore'),
             emptyTrash: $('nvEmptyTrash'), scopeActions: $('nvScopeActions'), toast: $('nvToast'), toastTxt: $('nvToastTxt'), toastBtn: $('nvToastBtn'),
             linkScrim: $('nvLinkScrim'), linkPicker: $('nvLinkPicker'), linkClose: $('nvLinkClose'), linkTitle: $('nvLinkTitle'), linkSub: $('nvLinkSub'), linkSearch: $('nvLinkSearch'), linkList: $('nvLinkList'),
-            sortBtn: $('nvSortBtn'), sortMenu: $('nvSortMenu'),
+            sortBtn: $('nvSortBtn'), sortMenu: $('nvSortMenu'), densityBtn: $('nvDensityBtn'),
             filterBtn: $('nvFilterBtn'), filterMenu: $('nvFilterMenu'), filterDot: $('nvFilterDot'),
             fType: $('nvFType'), fFolder: $('nvFFolder'), fTag: $('nvFTag'), fTagPop: $('nvFTagPop'),
             fCreated: $('nvFCreated'), fUpdated: $('nvFUpdated'),
@@ -42183,8 +42228,8 @@ kbd {
         el.moreBtn.addEventListener('click', () => toggleMenu(el.moreBtn, el.docMenu));
         el.inspBtn.addEventListener('click', toggleInspector);
         el.focusBtn.addEventListener('click', () => toggleFocus());
-        el.fsDown.addEventListener('click', () => { if (S.fs > 0) { S.fs--; saveReading(); applyFocus(); } });
-        el.fsUp.addEventListener('click', () => { if (S.fs < FS_STEPS.length - 1) { S.fs++; saveReading(); applyFocus(); } });
+        el.fsDown.addEventListener('click', () => { if (S.fs > 0) { S.fs--; saveReading(); applyFontSize(); } });
+        el.fsUp.addEventListener('click', () => { if (S.fs < FS_STEPS.length - 1) { S.fs++; saveReading(); applyFontSize(); } });
         el.widthBtn.addEventListener('click', () => { S.wd = (S.wd + 1) % WD_STEPS.length; saveReading(); applyFocus(); });
         [el.actions, el.docMenu].forEach((box) => box.addEventListener('click', (e) => {
             const b = e.target.closest('[data-action]');
@@ -42458,6 +42503,13 @@ kbd {
         el.storScrim.addEventListener('click', closeStorModal);
         el.storRefresh.addEventListener('click', renderStorBody);
         el.stor.querySelectorAll('[data-stor-tab]').forEach((b) => b.addEventListener('click', () => switchStorTab(b.dataset.storTab)));
+
+        // density toggle (Comfortable / Compact row spacing in the list view)
+        applyDensity();
+        el.densityBtn.addEventListener('click', () => toggleDensity());
+
+        // text size (A−/A+): now applied unconditionally, not just inside Focus mode
+        applyFontSize();
 
         // sort menu
         el.sortBtn.addEventListener('click', () => toggleMenu(el.sortBtn, el.sortMenu));
