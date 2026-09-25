@@ -9,6 +9,22 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- MathJax: renders LaTeX formulas (Notes Vault, flashcards, etc.) into proper typeset
+         math. Configured and loaded here in <head> — rather than only from a script further
+         down the page — so it's available even if something later in the page throws before
+         reaching its own loader. No bare "$ ... $" inline delimiter: it collides with plain
+         currency amounts (e.g. "$100"), which MathJax would otherwise read as one equation
+         and swallow. Use \( ... \) for inline math; $ always stays literal text. -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']]
+            },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -40277,6 +40293,43 @@ kbd {
         root.appendChild(section);
     }
 
+    /* ═════════════ LaTeX protection for the Markdown → reading pipeline ═════════════
+       MathJax (loaded globally elsewhere, delimiters \( \), $$ $$, \[ \]) only typesets
+       math it can recognise as one intact chunk of text. Two things break that before it
+       ever sees the note:
+         1. Content pasted from elsewhere often uses a bare "[" / "]" on their own line as
+            an informal display-math delimiter, which MathJax does not understand at all.
+         2. Markdown (marked, with breaks:true) will (a) turn "_x_" / "*x*" inside a formula
+            into <em>, mangling things like Revenue_t, and (b) insert <br> at every internal
+            newline, splitting one formula across several text nodes so MathJax can't match
+            the whole thing even when real \[ \] delimiters are used.
+       mjxPrepare() runs before marked: it upgrades bare [ ... ] blocks to \[ ... \], then
+       swaps every recognised math span (display or inline) out for an opaque placeholder
+       token so Markdown can't touch its contents. Its restore() puts the original LaTeX
+       back — as a single flattened line, HTML-escaped (safe to run before DOMPurify, since
+       it's just escaped text, not markup) — right after marked has produced HTML, so
+       MathJax finally sees one clean text node per formula. */
+    function mjxPrepare(src) {
+        // Bare "[ ... ]" block on its own lines → "\[ ... \]" (flattened to one line so it
+        // can't be split by breaks:true later).
+        src = src.replace(/^[ \t]*\[[ \t]*\n([\s\S]*?)\n[ \t]*\][ \t]*$/gm, (_, body) =>
+            '\\[' + body.split('\n').map((l) => l.trim()).filter(Boolean).join(' ') + '\\]');
+        const store = [];
+        const nonce = 'MJXPH' + Math.random().toString(36).slice(2, 8);
+        const guard = (re) => {
+            src = src.replace(re, (m) => {
+                store.push(m.split('\n').map((l) => l.trim()).join(' '));
+                return nonce + (store.length - 1) + 'E';
+            });
+        };
+        guard(/\$\$[\s\S]*?\$\$/g);
+        guard(/\\\[[\s\S]*?\\\]/g);
+        guard(/\\\([\s\S]*?\\\)/g);
+        return { text: src, restore: (html) => store.length
+            ? html.replace(new RegExp(nonce + '(\\d+)E', 'g'), (_, i) => esc(store[Number(i)]))
+            : html };
+    }
+
     /* ═════════════ Markdown → reading view ═════════════ */
     function renderInto(target, md, interactive) {
         if (!md.trim()) {
@@ -40285,16 +40338,18 @@ kbd {
         }
         const afterFm = extractFrontmatter(md).body;            // frontmatter never shows in Read mode
         const { body: forMarked, defs: footnoteDefs } = extractFootnoteDefs(afterFm);
+        const mjx = mjxPrepare(forMarked);
         let html;
         try {
             const opts = { gfm: true, breaks: true };   // single newline = line break (Obsidian default; good for transcripts)
-            html = window.marked ? (window.marked.parse ? window.marked.parse(forMarked, opts) : window.marked(forMarked, opts)) : null;
+            html = window.marked ? (window.marked.parse ? window.marked.parse(mjx.text, opts) : window.marked(mjx.text, opts)) : null;
         } catch (e) { console.warn('Notes Vault markdown error:', e); html = null; }
         if (html == null || !window.DOMPurify) {
             // No renderer/sanitiser available: show plain text rather than inject unsanitised HTML.
             target.innerHTML = '<pre style="white-space:pre-wrap">' + esc(md) + '</pre>';
             return;
         }
+        html = mjx.restore(html);
         // DOMPurify's default ALLOWED_URI_REGEXP only accepts a small whitelist of protocols
         // (http, https, mailto, …) in src/href — "attachment:" isn't in it, so an attached
         // image's src would otherwise get silently stripped. Extend the same default regex
@@ -43778,6 +43833,36 @@ kbd {
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && S.linkPicker.open) { e.preventDefault(); e.stopPropagation(); closeLinkPicker(); }
         }, true);
+        // Read mode, Obsidian-style: Ctrl/Cmd+C with nothing selected copies the WHOLE note
+        // straight away, instead of requiring Ctrl+A first. A real text selection still just
+        // copies that selection — the browser's own default handles it, untouched.
+        document.addEventListener('keydown', (e) => {
+            if (!S.open || !S.note || S.mode === 'edit') return;
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'c') return;
+            const ae = document.activeElement;
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+            const sel = window.getSelection();
+            if (sel && sel.toString().length) return;   // real selection present — let default copy run
+            e.preventDefault();
+            const src = S.viewRev ? S.viewRev.markdown : S.note.markdown;
+            const text = extractFrontmatter(src).body;  // skip frontmatter — it's hidden in Read mode too
+            const done = () => { if (typeof showNotification === 'function') showNotification('Copied note to clipboard', 'success'); };
+            const fail = () => { if (typeof showNotification === 'function') showNotification('Could not copy — please copy manually.', 'error'); };
+            const fallbackCopy = () => {
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                    document.body.appendChild(ta); ta.focus(); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta);
+                    done();
+                } catch (err) { fail(); }
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(fallbackCopy);
+            } else {
+                fallbackCopy();
+            }
+        });
         el.scrim.addEventListener('click', closeDrawers);
         $('nvMenuBtn').addEventListener('click', () => { S.sideOpen = true; applyLayout(); });
         window.addEventListener('resize', () => { if (S.open) applyLayout(); updateProgress(); });
