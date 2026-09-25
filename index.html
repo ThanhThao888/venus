@@ -36483,10 +36483,11 @@ window.DBP={
 .nv-side-h { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); padding: 16px 10px 5px; }
 .nv-side-h-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-right: 6px; }
 .nv-side-h-add {
-    flex-shrink: 0; width: 20px; height: 20px; border: 0; border-radius: 6px;
-    background: none; color: var(--text-muted); cursor: pointer; font-size: 0.72rem;
-    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; display: flex; align-items: center; gap: 4px;
+    padding: 3px 7px; border: 0; border-radius: 999px;
+    background: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; font-weight: 600;
 }
+.nv-side-h-add i { font-size: 0.62rem; }
 .nv-side-h-add:hover { background: var(--nv-hover); color: var(--primary-dark); }
 .nv-nav-item {
     display: flex; align-items: center; gap: 10px; width: 100%;
@@ -39923,7 +39924,7 @@ kbd {
             + item('trash', '', 'trash', 'Trash', S.trash.length);
 
         const fl = [...folders.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
-        html += '<div class="nv-side-h nv-side-h-row"><span>Folders</span><button type="button" class="nv-side-h-add" data-new-folder title="New folder" aria-label="New folder"><i class="fa-solid fa-plus" aria-hidden="true"></i></button></div>';
+        html += '<div class="nv-side-h nv-side-h-row"><span>Folders</span><button type="button" class="nv-side-h-add" data-new-folder title="New folder" aria-label="New folder"><i class="fa-solid fa-plus" aria-hidden="true"></i>New</button></div>';
         if (fl.length) html += fl.map(([k, f]) => item('folder', k, iconFor(f.label), f.label, f.count)).join('');
 
         const tl = [...tags.entries()].sort((a, b) => (b[1].count - a[1].count) || a[1].label.localeCompare(b[1].label));
@@ -40001,6 +40002,7 @@ kbd {
                 <span title="${esc(fmtFull(n.updatedAt))}">${esc(fmtRel(n.updatedAt))}</span>
                 <span class="nv-row-acts">
                     <button type="button" class="nv-ib${n.pinned ? ' nv-on-pin' : ''}" data-act="pin" title="${n.pinned ? 'Unpin' : 'Pin'}" aria-label="${n.pinned ? 'Unpin' : 'Pin'} note"><i class="fa-solid fa-star"></i></button>
+                    <button type="button" class="nv-ib" data-act="move" title="Move to folder" aria-label="Move to folder"><i class="fa-solid fa-folder-tree"></i></button>
                     ${entityRowAction}
                     <button type="button" class="nv-ib nv-danger" data-act="del" title="Move to Trash" aria-label="Move note to Trash"><i class="fa-solid fa-trash"></i></button>
                 </span>
@@ -43159,7 +43161,7 @@ kbd {
     const KEYNAME = { mod: IS_MAC ? '⌘' : 'Ctrl', shift: IS_MAC ? '⇧' : 'Shift', alt: IS_MAC ? '⌥' : 'Alt', esc: 'Esc' };
     const kbds = (keys) => keys.map((k) => '<kbd>' + esc(KEYNAME[k] || k) + '</kbd>').join('');
     const keyText = (keys) => keys.map((k) => KEYNAME[k] || k).join(IS_MAC ? '' : '+');
-    const P = { open: false, mode: 'root', items: [], active: 0, prevFocus: null, timer: 0 };
+    const P = { open: false, mode: 'root', items: [], active: 0, prevFocus: null, timer: 0, targetId: null };
     const PAL_PLACE = { root: 'Type a command or search notes…', folder: 'Pick a folder, or type a new name', tag: 'Pick a tag to add, or type a new one' };
     const PAL_CHIP = { folder: 'Move to folder', tag: 'Tags' };
     const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
@@ -43229,15 +43231,22 @@ kbd {
         return m;
     }
     function moveToFolder(name) {
-        const n = S.note;
+        const n = (P.targetId && S.notes.find((x) => x.id === P.targetId)) || S.note;
         if (!n) return;
         const typed = normType(name), ex = liveFolders().find((f) => f.key === typeKey(typed));
         const label = ex ? ex.label : typed;               // typing "study" reuses the existing "Study"
         if (label === normType(n.type)) { flash('Already in “' + label + '”'); return; }
         n.type = label;
-        el.folderIn.value = label;
-        renderDocMeta();
-        markDirty();
+        if (S.note === n) {
+            el.folderIn.value = label;
+            renderDocMeta();
+            markDirty();
+        } else {
+            // Moved from the library list, without opening the note — there's no open-document
+            // autosave pipeline to piggyback on here, so persist this one field change directly.
+            n.updatedAt = Date.now();
+            dbPut(n).then(renderAll).catch((e) => console.error('Notes Vault: move failed', e));
+        }
         flash('Moved to “' + label + '”');
     }
     function tagsChanged() {
@@ -43360,7 +43369,7 @@ kbd {
 
     // second-step choosers
     function palFolderGroups(q, tokens) {
-        const n = S.note;
+        const n = (P.targetId && S.notes.find((x) => x.id === P.targetId)) || S.note;
         if (!n) return [];
         const cur = typeKey(n.type), items = [];
         for (const f of liveFolders()) {
@@ -43511,13 +43520,28 @@ kbd {
     function closePalette(restore) {
         if (!P.open) return;
         clearTimeout(P.timer); P.timer = 0;
-        P.open = false; P.mode = 'root';
+        P.open = false; P.mode = 'root'; P.targetId = null;
         el.pal.hidden = true;
         el.palScrim.hidden = true;
         el.palIn.setAttribute('aria-activedescendant', '');
         const f = P.prevFocus;
         P.prevFocus = null;
         if (restore !== false) refocus(f);
+    }
+    // "Move to folder" from a row in the library list — same folder picker the command
+    // palette uses for the open note, just aimed at a note that isn't open yet.
+    function openFolderPickerFor(id) {
+        if (!S.open || !S.notes.some((x) => x.id === id)) return;
+        closeMenus();
+        P.open = true; P.mode = 'folder'; P.active = 0; P.targetId = id;
+        P.prevFocus = document.activeElement;
+        el.palScrim.hidden = false;
+        el.pal.hidden = false;
+        el.palIn.value = '';
+        palChrome();
+        palRender();
+        el.palList.scrollTop = 0;
+        el.palIn.focus();
     }
     function palKey(e) {
         e.stopPropagation();                                    // the palette is modal: nothing behind it should react to keys
@@ -44183,6 +44207,7 @@ kbd {
             const id = row.dataset.id;
             if (b.dataset.act === 'open') openNote(id);
             else if (b.dataset.act === 'pin') togglePinById(id);
+            else if (b.dataset.act === 'move') openFolderPickerFor(id);
             else if (b.dataset.act === 'del') deleteNote(id);
             else if (b.dataset.act === 'unlinkEntity') unlinkScopedNote(id);
             else if (b.dataset.act === 'restore') restoreNote(id);
