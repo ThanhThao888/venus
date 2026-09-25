@@ -43230,11 +43230,13 @@ kbd {
         }
         return m;
     }
-    function moveToFolder(name) {
-        const n = (P.targetId && S.notes.find((x) => x.id === P.targetId)) || S.note;
+    // The actual move, once we already know which note. Split out from moveToFolder() because
+    // palRun() closes the palette (which clears P.targetId) BEFORE it runs the picked item's
+    // callback — so looking up P.targetId again inside that callback always saw it already
+    // cleared, and the note silently never moved. palFolderGroups() below resolves the note
+    // once, while P.targetId is still valid, and closes over that reference instead.
+    function applyMoveToFolder(n, label) {
         if (!n) return;
-        const typed = normType(name), ex = liveFolders().find((f) => f.key === typeKey(typed));
-        const label = ex ? ex.label : typed;               // typing "study" reuses the existing "Study"
         if (label === normType(n.type)) { flash('Already in “' + label + '”'); return; }
         n.type = label;
         if (S.note === n) {
@@ -43248,6 +43250,12 @@ kbd {
             dbPut(n).then(renderAll).catch((e) => console.error('Notes Vault: move failed', e));
         }
         flash('Moved to “' + label + '”');
+    }
+    function moveToFolder(name) {         // used by "Move to folder…" when a note is already open
+        const n = S.note;
+        if (!n) return;
+        const typed = normType(name), ex = liveFolders().find((f) => f.key === typeKey(typed));
+        applyMoveToFolder(n, ex ? ex.label : typed);   // typing "study" reuses the existing "Study"
     }
     function tagsChanged() {
         renderTagChips(); renderDocMeta(); markDirty();
@@ -43376,11 +43384,11 @@ kbd {
             let sc = 0;
             if (tokens.length) { sc = textScore(fold(f.label), tokens); if (sc < 0) continue; }
             const isCur = f.key === cur;
-            items.push({ icon: iconFor(f.label), label: f.label, hint: isCur ? 'Current folder' : plural(f.count, 'note'), score: sc, run: () => { closePalette(); moveToFolder(f.label); } });
+            items.push({ icon: iconFor(f.label), label: f.label, hint: isCur ? 'Current folder' : plural(f.count, 'note'), score: sc, run: () => applyMoveToFolder(n, f.label) });
         }
         const typed = q.trim();
         if (typed && !items.some((i) => i.label.toLowerCase() === typed.toLowerCase())) {
-            items.push({ icon: 'folder-plus', label: 'Create folder “' + typed + '”', plain: true, score: -1, run: () => { closePalette(); moveToFolder(typed); } });
+            items.push({ icon: 'folder-plus', label: 'Create folder “' + typed + '”', plain: true, score: -1, run: () => applyMoveToFolder(n, normType(typed)) });
         }
         items.sort((a, b) => b.score - a.score);
         return [{ label: 'Folders', items }];
