@@ -36791,6 +36791,24 @@ window.DBP={
     position: absolute; top: 5px; left: 5px; padding: 2px 6px; border-radius: 999px;
     background: rgba(192, 54, 74, 0.85); color: #fff; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em;
 }
+/* Files/PDFs tab — a list of rows (icon + filename), unlike the Images grid which has
+   real thumbnails to show. Reuses the same toolbar/summary markup as Images. */
+.nv-stor-filelist { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.nv-stor-filerow {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 10px;
+    background: var(--bg-light); cursor: pointer; text-align: left; position: relative;
+}
+.nv-stor-filerow:hover { border-color: var(--primary); }
+.nv-stor-fileicon {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(var(--primary-rgb), 0.12); color: var(--primary-dark); font-size: 0.95rem;
+}
+.nv-stor-filebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nv-stor-filename { font-size: 0.86rem; font-weight: 600; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-stor-filemeta { font-size: 0.74rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-filerow .nv-stor-badge-unused { position: static; margin-left: auto; flex-shrink: 0; }
 .nv-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 0.77rem; color: var(--text-muted); white-space: nowrap; }
 .nv-row-acts { position: relative; z-index: 2; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
 .nv-row:hover .nv-row-acts, .nv-row:focus-within .nv-row-acts { opacity: 1; }
@@ -37895,6 +37913,7 @@ kbd {
             <div class="nv-stor-tabs" role="tablist">
                 <button class="nv-stor-tab" data-stor-tab="overview" type="button" role="tab">Overview</button>
                 <button class="nv-stor-tab" data-stor-tab="images" type="button" role="tab">Images</button>
+                <button class="nv-stor-tab" data-stor-tab="files" type="button" role="tab">Files/PDFs</button>
             </div>
             <span class="nv-grow"></span>
             <button class="nv-btn nv-btn-ghost" id="nvStorRefresh" type="button"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
@@ -38047,7 +38066,7 @@ kbd {
             compareKey: null,             // pair key currently shown in the Compare view, or null for the list
             prevFocus: null
         },
-        stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', objectUrls: [] },   // Manage storage panel
+        stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', fileSort: 'size', fileFilter: 'all', objectUrls: [] },   // Manage storage panel
         linkPicker: { open: false, type: '', id: '', title: '', career: '', query: '', prevFocus: null },
         storageStats: null,                       // last getVaultStorageStats() result, cached for the compact indicator + panel
         noteAttachRefCache: new Map(),            // noteId → Set(attachment id) last synced to attachmentRefs — lets flushSave diff cheaply
@@ -43604,6 +43623,7 @@ kbd {
         if (!el.storBody) return;
         updateStorTabsUI();
         if (S.stor.tab === 'images') return renderStorImages();
+        if (S.stor.tab === 'files') return renderStorFiles();
         return renderStorOverview();
     }
     async function renderStorOverview() {
@@ -43745,7 +43765,7 @@ kbd {
         el.storBody.innerHTML = storImagesToolbarHtml() + '<div class="nv-dup-loading">Loading images…</div>';
         wireStorImagesToolbar();
         let items;
-        try { items = await getAttachmentsOverview(); }
+        try { items = (await getAttachmentsOverview()).filter((it) => /^image\//.test(it.rec.mime || '')); }
         catch (e) {
             console.warn('Notes Vault: could not load attachments', e);
             el.storBody.innerHTML = storImagesToolbarHtml() + '<div class="nv-stor-unsupported">Couldn’t load attachments.</div>';
@@ -43768,6 +43788,83 @@ kbd {
             + (filtered.length ? '<div class="nv-stor-imggrid" id="nvStorImgGrid">' + cards + '</div>' : '<div class="nv-stor-unsupported">No unused images — nice and tidy.</div>');
         wireStorImagesToolbar();
         await hydrateStorImageThumbs(filtered);
+    }
+
+    /* ── Files/PDFs tab: every non-image attachment (currently: PDFs) — same sort/filter
+       pattern as Images, but a plain list since there's no thumbnail worth rendering. ── */
+    function applyStorFileSort(items) {
+        if (S.stor.fileSort === 'new') items.sort((a, b) => b.rec.createdAt - a.rec.createdAt);
+        else if (S.stor.fileSort === 'old') items.sort((a, b) => a.rec.createdAt - b.rec.createdAt);
+        else items.sort((a, b) => b.rec.size - a.rec.size);   // 'size' — largest first, the default
+        return items;
+    }
+    function storFileRowHtml(it) {
+        const unused = !it.noteIds.length && !it.revIds.length;
+        const name = it.rec.filename || (it.rec.id + '.pdf');
+        const usage = unused ? '' : (' \u00b7 ' + (it.noteIds.length ? 'Used in ' + it.noteIds.length + (it.noteIds.length === 1 ? ' note' : ' notes') : 'In version history only'));
+        return '<button type="button" class="nv-stor-filerow">'
+            + '<span class="nv-stor-fileicon"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i></span>'
+            + '<span class="nv-stor-filebody">'
+            + '<span class="nv-stor-filename">' + esc(name) + '</span>'
+            + '<span class="nv-stor-filemeta">' + esc(fmtBytes(it.rec.size)) + usage + '</span>'
+            + '</span>'
+            + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
+            + '</button>';
+    }
+    function storFilesToolbarHtml() {
+        return '<div class="nv-stor-toolbar">'
+            + '<label class="nv-stor-select"><span>Sort</span><select id="nvStorFileSort">'
+            + '<option value="size"' + (S.stor.fileSort === 'size' ? ' selected' : '') + '>Largest first</option>'
+            + '<option value="new"' + (S.stor.fileSort === 'new' ? ' selected' : '') + '>Newest first</option>'
+            + '<option value="old"' + (S.stor.fileSort === 'old' ? ' selected' : '') + '>Oldest first</option>'
+            + '</select></label>'
+            + '<label class="nv-stor-check"><input type="checkbox" id="nvStorFileUnused"' + (S.stor.fileFilter === 'unused' ? ' checked' : '') + '> Unused only</label>'
+            + '</div>';
+    }
+    function wireStorFilesToolbar() {
+        const sortSel = $('nvStorFileSort');
+        if (sortSel) sortSel.addEventListener('change', () => { S.stor.fileSort = sortSel.value; renderStorFiles(); });
+        const unusedChk = $('nvStorFileUnused');
+        if (unusedChk) unusedChk.addEventListener('change', () => { S.stor.fileFilter = unusedChk.checked ? 'unused' : 'all'; renderStorFiles(); });
+    }
+    function wireStorFileRows(items) {
+        const list = $('nvStorFileList');
+        if (!list) return;
+        Array.from(list.children).forEach((row, i) => {
+            const it = items[i];
+            if (!it) return;
+            row.addEventListener('click', () => {
+                openAttachMenu(it.rec, row, { context: 'manager', noteCount: it.noteIds.length, revCount: it.revIds.length, onDeleted: renderStorFiles });
+            });
+        });
+    }
+    async function renderStorFiles() {
+        el.storBody.innerHTML = storFilesToolbarHtml() + '<div class="nv-dup-loading">Loading files…</div>';
+        wireStorFilesToolbar();
+        let items;
+        try { items = (await getAttachmentsOverview()).filter((it) => !/^image\//.test(it.rec.mime || '')); }
+        catch (e) {
+            console.warn('Notes Vault: could not load attachments', e);
+            el.storBody.innerHTML = storFilesToolbarHtml() + '<div class="nv-stor-unsupported">Couldn’t load attachments.</div>';
+            wireStorFilesToolbar();
+            return;
+        }
+        if (S.stor.tab !== 'files') return;   // the panel moved on while this was loading
+        if (!items.length) {
+            el.storBody.innerHTML = storFilesToolbarHtml() + '<div class="nv-stor-unsupported"><i class="fa-regular fa-file-pdf" aria-hidden="true"></i>No PDFs attached to any note yet.</div>';
+            wireStorFilesToolbar();
+            return;
+        }
+        applyStorFileSort(items);
+        const totalBytes = items.reduce((s, it) => s + (it.rec.size || 0), 0);
+        const unusedCount = items.filter((it) => !it.noteIds.length && !it.revIds.length).length;
+        const filtered = S.stor.fileFilter === 'unused' ? items.filter((it) => !it.noteIds.length && !it.revIds.length) : items;
+        const summary = '<p class="nv-stor-note" style="margin-top:0;">' + items.length + (items.length === 1 ? ' file' : ' files') + ' \u00b7 ' + fmtBytes(totalBytes) + ' total' + (unusedCount ? ' \u00b7 ' + unusedCount + ' unused' : '') + '</p>';
+        const rows = filtered.length ? filtered.map(storFileRowHtml).join('') : '';
+        el.storBody.innerHTML = storFilesToolbarHtml() + summary
+            + (filtered.length ? '<div class="nv-stor-filelist" id="nvStorFileList">' + rows + '</div>' : '<div class="nv-stor-unsupported">No unused files — nice and tidy.</div>');
+        wireStorFilesToolbar();
+        wireStorFileRows(filtered);
     }
 
     async function openStorModal() {
