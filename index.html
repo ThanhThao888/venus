@@ -36481,6 +36481,13 @@ window.DBP={
 
 .nv-side-scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -6px; padding: 0 6px 12px; }
 .nv-side-h { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); padding: 16px 10px 5px; }
+.nv-side-h-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-right: 6px; }
+.nv-side-h-add {
+    flex-shrink: 0; width: 20px; height: 20px; border: 0; border-radius: 6px;
+    background: none; color: var(--text-muted); cursor: pointer; font-size: 0.72rem;
+    display: flex; align-items: center; justify-content: center;
+}
+.nv-side-h-add:hover { background: var(--nv-hover); color: var(--primary-dark); }
 .nv-nav-item {
     display: flex; align-items: center; gap: 10px; width: 100%;
     padding: 7px 10px; border: 0; border-radius: 9px; background: none;
@@ -39916,7 +39923,8 @@ kbd {
             + item('trash', '', 'trash', 'Trash', S.trash.length);
 
         const fl = [...folders.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
-        if (fl.length) html += '<div class="nv-side-h">Folders</div>' + fl.map(([k, f]) => item('folder', k, iconFor(f.label), f.label, f.count)).join('');
+        html += '<div class="nv-side-h nv-side-h-row"><span>Folders</span><button type="button" class="nv-side-h-add" data-new-folder title="New folder" aria-label="New folder"><i class="fa-solid fa-plus" aria-hidden="true"></i></button></div>';
+        if (fl.length) html += fl.map(([k, f]) => item('folder', k, iconFor(f.label), f.label, f.count)).join('');
 
         const tl = [...tags.entries()].sort((a, b) => (b[1].count - a[1].count) || a[1].label.localeCompare(b[1].label));
         if (tl.length) {
@@ -41199,14 +41207,14 @@ kbd {
         closeDrawers();
     }
 
-    async function newNote() {
+    async function newNote(folderName) {
         await settle();
         pruneCurrentTabIfBlank();
         const now = Date.now();
         const sc = S.scope;
         const note = {
             id: uid(), title: '', markdown: '',
-            type: (sc.kind === 'folder' && S.fmap.get(sc.value)) ? S.fmap.get(sc.value).label : 'General',
+            type: folderName ? normType(folderName) : ((sc.kind === 'folder' && S.fmap.get(sc.value)) ? S.fmap.get(sc.value).label : 'General'),
             tags: (sc.kind === 'tag' && S.tmap.get(sc.value)) ? [S.tmap.get(sc.value).label] : [],
             pinned: false, createdAt: now, updatedAt: now
         };
@@ -41251,6 +41259,18 @@ kbd {
         setMode('edit', false);
         closeDrawers();
         requestAnimationFrame(() => { fitTitle(); el.title.focus(); });
+    }
+
+    // Folders aren't a stored entity of their own — they're just each note's "type" field,
+    // and one shows up in the sidebar the moment any note uses it. So "creating a folder"
+    // means: ask for a name, then open a new blank note already filed under it. Typing a
+    // title/body for that note is what actually makes the folder appear (a still-blank note
+    // is never saved — see flushSave() — same as "+ New note").
+    async function promptNewFolder() {
+        const name = (await skPrompt('Name this folder', ''))?.trim();
+        if (!name) return;
+        await newNote(name);
+        toast('New note started in “' + normType(name) + '” — give it a title to keep it.');
     }
 
     // Clicking a [[wikilink]] opens the note with that title, or — if none exists — creates a
@@ -44105,6 +44125,7 @@ kbd {
 
         // sidebar navigation
         el.sideScroll.addEventListener('click', (e) => {
+            if (e.target.closest('[data-new-folder]')) { promptNewFolder(); return; }
             const b = e.target.closest('[data-kind]');
             if (!b) return;
             if (b.dataset.kind === 'moretags') { S.tagsAll = !S.tagsAll; renderSide(); return; }
