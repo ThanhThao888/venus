@@ -36539,6 +36539,28 @@ window.DBP={
 .nv-prose img[data-nv-attach] { cursor: zoom-in; transition: filter 0.12s ease; border-radius: 10px; }
 .nv-prose img[data-nv-attach]:hover { filter: brightness(0.94); }
 .nv-prose img[data-nv-attach-missing] { cursor: default; opacity: 0.55; }
+.nv-prose a.nv-attach-missing { cursor: default; opacity: 0.55; text-decoration: line-through; }
+
+/* Inline PDF viewer card — replaces the `[label](attachment://id)` link at render time. */
+.nv-pdf-embed {
+    margin: 10px 0; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    overflow: hidden; background: var(--bg-light);
+}
+.nv-pdf-embed-bar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    border-bottom: 1px solid var(--border-color); background: var(--bg-white);
+    font-size: 0.82rem; color: var(--text-dark);
+}
+.nv-pdf-embed-bar > i { color: var(--primary); }
+.nv-pdf-embed-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-pdf-embed-size { color: var(--text-muted); font-size: 0.76rem; flex-shrink: 0; }
+.nv-pdf-embed-more {
+    margin-left: auto; flex-shrink: 0; width: 26px; height: 26px; border: 0; border-radius: 7px;
+    background: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.nv-pdf-embed-more:hover { background: var(--nv-hover); color: var(--text-dark); }
+.nv-pdf-embed-frame { display: block; width: 100%; height: 65vh; min-height: 320px; max-height: 720px; border: 0; background: var(--bg-white); }
+@media (max-width: 640px) { .nv-pdf-embed-frame { height: 55vh; } }
 .nv-attach-menu {
     position: fixed; z-index: 60; min-width: 200px; max-width: 260px;
     padding: 6px; border-radius: 12px; display: none;
@@ -37563,6 +37585,7 @@ kbd {
         </div>
         <input type="file" id="nvImportFile" accept="application/json,.json" hidden>
         <input type="file" id="nvAttachInput" accept="image/*" multiple hidden>
+        <input type="file" id="nvPdfInput" accept="application/pdf" multiple hidden>
     </aside>
 
     <!-- ── Main: library ⇄ document ── -->
@@ -37711,6 +37734,7 @@ kbd {
                         <button class="nv-tb" type="button" data-cmd="link" data-tip="Link"><i class="fa-solid fa-link"></i></button>
                         <button class="nv-tb nv-tb-txt" type="button" data-cmd="wikilink" data-tip="Link to note">[[ ]]</button>
                         <button class="nv-tb" type="button" data-cmd="image" data-tip="Image"><i class="fa-solid fa-image"></i></button>
+                        <button class="nv-tb" type="button" data-cmd="pdf" data-tip="PDF"><i class="fa-solid fa-file-pdf"></i></button>
                         <span class="nv-tsep" aria-hidden="true"></span>
                         <button class="nv-tb" type="button" data-cmd="codeblock" data-tip="Code block"><i class="fa-solid fa-file-code"></i></button>
                         <button class="nv-tb" type="button" data-cmd="table" data-tip="Table"><i class="fa-solid fa-table"></i></button>
@@ -38646,16 +38670,50 @@ kbd {
         return new Blob([bytes], { type: mime || 'application/octet-stream' });
     }
 
+    // A PDF is stored as-is — no resize/re-encode step makes sense for it the way it does for
+    // an image, so this is a thin sibling of the image path below: hash the raw bytes, dedupe
+    // against the same `attachments` store, save the Blob untouched, verify it reads back.
+    // Kept in the same store/id-space as images (content-addressed by SHA-256) so ref-counting,
+    // storage accounting and backup/restore all work on PDFs for free, with no code of their own.
+    async function ingestPdfAttachment(file) {
+        const hash = await hashBlob(file);
+        const existing = await dbFindAttachmentByHash(hash);
+        if (existing) {
+            if (existing.blob instanceof Blob && existing.blob.size > 0) {
+                S.attachmentCache.set(existing.id, existing);
+                return existing;
+            }
+            await dbDeleteAttachment(existing.id).catch(() => {});
+            await dbDeleteAttachmentRefs(existing.id).catch(() => {});
+            S.attachmentCache.delete(existing.id);
+        }
+        const rec = {
+            id: 'att_' + hash.slice(0, 24), hash, blob: file, mime: 'application/pdf',
+            size: file.size, filename: (file.name || 'document.pdf').trim() || 'document.pdf', createdAt: Date.now()
+        };
+        await dbPutAttachment(rec);
+        const verified = await dbGetAttachment(rec.id);
+        if (!verified || !(verified.blob instanceof Blob) || verified.blob.size <= 0) {
+            await dbDeleteAttachment(rec.id).catch(() => {});
+            throw attachError('The PDF could not be read back from browser storage. If this app is opened as a local file (file://), open it from a local web server instead.');
+        }
+        S.attachmentCache.set(rec.id, verified);
+        return verified;
+    }
+
     async function ingestAttachment(file) {
-        if (!file || !/^image\//.test(file.type)) throw attachError('Only images can be attached right now.');
-        if (file.size > ATTACH_MAX_SOURCE_BYTES) throw attachError('That image is too large to attach (25\u202fMB limit).');
+        const isPdf = file && file.type === 'application/pdf';
+        if (!file || !(/^image\//.test(file.type) || isPdf)) throw attachError('Only images and PDFs can be attached right now.');
+        if (file.size > ATTACH_MAX_SOURCE_BYTES) throw attachError('That file is too large to attach (25\u202fMB limit).');
 
         // Storage guard — checked here (not just in the UI) so drag/drop and paste both respect it.
         try {
             const stats = await getVaultStorageStats();
             const health = getStorageHealth(stats.totals.percent);
-            if (health.blockAttachments) throw attachError('Storage is almost full — free up space before attaching images.');
+            if (health.blockAttachments) throw attachError('Storage is almost full — free up space before attaching files.');
         } catch (e) { if (e && e.__attach) throw e; /* stats call itself failing shouldn't block a paste */ }
+
+        if (isPdf) return ingestPdfAttachment(file);
 
         const encoded = await encodeAttachmentImage(file).catch(() => null);
         if (!encoded) throw attachError('Could not read or encode that image.');
@@ -40430,6 +40488,67 @@ kbd {
             img.setAttribute('data-nv-attach', id);
             img.addEventListener('click', (e) => { e.preventDefault(); openAttachMenu(rec, img); });
         }
+
+        // Non-image attachments (currently: PDFs) are inserted as a plain markdown link —
+        // `[label](attachment://id)` — since a browser can't decode them as an <img>. Swap each
+        // one for an inline viewer card instead of leaving a dead "attachment://…" href behind.
+        const links = Array.from(target.querySelectorAll('a[href^="attachment://"]'));
+        for (const a of links) {
+            const id = a.getAttribute('href').slice('attachment://'.length);
+            let rec = S.attachmentCache.get(id) || null;
+            if (!rec) {
+                try { rec = await dbGetAttachment(id); } catch (e) { /* try session cache below */ }
+            }
+            if (!target.isConnected) return;
+            if (!rec || !(rec.blob instanceof Blob) || rec.blob.size <= 0) rec = S.attachmentCache.get(id) || null;
+            if (!rec || !(rec.blob instanceof Blob) || rec.blob.size <= 0) {
+                a.removeAttribute('href');
+                a.classList.add('nv-attach-missing');
+                a.textContent = (a.textContent || 'file') + ' (attachment no longer available)';
+                continue;
+            }
+            S.attachmentCache.set(id, rec);
+            let url;
+            try { url = URL.createObjectURL(rec.blob); } catch (e) { continue; }
+            S.attachObjectUrls.push(url);
+            if (rec.mime === 'application/pdf') {
+                renderPdfEmbed(a, rec, url);
+            } else {
+                // Any other non-image attachment reached via a plain link — just point it at a
+                // working blob: URL rather than leaving the inert "attachment://…" scheme in place.
+                a.href = url;
+                a.target = '_blank';
+                a.rel = 'noopener';
+            }
+        }
+    }
+
+    // Replaces a `[label](attachment://id)` anchor with an inline PDF viewer: a small title bar
+    // (filename, size, "…" menu reusing openAttachMenu) plus an <iframe> onto the blob: URL,
+    // which every modern desktop/mobile browser renders using its own built-in PDF viewer — no
+    // pdf.js or other bundled renderer needed, and it keeps working if that CDN is ever offline.
+    function renderPdfEmbed(anchor, rec, url) {
+        const wrap = document.createElement('div');
+        wrap.className = 'nv-pdf-embed';
+        wrap.innerHTML =
+            '<div class="nv-pdf-embed-bar">'
+            + '<i class="fa-solid fa-file-pdf" aria-hidden="true"></i>'
+            + '<span class="nv-pdf-embed-name"></span>'
+            + '<span class="nv-pdf-embed-size"></span>'
+            + '<button type="button" class="nv-pdf-embed-more" aria-label="PDF options" title="PDF options"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>'
+            + '</div>'
+            + '<iframe class="nv-pdf-embed-frame" loading="lazy"></iframe>';
+        const name = (rec.filename || anchor.textContent || 'PDF document').replace(/^\uD83D\uDCC4\s*/, '');
+        wrap.querySelector('.nv-pdf-embed-name').textContent = name;
+        wrap.querySelector('.nv-pdf-embed-size').textContent = fmtBytes(rec.size);
+        const frame = wrap.querySelector('.nv-pdf-embed-frame');
+        frame.title = name;
+        frame.src = url;
+        wrap.querySelector('.nv-pdf-embed-more').addEventListener('click', (e) => {
+            e.preventDefault();
+            openAttachMenu(rec, e.currentTarget);
+        });
+        anchor.replaceWith(wrap);
     }
 
     /* ── "Open image externally" — a tiny fixed-position popover, not an editor ── */
@@ -40460,10 +40579,12 @@ kbd {
             else usageLine = ' \u00b7 Unused';
         }
         const canDelete = context === 'note' || (context === 'manager' && !opts.noteCount && !opts.revCount);
+        const isImage = /^image\//.test(rec.mime || '');
+        const noun = isImage ? 'image' : 'file';
         menu.innerHTML =
-            '<div class="nv-attach-meta">' + esc(dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || 'image') + usageLine) + '</div>'
+            '<div class="nv-attach-meta">' + esc((rec.filename ? rec.filename + ' \u00b7 ' : '') + dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || noun) + usageLine) + '</div>'
             + '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>'
-            + '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>'
+            + (isImage ? '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>' : '')
             + '<button type="button" class="nv-act" data-act="save"><i class="fa-solid fa-download" aria-hidden="true"></i> Save as…</button>'
             + (canDelete ? '<button type="button" class="nv-act nv-danger" data-act="delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>' : '');
         document.body.appendChild(menu);
@@ -40492,26 +40613,29 @@ kbd {
                 const ext = (rec.mime && rec.mime.split('/')[1]) || 'webp';
                 const url = URL.createObjectURL(rec.blob);
                 const a = document.createElement('a');
-                a.href = url; a.download = rec.id + '.' + ext;
+                a.href = url; a.download = rec.filename || (rec.id + '.' + ext);
                 document.body.appendChild(a); a.click(); a.remove();
                 setTimeout(() => URL.revokeObjectURL(url), 2000);
             } else if (act === 'delete' && context === 'manager') {
-                if (!confirm('Delete this unused image permanently? This cannot be undone.')) return;
+                if (!confirm('Delete this unused ' + noun + ' permanently? This cannot be undone.')) return;
                 await dbDeleteAttachment(rec.id).catch(() => {});
                 await dbDeleteAttachmentRefs(rec.id).catch(() => {});
-                flash('Image deleted');
+                flash((isImage ? 'Image' : 'File') + ' deleted');
                 if (opts.onDeleted) opts.onDeleted();
             } else if (act === 'delete') {
-                if (!confirm('Remove this image from the note? The file stays stored until Storage → Clean up unused attachments is run, in case you undo.')) return;
+                if (!confirm('Remove this ' + noun + ' from the note? The file stays stored until Storage → Clean up unused attachments is run, in case you undo.')) return;
                 if (S.note && S.mode === 'edit') {
-                    const md = S.note.markdown.replace(new RegExp('!\\[[^\\]]*\\]\\(attachment://' + rec.id + '\\)'), '');
+                    // Matches both the image syntax (`![alt](attachment://id)`) and the plain-link
+                    // syntax used for PDFs/other files (`[label](attachment://id)`).
+                    const md = S.note.markdown.replace(new RegExp('!?\\[[^\\]]*\\]\\(attachment://' + rec.id + '\\)'), '');
                     S.note.markdown = md;
                     if (el.src) el.src.value = md;
                     markDirty();
                     renderInto(el.read, md);
-                    toast('Image removed from the note');
+                    toast((isImage ? 'Image' : 'File') + ' removed from the note');
                 } else {
-                    imgEl.remove();
+                    const embed = imgEl.closest('.nv-pdf-embed');
+                    if (embed) embed.remove(); else imgEl.remove();
                 }
             }
         });
@@ -41963,7 +42087,7 @@ kbd {
             try {
                 attachments.push({
                     id: rec.id, hash: rec.hash, mime: rec.mime, size: rec.size,
-                    width: rec.width, height: rec.height, createdAt: rec.createdAt,
+                    width: rec.width, height: rec.height, filename: rec.filename, createdAt: rec.createdAt,
                     dataB64: await blobToBase64(rec.blob)
                 });
             } catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
@@ -42072,7 +42196,7 @@ kbd {
                 const rec = {
                     id: raw.id, hash: raw.hash || raw.id, blob, mime: raw.mime || blob.type,
                     size: +raw.size || blob.size, width: +raw.width || 0, height: +raw.height || 0,
-                    createdAt: +raw.createdAt || Date.now()
+                    filename: raw.filename || undefined, createdAt: +raw.createdAt || Date.now()
                 };
                 await dbPutAttachment(rec);
                 S.attachmentCache.set(rec.id, rec);
@@ -42432,6 +42556,7 @@ kbd {
         ul: () => setList('ul'), ol: () => setList('ol'), task: () => setList('task'),
         quote: toggleQuote, link: insertLink, wikilink: insertWikilink,
         image: () => { if (el.attachInput) el.attachInput.click(); },
+        pdf: () => { if (el.pdfInput) el.pdfInput.click(); },
         codeblock: toggleCodeBlock,
         table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting,
         extract: extractSelectionToNote
@@ -42702,16 +42827,25 @@ kbd {
     async function insertAttachments(files) {
         const ta = el.src;
         for (const file of files) {
+            const isPdf = file.type === 'application/pdf';
             const jobId = 'j' + (++attachJobSeq) + Date.now().toString(36);
-            const placeholder = '![Uploading…](attachment-pending:' + jobId + ')';
+            // A PDF is inserted as a plain markdown link (not `![]()`) — a browser can't decode a
+            // PDF blob as an <img>, so it gets its own inline viewer at render time instead (see
+            // resolveAttachments/renderPdfEmbed) rather than pretending to be a picture.
+            const placeholder = isPdf ? '[Uploading…](attachment-pending:' + jobId + ')' : '![Uploading…](attachment-pending:' + jobId + ')';
             const s = ta.selectionStart, en = ta.selectionEnd;
             replaceRange(s, en, placeholder, s + placeholder.length);
             markDirty();
             let md, err;
             try {
                 const rec = await ingestAttachment(file);
-                const alt = (file.name || 'image').replace(/\.[a-z0-9]+$/i, '').trim() || 'image';
-                md = '![' + alt + '](attachment://' + rec.id + ')';
+                if (isPdf) {
+                    const label = (file.name || rec.filename || 'document.pdf').trim() || 'document.pdf';
+                    md = '[\uD83D\uDCC4 ' + label + '](attachment://' + rec.id + ')';
+                } else {
+                    const alt = (file.name || 'image').replace(/\.[a-z0-9]+$/i, '').trim() || 'image';
+                    md = '![' + alt + '](attachment://' + rec.id + ')';
+                }
             } catch (e) {
                 err = e; md = '';
             }
@@ -42719,7 +42853,7 @@ kbd {
             if (idx !== -1) replaceRange(idx, idx + placeholder.length, md, idx + md.length);
             else if (md) { const p = ta.selectionStart; replaceRange(p, p, md, p + md.length); }
             markDirty();
-            if (err) toast(err.message || 'Could not attach that image.');
+            if (err) toast(err.message || 'Could not attach that file.');
         }
     }
     async function onEditorPaste(e) {
@@ -43778,7 +43912,7 @@ kbd {
         el = {
             fab: $('nvFab'), overlay: $('nvOverlay'), app: $('nvApp'), scrim: $('nvScrim'),
             side: $('nvSide'), sideScroll: $('nvSideScroll'), search: $('nvSearch'), clear: $('nvClear'),
-            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), attachInput: $('nvAttachInput'),
+            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), attachInput: $('nvAttachInput'), pdfInput: $('nvPdfInput'),
             themeBtn: $('nvThemeBtn'), themeMenu: $('nvThemeMenu'),
             lib: $('nvLib'), libScroll: $('nvLibScroll'), libTitle: $('nvLibTitle'), libSub: $('nvLibSub'), list: $('nvList'),
             docView: $('nvDocView'), docScroll: $('nvDocScroll'), title: $('nvTitle'), docMeta: $('nvDocMeta'),
@@ -44015,7 +44149,8 @@ kbd {
         el.src.addEventListener('paste', onEditorPaste);
         el.src.addEventListener('dragover', (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) e.preventDefault(); });
         el.src.addEventListener('drop', (e) => {
-            const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files).filter((f) => /^image\//.test(f.type)) : [];
+            const files = e.dataTransfer && e.dataTransfer.files
+                ? Array.from(e.dataTransfer.files).filter((f) => /^image\//.test(f.type) || f.type === 'application/pdf') : [];
             if (!files.length) return;
             e.preventDefault();
             insertAttachments(files);   // inserts at the current selection — dropping doesn't move the caret in a plain <textarea>
@@ -44025,6 +44160,13 @@ kbd {
                 const files = Array.from(el.attachInput.files || []);
                 if (files.length) insertAttachments(files);
                 el.attachInput.value = '';   // reset so picking the same file twice still fires 'change'
+            });
+        }
+        if (el.pdfInput) {
+            el.pdfInput.addEventListener('change', () => {
+                const files = Array.from(el.pdfInput.files || []);
+                if (files.length) insertAttachments(files);
+                el.pdfInput.value = '';
             });
         }
         ['keyup', 'mouseup', 'input', 'focus'].forEach((ev) => el.src.addEventListener(ev, () => { refreshToolbar(); checkWlTrigger(); }));
