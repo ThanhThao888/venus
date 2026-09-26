@@ -29890,6 +29890,22 @@ window.DBP={
                 <div id="sleepSnapshotBody"></div>
             </div>
 
+                <!-- Data completeness — "độ tin cậy phân tích", KHÔNG phải điểm sức khoẻ.
+                 Chỉ trả lời 1 câu: dữ liệu 14 đêm gần nhất đầy đủ tới đâu, vì nhiều phân tích
+                 (đều đặn, SE, insight) có thể đang chạy trên dữ liệu thiếu mà người dùng không biết. -->
+            <div id="dataCompletenessCard" style="display:none; margin: 4px 0 14px; padding:10px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer;" onclick="toggleDataCompletenessDetail()">
+                    <span style="font-size:0.78rem; font-weight:600; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+                        <svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Độ tin cậy phân tích
+                    </span>
+                    <span id="dataCompletenessSummary" style="font-size:0.76rem; font-weight:700; white-space:nowrap;"></span>
+                </div>
+                <div id="dataCompletenessBar" style="margin-top:7px; height:5px; border-radius:3px; background:var(--border-color); overflow:hidden;">
+                    <div id="dataCompletenessBarFill" style="height:100%; width:0%; border-radius:3px; transition:width 0.3s;"></div>
+                </div>
+                <div id="dataCompletenessDetail" style="display:none; margin-top:9px; font-size:0.74rem; color:var(--text-muted); line-height:1.7;"></div>
+            </div>
+
                 <!-- Morning Sleep Brief — 4 dòng tóm tắt mỗi sáng, tái dùng tinh thần Deadline Brief -->
             <div id="sleepBriefWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -29944,6 +29960,7 @@ window.DBP={
                 <div style="height:64px;">
                     <canvas id="solTrendChart"></canvas>
                 </div>
+                <div id="solTrendStreakNote" style="display:none; margin-top:6px; padding-top:6px; border-top:1px dashed var(--border-color); font-size:0.75rem; color:#f59e0b; line-height:1.5;"></div>
             </div>
 
                 <!-- SOL vs Ghi chú (Notes) Correlation -->
@@ -30003,8 +30020,12 @@ window.DBP={
                 <div class="chart-container" id="sleepTimelineWrap" style="margin:0 0 4px;">
                     <canvas id="sleepTimelineChart"></canvas>
                 </div>
-                <div style="font-size:0.7rem; color:var(--text-muted);">
-                    <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-pencil"></use></svg> Nhấn vào 1 hàng để sửa đêm đó
+                <div style="font-size:0.7rem; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span><svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-pencil"></use></svg> Nhấn vào 1 hàng để sửa đêm đó</span>
+                    <span id="sleepTimelineNapLegend" style="display:none; align-items:center; gap:5px;">
+                        <span style="width:9px;height:9px;border-radius:3px;background:rgba(245,158,11,0.75);border:1px solid #f59e0b;display:inline-block;"></span>
+                        Nap
+                    </span>
                 </div>
             </div>
 
@@ -59678,6 +59699,71 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         }
 
+        // ===== Data completeness — "độ tin cậy phân tích" =====
+        // Trả lời đúng 1 câu: dữ liệu 14 ngày gần nhất đầy đủ tới đâu — KHÔNG phải điểm sức
+        // khoẻ giấc ngủ. Gồm 2 khía cạnh độc lập, vì thiếu ở khía cạnh nào cũng làm sai lệch
+        // phân tích khác nhau:
+        //  1) Tần suất log — có bao nhiêu trong 14 ngày gần nhất thực sự có log đêm ngủ.
+        //     Thiếu ở đây làm sai lệch mọi phân tích theo cửa sổ ngày (đều đặn, nợ ngủ, trend).
+        //  2) Độ đầy trường dữ liệu — trong các đêm ĐÃ log, bao nhiêu đêm có kèm SOL/chất lượng/
+        //     awakenings. Thiếu ở đây làm sai lệch riêng SE, insomnia pattern, "vì sao đêm qua tệ".
+        function computeDataCompleteness(days = 14) {
+            const dayKeys = [];
+            for (let i = days - 1; i >= 0; i--) {
+                dayKeys.push(vnDateStrFromTs(Date.now() - i * 86400000));
+            }
+            const dayKeySet = new Set(dayKeys);
+            const sessionsInWindow = sleepSessions.filter(s => dayKeySet.has(getSleepWakeDateVN(s)));
+            const loggedDays = new Set(sessionsInWindow.map(getSleepWakeDateVN)).size;
+
+            const n = sessionsInWindow.length;
+            const withQuality = sessionsInWindow.filter(s => s.quality > 0).length;
+            const withSOL = sessionsInWindow.filter(s => typeof s.sol === 'number' && !isNaN(s.sol)).length;
+            const withAwakenings = sessionsInWindow.filter(s => typeof s.awakenings_min === 'number' && !isNaN(s.awakenings_min)).length;
+
+            const loggingRate = loggedDays / days;
+            const qualityRate = n > 0 ? withQuality / n : 0;
+            const solRate = n > 0 ? withSOL / n : 0;
+            const awakeningsRate = n > 0 ? withAwakenings / n : 0;
+
+            // Tần suất log quan trọng nhất (không log = mất trắng mọi phân tích), 3 trường còn
+            // lại chia đều phần còn lại.
+            const confidence = Math.round(100 * (loggingRate * 0.5 + qualityRate * 0.2 + solRate * 0.2 + awakeningsRate * 0.1));
+
+            return { days, loggedDays, n, withQuality, withSOL, withAwakenings, confidence };
+        }
+
+        function toggleDataCompletenessDetail() {
+            const el = document.getElementById('dataCompletenessDetail');
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function renderDataCompletenessCard() {
+            const wrap = document.getElementById('dataCompletenessCard');
+            if (!wrap) return;
+            if (sleepSessions.length === 0) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+
+            const c = computeDataCompleteness(14);
+            const color = c.confidence >= 75 ? '#10b981' : c.confidence >= 45 ? '#f59e0b' : '#ef4444';
+
+            const summaryEl = document.getElementById('dataCompletenessSummary');
+            if (summaryEl) { summaryEl.textContent = `${c.confidence}%`; summaryEl.style.color = color; }
+            const fillEl = document.getElementById('dataCompletenessBarFill');
+            if (fillEl) { fillEl.style.width = `${c.confidence}%`; fillEl.style.background = color; }
+
+            const detailEl = document.getElementById('dataCompletenessDetail');
+            if (detailEl) {
+                detailEl.innerHTML = `
+                    <div>${c.loggedDays}/${c.days} ngày gần nhất có log đêm ngủ</div>
+                    <div>${c.withQuality}/${c.n || 0} đêm đã log có chấm chất lượng</div>
+                    <div>${c.withSOL}/${c.n || 0} đêm đã log có SOL (thời gian vào giấc)</div>
+                    <div>${c.withAwakenings}/${c.n || 0} đêm đã log có thức giấc giữa đêm</div>
+                    <div style="margin-top:4px; font-style:italic;">Số liệu này chỉ nói dữ liệu đầy đủ tới đâu — không phải điểm chất lượng giấc ngủ.</div>
+                `;
+            }
+        }
+
         function renderSleepDebtCard() {
             const wrap = document.getElementById('sleepDebtCard');
             const body = document.getElementById('sleepDebtCardBody');
@@ -59900,6 +59986,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (withSOL.length < 3) {
                 wrap.style.display = 'none';
                 if (solTrendChart) { solTrendChart.destroy(); solTrendChart = null; }
+                const streakNoteElEmpty = document.getElementById('solTrendStreakNote');
+                if (streakNoteElEmpty) streakNoteElEmpty.style.display = 'none';
                 return;
             }
             wrap.style.display = 'block';
@@ -59909,6 +59997,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
             });
             const solValues = withSOL.map(s => s.sol);
+
+            // Chuỗi đêm liên tiếp gần nhất SOL cứ tăng dần (đêm sau ≥ đêm trước, và có ít
+            // nhất 1 đêm thực sự tăng) — báo sớm một xu hướng đang xấu đi rõ ràng, khác với
+            // % so sánh nửa-đầu/nửa-sau ở trên vốn có thể "trung hoà" một chuỗi tăng liên tục
+            // gần đây nếu nửa đầu chuỗi vốn đã cao.
+            let streak = 1;
+            for (let i = solValues.length - 1; i > 0; i--) {
+                if (solValues[i] >= solValues[i - 1]) streak++;
+                else break;
+            }
+            const hasRealIncrease = streak >= 3 && solValues[solValues.length - streak] < solValues[solValues.length - 1];
+            const streakNoteEl = document.getElementById('solTrendStreakNote');
+            if (streakNoteEl) {
+                if (hasRealIncrease) {
+                    streakNoteEl.style.display = 'block';
+                    streakNoteEl.innerHTML = `<svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-triangle-alert"></use></svg> Thời gian vào giấc đã tăng dần trong ${streak} đêm liên tiếp gần nhất (${solValues[solValues.length - streak]} → ${solValues[solValues.length - 1]} phút).`;
+                } else {
+                    streakNoteEl.style.display = 'none';
+                }
+            }
 
             // So sánh trung bình nửa sau vs nửa đầu của chuỗi để hiện mũi tên xu hướng
             const mid = Math.floor(withSOL.length / 2);
@@ -60627,6 +60735,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
 
+        // Holds the cleanup for whichever manual-sleep modal instance is
+        // currently open. closeManualSleepModal() (defined below) runs this
+        // once and clears it — replaces the old pattern of re-wrapping
+        // window.closeManualSleepModal on every open, which stacked a new
+        // closure around the previous one each time and never unwound.
+        let _manualSleepModalCleanup = null;
+
         function openManualSleepModal() {
             const now = new Date();
             
@@ -61119,12 +61234,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
-            // Override the close function to include cleanup
-            const originalCloseManualSleepModal = closeManualSleepModal;
-            window.closeManualSleepModal = function() {
-                cleanupModal();
-                originalCloseManualSleepModal();
-            };
+            // Register this instance's cleanup; closeManualSleepModal() runs it.
+            _manualSleepModalCleanup = cleanupModal;
+
+            // Previously done via an external wrap re-applied on every open
+            // (window.openManualSleepModal = function... setTimeout(...)).
+            // Inlined here instead: this function has a single exit path
+            // (no early `return`), so appending it directly is equivalent
+            // and needs no wrapper.
+            setTimeout(updateAllRecommendations, 500);
         }
 
 
@@ -61162,6 +61280,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         function closeManualSleepModal() {
+            if (_manualSleepModalCleanup) {
+                _manualSleepModalCleanup();
+                _manualSleepModalCleanup = null;
+            }
             const modal = document.getElementById('manualSleepModal');
             if (modal) modal.remove();
         }
@@ -62009,6 +62131,51 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             const barColors = recentSessions.map(session => colorForDuration(session.duration));
 
+            // Gán nap vào đúng 1 hàng: hàng của đêm ngủ chính diễn ra NGAY SAU nap đó — tức
+            // nap thuộc "khung ban ngày" giữa lúc dậy của đêm liền trước và giờ đi ngủ của
+            // đêm này. Nhờ vậy đọc một hàng là đọc trọn "nap ban ngày → tối đến giờ ngủ chính"
+            // theo đúng trình tự thời gian, không cần thêm hàng riêng cho nap.
+            const naps = getSleepNapsSafe().filter(n => n && typeof n.start === 'number' && !isNaN(n.start));
+            const napsByRow = recentSessions.map(() => []);
+            naps.forEach(nap => {
+                const napEnd = typeof nap.end === 'number' && !isNaN(nap.end)
+                    ? nap.end : nap.start + (nap.durationMin || 0) * 60000;
+                if (!(napEnd > nap.start)) return;
+                for (let i = 0; i < recentSessions.length; i++) {
+                    const windowEnd = recentSessions[i].start;
+                    const prevEndTs = i > 0 ? getSleepSessionEndTs(recentSessions[i - 1]) : null;
+                    const windowStart = prevEndTs !== null ? prevEndTs : -Infinity;
+                    if (nap.start >= windowStart && nap.start < windowEnd) {
+                        napsByRow[i].push([nap.start, napEnd]);
+                        break;
+                    }
+                }
+            });
+            // Tối đa 3 nap/hàng hiển thị riêng biệt — quá hiếm khi có nhiều hơn trong 1 ngày,
+            // và mỗi nap thêm là 1 dataset riêng nên giới hạn để tránh phình cấu hình chart.
+            const maxNapsInRow = Math.min(3, napsByRow.reduce((m, arr) => Math.max(m, arr.length), 0));
+            const napDatasets = [];
+            for (let k = 0; k < maxNapsInRow; k++) {
+                napDatasets.push({
+                    label: 'Nap',
+                    __isNap: true,
+                    data: napsByRow.map(row => {
+                        const nap = row[k];
+                        if (!nap) return null;
+                        const xStart = sleepTimeToAxisHour(nap[0]);
+                        return [xStart, xStart + (nap[1] - nap[0]) / 3600000];
+                    }),
+                    backgroundColor: 'rgba(245,158,11,0.75)',
+                    borderColor: '#f59e0b',
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    barPercentage: 0.32,
+                    categoryPercentage: 0.8
+                });
+            }
+            const napLegend = document.getElementById('sleepTimelineNapLegend');
+            if (napLegend) napLegend.style.display = maxNapsInRow > 0 ? 'inline-flex' : 'none';
+
             // Trục X cố định 12:00 trưa → 12:00 trưa hôm sau (12–36), vừa đủ chứa mọi khung
             // giờ ngủ thường gặp mà vẫn giữ tỉ lệ nhất quán giữa các lần vẽ lại.
             let axisMin = 12, axisMax = 36;
@@ -62016,6 +62183,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (s < axisMin) axisMin = Math.floor(s / 3) * 3;
                 if (e > axisMax) axisMax = Math.ceil(e / 3) * 3;
             });
+            napDatasets.forEach(ds => ds.data.forEach(r => {
+                if (!r) return;
+                if (r[0] < axisMin) axisMin = Math.floor(r[0] / 3) * 3;
+                if (r[1] > axisMax) axisMax = Math.ceil(r[1] / 3) * 3;
+            }));
 
             if (sleepTimelineChart) {
                 sleepTimelineChart.destroy();
@@ -62034,14 +62206,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         borderRadius: 6,
                         barPercentage: 0.65,
                         categoryPercentage: 0.8
-                    }]
+                    }, ...napDatasets]
                 },
                 options: {
                     indexAxis: 'y',
                     responsive: true,
                     // Click-to-edit (#8): cùng cơ chế với Hours chart — bấm vào bất kỳ
                     // đâu dọc theo hàng (đêm) đó, không cần trúng chính xác thanh, đều mở
-                    // modal sửa đêm đó.
+                    // modal sửa đêm đó. Nap chỉ hiển thị để đọc, không mở modal riêng (nap có
+                    // modal sửa/xoá của chính nó ở Nap Tracker phía trên).
                     onClick: (evt, elements, chart) => {
                         const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
                         const barEl = els.find(el => el.datasetIndex === 0);
@@ -62060,6 +62233,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             callbacks: {
                                 title: (items) => items[0]?.label || '',
                                 label: (context) => {
+                                    if (context.dataset.__isNap) {
+                                        const row = napsByRow[context.dataIndex];
+                                        const k = context.datasetIndex - 1; // 0 = dataset ngủ chính
+                                        const nap = row && row[k];
+                                        if (!nap) return '';
+                                        const nStart = axisHourToClockLabel(sleepTimeToAxisHour(nap[0]));
+                                        const nEnd = axisHourToClockLabel(sleepTimeToAxisHour(nap[0]) + (nap[1] - nap[0]) / 3600000);
+                                        const mins = Math.round((nap[1] - nap[0]) / 60000);
+                                        return `Nap: ${nStart} → ${nEnd} · ${mins}p`;
+                                    }
                                     const session = recentSessions[context.dataIndex];
                                     const bedtime = axisHourToClockLabel(ranges[context.dataIndex][0]);
                                     const wake = axisHourToClockLabel(ranges[context.dataIndex][1]);
@@ -62532,6 +62715,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (wrap) wrap.style.display = 'none';
                 renderTonightPlanCard(); // ẩn kế hoạch tối nay khi chưa có dữ liệu
                 renderSleepSnapshotCard(); // ẩn snapshot khi chưa có dữ liệu
+                renderDataCompletenessCard(); // ẩn độ tin cậy khi chưa có dữ liệu
                 renderSleepDebtCard(); // ẩn card nợ ngủ khi chưa có dữ liệu
                 const alertBanner = document.getElementById('solAlertBanner');
                 if (alertBanner) alertBanner.style.display = 'none';
@@ -62635,6 +62819,7 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSolTrendChart();
             renderTonightPlanCard();
             renderSleepSnapshotCard();
+            renderDataCompletenessCard();
             renderSleepDebtCard();
             renderSolAlert();
             renderSolNoteCorrelation();
@@ -63843,18 +64028,42 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 500);
         });
 
-        const originalAddStudyTime = addStudyTime; 
-        addStudyTime = function(...args) {
-            originalAddStudyTime(...args);
-            updateCorrelationAnalytics();
-        };
+        // Refreshes correlation, recommendation and pattern-insight UI after
+        // sleep/study data changes. This used to be 3 separate wraps of
+        // addStudyTime/stopSleepTracking, applied at 3 different times
+        // (script load, DOMContentLoaded, DOMContentLoaded+2s) and nested
+        // around one another — the outermost one calling into the previous
+        // wrap, which called into the one before that, which called the
+        // original. Functionally equivalent, but hard to trace and, for a
+        // brief window after page load, fewer of the 3 layers were active
+        // yet (whichever hadn't registered), so not all refreshes fired for
+        // very early calls. Consolidated into one wrapper, active from
+        // script load, that reproduces the same sequence of side effects
+        // every time: base function runs first, then correlation analytics
+        // (sync), then recommendations and pattern insights (each already
+        // debounced by its own 500ms setTimeout, same as before).
+        //
+        // Both base functions only ever return undefined (bare `return;`),
+        // so no return value is lost here.
+        (function attachStudySleepRefreshHooks() {
+            const _baseAddStudyTime = addStudyTime;
+            addStudyTime = function(...args) {
+                const result = _baseAddStudyTime(...args);
+                updateCorrelationAnalytics();
+                setTimeout(updateAllRecommendations, 500);
+                setTimeout(renderPatternInsights, 500);
+                return result;
+            };
 
-        const originalStopSleepTracking = stopSleepTracking;
-        stopSleepTracking = function(...args) {
-            const result = originalStopSleepTracking(...args); 
-            updateCorrelationAnalytics();
-            return result;
-        };
+            const _baseStopSleepTracking = stopSleepTracking;
+            stopSleepTracking = function(...args) {
+                const result = _baseStopSleepTracking(...args);
+                updateCorrelationAnalytics();
+                setTimeout(updateAllRecommendations, 500);
+                setTimeout(renderPatternInsights, 500);
+                return result;
+            };
+        })();
 
         let correlationUpdateTimeout;
         function scheduleCorrelationUpdate() {
@@ -64796,29 +65005,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         document.addEventListener('DOMContentLoaded', function() {
             setTimeout(updateAllRecommendations, 1000);
-            
-            const originalAddStudyTime = addStudyTime;
-            if (originalAddStudyTime) {
-                addStudyTime = function(...args) {
-                    const result = originalAddStudyTime(...args);
-                    setTimeout(updateAllRecommendations, 500);
-                    return result;
-                };
-            }
-            
-            const originalStopSleepTracking = stopSleepTracking;
-            stopSleepTracking = function(...args) {
-                const result = originalStopSleepTracking(...args);
-                setTimeout(updateAllRecommendations, 500);
-                return result;
-            };
-            
-            const originalOpenManualSleepModal = openManualSleepModal;
-            openManualSleepModal = function(...args) {
-                const result = originalOpenManualSleepModal(...args);
-                setTimeout(updateAllRecommendations, 500);
-                return result;
-            };
         });
 
 
@@ -68476,29 +68662,7 @@ function getConfidenceColor(confidence) {
         document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => {
                 renderPatternInsights();
-
-                const updatePatterns = () => {
-                    setTimeout(renderPatternInsights, 500);
-                };
-                
-                const originalStopSleepTracking = stopSleepTracking;
-                stopSleepTracking = function(...args) {
-                    const result = originalStopSleepTracking(...args);
-                    updatePatterns();
-                    return result;
-                };
-                
-                const originalAddStudyTime = addStudyTime;
-                if (originalAddStudyTime) {
-                    addStudyTime = function(...args) {
-                        const result = originalAddStudyTime(...args);
-                        updatePatterns();
-                        return result;
-                    };
-                }
-                
                 setInterval(renderPatternInsights, 5 * 60 * 1000);
-                
             }, 2000); 
         });
 
@@ -70357,33 +70521,57 @@ function computeBaselineDeviation(night, baseline) {
     };
 }
 
-// 3. Fix detectGoalPatterns by adding the missing function call
+// 3. Fix detectGoalPatterns by adding the missing function call, and make
+// it robust to a missing/failing base call. Previously two separate wraps
+// applied at different times (this one immediately, another one 1s after
+// DOMContentLoaded inside replaceWithSafeFunctions() further down) —
+// functionally a 2-deep chain around the same base function. Consolidated
+// into one wrapper; the outer try/catch here plays the same role the later
+// wrap's try/catch used to play (catching a re-thrown error from the inner
+// catch below), so the exception-handling path is unchanged. Verified
+// against the old 2-layer version across normal/edge/throwing inputs.
 if (typeof detectGoalPatterns === 'function') {
     const originalDetectGoalPatterns = detectGoalPatterns;
     detectGoalPatterns = function(goals) {
         try {
-            const result = originalDetectGoalPatterns.call(this, goals);
-            
-            // Add pacing consistency if missing
-            if (result && typeof result.pacingConsistency === 'undefined') {
-                result.pacingConsistency = calculatePacingConsistency(goals);
-                
-                // Add interpretation
-                if (result.pacingConsistency >= 80) {
-                    result.pacingNote = 'Excellent pacing consistency';
-                } else if (result.pacingConsistency >= 60) {
-                    result.pacingNote = 'Good pacing consistency';
-                } else if (result.pacingConsistency >= 40) {
-                    result.pacingNote = 'Moderate pacing consistency';
-                } else {
-                    result.pacingNote = 'Inconsistent pacing - needs attention';
+            let result;
+            try {
+                result = originalDetectGoalPatterns.call(this, goals);
+
+                // Add pacing consistency if missing
+                if (result && typeof result.pacingConsistency === 'undefined') {
+                    result.pacingConsistency = calculatePacingConsistency(goals);
+
+                    // Add interpretation
+                    if (result.pacingConsistency >= 80) {
+                        result.pacingNote = 'Excellent pacing consistency';
+                    } else if (result.pacingConsistency >= 60) {
+                        result.pacingNote = 'Good pacing consistency';
+                    } else if (result.pacingConsistency >= 40) {
+                        result.pacingNote = 'Moderate pacing consistency';
+                    } else {
+                        result.pacingNote = 'Inconsistent pacing - needs attention';
+                    }
                 }
+            } catch (error) {
+                console.error('Enhanced detectGoalPatterns error:', error);
+                result = originalDetectGoalPatterns.call(this, goals);
             }
-            
+
+            // Formerly a second wrap (replaceWithSafeFunctions, applied 1s
+            // after DOMContentLoaded): fill in deadlineAdherence too, and
+            // default pacingConsistency if it's still falsy.
+            result.deadlineAdherence = result.deadlineAdherence || calculateDeadlineAdherence(goals);
+            result.pacingConsistency = result.pacingConsistency || 50;
             return result;
-        } catch (error) {
-            console.error('Enhanced detectGoalPatterns error:', error);
-            return originalDetectGoalPatterns.call(this, goals);
+        } catch {
+            return {
+                totalGoals: goals?.length || 0,
+                completedGoals: goals?.filter(g => g.progress >= 100)?.length || 0,
+                deadlineAdherence: calculateDeadlineAdherence(goals),
+                pacingConsistency: 50,
+                error: 'Simplified analysis'
+            };
         }
     };
 }
@@ -70671,28 +70859,11 @@ function safeRenderStudyPatternCard(studyPatterns) {
     }
 }
 
-// 5. Replace ONLY detectGoalPatterns with safe version (sleep/study render functions don't need wrapping)
+// 5. detectGoalPatterns robustness is now handled entirely by the single
+// consolidated wrapper above (see "3. Fix detectGoalPatterns..."), which
+// folds in what this used to add. Kept as a no-op so the call site below
+// and anything referencing this function by name still work.
 function replaceWithSafeFunctions() {
-    // Make detectGoalPatterns more robust
-    if (typeof window.detectGoalPatterns === 'function') {
-        window._originalDetectGoalPatterns = window.detectGoalPatterns;
-        window.detectGoalPatterns = function(goals) {
-            try {
-                const result = window._originalDetectGoalPatterns(goals);
-                result.deadlineAdherence = result.deadlineAdherence || calculateDeadlineAdherence(goals);
-                result.pacingConsistency = result.pacingConsistency || 50;
-                return result;
-            } catch {
-                return {
-                    totalGoals: goals?.length || 0,
-                    completedGoals: goals?.filter(g => g.progress >= 100)?.length || 0,
-                    deadlineAdherence: calculateDeadlineAdherence(goals),
-                    pacingConsistency: 50,
-                    error: 'Simplified analysis'
-                };
-            }
-        };
-    }
 }
 
 // 6. Initialize everything
