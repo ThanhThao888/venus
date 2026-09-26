@@ -61816,7 +61816,17 @@ document.addEventListener('DOMContentLoaded', function() {
             recentSessions = recentSessions || getSortedSleepSessions().slice(-sleepChartRangeDays);
             goal = (typeof goal === 'number') ? goal : getSleepGoal();
 
-            const labels = recentSessions.map(session => vnDayLabel(session.start));
+            // Nếu 2+ session bắt đầu cùng 1 ngày (VD: ngủ trưa + ngủ đêm), nhãn ngày sẽ
+            // trùng nhau y hệt và người xem không phân biệt được hàng nào là hàng nào.
+            // Khi phát hiện trùng, thêm giờ đi ngủ vào sau nhãn ngày để tách biệt.
+            const rawLabels = recentSessions.map(session => vnDayLabel(session.start));
+            const labelCounts = {};
+            rawLabels.forEach(l => { labelCounts[l] = (labelCounts[l] || 0) + 1; });
+            const labels = rawLabels.map((l, i) => {
+                if (labelCounts[l] <= 1) return l;
+                const bedtimeClock = axisHourToClockLabel(sleepTimeToAxisHour(recentSessions[i].start));
+                return `${l} · ${bedtimeClock}`;
+            });
 
             const qualityLabels = ['Chưa đánh giá','Rất tệ','Tệ','Bình thường','Tốt','Rất tốt'];
             function colorForDuration(duration) {
