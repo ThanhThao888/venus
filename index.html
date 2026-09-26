@@ -36489,6 +36489,17 @@ window.DBP={
 }
 .nv-side-h-add i { font-size: 0.62rem; }
 .nv-side-h-add:hover { background: var(--nv-hover); color: var(--primary-dark); }
+.nv-fitem { position: relative; }
+.nv-fitem .nv-nav-item { padding-right: 30px; }
+.nv-fitem-edit {
+    position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+    width: 24px; height: 24px; border: 0; border-radius: 7px; background: none;
+    color: var(--text-muted); cursor: pointer; opacity: 0; transition: opacity 0.12s;
+    display: flex; align-items: center; justify-content: center; font-size: 0.72rem;
+}
+.nv-fitem:hover .nv-fitem-edit, .nv-fitem-edit:focus-visible { opacity: 1; }
+@media (hover: none) { .nv-fitem-edit { opacity: 1; } }
+.nv-fitem-edit:hover { background: var(--nv-hover); color: var(--primary-dark); }
 .nv-nav-item {
     display: flex; align-items: center; gap: 10px; width: 100%;
     padding: 7px 10px; border: 0; border-radius: 9px; background: none;
@@ -37319,6 +37330,45 @@ kbd {
 }
 
 /* ═════════════ Find duplicates ═════════════ */
+.nv-fed-scrim { position: absolute; inset: 0; z-index: 55; background: rgba(40, 20, 32, 0.4); }
+.nv-fed {
+    position: absolute; left: 50%; top: 60px; z-index: 56; transform: translateX(-50%);
+    width: min(92%, 380px); max-height: min(85%, 560px);
+    display: flex; flex-direction: column;
+    background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: 0 28px 70px -20px rgba(74, 50, 64, 0.55), 0 4px 18px rgba(201, 125, 150, 0.2);
+    overflow: hidden; font-family: var(--nv-sans);
+}
+.nv-fed-bar { display: flex; align-items: center; gap: 8px; padding: 12px 10px 12px 16px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.nv-fed-title { font-family: var(--nv-display); font-weight: 700; font-size: 0.94rem; color: var(--text-dark); display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-fed-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 6px; }
+.nv-fed-preview {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 14px;
+    border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-light);
+    font-size: 0.9rem; font-weight: 600; color: var(--text-dark);
+}
+.nv-fed-preview i { font-size: 1rem; width: 20px; text-align: center; }
+.nv-fed-h { font-size: 0.76rem; font-weight: 600; color: var(--text-muted); padding: 4px 2px 8px; }
+.nv-fed-icons { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 4px; }
+.nv-fed-swatch {
+    width: 100%; aspect-ratio: 1; border: 1px solid var(--border-color); border-radius: 9px;
+    background: var(--bg-light); color: var(--text-dark); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 0.86rem;
+}
+.nv-fed-swatch:hover { border-color: var(--primary); }
+.nv-fed-swatch.nv-cur { background: var(--nv-active); border-color: var(--primary-dark); color: var(--primary-dark); }
+.nv-fed-colors { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 4px; }
+.nv-fed-color {
+    width: 100%; aspect-ratio: 1; border-radius: 999px; cursor: pointer;
+    border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.nv-fed-color.nv-cur { border-color: var(--text-dark); }
+.nv-fed-color-none { background: var(--bg-light); color: var(--text-muted); display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); font-size: 0.78rem; }
+.nv-fed-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border-color); flex-shrink: 0; }
+@media (max-width: 520px) {
+    .nv-fed { top: 0; left: 0; transform: none; width: 100%; height: 100%; max-height: none; border-radius: 0; border: 0; }
+}
+
 .nv-dup-scrim { position: absolute; inset: 0; z-index: 55; background: rgba(40, 20, 32, 0.4); }
 .nv-dup {
     position: absolute; left: 50%; top: 40px; z-index: 56; transform: translateX(-50%);
@@ -37899,6 +37949,27 @@ kbd {
         <div class="nv-pal-list" id="nvPalList" role="listbox" aria-label="Results"></div>
         <div class="nv-pal-live" id="nvPalLive" aria-live="polite"></div>
         <div class="nv-pal-foot" id="nvPalFoot"></div>
+    </div>
+
+    <!-- ── Customize folder: pick an icon + color for a folder ── -->
+    <div class="nv-fed-scrim" id="nvFedScrim" hidden></div>
+    <div class="nv-fed" id="nvFed" role="dialog" aria-modal="true" aria-label="Customize folder" hidden>
+        <div class="nv-fed-bar">
+            <span class="nv-fed-title" id="nvFedTitle"><i class="fa-solid fa-palette" aria-hidden="true"></i> Customize folder</span>
+            <button class="nv-ib" id="nvFedClose" type="button" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="nv-fed-body">
+            <div class="nv-fed-preview" id="nvFedPreview"></div>
+            <div class="nv-fed-h">Icon</div>
+            <div class="nv-fed-icons" id="nvFedIcons"></div>
+            <div class="nv-fed-h">Color</div>
+            <div class="nv-fed-colors" id="nvFedColors"></div>
+        </div>
+        <div class="nv-fed-foot">
+            <button class="nv-btn" id="nvFedReset" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reset to default</button>
+            <span class="nv-grow"></span>
+            <button class="nv-btn nv-btn-primary" id="nvFedDone" type="button">Done</button>
+        </div>
     </div>
 
     <!-- ── Find duplicates: title/content/tag/source similarity, with Compare · Merge · Keep both ── -->
@@ -38996,10 +39067,42 @@ kbd {
         [/brain|dump|inbox|idea/i, 'brain'],
         [/session|log|journal|diary/i, 'clock']
     ];
-    function iconFor(t) {
+    // Picker options for "Customize folder" — a person can override the guessed icon/color
+    // per folder; the choice is saved in S.folderStyles (see loadFolderStyles/saveFolderStyles).
+    const FOLDER_ICON_CHOICES = [
+        'folder', 'folder-open', 'folder-tree', 'briefcase', 'book', 'book-open', 'graduation-cap',
+        'chart-line', 'chart-pie', 'flask', 'code', 'laptop-code', 'lightbulb', 'star', 'heart',
+        'house', 'wallet', 'coins', 'piggy-bank', 'calendar-days', 'clipboard-list', 'pen',
+        'palette', 'camera', 'music', 'plane', 'map', 'compass', 'gamepad', 'dumbbell',
+        'utensils', 'mug-hot', 'seedling', 'paw', 'globe', 'rocket', 'shield-halved', 'gear',
+        'file-lines', 'tag', 'bookmark', 'bullseye', 'brain', 'microphone', 'magnifying-glass'
+    ];
+    const FOLDER_COLOR_CHOICES = [
+        '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#10b981', '#14b8a6',
+        '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
+        '#f43f5e', '#78716c'
+    ];
+    function loadFolderStyles() {
+        try { S.folderStyles = JSON.parse(localStorage.getItem('nvFolderStyles') || '{}') || {}; }
+        catch (e) { S.folderStyles = {}; }
+    }
+    function saveFolderStyles() { try { localStorage.setItem('nvFolderStyles', JSON.stringify(S.folderStyles)); } catch (e) { /* ignore */ } }
+    function heuristicIconFor(t) {
         const s = normType(t);
         for (const [re, ic] of FOLDER_ICONS) if (re.test(s)) return ic;
         return 'folder';
+    }
+    function iconFor(t) {
+        const custom = (S.folderStyles || {})[typeKey(normType(t))];
+        return (custom && custom.icon) || heuristicIconFor(t);
+    }
+    function colorFor(t) {
+        const custom = (S.folderStyles || {})[typeKey(normType(t))];
+        return (custom && custom.color) || '';
+    }
+    function folderPillHtml(type) {
+        const color = colorFor(type);
+        return '<span class="nv-folder-pill"><i class="fa-solid fa-' + iconFor(type) + '"' + (color ? ' style="color:' + esc(color) + '"' : '') + '></i>' + esc(normType(type)) + '</span>';
     }
 
     /* ───────── Accent/case-insensitive search (works for Vietnamese) ─────────
@@ -39914,9 +40017,9 @@ kbd {
         }
         const searching = !!S.query.trim();
         const isCur = (k, v) => !searching && S.scope.kind === k && S.scope.value === (v || '');
-        const item = (kind, val, icon, label, count) =>
+        const item = (kind, val, icon, label, count, color) =>
             `<button type="button" class="nv-nav-item${isCur(kind, val) ? ' nv-cur' : ''}" data-kind="${kind}" data-val="${esc(val)}"${isCur(kind, val) ? ' aria-current="true"' : ''}>` +
-            `<i class="fa-solid fa-${icon}"></i><span class="nv-nm">${esc(label)}</span><span class="nv-count">${count}</span></button>`;
+            `<i class="fa-solid fa-${icon}"${color ? ` style="color:${esc(color)}"` : ''}></i><span class="nv-nm">${esc(label)}</span><span class="nv-count">${count}</span></button>`;
 
         let html = item('all', '', 'layer-group', 'All notes', S.notes.length)
             + item('recent', '', 'clock', 'Recent', recent)
@@ -39925,7 +40028,10 @@ kbd {
 
         const fl = [...folders.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
         html += '<div class="nv-side-h nv-side-h-row"><span>Folders</span><button type="button" class="nv-side-h-add" data-new-folder title="New folder" aria-label="New folder"><i class="fa-solid fa-plus" aria-hidden="true"></i>New</button></div>';
-        if (fl.length) html += fl.map(([k, f]) => item('folder', k, iconFor(f.label), f.label, f.count)).join('');
+        if (fl.length) html += fl.map(([k, f]) => '<div class="nv-fitem">'
+            + item('folder', k, iconFor(f.label), f.label, f.count, colorFor(f.label))
+            + '<button type="button" class="nv-fitem-edit" data-edit-folder="' + esc(k) + '" title="Customize folder" aria-label="Customize ' + esc(f.label) + ' folder"><i class="fa-solid fa-palette" aria-hidden="true"></i></button>'
+            + '</div>').join('');
 
         const tl = [...tags.entries()].sort((a, b) => (b[1].count - a[1].count) || a[1].label.localeCompare(b[1].label));
         if (tl.length) {
@@ -39996,7 +40102,7 @@ kbd {
                     <span class="nv-row-title">${n.pinned ? '<i class="fa-solid fa-star" aria-label="Pinned"></i>' : ''}<span>${titleHtml}</span></span>
                 </button>
                 ${snip ? `<div class="nv-row-snip">${snip}</div>` : ''}
-                <div class="nv-row-meta"><span class="nv-folder-pill"><i class="fa-solid fa-${iconFor(n.type)}"></i>${esc(normType(n.type))}</span>${tagsHtml}</div>
+                <div class="nv-row-meta">${folderPillHtml(n.type)}${tagsHtml}</div>
             </div>
             <div class="nv-row-side">
                 <span title="${esc(fmtFull(n.updatedAt))}">${esc(fmtRel(n.updatedAt))}</span>
@@ -40019,7 +40125,7 @@ kbd {
             <div>
                 <div class="nv-row-title"><span>${esc(hasTitle ? n.title : 'Untitled note')}</span></div>
                 ${snip ? `<div class="nv-row-snip">${snip}</div>` : ''}
-                <div class="nv-row-meta"><span class="nv-folder-pill"><i class="fa-solid fa-${iconFor(n.type)}"></i>${esc(normType(n.type))}</span><span title="${esc(fmtFull(n.deletedAt))}">Deleted ${esc(when.charAt(0).toLowerCase() + when.slice(1))}</span><span>Removed for good in ${left} ${left === 1 ? 'day' : 'days'}</span></div>
+                <div class="nv-row-meta">${folderPillHtml(n.type)}<span title="${esc(fmtFull(n.deletedAt))}">Deleted ${esc(when.charAt(0).toLowerCase() + when.slice(1))}</span><span>Removed for good in ${left} ${left === 1 ? 'day' : 'days'}</span></div>
             </div>
             <div class="nv-row-side">
                 <span class="nv-row-acts nv-always">
@@ -40896,7 +41002,7 @@ kbd {
         const link = S.fileLinks.get(n.id);
         const pendingRelink = !link ? S.pendingRelinks.get(n.id) : null;
         el.docMeta.innerHTML =
-            `<span class="nv-folder-pill"><i class="fa-solid fa-${iconFor(n.type)}"></i>${esc(normType(n.type))}</span>`
+            folderPillHtml(n.type)
             + n.tags.map((t) => `<span>#${esc(t)}</span>`).join('')
             + (link ? `<span class="nv-folder-pill" title="Linked — “Save changes to file” writes here"><i class="fa-solid fa-link"></i>${esc(link.name)}</span>` : '')
             + (pendingRelink ? `<span class="nv-relink-pill" title="Restored from a backup — the file handle itself can't be backed up, so this note needs to be pointed at the file again"><i class="fa-solid fa-triangle-exclamation"></i> Needs relinking${pendingRelink.name ? ': ' + esc(pendingRelink.name) : ''}</span>` : '')
@@ -41273,6 +41379,59 @@ kbd {
         if (!name) return;
         await newNote(name);
         toast('New note started in “' + normType(name) + '” — give it a title to keep it.');
+    }
+
+    // "Customize folder": pick an icon + color for one folder, saved in S.folderStyles.
+    // Every pick is applied (and persisted) immediately, so there's nothing to lose by
+    // just closing the popover once you're happy with the preview.
+    let fedKey = null, fedLabel = '', fedPick = { icon: '', color: '' };
+    function fedRenderPreview() {
+        el.fedPreview.innerHTML = '<i class="fa-solid fa-' + fedPick.icon + '"' + (fedPick.color ? ' style="color:' + esc(fedPick.color) + '"' : '') + '></i><span>' + esc(fedLabel) + '</span>';
+    }
+    function fedRenderIcons() {
+        el.fedIcons.innerHTML = FOLDER_ICON_CHOICES.map((ic) =>
+            '<button type="button" class="nv-fed-swatch' + (ic === fedPick.icon ? ' nv-cur' : '') + '" data-fed-icon="' + ic + '" title="' + ic + '" aria-label="' + ic + '"><i class="fa-solid fa-' + ic + '" aria-hidden="true"></i></button>'
+        ).join('');
+    }
+    function fedRenderColors() {
+        el.fedColors.innerHTML = '<button type="button" class="nv-fed-color nv-fed-color-none' + (!fedPick.color ? ' nv-cur' : '') + '" data-fed-color="" title="No color" aria-label="No color"><i class="fa-solid fa-ban" aria-hidden="true"></i></button>'
+            + FOLDER_COLOR_CHOICES.map((c) =>
+                '<button type="button" class="nv-fed-color' + (c === fedPick.color ? ' nv-cur' : '') + '" data-fed-color="' + c + '" style="background:' + c + '" aria-label="' + c + '"></button>'
+            ).join('');
+    }
+    function openFolderEditor(key, label) {
+        closeMenus();
+        fedKey = key; fedLabel = label;
+        const cur = S.folderStyles[key] || {};
+        fedPick = { icon: cur.icon || heuristicIconFor(label), color: cur.color || '' };
+        el.fedTitle.innerHTML = '<i class="fa-solid fa-palette" aria-hidden="true"></i> Customize “' + esc(label) + '”';
+        fedRenderIcons(); fedRenderColors(); fedRenderPreview();
+        el.fedScrim.hidden = false;
+        el.fed.hidden = false;
+    }
+    function closeFolderEditor() {
+        el.fed.hidden = true;
+        el.fedScrim.hidden = true;
+        fedKey = null;
+    }
+    function applyFolderStyleChange(patch) {
+        if (!fedKey) return;
+        const cur = Object.assign({}, S.folderStyles[fedKey] || {});
+        if ('icon' in patch) { if (patch.icon && patch.icon !== heuristicIconFor(fedLabel)) cur.icon = patch.icon; else delete cur.icon; }
+        if ('color' in patch) { if (patch.color) cur.color = patch.color; else delete cur.color; }
+        if (Object.keys(cur).length) S.folderStyles[fedKey] = cur; else delete S.folderStyles[fedKey];
+        saveFolderStyles();
+        fedPick = { icon: cur.icon || heuristicIconFor(fedLabel), color: cur.color || '' };
+        fedRenderIcons(); fedRenderColors(); fedRenderPreview();
+        renderSide(); renderLibrary();
+    }
+    function resetFolderStyle() {
+        if (!fedKey) return;
+        delete S.folderStyles[fedKey];
+        saveFolderStyles();
+        fedPick = { icon: heuristicIconFor(fedLabel), color: '' };
+        fedRenderIcons(); fedRenderColors(); fedRenderPreview();
+        renderSide(); renderLibrary();
     }
 
     // Clicking a [[wikilink]] opens the note with that title, or — if none exists — creates a
@@ -42957,6 +43116,7 @@ kbd {
         const d = localStorage.getItem('nvDensity');
         if (d === 'compact' || d === 'comfortable') S.density = d;
     } catch (e) { /* ignore */ }
+    loadFolderStyles();
     try {
         const t = localStorage.getItem('nvTheme');
         if (t === 'sakura' || t === 'comfort' || t === 'blue' || t === 'red' || t === 'sage' || t === 'monastic' || t === 'nordic' || t === 'petrol' || t === 'ink' || t === 'rosewood' || t === 'peach' || t === 'lavender' || t === 'dustylilac' || t === 'eucalyptus' || t === 'oxford' || t === 'library' || t === 'coffee' || t === 'slate' || t === 'ocean' || t === 'mono' || t === 'espresso' || t === 'matcha' || t === 'blueberry' || t === 'terracotta' || t === 'airy') S.theme = t;
@@ -44096,6 +44256,8 @@ kbd {
             palScrim: $('nvPalScrim'), pal: $('nvPal'), palIn: $('nvPalIn'), palChip: $('nvPalChip'), palClose: $('nvPalClose'),
             palList: $('nvPalList'), palLive: $('nvPalLive'), palFoot: $('nvPalFoot'),
             dupScrim: $('nvDupScrim'), dup: $('nvDup'), dupClose: $('nvDupClose'), dupRescan: $('nvDupRescan'), dupBody: $('nvDupBody'),
+            fedScrim: $('nvFedScrim'), fed: $('nvFed'), fedClose: $('nvFedClose'), fedTitle: $('nvFedTitle'), fedPreview: $('nvFedPreview'),
+            fedIcons: $('nvFedIcons'), fedColors: $('nvFedColors'), fedReset: $('nvFedReset'), fedDone: $('nvFedDone'),
             storScrim: $('nvStorScrim'), stor: $('nvStor'), storClose: $('nvStorClose'), storRefresh: $('nvStorRefresh'), storBody: $('nvStorBody'),
             renScrim: $('nvRenScrim'), ren: $('nvRen'), renBody: $('nvRenBody'), renUpdate: $('nvRenUpdate'), renOnly: $('nvRenOnly'), renCancel: $('nvRenCancel')
         };
@@ -44158,6 +44320,12 @@ kbd {
         // sidebar navigation
         el.sideScroll.addEventListener('click', (e) => {
             if (e.target.closest('[data-new-folder]')) { promptNewFolder(); return; }
+            const editBtn = e.target.closest('[data-edit-folder]');
+            if (editBtn) {
+                const key = editBtn.dataset.editFolder, f = S.fmap.get(key);
+                if (f) openFolderEditor(key, f.label);
+                return;
+            }
             const b = e.target.closest('[data-kind]');
             if (!b) return;
             if (b.dataset.kind === 'moretags') { S.tagsAll = !S.tagsAll; renderSide(); return; }
@@ -44509,6 +44677,20 @@ kbd {
         el.dupRescan.addEventListener('click', () => { S.dup.dismissed.clear(); S.dup.swapped.clear(); S.dup.compareKey = null; scanDuplicates(); });
         el.dupBody.addEventListener('click', handleDupAction);
 
+        // Customize folder popover (icon + color)
+        el.fedClose.addEventListener('click', closeFolderEditor);
+        el.fedDone.addEventListener('click', closeFolderEditor);
+        el.fedScrim.addEventListener('click', closeFolderEditor);
+        el.fedReset.addEventListener('click', resetFolderStyle);
+        el.fedIcons.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-fed-icon]');
+            if (b) applyFolderStyleChange({ icon: b.dataset.fedIcon });
+        });
+        el.fedColors.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-fed-color]');
+            if (b) applyFolderStyleChange({ color: b.dataset.fedColor });
+        });
+
         // Storage manager modal
         el.storClose.addEventListener('click', closeStorModal);
         el.storScrim.addEventListener('click', closeStorModal);
@@ -44585,6 +44767,7 @@ kbd {
                 if (Gr.open) { closeGraph(); return; }
                 if (S.dup.open) { closeDupModal(); return; }
                 if (S.stor.open) { closeStorModal(); return; }
+                if (!el.fed.hidden) { closeFolderEditor(); return; }
                 if (closeMenus()) return;
                 if (S.focus) { toggleFocus(false); return; }
                 if (closeDrawers()) return;
