@@ -29713,6 +29713,17 @@ window.DBP={
                 <button class="sleep-btn-outline" onclick="openNapModal()"><i class="fa-solid fa-sun"></i> Log a nap</button>
             </div>
 
+                <!-- Tonight's Sleep Plan — lớp "quyết định" phía trên toàn bộ analytics: thay vì
+                 để người dùng tự đọc baseline/nợ ngủ/đều đặn rồi tự suy ra nên làm gì tối nay,
+                 card này gộp lại thành 1 khuyến nghị cụ thể (giờ ngủ/dậy mục tiêu + cảnh báo nếu
+                 lệch nhịp). Dữ liệu lấy từ computeSleepBaseline() (personal baseline, median). -->
+            <div id="tonightPlanCard" style="display:none; margin: 0 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Kế hoạch ngủ tối nay</span>
+                </div>
+                <div id="tonightPlanBody"></div>
+            </div>
+
                 <!-- ===== NAP TRACKER — ngủ trưa/ngủ ngắn được tách riêng khỏi sleepSessions
                  (không đụng vào nợ ngủ/SE/đều đặn/optimal window/correlation — những
                  phân tích đó chỉ nên tính trên giấc ngủ đêm chính) ===== -->
@@ -29869,6 +29880,16 @@ window.DBP={
                 <span id="sleepInsightsChevron" class="sleep-chevron">▾</span>
             </div>
             <div id="sleepInsightsBody" style="display:block;">
+                <!-- Sleep Snapshot — tổng kết đêm gần nhất ở dạng "nhìn phát hiểu ngay": thời
+                 lượng/đều đặn/hiệu suất/chất lượng/nợ ngủ cùng 1 hàng, kèm đúng 1 dòng "vấn đề
+                 nổi bật nhất" thay vì bắt người dùng tự đọc rời rạc nhiều card rồi tự kết luận. -->
+            <div id="sleepSnapshotCard" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Sleep Snapshot</span>
+                </div>
+                <div id="sleepSnapshotBody"></div>
+            </div>
+
                 <!-- Morning Sleep Brief — 4 dòng tóm tắt mỗi sáng, tái dùng tinh thần Deadline Brief -->
             <div id="sleepBriefWrap" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -59511,6 +59532,152 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Card "Nợ ngủ" trong mục Insight & phân tích. Chỉ hiển thị số liệu đã tính — không có lời khuyên/kế
         // hoạch cứng; việc đó dành cho nút Copy for AI (kèm sổ nợ chi tiết).
+        // ===== Tonight's Sleep Plan =====
+        // Gộp baseline cá nhân + nợ ngủ + đều đặn thành 1 khuyến nghị cụ thể cho tối nay,
+        // thay vì để người dùng tự đọc rời rạc rồi tự suy ra. Giờ ngủ/dậy mục tiêu tính lùi
+        // từ giờ dậy quen thuộc (baseline.wakeHour) theo đúng số giờ mục tiêu — giữ nguyên
+        // "wake anchor" quen thuộc thay vì áp giờ ngủ mới hoàn toàn.
+        function renderTonightPlanCard() {
+            const wrap = document.getElementById('tonightPlanCard');
+            const body = document.getElementById('tonightPlanBody');
+            if (!wrap || !body) return;
+
+            if (sleepSessions.length === 0) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+
+            const baseline = computeSleepBaseline();
+            if (!baseline.ok) {
+                body.innerHTML = `<div style="font-size:0.8rem; color:var(--text-muted); line-height:1.55;">Cần thêm ${SLEEP_BASELINE_CFG.minNights - baseline.have} đêm ghi log nữa để tính kế hoạch theo đúng nhịp ngủ của bạn (hiện có ${baseline.have}).</div>`;
+                return;
+            }
+
+            const goal = getSleepGoal();
+            const targetWakeClock = formatTimeFromDecimal(baseline.wakeHour);
+            const targetBedClock = formatTimeFromDecimal(baseline.wakeHour - goal);
+
+            const debt = computeSleepDebt();
+            const patterns = analyzeSleepPatterns(sleepSessions.slice(-14));
+            const consistency = patterns.insufficientData ? null : Math.round(patterns.consistencyScore);
+
+            // So đêm gần nhất với baseline (tính trên các đêm còn lại) để cảnh báo nếu lệch nhịp mạnh.
+            const nights = buildSleepNightsByWakeDate(sleepSessions);
+            const lastNight = nights[nights.length - 1];
+            const baselineExclLast = computeSleepBaseline({ excludeDayNum: lastNight.dayNum });
+            const dev = baselineExclLast.ok ? computeBaselineDeviation(lastNight, baselineExclLast) : null;
+
+            const tile = (label, value, color, title) => `
+                <div${title ? ` title="${title}"` : ''}><div style="font-size:0.7rem; color:var(--text-muted);">${label}</div>
+                <div style="font-size:1.05rem; font-weight:700; color:${color || 'var(--text-dark)'};">${value}</div></div>`;
+
+            const debtHtml = debt.ok
+                ? `<span style="color:${debt.level.color};">${debt.debt.toFixed(1)}h</span>`
+                : '—';
+            const consColor = consistency === null ? undefined : consistency >= 70 ? '#10b981' : consistency >= 40 ? '#f59e0b' : '#ef4444';
+            // Breakdown giờ ngủ vs giờ dậy trong tooltip — bedtime có thể ổn trong khi
+            // giờ dậy lệch mạnh (hoặc ngược lại), số % gộp một mình không lộ ra điều đó.
+            const consTitle = (!patterns.insufficientData && typeof patterns.bedtimeStdDev === 'number')
+                ? `Giờ ngủ lệch ~±${(patterns.bedtimeStdDev * 60).toFixed(0)}p · Giờ dậy lệch ~±${(patterns.wakeStdDev * 60).toFixed(0)}p (14 đêm)`
+                : undefined;
+
+            let warningHtml = '';
+            if (dev && Math.abs(dev.bedtimeDeltaMin) >= 60) {
+                warningHtml = `<div style="margin-top:10px; font-size:0.78rem; color:#f59e0b; display:flex; gap:6px; align-items:flex-start; line-height:1.5;">
+                    <svg class="icon-svg" aria-hidden="true" style="flex:0 0 auto; margin-top:1px;"><use href="#icon-triangle-alert"></use></svg>
+                    <span>Giờ đi ngủ đêm gần nhất ${dev.bedtimeLabel}.</span>
+                </div>`;
+            }
+
+            body.innerHTML = `
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px,1fr)); gap:10px;">
+                    ${tile('Giờ ngủ mục tiêu', targetBedClock)}
+                    ${tile('Giờ dậy mục tiêu', targetWakeClock)}
+                    ${tile('Mục tiêu ngủ', `${goal}h`)}
+                    ${tile('Nợ ngủ hiện tại', debtHtml)}
+                    ${consistency !== null ? tile('Đều đặn giờ ngủ', `${consistency}%`, consColor, consTitle) : ''}
+                </div>
+                ${warningHtml}
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:10px; border-top:1px dashed var(--border-color); padding-top:8px;">
+                    Tính từ nhịp ngủ ${baseline.sampleSize} đêm gần nhất của bạn — không phải khuyến nghị y khoa chung.
+                </div>
+            `;
+        }
+
+        // ===== Sleep Snapshot =====
+        // Tổng kết đêm gần nhất trong 1 hàng số liệu + đúng 1 dòng "vấn đề nổi bật nhất",
+        // thay vì hiển thị điểm tổng hợp kiểu "83/100" (tạo cảm giác chính xác giả) hoặc bắt
+        // người dùng tự đọc rời rạc Debt/SE/Regularity rồi tự kết luận.
+        function renderSleepSnapshotCard() {
+            const wrap = document.getElementById('sleepSnapshotCard');
+            const body = document.getElementById('sleepSnapshotBody');
+            if (!wrap || !body) return;
+
+            if (sleepSessions.length === 0) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+
+            const nights = buildSleepNightsByWakeDate(sleepSessions);
+            const lastNight = nights[nights.length - 1];
+            const lastSession = [...sleepSessions].sort((a, b) => (a.start || 0) - (b.start || 0)).slice(-1)[0];
+
+            const debt = computeSleepDebt();
+            const patterns = analyzeSleepPatterns(sleepSessions.slice(-14));
+            const consistency = patterns.insufficientData ? null : Math.round(patterns.consistencyScore);
+
+            const baseline = computeSleepBaseline({ excludeDayNum: lastNight.dayNum });
+            const dev = baseline.ok ? computeBaselineDeviation(lastNight, baseline) : null;
+
+            const se = computeSleepEfficiency(lastSession);
+            const quality = lastSession && lastSession.quality ? lastSession.quality : 0;
+
+            const durColor = dev
+                ? (dev.durationDeltaH >= -0.5 ? '#10b981' : dev.durationDeltaH >= -1.5 ? '#f59e0b' : '#ef4444')
+                : undefined;
+            const consColor = consistency === null ? undefined : consistency >= 70 ? '#10b981' : consistency >= 40 ? '#f59e0b' : '#ef4444';
+            // Breakdown giờ ngủ vs giờ dậy — cùng lý do như ở renderTonightPlanCard: % gộp
+            // một mình có thể che mất việc giờ dậy (hay giờ ngủ) mới là bên đang lệch.
+            const consTitle = (!patterns.insufficientData && typeof patterns.bedtimeStdDev === 'number')
+                ? `Giờ ngủ lệch ~±${(patterns.bedtimeStdDev * 60).toFixed(0)}p · Giờ dậy lệch ~±${(patterns.wakeStdDev * 60).toFixed(0)}p (14 đêm)`
+                : undefined;
+
+            const tile = (label, value, color, title) => `
+                <div style="text-align:center;"${title ? ` title="${title}"` : ''}>
+                    <div style="font-size:1.02rem; font-weight:700; color:${color || 'var(--text-dark)'};">${value}</div>
+                    <div style="font-size:0.66rem; color:var(--text-muted); margin-top:2px;">${label}</div>
+                </div>`;
+
+            // Chọn đúng 1 "vấn đề nổi bật" theo mức độ ưu tiên: nợ ngủ nặng > giờ ngủ không đều
+            // > lệch giờ mạnh so với baseline > hiệu suất thấp > nợ ngủ nhẹ còn tồn đọng.
+            // Khi giờ giấc không đều, nói rõ luôn là bedtime hay wake time đang lệch nhiều hơn
+            // (irregularDriver) thay vì chỉ nói chung chung "giờ ngủ chưa ổn định" — vì hai
+            // trường hợp cần chỉnh khác nhau (đi ngủ thất thường vs. dậy thất thường dù ngủ đúng giờ).
+            let mainIssue = null;
+            if (debt.ok && debt.debt >= 5) mainIssue = 'Nợ ngủ đang khá cao.';
+            else if (consistency !== null && consistency < 50) {
+                mainIssue = patterns.irregularDriver === 'wake'
+                    ? 'Giờ dậy thất thường giữa các đêm, dù giờ đi ngủ khá ổn định.'
+                    : patterns.irregularDriver === 'bedtime'
+                        ? 'Giờ đi ngủ thất thường giữa các đêm.'
+                        : 'Giờ ngủ chưa ổn định giữa các đêm.';
+            }
+            else if (dev && Math.abs(dev.bedtimeDeltaMin) >= 90) mainIssue = 'Giờ đi ngủ đêm qua lệch nhiều so với nhịp thường ngày.';
+            else if (se !== null && se < 85) mainIssue = 'Hiệu suất giấc ngủ (SE) chưa cao — nằm giường lâu nhưng ngủ ít.';
+            else if (debt.ok && debt.debt >= 2) mainIssue = 'Vẫn còn một ít nợ ngủ.';
+
+            body.innerHTML = `
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(80px,1fr)); gap:6px;">
+                    ${tile('Thời lượng', `${lastNight.hours.toFixed(1)}h`, durColor)}
+                    ${tile('Đều đặn', consistency !== null ? `${consistency}%` : '—', consColor, consTitle)}
+                    ${tile('Hiệu suất', se !== null ? `${Math.round(se)}%` : '—', se !== null ? seColor(se) : undefined)}
+                    ${tile('Chất lượng', quality > 0 ? `${quality}/5` : '—')}
+                    ${tile('Nợ ngủ', debt.ok ? `${debt.debt.toFixed(1)}h` : '—', debt.ok ? debt.level.color : undefined)}
+                </div>
+                ${mainIssue
+                    ? `<div style="margin-top:10px; font-size:0.78rem; color:var(--text-dark); display:flex; gap:6px; align-items:flex-start; line-height:1.5;">
+                        <svg class="icon-svg" aria-hidden="true" style="flex:0 0 auto; margin-top:1px; color:var(--primary);"><use href="#icon-triangle-alert"></use></svg>
+                        <span><b>Vấn đề nổi bật:</b> ${mainIssue}</span></div>`
+                    : `<div style="margin-top:10px; font-size:0.78rem; color:#10b981;">Không có vấn đề nổi bật — cứ giữ nhịp hiện tại.</div>`}
+            `;
+        }
+
         function renderSleepDebtCard() {
             const wrap = document.getElementById('sleepDebtCard');
             const body = document.getElementById('sleepDebtCardBody');
@@ -62363,6 +62530,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 ].join('');
                 const wrap = document.getElementById('solTrendWrap');
                 if (wrap) wrap.style.display = 'none';
+                renderTonightPlanCard(); // ẩn kế hoạch tối nay khi chưa có dữ liệu
+                renderSleepSnapshotCard(); // ẩn snapshot khi chưa có dữ liệu
                 renderSleepDebtCard(); // ẩn card nợ ngủ khi chưa có dữ liệu
                 const alertBanner = document.getElementById('solAlertBanner');
                 if (alertBanner) alertBanner.style.display = 'none';
@@ -62417,7 +62586,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Regularity Index: max(SD giờ lên giường, SD giờ dậy) trong 7 đêm gần nhất
             const reg = computeSleepRegularity(7);
             const regBox = reg
-                ? sleepTile('activity', regularityColor(reg.score), `±${Math.round(reg.score)}p`, `Đều đặn (${reg.nights}đ)`)
+                ? sleepTile('activity', regularityColor(reg.score), `±${Math.round(reg.score)}p`, `Đều đặn (${reg.nights}đ)`,
+                    `Giờ ngủ ±${Math.round(reg.sdBed)}p · Giờ dậy ±${Math.round(reg.sdWake)}p`)
                 : sleepTile('activity', MUTED, '—', 'Đều đặn (cần ≥3đ)');
 
             // Wake Anchor Streak (#5) — badge riêng, thưởng đều đặn chứ không thưởng thời lượng
@@ -62463,6 +62633,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             renderSolTrendChart();
+            renderTonightPlanCard();
+            renderSleepSnapshotCard();
             renderSleepDebtCard();
             renderSolAlert();
             renderSolNoteCorrelation();
@@ -69958,6 +70130,16 @@ function calculatePacingConsistency(goals = []) {
 }
 
 // 2. Sleep Pattern Analysis (for renderSleepPatternCard)
+// Giờ-trong-ngày kiểu "circular": giờ đi ngủ trước 12:00 trưa (00:00-11:59, tức
+// ngủ sau nửa đêm) được cộng thêm 24 để nó nằm liền sau dải tối (12:00-23:59)
+// thay vì bị coi là "đầu ngày". Nhờ vậy 23:30 / 00:30 / 01:00 được tính là một
+// cụm giờ gần nhau (23.5 / 24.5 / 25.0) thay vì bị kéo giãn thành 23.5 / 0.5 / 1.0
+// — tránh độ lệch chuẩn (stdDev) bị thổi phồng giả tạo chỉ vì đi ngủ quanh nửa đêm.
+// Dùng chung cho mọi chỗ tính bedtime consistency / regularity / social jetlag.
+function circularSleepHour(hour) {
+    return hour < 12 ? hour + 24 : hour;
+}
+
 function analyzeSleepPatterns(sleepSessions = []) {
     try {
         if (!sleepSessions || sleepSessions.length < 3) {
@@ -69972,12 +70154,28 @@ function analyzeSleepPatterns(sleepSessions = []) {
         const minDuration = Math.min(...durations);
         const maxDuration = Math.max(...durations);
         
-        // Analyze bedtime consistency
+        // Analyze bedtime consistency. Dùng circularSleepHour() để giờ ngủ quanh
+        // nửa đêm (23:30, 00:30, 01:00...) được tính là một cụm gần nhau thay vì
+        // bị coi là cách xa nhau cả ngày — xem chú thích ở circularSleepHour().
         const bedtimes = sorted.map(s => {
             const d = new Date(s.start);
-            return d.getHours() + d.getMinutes() / 60;
+            return circularSleepHour(d.getHours() + d.getMinutes() / 60);
         });
         const bedtimeStdDev = calculateStandardDeviation(bedtimes);
+
+        // Giờ dậy cũng cần tính riêng: bedtime có thể trông ổn (SD thấp) trong khi giờ
+        // dậy lại lệch mạnh giữa các đêm (vd ngủ lúc 01:00 mỗi đêm nhưng dậy lúc 7h/10h/8h/11h
+        // tuỳ hôm) — nếu chỉ nhìn bedtimeStdDev sẽ đánh giá nhầm là "đều đặn". Dùng session.end
+        // khi có (chính xác hơn), fallback start+duration cho session cũ chưa có field end.
+        const wakeTimes = sorted.map(s => {
+            const endTs = typeof s.end === 'number' ? s.end : (s.start + s.duration * 3600000);
+            const d = new Date(endTs);
+            return circularSleepHour(d.getHours() + d.getMinutes() / 60);
+        });
+        const wakeStdDev = calculateStandardDeviation(wakeTimes);
+        // "Đều đặn" thực tế = chiều lệch nào TỆ HƠN (bedtime hay wake time), không phải chỉ
+        // riêng bedtime — cùng triết lý với computeSleepRegularity() (Regularity Index).
+        const regularityStdDev = Math.max(bedtimeStdDev, wakeStdDev);
         
         // Detect patterns
         const shortSleeps = durations.filter(d => d < 5).length;
@@ -69996,11 +70194,17 @@ function analyzeSleepPatterns(sleepSessions = []) {
             avgDuration: parseFloat(avgDuration.toFixed(1)),
             minDuration: parseFloat(minDuration.toFixed(1)),
             maxDuration: parseFloat(maxDuration.toFixed(1)),
-            consistencyScore: Math.max(0, 100 - (bedtimeStdDev * 10)),
+            consistencyScore: Math.max(0, 100 - (regularityStdDev * 10)),
             bedtimeStdDev: parseFloat(bedtimeStdDev.toFixed(1)),
+            wakeStdDev: parseFloat(wakeStdDev.toFixed(1)),
+            regularityStdDev: parseFloat(regularityStdDev.toFixed(1)),
+            // Cờ để UI biết chiều nào đang lệch nhiều hơn, tránh phải tự so lại 2 số —
+            // dùng để chọn đúng câu "vấn đề nổi bật" (giờ ngủ hay giờ dậy không đều).
+            irregularDriver: wakeStdDev > bedtimeStdDev + 0.3 ? 'wake' :
+                             bedtimeStdDev > wakeStdDev + 0.3 ? 'bedtime' : 'both',
             pattern: avgDuration < 5 ? 'sleep_deprived' :
                     avgDuration > 9 ? 'oversleeping' :
-                    bedtimeStdDev > 3 ? 'irregular_schedule' :
+                    regularityStdDev > 3 ? 'irregular_schedule' :
                     daySleeps > sorted.length * 0.3 ? 'daytime_sleeper' : 'healthy',
             recommendations: generateSleepRecommendations({
                 avgDuration,
@@ -70069,6 +70273,88 @@ function generateSleepRecommendations(data) {
     }
     
     return recs;
+}
+
+// ===== Personal Sleep Baseline =====
+// Thay vì so đêm nay với số y khoa chung ("nên ngủ 7-9h"), so nó với chính nhịp
+// ngủ gần đây của người dùng: "muộn hơn/sớm hơn/ít hơn baseline của bạn X". Dùng
+// median (không phải trung bình) để 1-2 đêm bất thường (thức xuyên đêm, ngủ bù
+// cuối tuần) không kéo lệch cả baseline.
+const SLEEP_BASELINE_CFG = {
+    windowNights: 30,  // nhìn tối đa 30 đêm gần nhất để tính baseline
+    minNights: 5        // cần tối thiểu 5 đêm log mới coi baseline đáng tin
+};
+
+function computeSleepBaseline(opts = {}) {
+    const cfg = SLEEP_BASELINE_CFG;
+    const sessions = opts.sessions || sleepSessions;
+    const nights = buildSleepNightsByWakeDate(sessions);
+    // Bỏ đêm đang xét ra khỏi rổ tính baseline (nếu có), để không tự so sánh
+    // đêm đó với chính nó khi tính deviation.
+    const excludeDayNum = typeof opts.excludeDayNum === 'number' ? opts.excludeDayNum : null;
+    const pool = nights.filter(n => n.dayNum !== excludeDayNum).slice(-cfg.windowNights);
+
+    if (pool.length < cfg.minNights) {
+        return { ok: false, reason: 'insufficient', have: pool.length, needed: cfg.minNights };
+    }
+
+    const median = arr => {
+        const s = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(s.length / 2);
+        return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+    };
+
+    // startTs/endTs đã có sẵn trên mỗi "night" từ buildSleepNightsByWakeDate();
+    // dùng circularSleepHour() (xem chú thích ở định nghĩa) để giờ quanh nửa đêm
+    // không bị coi là cách xa nhau cả ngày khi tính median.
+    const bedHours = pool.map(n => {
+        const d = new Date(n.startTs);
+        return circularSleepHour(d.getHours() + d.getMinutes() / 60);
+    });
+    const wakeHours = pool.map(n => {
+        const d = new Date(n.endTs);
+        return circularSleepHour(d.getHours() + d.getMinutes() / 60);
+    });
+    const durations = pool.map(n => n.hours);
+
+    return {
+        ok: true,
+        sampleSize: pool.length,
+        bedtimeHour: median(bedHours),
+        bedtimeClock: formatTimeFromDecimal(median(bedHours)),
+        wakeHour: median(wakeHours),
+        wakeClock: formatTimeFromDecimal(median(wakeHours)),
+        durationHours: parseFloat(median(durations).toFixed(2))
+    };
+}
+
+// So một đêm cụ thể (dạng "night" từ buildSleepNightsByWakeDate) với baseline cá
+// nhân, trả về cả số phút lệch lẫn câu mô tả ngắn sẵn để hiển thị — người dùng
+// không phải tự trừ. VD: bedtimeLabel = "54 phút muộn hơn baseline".
+function computeBaselineDeviation(night, baseline) {
+    if (!baseline || !baseline.ok || !night) return null;
+
+    const bedHour = circularSleepHour(new Date(night.startTs).getHours() + new Date(night.startTs).getMinutes() / 60);
+    const wakeHour = circularSleepHour(new Date(night.endTs).getHours() + new Date(night.endTs).getMinutes() / 60);
+
+    const bedtimeDeltaMin = Math.round((bedHour - baseline.bedtimeHour) * 60);
+    const wakeDeltaMin = Math.round((wakeHour - baseline.wakeHour) * 60);
+    const durationDeltaH = parseFloat((night.hours - baseline.durationHours).toFixed(2));
+
+    const fmtDelta = (min) => {
+        const abs = Math.abs(min);
+        if (abs < 1) return 'đúng baseline';
+        const dir = min > 0 ? 'muộn hơn' : 'sớm hơn';
+        return abs >= 60 ? `${(abs / 60).toFixed(1)}h ${dir} baseline` : `${abs} phút ${dir} baseline`;
+    };
+
+    return {
+        bedtimeDeltaMin, wakeDeltaMin, durationDeltaH,
+        bedtimeLabel: fmtDelta(bedtimeDeltaMin),
+        wakeLabel: fmtDelta(wakeDeltaMin),
+        durationLabel: durationDeltaH === 0 ? 'đúng baseline'
+            : `${Math.abs(durationDeltaH).toFixed(1)}h ${durationDeltaH > 0 ? 'nhiều hơn' : 'ít hơn'} baseline`
+    };
 }
 
 // 3. Fix detectGoalPatterns by adding the missing function call
