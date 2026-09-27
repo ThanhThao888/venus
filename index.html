@@ -9253,15 +9253,18 @@
         }
 
         /* --- Responsive --- */
-        @media (max-width: 480px) {
+        @media (max-width: 640px) {
             #quoteFab {
                 width: 44px;
                 height: 44px;
-                bottom: 16px;
+                /* Match #bdFab / #dbpTriggerBtn: add the home-indicator safe area on
+                   iPhone, otherwise this left-side button sits ~34px lower than its
+                   right-side counterparts and the two pairs look misaligned. */
+                bottom: calc(16px + env(safe-area-inset-bottom));
                 left: 16px;
             }
             #quotePopup {
-                bottom: 68px;
+                bottom: calc(68px + env(safe-area-inset-bottom));
                 left: 16px;
                 width: calc(100vw - 32px);
                 height: 310px;
@@ -34281,6 +34284,147 @@ window.DBP={
         border-radius: 4px; padding: 1px 5px; color: var(--text-dark);
     }
     .dark-mode .bd-kbd-hint kbd { background: #3d2836; }
+
+    /* ══════════════════════════════════════════════════════════
+       🔔 BRAIN DUMP REMINDER — "Wake-up resurfacing"
+       Lets a dumped note carry a reminder: at a specific time,
+       inside a time window, or tied to an expected wake-up time
+       after a nap. Delivery = popup (always) + browser notification
+       (if permitted). State machine per note.reminder.status:
+       pending → waiting (delivered, not yet acknowledged) → done.
+    ══════════════════════════════════════════════════════════ */
+    .bdr-toggle-btn {
+        font-size: 0.72rem; font-weight: 700;
+        background: rgba(59,130,246,0.08); color: #2563eb;
+        border: 1.5px solid rgba(59,130,246,0.25); border-radius: 9px;
+        padding: 7px 10px; cursor: pointer; transition: all 0.15s;
+        display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+        margin-top: 8px;
+    }
+    .bdr-toggle-btn:hover { background: rgba(59,130,246,0.16); }
+    .bdr-toggle-btn.bdr-on { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .dark-mode .bdr-toggle-btn { color: #93c5fd; border-color: rgba(147,197,253,0.3); }
+    .dark-mode .bdr-toggle-btn.bdr-on { background: #3b82f6; color: #0b1220; }
+
+    .bdr-panel {
+        display: none; margin-top: 8px; padding: 10px 10px 8px;
+        background: var(--bg-light); border: 1px dashed rgba(59,130,246,0.35);
+        border-radius: 10px;
+    }
+    .bdr-panel.bdr-open { display: block; animation: bd-slide-in 0.15s ease; }
+    .bdr-modes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+    .bdr-mode-label {
+        display: flex; align-items: center; gap: 7px;
+        font-size: 0.76rem; font-weight: 600; color: var(--text-dark); cursor: pointer;
+    }
+    .bdr-mode-label input[type="radio"] { accent-color: #2563eb; }
+    .bdr-fields { display: none; gap: 6px; margin: 2px 0 8px 21px; flex-wrap: wrap; align-items: center; }
+    .bdr-fields.bdr-active { display: flex; }
+    .bdr-fields input[type="time"], .bdr-fields input[type="datetime-local"], .bdr-fields input[type="number"] {
+        font-size: 0.74rem; padding: 5px 7px; border-radius: 7px;
+        border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark);
+    }
+    .bdr-fields .bdr-sep { font-size: 0.7rem; color: var(--text-muted); }
+    .bdr-repeat-row {
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+        font-size: 0.7rem; color: var(--text-muted); padding-top: 8px;
+        border-top: 1px dashed var(--border-color);
+    }
+    .bdr-repeat-row input[type="checkbox"] { accent-color: #2563eb; }
+    .bdr-repeat-row label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+    /* Reminder badge shown on a saved note */
+    .bdr-badge {
+        font-size: 0.6rem; font-weight: 700; padding: 1px 6px; border-radius: 6px;
+        background: rgba(59,130,246,0.12); color: #2563eb;
+        display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
+    }
+    .bdr-badge.bdr-waiting { background: rgba(239,68,68,0.14); color: #dc2626; animation: bdr-pulse 1.6s ease-in-out infinite; }
+    .bdr-badge.bdr-done { background: rgba(16,185,129,0.12); color: #047857; }
+    @keyframes bdr-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+    .dark-mode .bdr-badge { color: #93c5fd; }
+    .dark-mode .bdr-badge.bdr-waiting { color: #f87171; }
+    .dark-mode .bdr-badge.bdr-done { color: #34d399; }
+    .bdr-cancel-btn {
+        font-size: 0.62rem; background: none; border: none; cursor: pointer;
+        color: var(--text-muted); opacity: 0.6; padding: 1px 4px;
+    }
+    .bdr-cancel-btn:hover { opacity: 1; color: #ef4444; }
+
+    /* Floating "N Brain Dumps waiting" pill — the persistent,
+       acknowledgement-required resurfacing cue */
+    #bdrWaitPill {
+        position: fixed; bottom: 84px; right: 20px;
+        display: none; align-items: center; gap: 6px;
+        background: #dc2626; color: #fff; font-size: 0.72rem; font-weight: 700;
+        padding: 8px 12px; border-radius: 20px; cursor: pointer; border: none;
+        box-shadow: 0 6px 18px rgba(220,38,38,0.35);
+        z-index: 201; animation: bdr-pulse 2s ease-in-out infinite;
+    }
+    #bdrWaitPill.bdr-show { display: flex; }
+    @media (max-width: 640px) {
+        #bdrWaitPill { bottom: calc(140px + env(safe-area-inset-bottom)); right: 16px; }
+    }
+
+    /* The reminder popup itself — "WAKE-UP REMINDER" card */
+    .bdr-popup-overlay {
+        position: fixed; inset: 0; background: rgba(30,15,25,0.45);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 999; padding: 16px; backdrop-filter: blur(2px);
+    }
+    .bdr-popup-card {
+        width: 100%; max-width: 360px; background: var(--bg-white);
+        border-radius: 16px; padding: 18px 18px 16px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        border: 1px solid var(--border-color);
+        animation: bdr-pop-in 0.22s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes bdr-pop-in { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .bdr-popup-head { display: flex; align-items: center; gap: 8px; font-weight: 800; color: var(--text-dark); font-size: 0.95rem; margin-bottom: 4px; }
+    .bdr-popup-sub { font-size: 0.68rem; color: var(--text-muted); margin-bottom: 10px; }
+    .bdr-popup-text {
+        font-size: 0.92rem; color: var(--text-dark); line-height: 1.5;
+        background: var(--bg-light); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+        white-space: pre-wrap; word-break: break-word;
+    }
+    .bdr-popup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .bdr-popup-actions button {
+        font-size: 0.74rem; font-weight: 700; border-radius: 8px; padding: 8px 6px;
+        cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-light);
+        color: var(--text-dark); transition: all 0.15s; font-family: inherit;
+    }
+    .bdr-popup-actions button:hover { filter: brightness(0.96); transform: translateY(-1px); }
+    .bdr-popup-actions .bdr-done-main { grid-column: 1 / -1; background: linear-gradient(135deg,#10b981,#059669); color: #fff; border: none; }
+    .bdr-popup-actions .bdr-open-bd { grid-column: 1 / -1; background: rgba(219,39,119,0.08); color: #9d2867; border-color: rgba(219,39,119,0.2); }
+    .dark-mode .bdr-popup-actions .bdr-open-bd { color: #f9a8d4; }
+
+    /* "You left yourself N notes" review modal */
+    .bdr-review-overlay {
+        position: fixed; inset: 0; background: rgba(30,15,25,0.4);
+        display: flex; align-items: center; justify-content: center; z-index: 998; padding: 16px;
+    }
+    .bdr-review-card {
+        width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto;
+        background: var(--bg-white); border-radius: 16px; padding: 16px;
+        border: 1px solid var(--border-color); box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .bdr-review-title { font-weight: 800; font-size: 0.95rem; color: var(--text-dark); margin-bottom: 10px; display:flex; align-items:center; justify-content:space-between; gap: 10px; }
+    .bdr-review-item {
+        background: var(--bg-light); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+        border-left: 3px solid #dc2626;
+    }
+    .bdr-review-item-text { font-size: 0.85rem; color: var(--text-dark); margin-bottom: 4px; word-break: break-word; white-space: pre-wrap; }
+    .bdr-review-item-meta { font-size: 0.66rem; color: var(--text-muted); margin-bottom: 6px; }
+    .bdr-review-item-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+    .bdr-review-item-actions button {
+        font-size: 0.66rem; font-weight: 700; border-radius: 6px; padding: 3px 8px;
+        cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark);
+        font-family: inherit;
+    }
+    .bdr-review-close {
+        background: none; border: none; color: var(--text-muted);
+        font-size: 0.9rem; cursor: pointer; line-height: 1; padding: 2px 4px;
+    }
     </style>
 
     <!-- FAB button -->
@@ -34288,6 +34432,10 @@ window.DBP={
         <span id="bdFabIcon"><i class="fa-solid fa-lightbulb"></i></span>
         <span class="bd-count" id="bdCount"></span>
     </button>
+
+    <!-- Persistent "waiting" pill: shows whenever a reminder has been delivered
+         but not yet acknowledged (delivered → seen → acknowledged → done) -->
+    <button type="button" id="bdrWaitPill" onclick="BrainDump.openWaitReview()" title="Review reminders waiting for you"></button>
 
     <!-- Panel -->
     <div id="bdPanel" role="dialog" aria-label="Brain Dump" aria-hidden="true">
@@ -34333,6 +34481,42 @@ window.DBP={
             <div class="bd-save-row">
                 <button id="bdSaveBtn" onclick="BrainDump.save()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-save"></use></svg> Dump it <span style="opacity:0.7;font-weight:400;font-size:0.72rem;">&amp; back to work</span></button>
                 <span class="bd-kbd-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+            </div>
+
+            <!-- Wake-up / time-window resurfacing -->
+            <button type="button" id="bdrToggleBtn" class="bdr-toggle-btn" onclick="BrainDump.toggleReminderPanel()" aria-expanded="false" aria-controls="bdrPanel">
+                <i class="fa-regular fa-clock"></i> Remind me <span id="bdrToggleSummary" style="opacity:0.75;font-weight:600;"></span>
+            </button>
+            <div id="bdrPanel" class="bdr-panel">
+                <div class="bdr-modes">
+                    <label class="bdr-mode-label">
+                        <input type="radio" name="bdrMode" value="at" onchange="BrainDump.setReminderMode('at')"> At a specific time
+                    </label>
+                    <div class="bdr-fields" id="bdrFieldsAt">
+                        <input type="datetime-local" id="bdrAtTime">
+                    </div>
+
+                    <label class="bdr-mode-label">
+                        <input type="radio" name="bdrMode" value="window" onchange="BrainDump.setReminderMode('window')"> Within a time window
+                    </label>
+                    <div class="bdr-fields" id="bdrFieldsWindow">
+                        <input type="datetime-local" id="bdrWindowStart">
+                        <span class="bdr-sep">→</span>
+                        <input type="datetime-local" id="bdrWindowEnd">
+                    </div>
+
+                    <label class="bdr-mode-label">
+                        <input type="radio" name="bdrMode" value="afterNap" onchange="BrainDump.setReminderMode('afterNap')"> After nap (expected wake-up)
+                    </label>
+                    <div class="bdr-fields" id="bdrFieldsNap">
+                        <input type="datetime-local" id="bdrNapWake">
+                    </div>
+                </div>
+                <div class="bdr-repeat-row">
+                    <label><input type="checkbox" id="bdrRepeatChk" onchange="BrainDump.toggleRepeatFields()"> Repeat if ignored, every <input type="number" id="bdrRepeatMin" value="10" min="1" max="120" style="width:44px;padding:2px 4px;" disabled> min</label>
+                    <span>until</span>
+                    <input type="datetime-local" id="bdrRepeatUntil" style="width:auto;" disabled>
+                </div>
             </div>
         </div>
 
@@ -34504,6 +34688,7 @@ window.DBP={
                 <div class="bd-note cat-${n.cat}${n.processed ? ' bd-processed' : ''}" data-id="${n.id}">
                     <div class="bd-note-meta">
                         <span class="bd-note-cat">${CAT_LABELS[n.cat] || n.cat}</span>
+                        ${reminderBadge(n)}
                         <span class="bd-note-time">${formatTime(n.ts)}</span>
                     </div>
                     <div class="bd-note-text">${escHtml(n.text)}</div>
@@ -34515,6 +34700,7 @@ window.DBP={
                             ${n.processed ? '<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Done' : '○ Mark done'}
                         </button>
                         ${n.cat === 'task' ? `<button class="bd-promote-btn" onclick="BrainDump.promoteToGoal('${n.id}')"><svg class="icon-svg" aria-hidden="true"><use href="#icon-plus"></use></svg> To Goal</button>` : ''}
+                        ${n.reminder && n.reminder.status !== 'done' ? `<button class="bdr-cancel-btn" onclick="BrainDump.cancelReminder('${n.id}')" title="Cancel reminder"><i class="fa-regular fa-bell-slash"></i></button>` : ''}
                         <button class="bd-note-del" onclick="BrainDump.deleteNote('${n.id}')" title="Delete" aria-label="Delete this note">✕</button>
                     </div>
                 </div>
@@ -34565,6 +34751,291 @@ window.DBP={
             if (isOpen && e.key === 'Escape') BrainDump.toggle();
         }
 
+        /* ══════════════════════════════════════════════════════
+           🔔 Reminder engine — "Wake-up resurfacing"
+           note.reminder = {
+             mode: 'at' | 'window' | 'afterNap',
+             due: ISOString,            // when it should first fire
+             windowEnd: ISOString|null, // only for 'window'
+             repeatEveryMin: number|null,
+             repeatUntil: ISOString|null,
+             status: 'pending' | 'waiting' | 'done',
+             deliveredAt: ISOString|null,
+             lastShownAt: ISOString|null,
+             snoozeUntil: ISOString|null
+           }
+           State machine: pending → waiting (delivered, not yet
+           acknowledged) → done. The system never assumes "shown = handled" —
+           a note stays in "waiting" (and keeps nudging) until the person
+           explicitly hits Done.
+        ══════════════════════════════════════════════════════════ */
+        let reminderPanelOpen = false;
+        let reminderMode      = null;   // 'at' | 'window' | 'afterNap' | null
+        let _reminderTimer    = null;
+        let _popupQueue       = [];
+        let _popupShowing     = false;
+
+        function fmt2(x) { return String(x).padStart(2, '0'); }
+        function toLocalInputValue(d) {
+            return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}T${fmt2(d.getHours())}:${fmt2(d.getMinutes())}`;
+        }
+        function fmtClock(iso) {
+            if (!iso) return '--:--';
+            const d = new Date(iso);
+            return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}`;
+        }
+        function reminderModeLabel(r) {
+            if (!r) return '';
+            if (r.mode === 'window')  return `Window ${fmtClock(r.due)}–${fmtClock(r.windowEnd)}`;
+            if (r.mode === 'afterNap') return `After nap · ${fmtClock(r.due)}`;
+            return `At ${fmtClock(r.due)}`;
+        }
+        function reminderBadge(n) {
+            const r = n.reminder;
+            if (!r) return '';
+            if (r.status === 'done') return `<span class="bdr-badge bdr-done"><i class="fa-solid fa-bell"></i> Done</span>`;
+            if (r.status === 'waiting') return `<span class="bdr-badge bdr-waiting"><i class="fa-solid fa-bell"></i> Waiting</span>`;
+            return `<span class="bdr-badge"><i class="fa-regular fa-clock"></i> ${escHtml(reminderModeLabel(r))}</span>`;
+        }
+
+        function requestNotifPermission() {
+            if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+                try { Notification.requestPermission(); } catch (e) {}
+            }
+        }
+
+        /* Reset + prefill the reminder config panel with sensible defaults
+           every time it's (re)opened for a fresh note. */
+        function resetReminderPanel() {
+            reminderPanelOpen = false;
+            reminderMode = null;
+            const panel = document.getElementById('bdrPanel');
+            const btn   = document.getElementById('bdrToggleBtn');
+            if (panel) panel.classList.remove('bdr-open');
+            if (btn) { btn.classList.remove('bdr-on'); btn.setAttribute('aria-expanded', 'false'); }
+            document.querySelectorAll('input[name="bdrMode"]').forEach(r => r.checked = false);
+            document.querySelectorAll('.bdr-fields').forEach(f => f.classList.remove('bdr-active'));
+            const repeatChk = document.getElementById('bdrRepeatChk');
+            if (repeatChk) repeatChk.checked = false;
+            const repeatMin = document.getElementById('bdrRepeatMin');
+            const repeatUntil = document.getElementById('bdrRepeatUntil');
+            if (repeatMin) repeatMin.disabled = true;
+            if (repeatUntil) { repeatUntil.disabled = true; repeatUntil.value = ''; }
+            const summary = document.getElementById('bdrToggleSummary');
+            if (summary) summary.textContent = '';
+
+            const now = new Date();
+            const at = document.getElementById('bdrAtTime');
+            if (at) at.value = toLocalInputValue(new Date(now.getTime() + 60 * 60000));
+            const ws = document.getElementById('bdrWindowStart');
+            const we = document.getElementById('bdrWindowEnd');
+            if (ws) ws.value = toLocalInputValue(new Date(now.getTime() + 60 * 60000));
+            if (we) we.value = toLocalInputValue(new Date(now.getTime() + 150 * 60000));
+            const nw = document.getElementById('bdrNapWake');
+            if (nw) nw.value = toLocalInputValue(new Date(now.getTime() + 90 * 60000));
+        }
+
+        function collectReminderFromPanel() {
+            if (!reminderMode) return null;
+            const repeatChk  = document.getElementById('bdrRepeatChk');
+            const repeatOn   = !!(repeatChk && repeatChk.checked);
+            const repeatMin  = Math.max(1, parseInt(document.getElementById('bdrRepeatMin')?.value, 10) || 10);
+            let dueISO = null, windowEndISO = null;
+
+            if (reminderMode === 'at') {
+                const v = document.getElementById('bdrAtTime')?.value;
+                if (!v) return null;
+                dueISO = new Date(v).toISOString();
+            } else if (reminderMode === 'window') {
+                const vs = document.getElementById('bdrWindowStart')?.value;
+                const ve = document.getElementById('bdrWindowEnd')?.value;
+                if (!vs || !ve) return null;
+                const s = new Date(vs), e = new Date(ve);
+                if (e <= s) {
+                    if (typeof showNotification === 'function') showNotification('End time must be after start time.', 'warning');
+                    return null;
+                }
+                dueISO = s.toISOString();
+                windowEndISO = e.toISOString();
+            } else if (reminderMode === 'afterNap') {
+                const v = document.getElementById('bdrNapWake')?.value;
+                if (!v) return null;
+                dueISO = new Date(v).toISOString();
+            }
+
+            const repeatUntilInput = document.getElementById('bdrRepeatUntil')?.value;
+            let repeatUntilISO = null;
+            if (repeatOn) {
+                repeatUntilISO = repeatUntilInput
+                    ? new Date(repeatUntilInput).toISOString()
+                    : new Date(new Date(windowEndISO || dueISO).getTime() + 2 * 3600000).toISOString();
+            }
+
+            return {
+                mode: reminderMode,
+                due: dueISO,
+                windowEnd: windowEndISO,
+                repeatEveryMin: repeatOn ? repeatMin : null,
+                repeatUntil: repeatUntilISO,
+                status: 'pending',
+                deliveredAt: null,
+                lastShownAt: null,
+                snoozeUntil: null
+            };
+        }
+
+        /* ── Scheduler: polls every 15s. Browsers don't guarantee timers
+           fire when the tab is closed or the machine sleeps — this covers
+           the case where the app/tab is open, which is the same limit any
+           localStorage-based reminder has. ── */
+        function startReminderScheduler() {
+            if (_reminderTimer) return;
+            checkReminders();
+            _reminderTimer = setInterval(checkReminders, 15000);
+        }
+
+        function checkReminders() {
+            const notes = loadNotes();
+            const now = Date.now();
+            let changed = false;
+
+            notes.forEach(n => {
+                const r = n.reminder;
+                if (!r || r.status === 'done') return;
+
+                if (r.status === 'pending') {
+                    if (now >= new Date(r.due).getTime()) {
+                        r.status = 'waiting';
+                        r.deliveredAt = new Date().toISOString();
+                        r.lastShownAt = r.deliveredAt;
+                        changed = true;
+                        queuePopup(n);
+                    }
+                    return;
+                }
+
+                if (r.status === 'waiting') {
+                    if (r.snoozeUntil && now < new Date(r.snoozeUntil).getTime()) return;
+                    if (r.snoozeUntil && now >= new Date(r.snoozeUntil).getTime()) {
+                        // snooze just expired — resurface once regardless of repeat config
+                        r.snoozeUntil = null;
+                        r.lastShownAt = new Date().toISOString();
+                        changed = true;
+                        queuePopup(n);
+                        return;
+                    }
+                    if (r.repeatEveryMin && r.repeatUntil && now < new Date(r.repeatUntil).getTime()) {
+                        const last = r.lastShownAt ? new Date(r.lastShownAt).getTime() : 0;
+                        if (now - last >= r.repeatEveryMin * 60000) {
+                            r.lastShownAt = new Date().toISOString();
+                            changed = true;
+                            queuePopup(n);
+                        }
+                    }
+                }
+            });
+
+            if (changed) saveNotes(notes);
+            updateWaitPill();
+        }
+
+        function queuePopup(note) {
+            if (!_popupQueue.find(x => x.id === note.id)) _popupQueue.push(note);
+            fireBrowserNotification(note);
+            processPopupQueue();
+        }
+
+        function fireBrowserNotification(note) {
+            if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+            try {
+                const notif = new Notification('🧠 Brain Dump Reminder', { body: note.text.substring(0, 120) });
+                notif.onclick = () => { try { window.focus(); } catch (e) {} };
+            } catch (e) {}
+        }
+
+        function processPopupQueue() {
+            if (_popupShowing || !_popupQueue.length) return;
+            _popupShowing = true;
+            renderPopup(_popupQueue.shift());
+        }
+
+        function renderPopup(note) {
+            const existing = document.getElementById('bdrPopupOverlay');
+            if (existing) existing.remove();
+            const r = note.reminder || {};
+            const html = `
+                <div class="bdr-popup-overlay" id="bdrPopupOverlay">
+                    <div class="bdr-popup-card" role="dialog" aria-modal="true" aria-label="Brain Dump Reminder">
+                        <div class="bdr-popup-head"><i class="fa-solid fa-brain"></i> Brain Dump Reminder</div>
+                        <div class="bdr-popup-sub">${escHtml(reminderModeLabel(r))}</div>
+                        <div class="bdr-popup-text">${escHtml(note.text)}</div>
+                        <div class="bdr-popup-actions">
+                            <button onclick="BrainDump.snoozeReminder('${note.id}',10)">Snooze 10 min</button>
+                            <button onclick="BrainDump.snoozeReminder('${note.id}',30)">Snooze 30 min</button>
+                            <button class="bdr-open-bd" onclick="BrainDump.openFromPopup('${note.id}')"><svg class="icon-svg" aria-hidden="true"><use href="#icon-brain"></use></svg> Open Brain Dump</button>
+                            <button class="bdr-done-main" onclick="BrainDump.ackDone('${note.id}')">✓ Done</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+
+        function closePopupAndAdvance() {
+            const el = document.getElementById('bdrPopupOverlay');
+            if (el) el.remove();
+            _popupShowing = false;
+            setTimeout(processPopupQueue, 150);
+        }
+
+        function updateWaitPill() {
+            const notes = loadNotes();
+            const waiting = notes.filter(n => n.reminder && n.reminder.status === 'waiting');
+            const pill = document.getElementById('bdrWaitPill');
+            if (!pill) return;
+            // Only show the floating pill while the Brain Dump panel itself is closed.
+            // With the panel open, each waiting note already shows its own badge in the
+            // list — a fixed pill on top of that scrolling list just looks glitchy.
+            if (waiting.length > 0 && !isOpen) {
+                pill.classList.add('bdr-show');
+                pill.innerHTML = `🔴 ${waiting.length} Brain Dump${waiting.length > 1 ? 's' : ''} waiting`;
+            } else {
+                pill.classList.remove('bdr-show');
+            }
+        }
+
+        function renderWaitReview() {
+            const notes = loadNotes();
+            const waiting = notes.filter(n => n.reminder && n.reminder.status === 'waiting')
+                .sort((a, b) => new Date(a.reminder.deliveredAt) - new Date(b.reminder.deliveredAt));
+            const items = waiting.map(n => `
+                <div class="bdr-review-item">
+                    <div class="bdr-review-item-text">${escHtml(n.text)}</div>
+                    <div class="bdr-review-item-meta">${formatTime(n.reminder.deliveredAt)} · ${escHtml(reminderModeLabel(n.reminder))}</div>
+                    <div class="bdr-review-item-actions">
+                        <button onclick="BrainDump.ackDone('${n.id}'); BrainDump.refreshWaitReview();">✓ Done</button>
+                        <button onclick="BrainDump.snoozeReminder('${n.id}',10); BrainDump.refreshWaitReview();">Snooze 10m</button>
+                        <button onclick="BrainDump.snoozeReminder('${n.id}',30); BrainDump.refreshWaitReview();">Snooze 30m</button>
+                    </div>
+                </div>
+            `).join('') || '<div class="bd-empty">Nothing waiting — all clear!</div>';
+
+            const html = `
+                <div class="bdr-review-overlay" id="bdrReviewOverlay">
+                    <div class="bdr-review-card">
+                        <div class="bdr-review-title">
+                            <span>You left yourself ${waiting.length} note${waiting.length !== 1 ? 's' : ''}</span>
+                            <button class="bdr-review-close" onclick="BrainDump.closeWaitReview()">✕</button>
+                        </div>
+                        <div id="bdrReviewList">${items}</div>
+                    </div>
+                </div>
+            `;
+            const existing = document.getElementById('bdrReviewOverlay');
+            if (existing) existing.remove();
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+
         /* ── Public API ── */
         window.BrainDump = {
 
@@ -34587,6 +35058,8 @@ window.DBP={
                     stopTimeRefresh();
                     fab.focus(); // return focus to the trigger for keyboard users
                 }
+                updateWaitPill(); // hide the floating "waiting" pill while the panel itself is open —
+                                  // otherwise it sits fixed on top of the scrolling note list underneath it
             },
 
             selectCat,
@@ -34600,18 +35073,23 @@ window.DBP={
                     setTimeout(() => ta.style.borderColor = '', 800);
                     return;
                 }
+                const reminder = collectReminderFromPanel();
                 const notes = loadNotes();
                 notes.push({
                     id: Date.now().toString(),
                     text, cat: selectedCat,
                     ts: new Date().toISOString(),
-                    processed: false   // FIX5
+                    processed: false,   // FIX5
+                    reminder             // null, or { mode, due, ... status:'pending' }
                 });
                 saveNotes(notes);
                 ta.value = '';
                 clearDraft(); // FIX3 — xóa draft sau khi lưu thành công
                 const hint = document.getElementById('bdDraftHint');
                 if (hint) hint.style.display = 'none';
+                resetReminderPanel();
+                if (reminder) requestNotifPermission();
+                updateWaitPill();
 
                 const btn = document.getElementById('bdSaveBtn');
                 if (btn) {
@@ -34716,6 +35194,102 @@ window.DBP={
                     if (typeof showNotification === 'function')
                         showNotification('<svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Copied: "' + note.text.substring(0,60) + '"', 'info');
                 }
+            },
+
+            /* ── Reminder panel controls ── */
+            toggleReminderPanel() {
+                reminderPanelOpen = !reminderPanelOpen;
+                const panel = document.getElementById('bdrPanel');
+                const btn   = document.getElementById('bdrToggleBtn');
+                if (reminderPanelOpen) {
+                    resetReminderPanel();
+                    reminderPanelOpen = true;
+                    if (panel) panel.classList.add('bdr-open');
+                    if (btn) { btn.classList.add('bdr-on'); btn.setAttribute('aria-expanded', 'true'); }
+                    requestNotifPermission();
+                } else {
+                    if (panel) panel.classList.remove('bdr-open');
+                    if (btn) { btn.classList.remove('bdr-on'); btn.setAttribute('aria-expanded', 'false'); }
+                }
+            },
+
+            setReminderMode(mode) {
+                reminderMode = mode;
+                document.querySelectorAll('.bdr-fields').forEach(f => f.classList.remove('bdr-active'));
+                const map = { at: 'bdrFieldsAt', window: 'bdrFieldsWindow', afterNap: 'bdrFieldsNap' };
+                const el = document.getElementById(map[mode]);
+                if (el) el.classList.add('bdr-active');
+                const summary = document.getElementById('bdrToggleSummary');
+                if (summary) summary.textContent = '• set';
+            },
+
+            toggleRepeatFields() {
+                const chk   = document.getElementById('bdrRepeatChk');
+                const min   = document.getElementById('bdrRepeatMin');
+                const until = document.getElementById('bdrRepeatUntil');
+                const on = !!(chk && chk.checked);
+                if (min) min.disabled = !on;
+                if (until) {
+                    until.disabled = !on;
+                    if (on && !until.value) {
+                        let baseVal;
+                        if (reminderMode === 'window') baseVal = document.getElementById('bdrWindowEnd')?.value;
+                        else if (reminderMode === 'afterNap') baseVal = document.getElementById('bdrNapWake')?.value;
+                        else baseVal = document.getElementById('bdrAtTime')?.value;
+                        const base = baseVal ? new Date(baseVal) : new Date();
+                        until.value = toLocalInputValue(new Date(base.getTime() + 2 * 3600000));
+                    }
+                }
+            },
+
+            /* ── Reminder lifecycle: pending → waiting → done ── */
+            snoozeReminder(id, minutes) {
+                const notes = loadNotes();
+                const n = notes.find(x => x.id === id);
+                if (n && n.reminder) {
+                    n.reminder.snoozeUntil = new Date(Date.now() + minutes * 60000).toISOString();
+                    saveNotes(notes);
+                }
+                closePopupAndAdvance();
+                updateWaitPill();
+                if (typeof showNotification === 'function')
+                    showNotification(`Snoozed ${minutes} min`, 'info');
+            },
+
+            ackDone(id) {
+                const notes = loadNotes();
+                const n = notes.find(x => x.id === id);
+                if (n) {
+                    if (n.reminder) n.reminder.status = 'done';
+                    n.processed = true;
+                    saveNotes(notes);
+                }
+                closePopupAndAdvance();
+                updateWaitPill();
+                renderList(); updateFab(); updateReviewBanner();
+            },
+
+            openFromPopup(id) {
+                closePopupAndAdvance();
+                this.toggle();
+                setTimeout(() => {
+                    const el = document.querySelector(`.bd-note[data-id="${id}"]`);
+                    if (el) el.scrollIntoView({ block: 'center' });
+                }, 250);
+            },
+
+            cancelReminder(id) {
+                const notes = loadNotes();
+                const n = notes.find(x => x.id === id);
+                if (n) { n.reminder = null; saveNotes(notes); }
+                renderList(); updateWaitPill();
+            },
+
+            openWaitReview() { renderWaitReview(); },
+            refreshWaitReview() { renderWaitReview(); updateWaitPill(); renderList(); updateFab(); },
+            closeWaitReview() {
+                const el = document.getElementById('bdrReviewOverlay');
+                if (el) el.remove();
             }
         };
 
@@ -34723,6 +35297,9 @@ window.DBP={
         document.addEventListener('DOMContentLoaded', () => {
             initCatChips();
             updateFab();
+            resetReminderPanel();
+            updateWaitPill();
+            startReminderScheduler();
             document.addEventListener('keydown', handleKeydown);
 
             // FIX3 — Auto-save draft khi gõ
@@ -35011,8 +35588,11 @@ window.DBP={
 }
 #nvFab:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 #nvFab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-@media (max-width: 480px) {
-    #nvFab { bottom: 70px; left: 16px; width: 44px; height: 44px; }
+@media (max-width: 640px) {
+    /* Match #bdFab's mobile rule: add the home-indicator safe area so this
+       stacks correctly above #quoteFab on iPhone instead of drifting ~34px
+       lower than the right-side pair (Brain Dump / Daily Plan). */
+    #nvFab { bottom: calc(70px + env(safe-area-inset-bottom)); left: 16px; width: 44px; height: 44px; }
 }
 
 /* ═════════════ Overlay + app shell ═════════════ */
