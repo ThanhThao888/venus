@@ -25665,8 +25665,9 @@ body.dark-mode .dbp-tpl-select{background:var(--bg-light);border-color:var(--bor
 .dbp-gen-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none;box-shadow:none;}
 
 /* ─── PLAN META ─── */
-.dbp-plan-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:12px 16px;background:rgba(219,39,119,0.06);border-radius:10px;border:1px solid rgba(219,39,119,0.12);}
-.dbp-plan-meta-stat{text-align:center;}
+.dbp-plan-meta{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 4px;margin-bottom:12px;padding:12px 16px;background:rgba(219,39,119,0.06);border-radius:10px;border:1px solid rgba(219,39,119,0.12);}
+.dbp-plan-meta-stat{text-align:center;flex:1 1 auto;min-width:52px;}
+@media (max-width:640px){ .dbp-plan-meta-val{font-size:0.82rem;} }
 .dbp-plan-meta-val{font-weight:800;font-size:0.94rem;color:#db2777;}
 .dbp-plan-meta-key{color:var(--text-muted,#b8919f);font-size:0.67rem;text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;}
 
@@ -25758,6 +25759,20 @@ body.dark-mode .dbp-mood-saved{color:#7ecdb4;}
 .dbp-analytics-stat{text-align:center;}
 .dbp-analytics-val{font-size:1.1rem;font-weight:800;color:#db2777;}
 .dbp-analytics-key{font-size:0.63rem;color:var(--text-muted,#b8919f);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;}
+
+/* ─── PLANNING ACCURACY / PLANNING DEBT / REALITY CHECK ───
+   A second analytics card in History, below "This Week": how much of what
+   you planned you actually completed, the cumulative gap between the two,
+   and — once there's enough data — a suggestion to set Available today to
+   match your real average instead of an optimistic guess. */
+.dbp-planacc-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.dbp-reality-check{margin-top:12px;padding-top:12px;border-top:1px dashed var(--border-color,#f0d7de);
+    font-size:0.76rem;line-height:1.5;color:var(--text-dark,#4a3240);}
+.dbp-reality-check strong{color:#db2777;}
+.dbp-reality-btn{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:6px 14px;
+    border-radius:999px;border:none;background:#db2777;color:#fff;font-size:0.72rem;font-weight:800;
+    cursor:pointer;}
+.dbp-reality-btn:hover{background:#c2185b;}
 
 /* ─── HISTORY ─── */
 .dbp-history-item{background:var(--bg-light,#fffbfc);border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid var(--border-color,#f0d7de);}
@@ -25867,6 +25882,7 @@ body.dark-mode .dbp-mood-saved{color:#7ecdb4;}
     .dbp-action-row { flex-wrap: wrap; }
     .dbp-action-btn { padding: 10px; font-size: 0.78rem; flex: 1 1 calc(50% - 4px); }
     .dbp-analytics-row { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .dbp-planacc-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .dbp-analytics-val { font-size: 1rem; }
     .dbp-history-item { padding: 10px 12px; }
     .dbp-history-date { font-size: 0.7rem; }
@@ -25946,6 +25962,18 @@ body.dark-mode .dbp-field input, body.dark-mode .dbp-field select {
 /* ─── TASK TAGS / CATEGORIES ─── */
 .dbp-tag-badge{display:inline-flex;align-items:center;font-size:0.62rem;font-weight:700;
     padding:1px 7px;border-radius:999px;margin-top:2px;white-space:nowrap;letter-spacing:0.01em;}
+
+/* ─── DEADLINE URGENCY BADGE ───
+   Only shown for goal-sourced tasks with a real deadline, and only when that
+   deadline is imminent (overdue / today / within a week) — a task with no
+   pressing deadline gets no badge at all, per the "don't add noise" rule.
+   Colors intentionally match the existing .course-deadline overdue/soon
+   palette elsewhere in the app instead of introducing a new scheme. */
+.dbp-deadline-badge{display:inline-flex;align-items:center;font-size:0.62rem;font-weight:800;
+    padding:1px 7px;border-radius:999px;margin-top:2px;margin-left:4px;white-space:nowrap;letter-spacing:0.01em;}
+.dbp-deadline-badge.overdue{background:#e74c3c1a;color:#e74c3c;}
+.dbp-deadline-badge.today{background:#d3540019;color:#d35400;}
+.dbp-deadline-badge.soon{background:#f39c121a;color:#b8720a;}
 .dbp-manual-tag-select{padding:9px 8px;border-radius:8px;border:1.5px dashed var(--border-color);
     background:transparent;color:var(--text-dark);font-size:0.78rem;flex-shrink:0;max-width:104px;}
 body.dark-mode .dbp-manual-tag-select{background:var(--bg-light);border-color:var(--border-color);color:var(--text-dark);}
@@ -26001,6 +26029,101 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
 @media (max-width: 640px) {
     .dbp-manual-tag-select { max-width: 88px; font-size: 0.72rem; padding: 8px 6px; }
     .dbp-cat-chip { font-size: 0.63rem; padding: 3px 8px 3px 6px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   QUICK PLAN — P0 redesign: Daily Plan opens as a small "tell me
+   your capacity + energy, I'll build the day" panel instead of a
+   full control panel. Everything a power user might want to hand-
+   tune still exists, just tucked into the collapsed Customize
+   section below rather than shown by default. ═══════════════════ */
+.dbp-quickplan{background:var(--bg-light,#faf3f6);border:1.5px solid var(--border-color,#f0d7de);border-radius:14px;padding:16px;margin-bottom:14px;}
+.dbp-quickplan .dbp-config{grid-template-columns:1fr 1fr;margin-bottom:12px;}
+.dbp-energy-field{margin-bottom:14px;}
+.dbp-energy-row{display:flex;gap:6px;}
+.dbp-energy-btn{flex:1;padding:9px 6px;border-radius:9px;border:1.5px solid var(--border-color,#f0d7de);background:var(--bg-white,#fffbfc);color:var(--text-muted,#9a7686);font-size:0.82rem;font-weight:700;cursor:pointer;transition:all 0.18s;}
+.dbp-energy-btn:hover{border-color:#db2777;}
+.dbp-energy-btn.active{background:linear-gradient(135deg,#9d2867,#db2777);border-color:transparent;color:#fff;}
+.dbp-quickplan .dbp-budget-wrap{margin:0 0 14px;}
+.dbp-buildday-btn{width:100%;padding:14px;background:linear-gradient(135deg,#9d2867,#db2777);color:#fff;border:none;border-radius:10px;font-weight:800;font-size:0.95rem;cursor:pointer;transition:all 0.22s;letter-spacing:0.01em;}
+.dbp-buildday-btn:hover{transform:translateY(-1px);box-shadow:0 7px 22px rgba(219,39,119,0.42);}
+.dbp-buildday-btn:active{transform:translateY(0);}
+
+/* ─── CUSTOMIZE (collapsed power-user config) ─── */
+details.dbp-customize{border:1.5px solid var(--border-color,#f0d7de);border-radius:12px;padding:0 14px;margin-bottom:14px;background:var(--bg-white,#fffbfc);}
+details.dbp-customize[open]{padding-bottom:14px;}
+details.dbp-customize summary{list-style:none;cursor:pointer;padding:12px 2px;font-weight:700;font-size:0.82rem;color:var(--text-dark,#4a3240);display:flex;align-items:center;gap:6px;user-select:none;}
+details.dbp-customize summary::-webkit-details-marker{display:none;}
+details.dbp-customize summary::before{content:'▸';display:inline-block;transition:transform 0.18s;color:#db2777;font-size:0.75rem;}
+details.dbp-customize[open] summary::before{transform:rotate(90deg);}
+
+/* ─── FOCUS VIEW: Now / Next ───
+   Default view for a generated plan. Shows only the current (or
+   upcoming) block plus a one-line peek at what's next — the full
+   block-by-block schedule moves into a secondary, collapsed
+   a collapsed, secondary details section instead. */
+.dbp-focusview{margin:2px 0 12px;}
+.dbp-focus-card{background:linear-gradient(135deg,rgba(157,40,103,0.07),rgba(219,39,119,0.05));border:1.5px solid rgba(219,39,119,0.22);border-radius:14px;padding:16px;margin-bottom:8px;}
+.dbp-focus-card.is-break{background:var(--bg-light,#faf3f6);border-color:var(--border-color,#f0d7de);}
+.dbp-focus-card.done-state{text-align:center;background:linear-gradient(135deg,#10b981,#ec4899);border:none;}
+.dbp-focus-card.done-state .dbp-focus-title{color:#fff;}
+.dbp-focus-eyebrow{font-size:0.66rem;font-weight:800;letter-spacing:0.08em;color:#db2777;text-transform:uppercase;margin-bottom:4px;}
+.dbp-focus-card.is-break .dbp-focus-eyebrow{color:var(--text-muted,#9a7686);}
+.dbp-focus-title{font-size:1.05rem;font-weight:800;color:var(--text-dark,#4a3240);margin-bottom:2px;}
+.dbp-focus-time{font-size:0.78rem;color:var(--text-muted,#9a7686);margin-bottom:10px;}
+.dbp-focus-prog{height:6px;border-radius:99px;background:rgba(219,39,119,0.12);overflow:hidden;margin-bottom:12px;}
+.dbp-focus-prog-fill{height:100%;background:linear-gradient(90deg,#9d2867,#db2777);border-radius:99px;transition:width 0.4s;}
+.dbp-focus-start-btn{width:100%;padding:11px;background:linear-gradient(135deg,#9d2867,#db2777);color:#fff;border:none;border-radius:9px;font-weight:800;font-size:0.86rem;cursor:pointer;}
+.dbp-focus-start-btn:hover{filter:brightness(1.06);}
+.dbp-focus-next{font-size:0.78rem;color:var(--text-muted,#9a7686);padding:2px 4px;}
+.dbp-focus-next-label{font-weight:800;color:var(--text-dark,#4a3240);text-transform:uppercase;font-size:0.64rem;letter-spacing:0.06em;margin-right:6px;}
+
+/* ─── FULL SCHEDULE (secondary, collapsed by default) ─── */
+details.dbp-fullschedule{margin-top:4px;}
+details.dbp-fullschedule summary{list-style:none;cursor:pointer;padding:8px 2px;font-weight:700;font-size:0.78rem;color:var(--text-muted,#9a7686);display:flex;align-items:center;gap:6px;user-select:none;}
+details.dbp-fullschedule summary::-webkit-details-marker{display:none;}
+details.dbp-fullschedule summary::before{content:'▸';display:inline-block;transition:transform 0.18s;color:#db2777;font-size:0.72rem;}
+details.dbp-fullschedule[open] summary::before{transform:rotate(90deg);}
+
+.dbp-action-btn.replan-pl{background:rgba(245,158,11,0.1);color:#c2760b;border:1.5px solid rgba(245,158,11,0.3);}
+
+/* ─── SNOOZE / MOVE / SKIP block menu ─── */
+.dbp-block-menu{position:relative;flex-shrink:0;}
+.dbp-block-menu summary{list-style:none;cursor:pointer;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:7px;color:var(--text-muted,#9a7686);font-weight:800;font-size:1rem;user-select:none;}
+.dbp-block-menu summary::-webkit-details-marker{display:none;}
+.dbp-block-menu[open] summary,.dbp-block-menu summary:hover{background:rgba(219,39,119,0.1);color:#db2777;}
+.dbp-block-menu-pop{position:absolute;right:0;top:calc(100% + 4px);background:var(--bg-white,#fff);border:1.5px solid var(--border-color,#f0d7de);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.16);padding:5px;z-index:40;min-width:140px;display:flex;flex-direction:column;gap:1px;}
+.dbp-block-menu-pop button{background:none;border:none;text-align:left;padding:8px 10px;border-radius:6px;font-size:0.8rem;font-weight:600;color:var(--text-dark,#4a3240);cursor:pointer;}
+.dbp-block-menu-pop button:hover{background:var(--bg-light,#faf3f6);color:#db2777;}
+body.dark-mode .dbp-block-menu-pop{background:var(--bg-white,#3a2530);border-color:var(--border-color);}
+.dbp-block.skipped{opacity:0.6;}
+
+/* ─── CARRY-OVER (unfinished work from last saved plan) ─── */
+.dbp-carry-card{background:var(--bg-light,#faf3f6);border:1.5px solid var(--border-color,#f0d7de);border-radius:12px;padding:12px 14px;margin-bottom:12px;}
+.dbp-carry-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.dbp-carry-eyebrow{font-size:0.66rem;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;color:#db2777;}
+.dbp-carry-count{font-size:0.72rem;color:var(--text-muted,#9a7686);font-weight:700;}
+.dbp-carry-list{display:none;flex-direction:column;gap:2px;margin-bottom:8px;max-height:180px;overflow-y:auto;}
+.dbp-carry-item{display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:0.8rem;cursor:pointer;}
+.dbp-carry-item-name{flex:1;color:var(--text-dark,#4a3240);}
+.dbp-carry-item-dur{color:var(--text-muted,#9a7686);font-size:0.72rem;font-weight:700;}
+.dbp-carry-add-btn{margin-top:4px;padding:8px;border:none;border-radius:8px;background:linear-gradient(135deg,#9d2867,#db2777);color:#fff;font-weight:700;font-size:0.78rem;cursor:pointer;}
+.dbp-carry-btns{display:flex;gap:6px;}
+.dbp-carry-btn{flex:1;padding:8px 6px;border-radius:8px;border:1.5px solid var(--border-color,#f0d7de);background:var(--bg-white,#fffbfc);color:var(--text-dark,#4a3240);font-size:0.76rem;font-weight:700;cursor:pointer;}
+.dbp-carry-btn.primary{background:linear-gradient(135deg,#9d2867,#db2777);border-color:transparent;color:#fff;}
+.dbp-carry-btn.ghost{color:var(--text-muted,#9a7686);}
+body.dark-mode .dbp-carry-card{background:var(--bg-light);border-color:var(--border-color);}
+body.dark-mode .dbp-carry-btn{background:var(--bg-white);border-color:var(--border-color);}
+
+body.dark-mode .dbp-quickplan,body.dark-mode details.dbp-customize{background:var(--bg-light);border-color:var(--border-color);}
+body.dark-mode .dbp-energy-btn{background:var(--bg-white);border-color:var(--border-color);color:var(--text-muted);}
+body.dark-mode .dbp-focus-card{background:linear-gradient(135deg,rgba(157,40,103,0.16),rgba(219,39,119,0.1));}
+body.dark-mode .dbp-focus-card.is-break{background:var(--bg-light);}
+
+@media (max-width: 640px) {
+    .dbp-energy-btn{font-size:0.75rem;padding:8px 4px;}
+    .dbp-focus-title{font-size:0.95rem;}
+    .dbp-quickplan .dbp-config{grid-template-columns:1fr;gap:10px;}
 }
 </style>
 
@@ -26082,16 +26205,66 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
         <!-- ── TAB PLAN ── -->
         <div id="dbpTabPlan">
 
-            <div class="dbp-config">
-                <div class="dbp-field">
-                    <label>Start Time</label>
-                    <input type="time" id="dbpStartTime" value="08:00" onchange="DBP.saveSettings()">
+            <!-- ── QUICK PLAN ──
+                 P0 redesign: opening Daily Plan used to mean facing every config
+                 field at once (start time, hours, style, budget, filters, search,
+                 templates, task list...) before you could even begin. This panel
+                 is the whole decision surface for a normal morning: how much time
+                 you have + how your brain feels → Build My Day picks tasks that
+                 fit (see DBP.buildMyDay / autoFitSelect) and generates the plan.
+                 Everything else still exists, just moved into Customize below. -->
+            <div class="dbp-quickplan">
+                <!-- ── CARRY-OVER inbox ──
+                     Populated by DBP.open() → renderCarryOver() from yesterday's
+                     unfinished, non-skipped blocks (see computeCarryOver below).
+                     Empty div renders nothing when there's nothing to carry. -->
+                <div id="dbpCarryOver"></div>
+
+                <div class="dbp-config">
+                    <div class="dbp-field">
+                        <label>Available today</label>
+                        <input type="number" id="dbpHours" min="0.5" max="16" step="0.5" value="4" oninput="DBP.updateBudget()">
+                    </div>
+                    <div class="dbp-field">
+                        <label>Start</label>
+                        <input type="time" id="dbpStartTime" value="08:00" onchange="DBP.saveSettings()">
+                    </div>
                 </div>
-                <div class="dbp-field">
-                    <label>Hours Available</label>
-                    <input type="number" id="dbpHours" min="0.5" max="16" step="0.5" value="4" oninput="DBP.updateBudget()">
+                <div class="dbp-field dbp-energy-field">
+                    <label>Energy</label>
+                    <div class="dbp-energy-row" id="dbpEnergyRow">
+                        <button type="button" class="dbp-energy-btn" data-style="sprint" onclick="DBP.setEnergy('sprint')">Low</button>
+                        <button type="button" class="dbp-energy-btn active" data-style="pomo" onclick="DBP.setEnergy('pomo')">Normal</button>
+                        <button type="button" class="dbp-energy-btn" data-style="deep" onclick="DBP.setEnergy('deep')">High</button>
+                    </div>
                 </div>
-                <div class="dbp-field">
+
+                <div class="dbp-budget-wrap">
+                    <div class="dbp-budget-meta">
+                        <span class="dbp-budget-label" title="Counts selected task minutes only — the generated schedule adds break time on top, so the actual end time will run later than this budget alone suggests.">⏱ Time Budget</span>
+                        <!-- A11Y: the budget is the main feedback signal for selecting tasks,
+                             but it was purely visual — a screen-reader user ticking tasks got
+                             no indication they were approaching or blowing past their limit.
+                             aria-live announces the new total as it changes, and the bar itself
+                             is now a labelled progressbar rather than two anonymous divs. -->
+                        <span class="dbp-budget-nums" id="dbpBudgetText" aria-live="polite" aria-atomic="true">0 / 0 min (0%)</span>
+                    </div>
+                    <div class="dbp-budget-bar" id="dbpBudgetBar" role="progressbar" aria-label="Time budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="dbp-budget-fill" id="dbpBudgetFill" style="width:0%"></div></div>
+                    <div class="dbp-budget-warn" id="dbpBudgetWarn" role="alert"><svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> Over budget — reduce task minutes or increase hours.</div>
+                </div>
+
+                <button class="dbp-buildday-btn" onclick="DBP.buildMyDay()" title="Auto-selects tasks that fit your available time (by priority), then generates the plan"><svg class="icon-svg" aria-hidden="true"><use href="#icon-zap"></use></svg> Build My Day</button>
+            </div>
+
+            <!-- ── CUSTOMIZE (collapsed by default) ──
+                 Session style, source filters, search, templates, the full task
+                 list and manual add all still work exactly as before — just not
+                 shown on every open, so picking today's plan isn't also a tour
+                 of every setting the module has. -->
+            <details class="dbp-customize" id="dbpCustomize">
+                <summary><svg class="icon-svg" aria-hidden="true"><use href="#icon-settings"></use></svg> Customize</summary>
+
+                <div class="dbp-field" style="margin:2px 0 14px;">
                     <label>Session Style</label>
                     <select id="dbpStyle" onchange="DBP.refreshTasks()">
                         <option value="deep">Deep (90/15)</option>
@@ -26099,91 +26272,78 @@ body.dark-mode .dbp-cat-chip{background:var(--bg-light);border-color:var(--borde
                         <option value="sprint">Sprint (25/5)</option>
                     </select>
                 </div>
-            </div>
 
-            <div class="dbp-budget-wrap">
-                <div class="dbp-budget-meta">
-                    <span class="dbp-budget-label" title="Counts selected task minutes only — the generated schedule adds break time on top, so the actual end time will run later than this budget alone suggests.">⏱ Time Budget</span>
-                    <!-- A11Y: the budget is the main feedback signal for selecting tasks,
-                         but it was purely visual — a screen-reader user ticking tasks got
-                         no indication they were approaching or blowing past their limit.
-                         aria-live announces the new total as it changes, and the bar itself
-                         is now a labelled progressbar rather than two anonymous divs. -->
-                    <span class="dbp-budget-nums" id="dbpBudgetText" aria-live="polite" aria-atomic="true">0 / 0 min (0%)</span>
+                <div class="dbp-section-title">
+                    <span class="dbp-section-label"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Tasks</span>
+                    <div class="dbp-section-btns">
+                        <button class="dbp-section-btn" id="dbpSortBtn" onclick="DBP.toggleSort()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-arrow-up-down"></use></svg> Priority</button>
+                        <button class="dbp-section-btn" onclick="DBP.repeatLastPlan()" title="Re-check whichever of today's tasks were in your last saved plan"><svg class="icon-svg" aria-hidden="true"><use href="#icon-repeat"></use></svg> Repeat<span class="dbp-xs-hide"> Last</span></button>
+                        <button class="dbp-section-btn" onclick="DBP.selectAll()">All</button>
+                        <button class="dbp-section-btn" onclick="DBP.clearAll()">None</button>
+                    </div>
                 </div>
-                <div class="dbp-budget-bar" id="dbpBudgetBar" role="progressbar" aria-label="Time budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="dbp-budget-fill" id="dbpBudgetFill" style="width:0%"></div></div>
-                <div class="dbp-budget-warn" id="dbpBudgetWarn" role="alert"><svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> Over budget — reduce task minutes or increase hours.</div>
-            </div>
-
-            <div class="dbp-section-title">
-                <span class="dbp-section-label"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Tasks</span>
-                <div class="dbp-section-btns">
-                    <button class="dbp-section-btn" id="dbpSortBtn" onclick="DBP.toggleSort()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-arrow-up-down"></use></svg> Priority</button>
-                    <button class="dbp-section-btn" onclick="DBP.repeatLastPlan()" title="Re-check whichever of today's tasks were in your last saved plan"><svg class="icon-svg" aria-hidden="true"><use href="#icon-repeat"></use></svg> Repeat<span class="dbp-xs-hide"> Last</span></button>
-                    <button class="dbp-section-btn" onclick="DBP.selectAll()">All</button>
-                    <button class="dbp-section-btn" onclick="DBP.clearAll()">None</button>
+                <!-- FEATURE (source toggle): lets each source that feeds the pool below be
+                     switched off, plus a quick "high priority only" narrow — the fix for
+                     the list growing unbounded as the Resource Library and Goals fill up. -->
+                <div class="dbp-source-row" id="dbpSourceRow">
+                    <label class="dbp-source-toggle active" id="dbpSrcGoalsLbl"><input type="checkbox" id="dbpSrcGoals" checked onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-flag"></use></svg> Goals</label>
+                    <label class="dbp-source-toggle active" id="dbpSrcResourcesLbl"><input type="checkbox" id="dbpSrcResources" checked onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-book-open"></use></svg> Resource Library</label>
+                    <label class="dbp-source-toggle prio" id="dbpSrcHighOnlyLbl"><input type="checkbox" id="dbpSrcHighOnly" onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> High priority only</label>
                 </div>
-            </div>
-            <!-- FEATURE (source toggle): lets each source that feeds the pool below be
-                 switched off, plus a quick "high priority only" narrow — the fix for
-                 the list growing unbounded as the Resource Library and Goals fill up. -->
-            <div class="dbp-source-row" id="dbpSourceRow">
-                <label class="dbp-source-toggle active" id="dbpSrcGoalsLbl"><input type="checkbox" id="dbpSrcGoals" checked onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-flag"></use></svg> Goals</label>
-                <label class="dbp-source-toggle active" id="dbpSrcResourcesLbl"><input type="checkbox" id="dbpSrcResources" checked onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-book-open"></use></svg> Resource Library</label>
-                <label class="dbp-source-toggle prio" id="dbpSrcHighOnlyLbl"><input type="checkbox" id="dbpSrcHighOnly" onchange="DBP.toggleSourceUI(this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> High priority only</label>
-            </div>
-            <!-- FEATURE: the task list is every unread resource + every active goal,
-                 which grows without bound — with 40+ items you had to scroll and
-                 eyeball to find anything. This filters the list live by name/tag. -->
-            <div class="dbp-search-wrap">
-                <svg class="icon-svg dbp-search-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
-                <input type="text" id="dbpSearch" class="dbp-search-input" placeholder="Filter tasks by name or tag…" aria-label="Filter tasks" oninput="DBP.setFilter(this.value)">
-                <button type="button" class="dbp-search-clear" id="dbpSearchClear" onclick="DBP.clearFilter()" aria-label="Clear filter" style="display:none;">✕</button>
-            </div>
-            <!-- FEATURE: "Repeat Last" only ever reloads the single most recent plan.
-                 Templates let you keep several named setups ("Deep research day",
-                 "Light admin morning") with their own hours/start/style + task set. -->
-            <div class="dbp-tpl-bar">
-                <select id="dbpTemplateSel" class="dbp-tpl-select" aria-label="Load a saved template">
-                    <option value="">Templates…</option>
-                </select>
-                <button class="dbp-tpl-btn apply" onclick="DBP.applyTemplate()" title="Load the selected template"><svg class="icon-svg" aria-hidden="true"><use href="#icon-download"></use></svg> Load</button>
-                <button class="dbp-tpl-btn" onclick="DBP.saveTemplate()" title="Save current selection + settings as a new template"><svg class="icon-svg" aria-hidden="true"><use href="#icon-save"></use></svg> Save as…</button>
-                <button class="dbp-tpl-btn del" onclick="DBP.deleteTemplate()" title="Delete the selected template" aria-label="Delete selected template"><svg class="icon-svg" aria-hidden="true"><use href="#icon-trash-2"></use></svg></button>
-            </div>
-            <div id="dbpTaskList"></div>
+                <!-- FEATURE: the task list is every unread resource + every active goal,
+                     which grows without bound — with 40+ items you had to scroll and
+                     eyeball to find anything. This filters the list live by name/tag. -->
+                <div class="dbp-search-wrap">
+                    <svg class="icon-svg dbp-search-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
+                    <input type="text" id="dbpSearch" class="dbp-search-input" placeholder="Filter tasks by name or tag…" aria-label="Filter tasks" oninput="DBP.setFilter(this.value)">
+                    <button type="button" class="dbp-search-clear" id="dbpSearchClear" onclick="DBP.clearFilter()" aria-label="Clear filter" style="display:none;">✕</button>
+                </div>
+                <!-- FEATURE: "Repeat Last" only ever reloads the single most recent plan.
+                     Templates let you keep several named setups ("Deep research day",
+                     "Light admin morning") with their own hours/start/style + task set. -->
+                <div class="dbp-tpl-bar">
+                    <select id="dbpTemplateSel" class="dbp-tpl-select" aria-label="Load a saved template">
+                        <option value="">Templates…</option>
+                    </select>
+                    <button class="dbp-tpl-btn apply" onclick="DBP.applyTemplate()" title="Load the selected template"><svg class="icon-svg" aria-hidden="true"><use href="#icon-download"></use></svg> Load</button>
+                    <button class="dbp-tpl-btn" onclick="DBP.saveTemplate()" title="Save current selection + settings as a new template"><svg class="icon-svg" aria-hidden="true"><use href="#icon-save"></use></svg> Save as…</button>
+                    <button class="dbp-tpl-btn del" onclick="DBP.deleteTemplate()" title="Delete the selected template" aria-label="Delete selected template"><svg class="icon-svg" aria-hidden="true"><use href="#icon-trash-2"></use></svg></button>
+                </div>
+                <div id="dbpTaskList"></div>
 
-            <div class="dbp-manual-row">
-                <input class="dbp-manual-input" id="dbpManualInput" type="text"
-                    placeholder="+ Quick add (e.g. Review CFA notes, Read paper X)…"
-                    onkeydown="if(event.key==='Enter')DBP.addManual()">
-                <select class="dbp-manual-tag-select" id="dbpManualTag" title="Category">
-                    <option value="">No tag</option>
-                    <option value="pe">PE</option>
-                    <option value="ib">IB</option>
-                    <option value="hf">HF</option>
-                    <option value="sc">Consulting</option>
-                    <option value="fintech">Fintech</option>
-                    <option value="english">English</option>
-                    <option value="chinese">Chinese</option>
-                    <option value="german">German</option>
-                    <option value="tools">Tools</option>
-                    <option value="cfa1">CFA</option>
-                    <option value="acca">ACCA</option>
-                    <option value="china">China</option>
-                    <option value="quant">Quant</option>
-                    <option value="other">Other</option>
-                </select>
-                <button class="dbp-manual-add" onclick="DBP.addManual()">Add</button>
-            </div>
+                <div class="dbp-manual-row">
+                    <input class="dbp-manual-input" id="dbpManualInput" type="text"
+                        placeholder="+ Quick add (e.g. Review CFA notes, Read paper X)…"
+                        onkeydown="if(event.key==='Enter')DBP.addManual()">
+                    <select class="dbp-manual-tag-select" id="dbpManualTag" title="Category">
+                        <option value="">No tag</option>
+                        <option value="pe">PE</option>
+                        <option value="ib">IB</option>
+                        <option value="hf">HF</option>
+                        <option value="sc">Consulting</option>
+                        <option value="fintech">Fintech</option>
+                        <option value="english">English</option>
+                        <option value="chinese">Chinese</option>
+                        <option value="german">German</option>
+                        <option value="tools">Tools</option>
+                        <option value="cfa1">CFA</option>
+                        <option value="acca">ACCA</option>
+                        <option value="china">China</option>
+                        <option value="quant">Quant</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <button class="dbp-manual-add" onclick="DBP.addManual()">Add</button>
+                </div>
 
-            <div class="dbp-divider"></div>
+                <div class="dbp-divider"></div>
 
-            <button class="dbp-gen-btn" onclick="DBP.generate()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-zap"></use></svg> Generate Plan</button>
+                <button class="dbp-gen-btn" onclick="DBP.generate()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-zap"></use></svg> Generate Plan</button>
+            </details>
 
             <div id="dbpSchedule"></div>
 
             <div class="dbp-action-row" id="dbpActionRow" style="display:none;">
+                <button class="dbp-action-btn replan-pl" onclick="DBP.replanRemaining()" title="Fell behind or got distracted? Recompute the rest of today from right now."><svg class="icon-svg" aria-hidden="true"><use href="#icon-repeat"></use></svg> Replan</button>
                 <button class="dbp-action-btn gcal-all" onclick="DBP.addAll()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-calendar"></use></svg> All to GCal</button>
                 <button class="dbp-action-btn copy-txt" onclick="DBP.copyText()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Copy</button>
                 <button class="dbp-action-btn copy-txt" onclick="DBP.exportIcs()" title="Download a .ics file you can import into Apple Calendar, Outlook, Google Calendar, etc."><svg class="icon-svg" aria-hidden="true"><use href="#icon-download"></use></svg> .ics</button>
@@ -26414,6 +26574,104 @@ function loadSettings(){
     if(gel('dbpSrcResources')) gel('dbpSrcResources').checked = s.srcResources !== false;
     if(gel('dbpSrcHighOnly'))  gel('dbpSrcHighOnly').checked  = !!s.srcHighOnly;
     syncSourceToggleUI();
+    syncEnergyUI();
+}
+
+/* ─── ENERGY (Quick Plan) ───
+   Wording swap over the raw session-style select: "Deep/Pomo/Sprint" is
+   power-user vocabulary that adds a decision most mornings don't need.
+   The Energy row drives the same underlying #dbpStyle value, so nothing
+   about the scheduling engine changes — Customize still exposes the raw
+   select (with its 90/15, 50/10, 25/5 numbers) for anyone who wants it. */
+function syncEnergyUI(){
+    const cur = gel('dbpStyle') ? gel('dbpStyle').value : 'pomo';
+    document.querySelectorAll('#dbpEnergyRow .dbp-energy-btn').forEach(b=>{
+        b.classList.toggle('active', b.dataset.style===cur);
+    });
+}
+function setEnergy(style){
+    if(!STYLES[style]) style='pomo';
+    const sel=gel('dbpStyle');
+    if(sel) sel.value=style;
+    syncEnergyUI();
+    renderTasks();
+    saveSettings();
+}
+
+/* ─── MUST / SHOULD / COULD ───
+   Reframes the existing high/mid/low priority scale (still stored as
+   'high'/'mid'/'low' everywhere else in the app — nothing about that
+   changes) as three plain tiers, and gives "Must" real teeth: Auto Fit and
+   the hard-capacity cap below always keep every Must-tier task, even if
+   that means the day runs a little over budget, and only let Should/Could
+   compete for whatever time is left over. "High priority" no longer just
+   nudges sort order — it means "this happens today". */
+const TIER_LABEL={high:'Must',mid:'Should',low:'Could'};
+function tierLabel(p){ return TIER_LABEL[p]||'Should'; }
+
+/* ─── AUTO FIT ───
+   Given a capacity in minutes, ranks every task in the pool (checked or
+   not) by priority — then by shortest-first as a tiebreak so more items
+   fit — and checks tasks off greedily until the budget (minus a small
+   buffer) is used up. Everything that doesn't fit is left unchecked, i.e.
+   pushed to "Later" rather than silently dropped or forced into the day.
+   This is the engine behind both Build My Day and the hard-capacity trim
+   in generate()/replanRemaining() below. */
+const AUTO_FIT_BUFFER_PCT = 0.08; // reserve ~8% of capacity as slack/buffer
+function autoFitSelect(availMin){
+    if(!_tasks.length) return {selected:0, deferred:0, mustOverflow:0, mustCount:0};
+    const capacity = Math.max(0, Math.round(availMin*(1-AUTO_FIT_BUFFER_PCT)));
+    const musts = _tasks.map((t,i)=>({t,i})).filter(x=>x.t.priority==='high');
+    // Should/Could compete for whatever's left of capacity — a task with a
+    // deadline landing soon now gets first crack at that leftover time, ahead
+    // of same-tier tasks that aren't going anywhere, before falling back to
+    // shortest-first so more items fit.
+    const rest  = _tasks.map((t,i)=>({t,i})).filter(x=>x.t.priority!=='high')
+        .sort((a,b)=>(a.t.priority==='low'?1:0)-(b.t.priority==='low'?1:0) || urgencyRank(a.t)-urgencyRank(b.t) || (a.t.def-b.t.def));
+    // Must-tier tasks are guaranteed a spot even if, together, they run past
+    // the available time — "Must" means today, not "today if there's room".
+    // Should/Could only compete for whatever capacity is left after that.
+    const keep=new Set();
+    let used=0;
+    musts.forEach(({t,i})=>{ keep.add(i); used+=t.def; });
+    const mustOverflow=Math.max(0, used-capacity);
+    rest.forEach(({t,i})=>{
+        if(used+t.def<=capacity){ keep.add(i); used+=t.def; }
+    });
+    // Nothing fit at all (e.g. every task is longer than the available time) —
+    // still surface the single smallest task rather than leaving the day empty.
+    if(!keep.size && _tasks.length){
+        const smallest=[..._tasks.keys()].sort((a,b)=>_tasks[a].def-_tasks[b].def)[0];
+        keep.add(smallest);
+    }
+    _tasks.forEach((t,i)=>{ t.checked = keep.has(i); });
+    renderTasks();
+    return {selected:keep.size, deferred:_tasks.length-keep.size, mustOverflow, mustCount:musts.length};
+}
+
+/* ─── BUILD MY DAY (Quick Plan primary action) ───
+   The whole point of Quick Plan: instead of hand-picking from a long task
+   list, tell the app how much time + energy you have and let it choose.
+   Falls back to a clear toast rather than a silent no-op if there's simply
+   nothing in the pool yet (empty Goals/Resource Library + no manual tasks). */
+function buildMyDay(){
+    if(!_tasks.length){
+        toast('Nothing to plan yet — add a Goal, a Resource, or quick-add a task below.', 4200);
+        const cust=gel('dbpCustomize'); if(cust) cust.open=true;
+        return;
+    }
+    let avail=parseFloat(gel('dbpHours').value||0)*60;
+    if(!isFinite(avail)||avail<=0){ avail=240; gel('dbpHours').value=4; }
+    const {selected,deferred,mustOverflow}=autoFitSelect(avail);
+    if(!selected){ toast('Could not fit anything into today — try increasing Available today.', 4200, 'warn'); return; }
+    generate();
+    if(mustOverflow>0){
+        toast(`Built your day — your Must tasks alone run ~${Math.round(mustOverflow)}m over. ${deferred>0?deferred+' Should/Could moved to Later.':''}`, 5200, 'warn');
+    } else {
+        toast(deferred>0
+            ? `Built your day — ${selected} task${selected>1?'s':''} · ${deferred} moved to Later`
+            : `Built your day — ${selected} task${selected>1?'s':''} planned`, 4000, 'success');
+    }
 }
 // Keeps the pill's visual "active" state in sync with its checkbox — used both
 // on load and whenever a checkbox changes, so the highlight works even in
@@ -26430,6 +26688,109 @@ function toggleSourceUI(cb){
     if(lbl) lbl.classList.toggle('active',cb.checked);
     renderTasks();
     saveSettings();
+}
+
+/* ─── CARRY-OVER ───
+   Shows yesterday's (or the last saved plan's) unfinished, non-skipped work
+   blocks as a small inbox at the top of Quick Plan. Distinct from "Repeat
+   Last" in Customize, which re-checks whatever was in the last plan
+   regardless of whether it got done — this is specifically the *leftover*
+   work, because unfinished work carries context that a fresh pick doesn't. */
+let _carryOver=[];
+function sameCalendarDay(a,b){
+    return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+}
+function computeCarryOver(){
+    const hist=store.get('dbpHistory',[]);
+    if(!hist.length) return [];
+    const last=hist[0];
+    if(!last || !last.date || !Array.isArray(last.blocks)) return [];
+    const lastDate=new Date(last.date);
+    if(isNaN(lastDate)||sameCalendarDay(lastDate,new Date())) return []; // already today's own plan
+    if(store.get('dbpCarryDismissed','')===new Date().toDateString()) return []; // dismissed already today
+    return last.blocks
+        .filter(b=>!b.isBreak && !b.done && !b.skipped)
+        .map(b=>({name:(b.name||'Task').replace(/ \(cont\.\)$/,''), dur:b.dur||25, details:b.details||'', tag:b.tag||'', priority:b.priority||'mid',
+            srcId:b.srcId||null}));
+}
+function renderCarryOver(){
+    const el=gel('dbpCarryOver'); if(!el) return;
+    _carryOver=computeCarryOver();
+    if(!_carryOver.length){ el.innerHTML=''; return; }
+    const n=_carryOver.length, totalMin=_carryOver.reduce((s,t)=>s+t.dur,0);
+    el.innerHTML=`
+        <div class="dbp-carry-card">
+            <div class="dbp-carry-head">
+                <span class="dbp-carry-eyebrow">Yesterday · Incomplete</span>
+                <span class="dbp-carry-count">${n} task${n>1?'s':''} · ${totalMin}m</span>
+            </div>
+            <div class="dbp-carry-list" id="dbpCarryList">
+                ${_carryOver.map((t,i)=>`
+                <label class="dbp-carry-item">
+                    <input type="checkbox" class="dbp-carry-cb" data-i="${i}" checked>
+                    <span class="dbp-carry-item-name">${escHtml(t.name)}</span>
+                    <span class="dbp-carry-item-dur">${t.dur}m</span>
+                </label>`).join('')}
+                <button class="dbp-carry-add-btn" onclick="DBP.carryAddSelected()">Add selected</button>
+            </div>
+            <div class="dbp-carry-btns">
+                <button class="dbp-carry-btn primary" onclick="DBP.carryAll()">Carry all</button>
+                <button class="dbp-carry-btn" onclick="DBP.carryChoose()">Choose</button>
+                <button class="dbp-carry-btn ghost" onclick="DBP.carryClear()">Clear</button>
+            </div>
+        </div>`;
+}
+function carryAddTasks(items){
+    if(!items.length) return;
+    pushUndo();
+    items.forEach(t=>{
+        // If the goal/resource this came from is still sitting in today's pool
+        // (its own source toggle is on, it's not archived/completed, etc.), just
+        // check that existing row instead of bolting on a duplicate manual copy —
+        // now possible because the carried block remembers its stable source id.
+        if(t.srcId){
+            const existing=_tasks.find(x=>x.id===t.srcId);
+            if(existing){ existing.checked=true; existing.def=t.dur; existing.customDur=true; return; }
+        }
+        // Skip if today's pool already has an identical carried item (e.g. Carry
+        // clicked twice) so re-opening the modal doesn't duplicate entries.
+        if(_tasks.some(x=>x._carried && (t.srcId ? x._carriedSrcId===t.srcId : x.label===t.name))) return;
+        _manualCount++;
+        _tasks.push({
+            id:'m_'+_manualCount, label:t.name, sub:'Carried over from yesterday', tag:t.tag||'',
+            def:t.dur, details:t.details||'', priority:t.priority||'mid',
+            isManual:true, checked:true, _carried:true, _carriedSrcId:t.srcId||null
+        });
+    });
+    saveOrder(); renderTasks();
+    const cust=gel('dbpCustomize'); if(cust) cust.open=true;
+}
+function carryAll(){
+    const items=_carryOver.slice();
+    if(!items.length) return;
+    carryAddTasks(items);
+    dismissCarryOver();
+    toast(`Carried over ${items.length} task${items.length>1?'s':''} from yesterday`, 3600, 'success');
+}
+function carryChoose(){
+    const list=gel('dbpCarryList');
+    if(list) list.style.display = (list.style.display==='flex') ? 'none' : 'flex';
+}
+function carryAddSelected(){
+    const checked=[...document.querySelectorAll('#dbpCarryList .dbp-carry-cb:checked')]
+        .map(cb=>_carryOver[parseInt(cb.dataset.i,10)]).filter(Boolean);
+    if(!checked.length){ toast('Nothing selected'); return; }
+    carryAddTasks(checked);
+    dismissCarryOver();
+    toast(`Carried over ${checked.length} task${checked.length>1?'s':''}`, 3600, 'success');
+}
+function carryClear(){
+    dismissCarryOver();
+    toast('Cleared — not carrying anything over today', 3200);
+}
+function dismissCarryOver(){
+    store.set('dbpCarryDismissed', new Date().toDateString());
+    const el=gel('dbpCarryOver'); if(el) el.innerHTML='';
 }
 
 /* ─── UNDO / REDO ─── */
@@ -26568,8 +26929,46 @@ function getLibraryTasks(styleDef){
             sub:'Goal · '+(g.career||''), tag:g.career||'',
             def:Math.round(styleDef*0.7/5)*5||60,
             details:g.description||'', priority:normPriority(g.priority),
+            deadline:g.deadline||'', // ISO date/datetime, same field the Goals page itself uses
             source:'Goal', isManual:false, checked:false }));
     return [...res,...goals];
+}
+
+/* ─── DEADLINE URGENCY ───
+   Deadline-aware prioritization: Must/Should/Could (priority) stays the primary
+   tier, but within a tier a task whose deadline is close should still get
+   picked ahead of one that isn't going anywhere. This computes, for any task
+   carrying a `deadline` (currently only goal-sourced tasks have one), how
+   urgent it is — evaluated in Vietnam time, same as the Goals/Deadlines pages
+   elsewhere in the app — without overriding the priority tier itself. */
+const URGENCY_RANK={overdue:0, today:1, soon:2, later:3, none:4};
+function deadlineInfo(t){
+    const raw=t&&t.deadline;
+    if(!raw) return null;
+    const dateOnly=String(raw).slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return null;
+    const end=getVietnamDeadlineEnd(dateOnly);
+    const now=getVietnamNow();
+    if(isNaN(end)) return null;
+    const days=Math.ceil((end-now)/86400000);
+    let tier, label;
+    if(days<0){ tier='overdue'; label=`Overdue ${Math.abs(days)}d`; }
+    else if(days===0){ tier='today'; label='Due today'; }
+    else if(days<=7){ tier='soon'; label=`Due in ${days}d`; }
+    else { tier='later'; label=`Due in ${days}d`; }
+    return {tier, label, days};
+}
+function urgencyRank(t){
+    const d=t&&t._deadline;
+    return d ? URGENCY_RANK[d.tier] : URGENCY_RANK.none;
+}
+// Small badge next to the tag, shown only when the deadline is actually close —
+// a task due next month gets no badge at all, matching "no imminent deadline
+// means nothing to show" from the Daily Plan review.
+function deadlineBadge(t){
+    const d=t&&t._deadline;
+    if(!d || d.tier==='later') return '';
+    return `<span class="dbp-deadline-badge ${d.tier}">${escHtml(d.label)}</span>`;
 }
 
 /* ─── BUDGET ─── */
@@ -26633,7 +27032,8 @@ function renderTasks(){
     const merged=lib.map(t=>({...t,
         checked:   byId[t.id]?byId[t.id].checked:false,
         def:       (byId[t.id]&&byId[t.id].customDur)?byId[t.id].def:t.def,
-        customDur: byId[t.id]?!!byId[t.id].customDur:false
+        customDur: byId[t.id]?!!byId[t.id].customDur:false,
+        _deadline: deadlineInfo(t) // recomputed every render — "today" moves on
     }));
     _tasks = loadOrder([...merged, ..._tasks.filter(t=>t.isManual)]);
     saveManualTasks();
@@ -26642,7 +27042,9 @@ function renderTasks(){
     // FIX: was `PRIO[a.priority]||1`, which breaks for 'high' — PRIO.high is 0,
     // and 0||1 evaluates to 1 (0 is falsy), so every "high priority" task was
     // silently ranked the same as "mid" and never actually sorted to the top.
-    if(_sortByPriority) _tasks.sort((a,b)=>(PRIO[a.priority] ?? 1)-(PRIO[b.priority] ?? 1));
+    // Deadline-aware tiebreak: priority still decides the Must/Should/Could tier;
+    // within the same tier, the task with the closer deadline now sorts first.
+    if(_sortByPriority) _tasks.sort((a,b)=>(PRIO[a.priority] ?? 1)-(PRIO[b.priority] ?? 1) || urgencyRank(a)-urgencyRank(b));
 
     const list=gel('dbpTaskList');
     if(!_tasks.length){
@@ -26669,7 +27071,7 @@ function renderTasks(){
             ondragstart="DBP._ds(event,${i})" ondragover="DBP._do(event)"
             ondrop="DBP._dd(event,${i})" ondragend="DBP._de()">
             <span class="dbp-drag-handle" title="Drag to reorder">⠿</span>
-            <span class="dbp-priority-dot ${t.priority||'mid'}" title="${t.priority} priority"></span>
+            <span class="dbp-priority-dot ${t.priority||'mid'}" title="${tierLabel(t.priority)}"></span>
             <input class="dbp-task-cb" type="checkbox" ${t.checked?'checked':''}
                 data-idx="${i}"
                 data-details="${encodeURIComponent(t.details||'')}"
@@ -26681,7 +27083,7 @@ function renderTasks(){
                 title="${escHtml(t.label)}${t.sub?' — '+escHtml(t.sub):''}">
                 <div class="dbp-task-name">${t.label}</div>
                 ${t.sub?`<div class="dbp-task-sub">${t.sub}</div>`:''}
-                ${tagBadge(t.tag)}
+                ${tagBadge(t.tag)}${deadlineBadge(t)}
             </div>
             <input class="dbp-task-dur" type="number" min="5" max="480" step="5" value="${t.def}"
                 onchange="DBP.durChange(this,${i})" title="Minutes">
@@ -26710,8 +27112,10 @@ function showDetail(idx){
     gel('dbpDetailTitle').textContent = t.label||'(untitled)';
     gel('dbpDetailSub').textContent   = t.sub||'';
     gel('dbpDetailSub').style.display = t.sub ? 'block' : 'none';
-    const chips=[srcLabel, `${(t.priority||'mid')} priority`, `${t.def||0} min`];
+    const chips=[srcLabel, tierLabel(t.priority), `${t.def||0} min`];
     if(t.tag) chips.push(tagLabel(t.tag));
+    const dl=deadlineInfo(t); // recompute fresh rather than trusting a stale _deadline snapshot
+    if(dl) chips.push(dl.label);
     gel('dbpDetailMeta').innerHTML = chips.map(c=>`<span class="dbp-detail-chip">${escHtml(c)}</span>`).join('');
     const isUrl = /^https?:\/\//i.test(t.details||'');
     const descEl=gel('dbpDetailDesc'), linkEl=gel('dbpDetailLink');
@@ -26875,11 +27279,20 @@ async function generate(){
             durInput.value = dur; // reflect the correction back into the visible field
             invalidDurCount++;
         }
+        const srcIdx = parseInt(row.dataset.idx, 10);
+        const srcTask = (!isNaN(srcIdx) && _tasks[srcIdx]) ? _tasks[srcIdx] : null;
         picked.push({
             name: decodeURIComponent(cb.dataset.label||'Task'),
             dur,
             details: decodeURIComponent(cb.dataset.details||''),
-            tag: decodeURIComponent(cb.dataset.tag||'')
+            tag: decodeURIComponent(cb.dataset.tag||''),
+            priority: srcTask ? (srcTask.priority||'mid') : 'mid',
+            urg: srcTask ? urgencyRank(srcTask) : URGENCY_RANK.none,
+            deadlineLabel: srcTask && srcTask._deadline ? srcTask._deadline.label : '',
+            // Stable source id (goal/resource/manual), not just the label — carried
+            // through into the block so Repeat Last and Carry-over can match on it.
+            srcId: srcTask ? srcTask.id : null,
+            srcIdx: isNaN(srcIdx) ? null : srcIdx
         });
     });
 
@@ -26889,23 +27302,82 @@ async function generate(){
         toast(`${invalidDurCount} task${invalidDurCount>1?'s':''} had an invalid duration — reset to ${s.workDef}m`, 4200, 'warn');
     }
 
+    // ── HARD CAPACITY ──
+    // "Hours Available" used to be a warning only — over-budget plans still
+    // got built with every checked task jammed in, so the number never
+    // actually limited anything. Now it's a real cap: if the checked tasks
+    // add up to more than the available time, the lowest-priority / longest
+    // tasks are deferred (unchecked, left visible for next time) rather than
+    // producing a schedule that quietly runs hours past what you have.
+    let avail = parseFloat(gel('dbpHours').value||0)*60;
+    if(!isFinite(avail) || avail<0) avail = 0;
+    let finalPicked = picked;
+    if(avail>0){
+        const totalPicked = picked.reduce((sum,t)=>sum+t.dur,0);
+        if(totalPicked > avail){
+            const buffer = Math.round(avail*AUTO_FIT_BUFFER_PCT);
+            const capacity = Math.max(0, avail-buffer);
+            const musts = picked.map((t,idx)=>({t,idx})).filter(x=>x.t.priority==='high');
+            // Deadline-aware: same idea as autoFitSelect — among Should/Could tasks
+            // competing for whatever capacity is left, the one whose deadline is
+            // closest is kept first, then shortest-first, then original order.
+            const rest  = picked.map((t,idx)=>({t,idx})).filter(x=>x.t.priority!=='high')
+                .sort((a,b)=>(a.t.priority==='low'?1:0)-(b.t.priority==='low'?1:0) || (a.t.urg??4)-(b.t.urg??4) || a.t.dur-b.t.dur || a.idx-b.idx);
+            // Must-tier tasks you've checked are never bumped by the capacity cap —
+            // only Should/Could tasks compete for whatever time is left over.
+            const keepIdx=new Set(); let used=0;
+            musts.forEach(({t,idx})=>{ keepIdx.add(idx); used+=t.dur; });
+            rest.forEach(({t,idx})=>{ if(used+t.dur<=capacity){ keepIdx.add(idx); used+=t.dur; } });
+            if(!keepIdx.size && picked.length) keepIdx.add(0);
+            const deferred = picked.filter((_,idx)=>!keepIdx.has(idx));
+            finalPicked = picked.filter((_,idx)=>keepIdx.has(idx));
+            if(deferred.length){
+                // Uncheck the deferred tasks so the list stays honest about what's
+                // actually in today's plan vs. pushed to Later.
+                deferred.forEach(dt=>{ if(dt.srcIdx!=null && _tasks[dt.srcIdx]) _tasks[dt.srcIdx].checked=false; });
+                renderTasks();
+                const overMust = musts.length && used>capacity;
+                toast(overMust
+                    ? `Capped at ${(avail/60).toFixed(1)}h — kept all Must tasks (runs a bit over) · ${deferred.length} Should/Could moved to Later`
+                    : `Capped at ${(avail/60).toFixed(1)}h — ${deferred.length} task${deferred.length>1?'s':''} moved to Later`,
+                    4500, 'warn');
+            }
+        }
+    }
+    if(!finalPicked.length){ toast('Not enough available time for any task — increase Available today.', 4200, 'warn'); return; }
+
     // FIX: warn before silently nuking progress on an existing plan (done blocks / timers run)
     const hasProgress = _blocks.some(b=>b.done || b.actualStart);
     if(hasProgress && !(await skConfirm("You already have progress on today's plan (completed blocks or a timer run). Generating a new plan will overwrite it. Continue?", {title:'Overwrite Plan?', danger:true, okText:'Overwrite'}))){
         return;
     }
 
-    const start = new Date(); start.setHours(sh,sm,0,0);
-    // Cảnh báo nếu Start Time đã qua rồi (so với giờ hiện tại)
+    let start = new Date(); start.setHours(sh,sm,0,0);
+    // ── START NOW ──
+    // A planned start time that's already passed used to be nothing more than
+    // a warning toast — the schedule still got built from the stale time,
+    // silently running behind for the rest of the day. Now it's a real choice,
+    // defaulting to starting from right now: the goal is to get you working
+    // from where you actually are, not to remind you that you're "late".
     if(start < new Date()){
-        toast(`${gel('dbpStartTime').value} has already passed — the plan will still be built from that time`, 4200, 'warn');
+        const elapsed = Math.round((new Date()-start)/60000);
+        const nowStr = fmt(new Date());
+        const wantsStartNow = await skConfirm(
+            `Your planned start was ${gel('dbpStartTime').value}. It's now ${nowStr} (${elapsed}m later).`,
+            {title:'Start from now?', danger:false, okText:`Start from ${nowStr}`, cancelText:`Keep ${gel('dbpStartTime').value}`}
+        );
+        if(wantsStartNow){
+            start = new Date();
+            gel('dbpStartTime').value = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+            saveSettings();
+        }
     }
     const blocks = [];
     let cursor = new Date(start);
     let cumWork = 0;
     let focusSinceBreak = 0;
 
-    picked.forEach((task)=>{
+    finalPicked.forEach((task)=>{
         let remaining = task.dur;
         while(remaining > 0){
             const sessionDur = Math.min(remaining, s.workDef);
@@ -26914,14 +27386,18 @@ async function generate(){
                 name: task.name + (isContinuation ? ' (cont.)' : ''),
                 start: new Date(cursor),
                 end: addM(cursor, sessionDur),
-                isBreak: false, details: task.details, tag: task.tag||'', dur: sessionDur, done: false
+                isBreak: false, details: task.details, tag: task.tag||'', priority: task.priority||'mid', dur: sessionDur, done: false,
+                // Stable source id, not just the name — lets Repeat Last Plan and
+                // Carry-over match this block back to its Goal/Resource/manual task
+                // even if it gets renamed later.
+                srcId: task.srcId||null, deadlineLabel: task.deadlineLabel||''
             });
             cursor = addM(cursor, sessionDur);
             remaining -= sessionDur;
             cumWork += sessionDur;
             focusSinceBreak += sessionDur;
 
-            if(remaining > 0 || picked.indexOf(task) < picked.length - 1){
+            if(remaining > 0 || finalPicked.indexOf(task) < finalPicked.length - 1){
                 if(focusSinceBreak >= s.workDef){
                     const isLong = cumWork >= s.longAfter;
                     const bd = isLong ? s.longBr : s.shortBr;
@@ -26946,6 +27422,139 @@ async function generate(){
     renderSchedule(blocks);
 }
 
+/* ─── REPLAN REMAINING ───
+   A plan built at 8am rarely survives contact with the actual day — a
+   distraction, an overrunning block, a late start. Rather than leaving the
+   rest of the schedule stuck at times that have already slipped, this
+   throws away only what's still ahead (blocks already done, or already in
+   the past, are kept as history) and rebuilds the remainder from right now,
+   using the same hard-capacity logic as generate(): whatever still fits
+   before the day's original end time is kept (priority first, shortest
+   first as a tiebreak); whatever doesn't is deferred rather than crammed
+   in or silently dropped. */
+function replanRemaining(){
+    if(!_blocks.length){ toast('No plan to replan yet — generate one first.'); return; }
+    const now = new Date();
+    const remaining = _blocks.filter(b=>!b.isBreak && !b.done && b.end>now);
+    if(!remaining.length){ toast('Nothing left to replan — every block is already done or in the past.'); return; }
+
+    const originalEnd = _blocks[_blocks.length-1].end;
+    const windowMin = Math.max(0, Math.round((originalEnd-now)/60000));
+    if(windowMin<=0){ toast("Today's planned window has already ended — generate a fresh plan for tomorrow.", 4200, 'warn'); return; }
+
+    const style = gel('dbpStyle').value||'deep';
+    const s = STYLES[style];
+    const buffer = Math.round(windowMin*AUTO_FIT_BUFFER_PCT);
+    const capacity = Math.max(0, windowMin-buffer);
+
+    // Collapse any block still mid-flight ("... (cont.)") back to one task
+    // entry per name so it isn't double-counted while re-slicing durations.
+    const tasks = remaining.map(b=>({
+        name: b.name.replace(/ \(cont\.\)$/,''),
+        dur: b.dur, details: b.details||'', tag: b.tag||'', priority: b.priority||'mid',
+        srcId: b.srcId||null, deadlineLabel: b.deadlineLabel||'',
+        // Re-derive urgency from the task pool if the source is still there, so a
+        // deadline that's crept closer since the original plan was built (e.g. it
+        // was "due in 2d" this morning and is "due today" now) is reflected here too.
+        urg: (()=>{ const src=b.srcId?_tasks.find(x=>x.id===b.srcId):null; return src?urgencyRank(src):URGENCY_RANK.none; })()
+    }));
+
+    const musts = tasks.map((t,idx)=>({t,idx})).filter(x=>x.t.priority==='high');
+    const rest  = tasks.map((t,idx)=>({t,idx})).filter(x=>x.t.priority!=='high')
+        .sort((a,b)=>(a.t.priority==='low'?1:0)-(b.t.priority==='low'?1:0) || (a.t.urg??4)-(b.t.urg??4) || a.t.dur-b.t.dur || a.idx-b.idx);
+    const keepIdx=new Set(); let used=0;
+    musts.forEach(({t,idx})=>{ keepIdx.add(idx); used+=t.dur; }); // Must-tier survives a replan too
+    rest.forEach(({t,idx})=>{ if(used+t.dur<=capacity){ keepIdx.add(idx); used+=t.dur; } });
+    if(!keepIdx.size && tasks.length) keepIdx.add(0);
+    const keep = tasks.filter((_,idx)=>keepIdx.has(idx));
+    const deferredCount = tasks.length-keep.length;
+
+    if(!keep.length){ toast('Not enough time left even for one task — consider clearing today and starting fresh tomorrow.', 4500, 'warn'); return; }
+
+    const newBlocks=[];
+    let cursor=new Date(now);
+    let cumWork=0, focusSinceBreak=0;
+    keep.forEach((task)=>{
+        let rem=task.dur;
+        while(rem>0){
+            const sessionDur=Math.min(rem,s.workDef);
+            newBlocks.push({
+                name:task.name, start:new Date(cursor), end:addM(cursor,sessionDur),
+                isBreak:false, details:task.details, tag:task.tag||'', priority:task.priority||'mid', dur:sessionDur, done:false,
+                srcId:task.srcId||null, deadlineLabel:task.deadlineLabel||''
+            });
+            cursor=addM(cursor,sessionDur); rem-=sessionDur; cumWork+=sessionDur; focusSinceBreak+=sessionDur;
+            if(rem>0 || keep.indexOf(task)<keep.length-1){
+                if(focusSinceBreak>=s.workDef){
+                    const isLong=cumWork>=s.longAfter;
+                    const bd=isLong?s.longBr:s.shortBr;
+                    newBlocks.push({name:isLong?'Long Break':'Break',start:new Date(cursor),end:addM(cursor,bd),isBreak:true,cls:isLong?'break-long':'break-short',dur:bd});
+                    cursor=addM(cursor,bd); focusSinceBreak=0; if(isLong)cumWork=0;
+                }
+            }
+        }
+    });
+
+    // Blocks already done, or already fully in the past, stay as-is (history);
+    // only the still-ahead portion of the day is replaced.
+    const past = _blocks.filter(b=>b.done || b.end<=now);
+    _blocks = [...past, ...newBlocks];
+    _timers = {};
+    if(_activeTimerIdx!==null) floatStop();
+    store.set('dbpCurrentBlocks', _blocks.map(b=>({...b, start:b.start.toISOString(), end:b.end.toISOString()})));
+    renderSchedule(_blocks);
+
+    toast(deferredCount>0
+        ? `Replanned — ${keep.length} task${keep.length>1?'s':''} fit in the ${(windowMin/60).toFixed(1)}h left. ${deferredCount} moved to Later.`
+        : `Replanned — everything still fits in the time you have left.`,
+        4800, deferredCount>0?'warn':'success');
+}
+
+/* ─── SNOOZE / MOVE TO END / SKIP ───
+   Per-block flex without a full Replan: the day rarely runs exactly as
+   scheduled, and re-running the whole capacity/priority engine is overkill
+   for "just push this one thing back 15 minutes". All three cascade the
+   change onto whatever comes after so the rest of the day stays consistent,
+   and persist immediately so a close/reopen doesn't lose the adjustment. */
+function shiftBlocksAfter(idx, deltaMin){
+    for(let k=idx+1;k<_blocks.length;k++){
+        _blocks[k].start = addM(_blocks[k].start, deltaMin);
+        _blocks[k].end = addM(_blocks[k].end, deltaMin);
+    }
+}
+function persistBlocks(){
+    store.set('dbpCurrentBlocks', _blocks.map(b=>({...b, start:b.start.toISOString(), end:b.end.toISOString()})));
+}
+function snoozeBlock(i, mins=15){
+    const b=_blocks[i]; if(!b||b.isBreak||b.done) return;
+    b.start = addM(b.start, mins);
+    b.end = addM(b.end, mins);
+    shiftBlocksAfter(i, mins);
+    persistBlocks();
+    renderSchedule(_blocks);
+    toast(`Snoozed “${b.name}” ${mins}m — rest of today shifted too`, 3600);
+}
+function moveBlockToEnd(i){
+    const b=_blocks[i]; if(!b||b.isBreak||b.done) return;
+    const dur=b.dur;
+    _blocks.splice(i,1);
+    shiftBlocksAfter(i-1, -dur); // reclaim the freed time for whatever follows
+    const lastEnd = _blocks.length ? _blocks[_blocks.length-1].end : new Date(b.start);
+    const newStart = new Date(lastEnd);
+    _blocks.push({...b, start:newStart, end:addM(newStart,dur), done:false});
+    persistBlocks();
+    renderSchedule(_blocks);
+    toast(`Moved “${b.name}” to the end of today`, 3600);
+}
+function skipBlock(i){
+    const b=_blocks[i]; if(!b||b.isBreak||b.done) return;
+    b.skipped = true;
+    shiftBlocksAfter(i, -b.dur); // freed time comes off the rest of the day, not added to it
+    persistBlocks();
+    renderSchedule(_blocks);
+    toast(`Skipped “${b.name}” — not today`, 3600);
+}
+
 /* ─── CATEGORY TIME BREAKDOWN ─── */
 // Sums focus minutes per tag across the work blocks (breaks excluded) and
 // renders one colored chip per category, sorted by time descending.
@@ -26967,7 +27576,17 @@ function renderSchedule(blocks){
     const work=blocks.filter(b=>!b.isBreak);
     const totFocus=work.reduce((s,b)=>s+b.dur,0);
     const totBreak=blocks.filter(b=>b.isBreak).reduce((s,b)=>s+b.dur,0);
-    const eff=totFocus+totBreak>0?Math.round(totFocus/(totFocus+totBreak)*100):100;
+    // FEATURE (#20): this ratio is focus-time-vs-scheduled-time, not "how
+    // efficiently you worked" — the old "Efficiency" label implied a
+    // performance judgment the number doesn't actually make. Renamed.
+    const focusRatio=totFocus+totBreak>0?Math.round(totFocus/(totFocus+totBreak)*100):100;
+    // FEATURE (#15 Buffer): Available today always holds back ~8% of
+    // capacity (AUTO_FIT_BUFFER_PCT) as slack for overruns/distractions/
+    // bathroom breaks — that number was invisible before, so a plan that
+    // used every visible minute still felt tight. Surface it explicitly.
+    let availMin=parseFloat(gel('dbpHours') ? gel('dbpHours').value : 0)*60;
+    if(!isFinite(availMin)||availMin<0) availMin=0;
+    const bufferMin = availMin>0 ? Math.round(availMin*AUTO_FIT_BUFFER_PCT) : 0;
 
     gel('dbpSchedule').innerHTML=`
         <div class="dbp-divider"></div>
@@ -26980,9 +27599,13 @@ function renderSchedule(blocks){
                 <div class="dbp-plan-meta-val">${(totFocus/60).toFixed(1)}h</div>
                 <div class="dbp-plan-meta-key">Focus</div>
             </div>
-            <div class="dbp-plan-meta-stat">
-                <div class="dbp-plan-meta-val">${eff}%</div>
-                <div class="dbp-plan-meta-key">Efficiency</div>
+            <div class="dbp-plan-meta-stat" title="Reserved slack for overruns, distractions, or breaks — not counted toward any task.">
+                <div class="dbp-plan-meta-val">${bufferMin>0?bufferMin+'m':'—'}</div>
+                <div class="dbp-plan-meta-key">Buffer</div>
+            </div>
+            <div class="dbp-plan-meta-stat" title="Focus time as a share of focus + break time — not a performance score.">
+                <div class="dbp-plan-meta-val">${focusRatio}%</div>
+                <div class="dbp-plan-meta-key">Focus Ratio</div>
             </div>
             <div class="dbp-plan-meta-stat">
                 <div class="dbp-plan-meta-val">${work.length}</div>
@@ -26990,7 +27613,11 @@ function renderSchedule(blocks){
             </div>
         </div>
         ${renderCatBreakdown(work)}
-        ${blocks.map((b,i)=>renderBlock(b,i)).join('')}
+        <div class="dbp-focusview" id="dbpFocusView"></div>
+        <details class="dbp-fullschedule" id="dbpFullScheduleDetails">
+            <summary><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Full schedule</summary>
+            ${blocks.map((b,i)=>renderBlock(b,i)).join('')}
+        </details>
         <div class="dbp-reflection-wrap">
             <label><svg class="icon-svg" aria-hidden="true"><use href="#icon-file-text"></use></svg> Session Reflection (optional)</label>
             <textarea class="dbp-reflection" id="dbpReflection" placeholder="What did you accomplish? Any blockers? What to improve tomorrow…" oninput="DBP.saveReflectionDraft(this.value)"></textarea>
@@ -27008,7 +27635,54 @@ function renderSchedule(blocks){
 
     gel('dbpActionRow').style.display='flex';
     gel('dbpSchedule').scrollIntoView({behavior:'smooth',block:'nearest'});
+    renderFocusView();
     startLiveHighlight();
+}
+
+/* ─── FOCUS VIEW: NOW / NEXT ───
+   Default view of a generated plan is just "what's happening right now"
+   plus a one-line look at what's next — not the whole day's block list
+   (that's one tap away under "Full schedule"). ADHD-friendly planners
+   generally do better showing the next single action, not the full map. */
+function renderFocusView(){
+    const fv=gel('dbpFocusView'); if(!fv) return;
+    if(!_blocks.length){ fv.innerHTML=''; return; }
+    const now=new Date();
+    const work=_blocks.filter(b=>!b.isBreak);
+    const allDone = work.length>0 && work.every(b=>b.done||b.skipped);
+    if(allDone){
+        fv.innerHTML=`<div class="dbp-focus-card done-state"><div class="dbp-focus-eyebrow" style="color:rgba(255,255,255,0.85);">TODAY</div><div class="dbp-focus-title"><svg class="icon-svg" aria-hidden="true"><use href="#icon-party-popper"></use></svg> All blocks complete!</div></div>`;
+        return;
+    }
+    // Prefer whatever block is literally happening right now; otherwise the
+    // next undone block still ahead of us; otherwise (fell behind) the first
+    // undone block regardless of its original time. Skipped blocks are never
+    // "current" or "next" — they've been explicitly taken off today.
+    let curIdx = _blocks.findIndex(b=>!b.done && !b.skipped && now>=b.start && now<b.end);
+    if(curIdx===-1) curIdx = _blocks.findIndex(b=>!b.done && !b.skipped && b.start>now);
+    if(curIdx===-1) curIdx = _blocks.findIndex(b=>!b.done && !b.skipped);
+    if(curIdx===-1){ fv.innerHTML=''; return; }
+
+    const cur=_blocks[curIdx];
+    const isLive = now>=cur.start && now<cur.end;
+    const isLate = cur.end<=now;
+    const nextIdx = _blocks.findIndex((b,i)=>i>curIdx && !b.done && !b.skipped);
+    const next = nextIdx!==-1 ? _blocks[nextIdx] : null;
+    const pct = isLive ? Math.min(100,Math.max(0,(now-cur.start)/(cur.end-cur.start)*100)) : (isLate?100:0);
+    const eyebrow = cur.isBreak ? (isLive?'On break':'Next') : (isLive?'Now':(isLate?'Running late':'Next'));
+    const isRunning = !!(_timers[curIdx] && _timers[curIdx].running);
+
+    fv.innerHTML = `
+        <div class="dbp-focus-card${cur.isBreak?' is-break':''}">
+            <div class="dbp-focus-eyebrow">${eyebrow}</div>
+            <div class="dbp-focus-title">${cur.name}</div>
+            <div class="dbp-focus-time">${fmt(cur.start)}–${fmt(cur.end)} · ${cur.dur}m</div>
+            <div class="dbp-focus-prog"><div class="dbp-focus-prog-fill" style="width:${pct}%"></div></div>
+            ${!cur.isBreak ? `<button class="dbp-focus-start-btn" onclick="DBP.startFocus(${curIdx},${cur.dur})">${isRunning?'Pause':'Start Focus'}</button>` : ''}
+        </div>
+        ${next ? `<div class="dbp-focus-next"><span class="dbp-focus-next-label">Next</span>${next.name} · ${fmt(next.start)}</div>`
+               : `<div class="dbp-focus-next">That's the last block today.</div>`}
+    `;
 }
 
 /* ─── ACTUAL TIME (planned vs actual, using idle CSS hooks) ─── */
@@ -27022,6 +27696,7 @@ function actualTimeHtml(b){
 let _liveInterval=null;
 function highlightCurrent(){
     if(!_blocks.length) return;
+    renderFocusView();
     const now=new Date();
     document.querySelectorAll('.dbp-now-badge').forEach(el=>el.remove());
     _blocks.forEach((b,i)=>{
@@ -27056,6 +27731,13 @@ function renderBlock(b,i){
             <div class="dbp-block-name" id="dbpBkN${i}" style="color:var(--text-muted,#b8919f);font-style:italic;">${b.name}</div>
             <div class="dbp-block-dur">${b.dur}m</div>
         </div>`;
+    if(b.skipped) return `
+        <div class="dbp-block work skipped" id="dbpBk${i}">
+            <div class="dbp-block-stripe" style="background:var(--text-muted,#b8919f);"></div>
+            <div class="dbp-block-time">${fmt(b.start)} – ${fmt(b.end)}</div>
+            <div class="dbp-block-name" id="dbpBkN${i}" style="text-decoration:line-through;color:var(--text-muted,#b8919f);">${b.name}</div>
+            <div class="dbp-block-dur">Skipped</div>
+        </div>`;
     return `
         <div class="dbp-block work${b.done?' done':''}" id="dbpBk${i}">
             <div class="dbp-block-stripe work-stripe" id="dbpBkS${i}"></div>
@@ -27064,8 +27746,21 @@ function renderBlock(b,i){
             <div class="dbp-block-dur" id="dbpBkD${i}">${b.dur}m${actualTimeHtml(b)}</div>
             <div class="dbp-block-actions">
                 <button class="dbp-done-btn${b.done?' checked':''}" id="dbpDB${i}" onclick="DBP.markDone(${i})">${b.done?'<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg>':'○'}</button>
-                <button class="dbp-timer-btn" id="dbpTB${i}" onclick="DBP.toggleTimer(${i},${b.dur})"><svg class="icon-svg" aria-hidden="true"><use href="#icon-timer"></use></svg> ${pad(b.dur)}:00</button>
+                <button class="dbp-timer-btn" id="dbpTB${i}" onclick="DBP.startFocus(${i},${b.dur})" title="Start Focus"><svg class="icon-svg" aria-hidden="true"><use href="#icon-timer"></use></svg> ${pad(b.dur)}:00</button>
                 <a class="dbp-gcal-btn" href="${gcalUrl(b.name,b.start,b.end,b.details)}" target="_blank" rel="noopener"><svg class="icon-svg" aria-hidden="true"><use href="#icon-calendar"></use></svg></a>
+                ${!b.done ? `
+                <!-- FEATURE (Snooze/Move/Skip): a plan built at one point in the
+                     morning rarely survives contact with the day untouched — this
+                     lets a single block flex (push it back, push it to the very
+                     end, or drop it) without regenerating or Replanning everything. -->
+                <details class="dbp-block-menu">
+                    <summary title="More actions" aria-label="More actions">⋯</summary>
+                    <div class="dbp-block-menu-pop">
+                        <button onclick="DBP.snoozeBlock(${i},15);this.closest('details').open=false;">Snooze 15m</button>
+                        <button onclick="DBP.moveBlockToEnd(${i});this.closest('details').open=false;">Move to end</button>
+                        <button onclick="DBP.skipBlock(${i});this.closest('details').open=false;">Skip</button>
+                    </div>
+                </details>` : ''}
             </div>
         </div>
         <!-- FIX #6: panel used to always render collapsed, so a timer resumed after F5
@@ -27117,6 +27812,7 @@ function markDone(i){
     if(db){ db.textContent=_blocks[i].done?'✓':'○'; db.classList.toggle('checked',_blocks[i].done); }
     if(durEl){ durEl.innerHTML = `${_blocks[i].dur}m${actualTimeHtml(_blocks[i])}`; }
     if(_blocks[i].done) toast('Block done!');
+    renderFocusView();
 
     // Sync done states vào temp storage để sống sót qua modal close/open
     try{
@@ -27124,7 +27820,7 @@ function markDone(i){
     }catch(_){}
 
     const wb=_blocks.filter(b=>!b.isBreak);
-    const allDone = wb.length>0 && wb.every(b=>b.done);
+    const allDone = wb.length>0 && wb.every(b=>b.done||b.skipped);
     // Xóa banner cũ nếu có (undo 1 block thì banner biến)
     const oldBanner = document.getElementById('dbpAllDoneBanner');
     if(oldBanner && !allDone) oldBanner.remove();
@@ -27196,6 +27892,20 @@ function toggleTimer(i,durMin){
     if(gel('dbpMR'+i)) gel('dbpMR'+i).style.display='none';
 }
 
+/* ─── START FOCUS ───
+   The old flow was two clicks: click the block's Timer button to open its
+   panel, then click Start inside the panel. That's a small thing, but it's
+   exactly the kind of extra step that turns "I'm going to start" into "I'm
+   fiddling with the planner". This opens the panel AND starts (or pauses,
+   on a second click) the timer in one action — the in-panel Start/Pause/
+   Reset controls still work individually for anyone who wants them. */
+function startFocus(i,durMin){
+    const panel=gel('dbpTP'+i);
+    if(panel && !panel.classList.contains('visible')) panel.classList.add('visible');
+    if(!_timers[i]) initTimer(i,durMin);
+    if(_timers[i].running) pauseTimer(i); else startTimer(i);
+    renderFocusView();
+}
 
 function startTimer(i){
     if(!_timers[i]||_timers[i].running)return;
@@ -27240,6 +27950,7 @@ function pauseTimer(i){
     const btn=gel('dbpTB'+i); if(btn)btn.classList.remove('running');
     saveTimerState(); 
     updateFloat();
+    renderFocusView();
 }
 
 function resetTimer(i,durMin){
@@ -27249,6 +27960,7 @@ function resetTimer(i,durMin){
     const mr=gel('dbpMR'+i); if(mr)mr.style.display='none';
     if(_activeTimerIdx === i){ _activeTimerIdx=null; gel('dbpFloatTimer').style.display='none'; }
     saveTimerState(); 
+    renderFocusView();
 }
 
 function floatStop(){
@@ -27277,6 +27989,7 @@ function onTimerDone(i){
     if(_blocks[i]&&!_blocks[i].done) markDone(i);
     _activeTimerIdx=null;
     saveTimerState(); 
+    renderFocusView();
     const ft=gel('dbpFloatTimer');
     ft.className='done';
     gel('dbpFTName').textContent=_blocks[i]?.name||'Timer';
@@ -27376,12 +28089,19 @@ function savePlan(){
     const reflection=(gel('dbpReflection')?.value||'').trim();
     const now=new Date().toISOString();
     const hist=store.get('dbpHistory',[]);
+    // Captured for Planning Debt / Plan Accuracy / Reality Check: what you said
+    // you had today, vs. what actually got done vs. skipped.
+    let availMin=parseFloat(gel('dbpHours')?.value||0)*60;
+    if(!isFinite(availMin)||availMin<0) availMin=0;
+    const totalFocus     = work.reduce((s,b)=>s+b.dur,0);
+    const completedFocus = work.filter(b=>b.done).reduce((s,b)=>s+(b.dur||0),0);
+    const skippedFocus   = work.filter(b=>b.skipped).reduce((s,b)=>s+(b.dur||0),0);
     hist.unshift({
         date:now,
         style:gel('dbpStyle').value,
         tasks:work.map(b=>b.name),
         dones:work.map(b=>!!b.done),
-        totalFocus:work.reduce((s,b)=>s+b.dur,0),
+        totalFocus, completedFocus, skippedFocus, availMin,
         reflection,
         blocks:_blocks.map(b=>({...b, start:b.start.toISOString(), end:b.end.toISOString()}))
     });
@@ -27393,6 +28113,12 @@ function savePlan(){
     const streakLog=store.get('dbpStreakLog',[]);
     streakLog.unshift(now);
     store.set('dbpStreakLog',streakLog.slice(0,400)); // ~13 months of daily entries
+    // Same idea for Planning Debt / Plan Accuracy / Reality Check: these want a
+    // longer runway than the 7 full plans History keeps, but don't need the full
+    // block list — just the daily totals — so they get their own lightweight log.
+    const planLog=store.get('dbpPlanningLog',[]);
+    planLog.unshift({date:now, totalFocus, completedFocus, skippedFocus, availMin});
+    store.set('dbpPlanningLog', planLog.slice(0,120)); // ~4 months of daily entries
     // Xóa temp storage vì đã vào history rồi
     try{ localStorage.removeItem('dbpCurrentBlocks'); localStorage.removeItem('dbpCurrentStyle'); }catch(_){}
     try{ localStorage.removeItem('dbpReflectionDraft'); }catch(_){} // saved into history now, drop the draft
@@ -27480,12 +28206,13 @@ function clearFilter(){
 }
 
 /* ─── TEMPLATES ───
-   A template stores the *settings* plus the chosen task labels and their minutes.
-   It deliberately does NOT store task ids: resources and goals come and go from
-   the library, and ids for library items are position-derived, so an id saved
-   weeks ago can point at an entirely different item later. Matching on the label
-   (normalised the same way repeatLastPlan does) is the stable choice — worst case
-   a renamed task simply doesn't match, instead of silently selecting the wrong one. */
+   A template stores the *settings* plus the chosen tasks' ids and minutes.
+   Ids for library items are now derived from the real Goal/Resource id (see
+   getLibraryTasks), not from position, so they stay stable across renders and
+   across days — matching on id first means a renamed goal still loads
+   correctly. The normalised label is kept as a fallback for templates saved
+   before this change, and for the rare case an id no longer resolves (the
+   source item was deleted) but a same-named item exists again. */
 const TPL_KEY='dbpTemplates';
 const tplNorm=n=>String(n||'').replace(/\s*\(cont\.\)\s*$/,'').replace(/\s*\(copy\)\s*$/,'').trim().toLowerCase();
 
@@ -27517,7 +28244,7 @@ async function saveTemplate(){
         startTime: gel('dbpStartTime').value,
         hours:     gel('dbpHours').value,
         style:     gel('dbpStyle').value,
-        tasks:     picked.map(t=>({label:t.label, def:t.def}))
+        tasks:     picked.map(t=>({id:t.id, label:t.label, def:t.def}))
     };
     if(existing) tpls[tpls.indexOf(existing)]=data; else tpls.push(data);
     store.set(TPL_KEY, tpls);
@@ -27536,15 +28263,22 @@ function applyTemplate(){
     if(tpl.hours)     gel('dbpHours').value=tpl.hours;
     if(tpl.style)     gel('dbpStyle').value=tpl.style;
     saveSettings();
-    const want=new Map(tpl.tasks.map(t=>[tplNorm(t.label), t.def]));
+    // Prefer the stable id (works even if the item was renamed); fall back to
+    // the normalised label for older templates that only ever stored one, or
+    // for a task whose id no longer resolves.
+    const wantById=new Map(tpl.tasks.filter(t=>t.id).map(t=>[t.id, t.def]));
+    const wantByLabel=new Map(tpl.tasks.map(t=>[tplNorm(t.label), t.def]));
     let matched=0;
+    const claimedIds=new Set();
     _tasks.forEach(t=>{
-        const m=want.get(tplNorm(t.label));
+        let m = wantById.has(t.id) ? wantById.get(t.id) : null;
+        if(m==null) m = wantByLabel.get(tplNorm(t.label));
         if(m!=null){
             t.checked=true;
             t.def=m;
             t.customDur=true; // template minutes are a deliberate choice, not a style default
             matched++;
+            claimedIds.add(t.id);
         } else {
             t.checked=false;
         }
@@ -27573,18 +28307,26 @@ async function deleteTemplate(){
    FEATURE: quick-fill today's checkboxes with whichever tasks are still in the
    current list and were also part of your most recently saved plan — handy for
    recurring routines instead of re-checking the same items every morning.
-   Matches by task name (history only stores names, not ids) and strips the
-   "(cont.)"/"(copy)" suffixes this module adds so a split/duplicated task still
-   matches its original label. */
+   Matches by the block's stable srcId when the saved plan has one (any plan
+   saved after stable source ids were added to blocks); falls back to matching
+   on the task name — stripped of the "(cont.)"/"(copy)" suffixes this module
+   adds — for older history entries that predate srcId, or for manual tasks
+   that got removed and re-added under a new id. */
 function repeatLastPlan(){
     const hist=store.get('dbpHistory',[]);
     if(!hist.length){ toast('No saved plan yet to repeat'); return; }
     const clean=n=>String(n||'').replace(/\s*\(cont\.\)\s*$/,'').replace(/\s*\(copy\)\s*$/,'').trim();
-    const names=new Set(hist[0].tasks.map(clean));
-    if(!names.size){ toast('Last saved plan had no tasks'); return; }
+    const lastWork=(hist[0].blocks||[]).filter(b=>!b.isBreak);
+    const idSet=new Set(lastWork.map(b=>b.srcId).filter(Boolean));
+    const nameSet=new Set((lastWork.length?lastWork.map(b=>b.name):hist[0].tasks||[]).map(clean));
+    if(!idSet.size && !nameSet.size){ toast('Last saved plan had no tasks'); return; }
     pushUndo();
     let matched=0;
-    _tasks.forEach(t=>{ if(names.has(clean(t.label))){ t.checked=true; matched++; } });
+    _tasks.forEach(t=>{
+        const hitById = idSet.has(t.id);
+        const hitByName = !hitById && nameSet.has(clean(t.label));
+        if(hitById || hitByName){ t.checked=true; matched++; }
+    });
     renderTasks();
     toast(matched
         ? `Selected ${matched} task${matched>1?'s':''} from your last plan`
@@ -27604,6 +28346,74 @@ function computeStreak(streakDates){
         cursor.setDate(cursor.getDate()-1);
     }
     return streak;
+}
+
+/* ─── PLANNING DEBT / PLAN ACCURACY / REALITY CHECK ───
+   Runs on dbpPlanningLog (see savePlan) rather than the 7-entry dbpHistory, so
+   there's a real sample to learn from. Three numbers:
+   - Plan Accuracy:  completed / planned, as a %      — "how much of the day you built actually happened"
+   - Planning Debt:  cumulative planned − completed    — the gap piling up across recent days
+   - Reality Check:  average actual focus vs. average Available today you typed in,
+     surfaced as a one-tap "use this instead" suggestion once there's enough data
+     to trust it (also covers "historical capacity learning" — the two are the
+     same computation, just one is a passive stat and the other an actionable nudge). */
+function fmtHM(min){
+    min=Math.max(0,Math.round(min||0));
+    const h=Math.floor(min/60), m=min%60;
+    if(h<=0) return `${m}m`;
+    return m ? `${h}h${m}m` : `${h}h`;
+}
+function computePlanningStats(){
+    const log=store.get('dbpPlanningLog',[]);
+    if(!log.length) return null;
+    const planned   = log.reduce((s,h)=>s+(h.totalFocus||0),0);
+    const completed = log.reduce((s,h)=>s+(h.completedFocus||0),0);
+    const debt      = Math.max(0, planned-completed);
+    const accuracy  = planned>0 ? Math.round(completed/planned*100) : null;
+    const withAvail = log.filter(h=>h.availMin>0);
+    const avgAvail     = withAvail.length ? withAvail.reduce((s,h)=>s+h.availMin,0)/withAvail.length : null;
+    const avgCompleted = log.length ? completed/log.length : null;
+    return {n:log.length, planned, completed, debt, accuracy, avgAvail, avgCompleted};
+}
+function renderPlanningPanel(){
+    const stats=computePlanningStats();
+    if(!stats || stats.n<2) return ''; // one data point isn't a pattern yet
+    // Only worth suggesting a different capacity once there's a real, consistent
+    // gap — a couple of minutes' difference is just noise, not a signal to act on.
+    const gapMin = (stats.avgAvail!=null && stats.avgCompleted!=null) ? (stats.avgAvail-stats.avgCompleted) : 0;
+    const showReality = stats.n>=3 && stats.avgAvail!=null && Math.abs(gapMin)>=20;
+    const realityHtml = showReality ? `
+        <div class="dbp-reality-check">
+            Over your last ${stats.n} saved plans, you've said you had <strong>${fmtHM(stats.avgAvail)}</strong> a day on average, but actually completed <strong>${fmtHM(stats.avgCompleted)}</strong> of focus.
+            ${gapMin>0
+                ? `Setting a more realistic capacity may make plans easier to actually finish.`
+                : `You're regularly completing more than you plan for — Available today could go up.`}
+            <br><button type="button" class="dbp-reality-btn" onclick="DBP.useSuggestedCapacity(${Math.round(stats.avgCompleted)})">Use ${fmtHM(stats.avgCompleted)} as capacity</button>
+        </div>` : '';
+    return `
+        <div class="dbp-analytics">
+            <div class="dbp-analytics-title"><svg class="icon-svg" aria-hidden="true"><use href="#icon-chart-column"></use></svg> Planning Accuracy <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted,#b8919f);">· last ${stats.n} plan${stats.n>1?'s':''}</span></div>
+            <div class="dbp-planacc-row">
+                <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${stats.accuracy!=null?stats.accuracy+'%':'–'}</div><div class="dbp-analytics-key">Plan Accuracy</div></div>
+                <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${fmtHM(stats.debt)}</div><div class="dbp-analytics-key">Planning Debt</div></div>
+                <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${fmtHM(stats.planned)}</div><div class="dbp-analytics-key">Total Planned</div></div>
+                <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${fmtHM(stats.completed)}</div><div class="dbp-analytics-key">Total Completed</div></div>
+            </div>
+            ${realityHtml}
+        </div>`;
+}
+// One tap from the Reality Check suggestion: sets Available today to the
+// suggested capacity (rounded to the nearest quarter hour so the field stays
+// tidy) and jumps back to the Plan tab so it's immediately visible/usable.
+function useSuggestedCapacity(min){
+    const hrs=Math.max(0.5, Math.round((min/60)*4)/4);
+    const input=gel('dbpHours');
+    if(input) input.value=hrs;
+    const planTab=document.querySelector('.dbp-tab');
+    switchTab('plan', planTab);
+    saveSettings();
+    updateBudget();
+    toast(`Available today set to ${fmtHM(Math.round(hrs*60))} based on your recent averages`, 4200, 'success');
 }
 
 /* ─── HISTORY ─── */
@@ -27627,7 +28437,7 @@ function renderHistory(){
                 <div class="dbp-analytics-stat"><div class="dbp-analytics-val">${lastMood}</div><div class="dbp-analytics-key">Last Mood</div></div>
                 <div class="dbp-analytics-stat"><div class="dbp-analytics-val dbp-streak-badge">${streak>0?'<svg class="icon-svg" aria-hidden="true"><use href="#icon-flame"></use></svg>':'<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg>'} ${streak}</div><div class="dbp-analytics-key">Day Streak</div></div>
             </div>
-        </div>`:'';
+        </div>${renderPlanningPanel()}`:renderPlanningPanel();
 
     if(!hist.length){
         el.innerHTML=analytic+`<div class="dbp-empty"><div class="dbp-empty-icon"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clock"></use></svg></div><div class="dbp-empty-text">No saved plans yet.<br>Generate a plan and hit "Save".</div></div>`;
@@ -27705,6 +28515,7 @@ function open(){
     loadSettings();
     loadManualTasks();
     renderTasks();
+    renderCarryOver();
     renderTemplateList();
     switchTab('plan',document.querySelector('.dbp-tab'));
     updateNotifBtn();
@@ -27784,6 +28595,10 @@ window.DBP={
     undo, redo, repeatLastPlan, saveReflectionDraft, setFilter, clearFilter,
     saveTemplate, applyTemplate, deleteTemplate,
     showDetail, closeDetail, toggleSourceUI,
+    setEnergy, buildMyDay, startFocus, replanRemaining,
+    snoozeBlock, moveBlockToEnd, skipBlock,
+    carryAll, carryChoose, carryAddSelected, carryClear,
+    useSuggestedCapacity,
     _ds:ds,_do:dov,_dd:dd,_de:de
 };
 
