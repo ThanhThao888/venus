@@ -58463,9 +58463,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const nowH = now.getHours() + now.getMinutes() / 60;
             const goal = getSleepGoal();
 
+            // Gán đêm theo giờ VN — đồng bộ với computeSleepDebt() và phần còn lại của
+            // Sleep Debt Engine (xem quy ước ở getSleepWakeDateVN). Trước đây hàm này dùng
+            // getSleepWakeDateLocal/toLocalDateStr (giờ THIẾT BỊ), nên nếu máy/trình duyệt
+            // đặt múi giờ khác VN, debtWeighted và fragmentCount bên dưới có thể gộp nhầm
+            // đêm sang ngày liền kề so với debt7 (lấy từ computeSleepDebt(), luôn theo VN).
             const byDate = {};
             sorted.forEach(s => {
-                const dateStr = getSleepWakeDateLocal(s); // đêm gán theo ngày thức dậy
+                const dateStr = getSleepWakeDateVN(s); // đêm gán theo ngày thức dậy (giờ VN)
                 byDate[dateStr] = (byDate[dateStr] || 0) + s.duration;
             });
             // Nợ ngủ hiển thị lấy từ Sleep Debt Engine (sổ 14 đêm); điểm bên dưới vẫn dùng
@@ -58475,10 +58480,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Nợ ngủ trọng số gần: đêm qua trọng số cao nhất, giảm dần ~35%/ngày lùi về quá
             // khứ. Ngày không có log bị bỏ qua (thiếu dữ liệu ≠ không ngủ), không tính là 0h.
+            // Lùi ngày bằng dayNum (lịch VN) thay vì Date.setDate() (lịch múi giờ thiết bị),
+            // cùng cách sleepDateToDayNum/sleepDayNumToDateStr đã dùng ở nơi khác trong engine.
+            const todayDayNumVN = sleepDateToDayNum(getVietnamDateStr());
             let wNum = 0, wDen = 0, missingRecent = 0;
             for (let i = 0; i < 7; i++) {
-                const d = new Date(now); d.setDate(d.getDate() - i);
-                const key = toLocalDateStr(d);
+                const key = sleepDayNumToDateStr(todayDayNumVN - i);
                 if (!(key in byDate)) { if (i <= 2) missingRecent++; continue; }
                 const w = Math.pow(0.65, i);
                 wNum += Math.max(0, goal - byDate[key]) * w;
@@ -58487,8 +58494,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const debtWeighted = wDen > 0 ? wNum / wDen : debt7 / SLEEP_DEBT_CFG.windowNights;
 
             // Phân mảnh: đếm số đợt ngủ kết thúc trong ngày hôm nay (= các đợt của giấc ngủ vừa dậy)
-            const todayStr = toLocalDateStr(now);
-            const fragmentCount = sorted.filter(s => getSleepWakeDateLocal(s) === todayStr).length;
+            const todayStr = sleepDayNumToDateStr(todayDayNumVN);
+            const fragmentCount = sorted.filter(s => getSleepWakeDateVN(s) === todayStr).length;
 
             const recentWithSOL = sorted.filter(s => typeof s.sol === 'number' && !isNaN(s.sol)).slice(-3);
             const seValues = recentWithSOL.map(computeSleepEfficiency).filter(v => v !== null);
@@ -59386,12 +59393,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 let n = map.get(date);
                 if (!n) {
                     n = { date, dayNum: sleepDateToDayNum(date), hours: 0, awakeMin: 0, sessions: 0,
-                          startTs: typeof s.start === 'number' ? s.start : null, endTs };
+                          startTs: typeof s.start === 'number' ? s.start : null, endTs, maxSessionHours: 0 };
                     map.set(date, n);
                 }
-                n.hours += Math.max(0, s.duration - awakeMin / 60);
+                const sessHours = Math.max(0, s.duration - awakeMin / 60);
+                n.hours += sessHours;
                 n.awakeMin += awakeMin;
                 n.sessions += 1;
+                n.maxSessionHours = Math.max(n.maxSessionHours, sessHours);
                 if (typeof s.start === 'number' && (n.startTs === null || s.start < n.startTs)) n.startTs = s.start;
                 if (endTs > n.endTs) n.endTs = endTs;
             });
@@ -59464,7 +59473,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     hours: n.hours, gap, napCreditH, netGap, debtBefore, debtAfter: debt,
                     awakeMin: n.awakeMin, sessions: n.sessions, startTs: n.startTs, endTs: n.endTs,
                     naps: n.naps || [], napMinutes: n.napMinutes || 0, napDiscardedMin: n.napDiscardedMin || 0,
-                    long: n.hours > cfg.longNightHours
+                    long: (typeof n.maxSessionHours === 'number' ? n.maxSessionHours : n.hours) > cfg.longNightHours
                 });
             }
             return { debt, series };
@@ -59581,10 +59590,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const consistency = patterns.insufficientData ? null : Math.round(patterns.consistencyScore);
 
             // So đêm gần nhất với baseline (tính trên các đêm còn lại) để cảnh báo nếu lệch nhịp mạnh.
+            // nights có thể RỖNG dù sleepSessions không rỗng (session cũ/hỏng có duration không hợp lệ
+            // bị buildSleepNightsByWakeDate() lọc bỏ hết) — phải chặn ở đây, nếu không lastNight sẽ là
+            // undefined và làm crash cả renderSleepStats(), kéo theo mọi card render SAU nó bị bỏ dở.
             const nights = buildSleepNightsByWakeDate(sleepSessions);
             const lastNight = nights[nights.length - 1];
-            const baselineExclLast = computeSleepBaseline({ excludeDayNum: lastNight.dayNum });
-            const dev = baselineExclLast.ok ? computeBaselineDeviation(lastNight, baselineExclLast) : null;
+            const baselineExclLast = lastNight ? computeSleepBaseline({ excludeDayNum: lastNight.dayNum }) : { ok: false };
+            const dev = (lastNight && baselineExclLast.ok) ? computeBaselineDeviation(lastNight, baselineExclLast) : null;
 
             const tile = (label, value, color, title) => `
                 <div${title ? ` title="${title}"` : ''}><div style="font-size:0.7rem; color:var(--text-muted);">${label}</div>
@@ -59637,6 +59649,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const nights = buildSleepNightsByWakeDate(sleepSessions);
             const lastNight = nights[nights.length - 1];
+            // Cùng lý do như renderTonightPlanCard(): nights có thể rỗng dù sleepSessions không rỗng
+            // (session cũ/hỏng bị buildSleepNightsByWakeDate() lọc bỏ hết) — ẩn card thay vì crash.
+            if (!lastNight) { wrap.style.display = 'none'; return; }
             const lastSession = [...sleepSessions].sort((a, b) => (a.start || 0) - (b.start || 0)).slice(-1)[0];
 
             const debt = computeSleepDebt();
@@ -61632,7 +61647,52 @@ document.addEventListener('DOMContentLoaded', function() {
                 return { icon: 'icon-moon', label: 'Ngủ ban đêm' };
             }
 
-            container.innerHTML = recentSessions.map(session => {
+            // Nap hiển thị ở lịch sử phải gán vào đêm CHÍNH XÁC theo cách Sleep Debt Engine đang
+            // gán (buildSleepNightsByWakeDate + attachNapsToNights, cùng anchor = đêm kết thúc gần
+            // nhất TRƯỚC nap). Build trên TOÀN BỘ sleepSessions/naps (không phải recentSessions đã
+            // cắt trang) để anchor không bị lệch khi phân trang/lọc — chỉ lookup theo ngày khi render.
+            const historyNights = buildSleepNightsByWakeDate(sleepSessions);
+            attachNapsToNights(historyNights, getSleepNapsSafe());
+            const historyNightsByDate = new Map(historyNights.map(n => [n.date, n]));
+
+            // Gom các session hiển thị theo ngày thức dậy (VN) — cùng quy ước gán đêm duy nhất của
+            // app (getSleepWakeDateVN) — để chèn khối Nap ngay sau nhóm phiên ngủ chính của mỗi đêm.
+            const historyGroups = [];
+            const historyGroupIndexByDate = new Map();
+            recentSessions.forEach(session => {
+                const date = typeof session.start === 'number' ? getSleepWakeDateVN(session) : `_s${session.id}`;
+                if (historyGroupIndexByDate.has(date)) {
+                    historyGroups[historyGroupIndexByDate.get(date)].sessions.push(session);
+                } else {
+                    historyGroupIndexByDate.set(date, historyGroups.length);
+                    historyGroups.push({ date, sessions: [session] });
+                }
+            });
+
+            function renderSleepHistoryNapBlock(date) {
+                const night = historyNightsByDate.get(date);
+                if (!night || !night.naps || night.naps.length === 0) return '';
+                const totalSleepMin = Math.round(night.hours * 60) + Math.round(night.napMinutes);
+                return `
+                <div style="background: rgba(249,115,22,0.06); border: 1px solid rgba(249,115,22,0.35); border-radius: 8px; padding: 10px 12px; margin: -4px 0 10px 0;">
+                    <div style="font-size:0.78rem; font-weight:600; color:#c2650a; display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                        <svg class="icon-svg" aria-hidden="true"><use href="#icon-sun"></use></svg> Nap (${night.naps.length})
+                    </div>
+                    ${night.naps.map(nap => `
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem; color:var(--text-dark); padding:2px 0;">
+                            <span>${fmtVNTimeHM(nap.start)} · ${formatNapDuration(Math.round(nap.minutes))}</span>
+                            <span style="font-size:0.72rem; color:var(--text-muted);" title="Phần nợ ngủ được bù nhờ nap này">bù ${nap.creditMin.toFixed(0)}p nợ ngủ</span>
+                        </div>
+                    `).join('')}
+                    ${night.napDiscardedMin > 0.5 ? `<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">Đã chạm trần bù nợ ngủ/ngày — ${Math.round(night.napDiscardedMin)}p nap không tính thêm.</div>` : ''}
+                    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed rgba(249,115,22,0.35); display:flex; justify-content:space-between; font-size:0.8rem; font-weight:600; color:var(--text-dark);">
+                        <span>Tổng ngủ</span>
+                        <span>${formatNapDuration(totalSleepMin)}</span>
+                    </div>
+                </div>`;
+            }
+
+            function renderSleepHistorySessionCard(session) {
                 const qualityEmojis = ['','<svg class="icon-svg" aria-hidden="true"><use href="#icon-frown"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-face-slightly-frowning"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-meh"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-smile"></use></svg>','<svg class="icon-svg" aria-hidden="true"><use href="#icon-laugh"></use></svg>'];
                 const qualityLabels = ['','Rất tệ','Tệ','Bình thường','Tốt','Rất tốt'];
                 const qualityColors = ['','#ef4444','#f59e0b','#9a7686','var(--primary)','#10b981'];
@@ -61695,7 +61755,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                 </div>
-            `}).join('');
+            `;
+            }
+
+            container.innerHTML = historyGroups.map(group =>
+                group.sessions.map(renderSleepHistorySessionCard).join('') + renderSleepHistoryNapBlock(group.date)
+            ).join('');
         }
 
         function updateSleepDisplay() {
@@ -69247,7 +69312,7 @@ function analyzeSleepFragmentation() {
     // 2.5h each looks like "2.5h avg sleep" per session even though the day totals 7.5h).
     const byDate = {};
     sorted.forEach(s => {
-        const dateStr = getSleepWakeDateLocal(s); // đêm gán theo ngày thức dậy
+        const dateStr = getSleepWakeDateVN(s); // đêm gán theo ngày thức dậy (giờ VN — hàm này không ghép với dữ liệu học tập nên dùng VN, không phải Local)
         if (!byDate[dateStr]) byDate[dateStr] = 0;
         byDate[dateStr] += s.duration;
     });
@@ -69338,7 +69403,7 @@ function analyzeRecoveryPatterns() {
     // (polyphasic) và không dồn 2 đêm vào 1 ngày.
     const byDate = {};
     sorted.forEach(session => {
-        const dateStr = getSleepWakeDateLocal(session);
+        const dateStr = getSleepWakeDateVN(session); // giờ VN — hàm này không ghép với dữ liệu học tập
         if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, duration: 0 };
         byDate[dateStr].duration += session.duration;
     });
@@ -69568,7 +69633,7 @@ function analyzeSleepTrend() {
     // pha ngắn sẽ kéo "trung bình mỗi session" xuống dù tổng giờ ngủ ngày đó ổn.
     const byDate = {};
     sorted.forEach(s => {
-        const dateStr = getSleepWakeDateLocal(s); // đêm gán theo ngày thức dậy
+        const dateStr = getSleepWakeDateVN(s); // giờ VN — hàm này không ghép với dữ liệu học tập
         if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, duration: 0 };
         byDate[dateStr].duration += s.duration;
     });
