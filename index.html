@@ -35703,10 +35703,12 @@ window.DBP={
                 return;
             }
 
-            list.innerHTML = filtered.slice().reverse().map(n => `
-                <div class="bd-note cat-${n.cat}${n.processed ? ' bd-processed' : ''}" data-id="${n.id}">
+            const _pr = { urgent: 0, normal: 1, someday: 2 };
+            list.innerHTML = filtered.slice().reverse().sort((a, b) => (a.processed ? 1 : 0) - (b.processed ? 1 : 0) || (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || _pr[a.prio || 'normal'] - _pr[b.prio || 'normal']).map(n => `
+                <div class="bd-note cat-${n.cat}${n.processed ? ' bd-processed' : ''}${n.pinned ? ' bd-pinned' : ''}" data-id="${n.id}">
                     <div class="bd-note-meta">
                         <span class="bd-note-cat">${CAT_LABELS[n.cat] || n.cat}</span>
+                        ${n.pinned ? '<i class="fa-solid fa-thumbtack bdx-pin" title="Pinned"></i>' : ''}${n.prio && n.prio !== 'normal' ? '<span class="bdx-prio ' + n.prio + '">' + (n.prio === 'urgent' ? 'Urgent' : 'Someday') + '</span>' : ''}
                         ${reminderBadge(n)}
                         <span class="bd-note-time">${formatTime(n.ts)}</span>
                     </div>
@@ -36477,6 +36479,8 @@ window.DBP={
     .bdx-pin{font-size:.72rem;color:var(--c)}
     .bdx-card.pinned{box-shadow:0 8px 20px rgba(var(--rc),.24)}
     .bdx-act button.on{color:var(--c)}
+    .bd-note .bdx-pin{color:var(--primary)}
+    .bd-note.bd-pinned{box-shadow:0 4px 12px rgba(var(--primary-rgb),.22)}
     @media (max-width:820px){
         .bdx{grid-template-columns:1fr;grid-template-rows:none;overflow-y:auto;height:100%;border-radius:20px;display:block}
         .bdx-write{overflow:visible;border-right:none;border-bottom:1px solid var(--border-color)}
