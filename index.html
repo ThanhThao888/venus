@@ -45148,7 +45148,7 @@ kbd {
             }
         }
         const V = 'Vault';
-        add(V, 'new', 'plus', 'New note', newNote, { kw: 'create write blank add' });
+        add(V, 'new', 'plus', 'New note', newNote, { kw: 'create write blank add', keys: ['alt', 'N'] });
         add(V, 'search', 'magnifying-glass', 'Search notes', focusSearch, { kw: 'find filter', keys: ['/'] });
         if (window.BrainDump && document.getElementById('bdPanel')) add(V, 'bd', 'brain', 'Open Brain Dump', openBrainDump, { kw: 'inbox capture tracker thoughts' });
         add(V, 'exportmd', 'folder-tree', 'Export notes as .md files…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
@@ -45945,6 +45945,14 @@ kbd {
             }
         });
         $('nvNewBtn').addEventListener('click', () => newNote());
+        // hover hint: "New note (Alt+N)" — shown only on hover, nothing written inside the button
+        const NEW_NOTE_TIP = 'New note (' + keyText(['alt', 'N']) + ')';
+        const tipNewBtns = (root) => root.querySelectorAll('#nvNewBtn, [data-new], [data-scope-new]').forEach((b) => { b.title = NEW_NOTE_TIP; });
+        tipNewBtns(el.overlay);
+        el.overlay.addEventListener('mouseover', (e) => {
+            const b = e.target.closest && e.target.closest('#nvNewBtn, [data-new], [data-scope-new]');
+            if (b && b.title !== NEW_NOTE_TIP) b.title = NEW_NOTE_TIP;
+        });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && S.linkPicker.open) { e.preventDefault(); e.stopPropagation(); closeLinkPicker(); }
         }, true);
@@ -46442,6 +46450,10 @@ kbd {
                 if (closeDrawers()) return;
                 if (S.viewRev) { backToCurrent(); return; }
                 if (S.note) leaveDoc(); else close();
+            } else if (e.altKey && !mod && !e.shiftKey && keyIs(e, 'n')) {
+                // Alt/⌥+N = New note (Ctrl+N is reserved by the browser, so it can't be used)
+                e.preventDefault();
+                newNote();
             } else if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F') && S.note) {
                 e.preventDefault();
                 toggleFocus();
