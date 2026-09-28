@@ -42144,6 +42144,27 @@ kbd {
        it's just escaped text, not markup) — right after marked has produced HTML, so
        MathJax finally sees one clean text node per formula. */
     function mjxPrepare(src) {
+        // Park fenced code blocks and inline code behind tokens so the math rules below never touch them.
+        const codeStore = [];
+        const cnonce = 'MJXCODE' + Math.random().toString(36).slice(2, 8);
+        const park = (t) => { codeStore.push(t); return cnonce + (codeStore.length - 1) + 'E'; };
+        const unpark = (t) => codeStore.length
+            ? t.replace(new RegExp(cnonce + '(\\d+)E', 'g'), (_, i) => codeStore[Number(i)]) : t;
+        {
+            const out = []; let fence = null, buf = [];
+            for (const line of src.split('\n')) {
+                if (!fence) {
+                    const m = /^[ \t]*(`{3,}|~{3,})/.exec(line);
+                    if (m) { fence = { ch: m[1][0], len: m[1].length }; buf = [line]; } else out.push(line);
+                } else {
+                    buf.push(line);
+                    const m = /^[ \t]*(`{3,}|~{3,})[ \t]*$/.exec(line);
+                    if (m && m[1][0] === fence.ch && m[1].length >= fence.len) { out.push(park(buf.join('\n'))); fence = null; buf = []; }
+                }
+            }
+            if (fence) out.push(park(buf.join('\n')));
+            src = out.join('\n').replace(/(`+)(?!`)([^\n]*?[^`\n])\1(?!`)/g, (m) => park(m));
+        }
         // Bare "[ ... ]" block on its own lines → "\[ ... \]" (flattened to one line so it
         // can't be split by breaks:true later).
         src = src.replace(/^[ \t]*\[[ \t]*\n([\s\S]*?)\n[ \t]*\][ \t]*$/gm, (_, body) =>
@@ -42152,14 +42173,14 @@ kbd {
         const nonce = 'MJXPH' + Math.random().toString(36).slice(2, 8);
         const guard = (re) => {
             src = src.replace(re, (m) => {
-                store.push(m.split('\n').map((l) => l.trim()).join(' '));
+                store.push(unpark(m.split('\n').map((l) => l.trim()).join(' ')));
                 return nonce + (store.length - 1) + 'E';
             });
         };
         guard(/\$\$[\s\S]*?\$\$/g);
         guard(/\\\[[\s\S]*?\\\]/g);
         guard(/\\\([\s\S]*?\\\)/g);
-        return { text: src, restore: (html) => store.length
+        return { text: unpark(src), restore: (html) => store.length
             ? html.replace(new RegExp(nonce + '(\\d+)E', 'g'), (_, i) => esc(store[Number(i)]))
             : html };
     }
@@ -43832,6 +43853,7 @@ kbd {
         primary.updatedAt = Date.now();
         try { await dbPut(primary); }
         catch (e) { console.error('Notes Vault: merge failed', e); flash('Couldn’t merge those notes'); return false; }
+        await syncAttachmentRefs(primary.id, primary.markdown).catch(() => {});
         if (S.note && S.note.id === primary.id) { fillDoc(); }
         await deleteNote(secondary.id);   // shows its own "Moved to Trash · Undo" toast
         renderAll();
@@ -43853,6 +43875,7 @@ kbd {
             const now = Date.now();
             const copy = Object.assign({}, n, { id: uid(), title: (n.title || 'Untitled note') + ' (copy)', tags: n.tags.slice(), pinned: false, createdAt: now, updatedAt: now });
             await dbPut(copy);
+            await syncAttachmentRefs(copy.id, copy.markdown).catch(() => {});
             S.notes.push(copy);
             await openNote(copy.id);
             renderSide();
@@ -43942,7 +43965,10 @@ kbd {
     async function restoreNotesList(list, opts = {}) {
         if (!Array.isArray(list) || !list.length) return { added: 0, updated: 0, skipped: 0 };
         await flushSave();
-        const existing = new Map(S.notes.concat(S.trash).map((n) => [n.id, n]));
+        let known;
+        try { known = (await dbGetAll()).map(normalizeNote); }
+        catch (e) { known = S.notes.concat(S.trash); }
+        const existing = new Map(known.map((n) => [n.id, n]));
         let added = 0, updated = 0, skipped = 0;
         for (const raw of list) {
             if (!raw || typeof raw.markdown !== 'string') continue;
@@ -44378,6 +44404,7 @@ kbd {
             type: normType(S.note.type), tags: [], pinned: false, createdAt: now, updatedAt: now
         };
         dbPut(child).then(() => {
+            syncAttachmentRefs(child.id, child.markdown).catch(() => {});
             S.notes.push(child);
             const link = 'See [[' + finalTitle + ']]';
             replaceRange(s, e, link, s, s + link.length);
@@ -46052,6 +46079,7 @@ kbd {
 
         // document: title + body
         el.title.addEventListener('input', () => {
+            if (!S.note) return;
             if (el.title.value.includes('\n')) el.title.value = el.title.value.replace(/\n+/g, ' ');
             S.note.title = el.title.value;
             fitTitle();
@@ -46060,7 +46088,7 @@ kbd {
         el.title.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); if (S.mode === 'edit') el.src.focus(); else el.title.blur(); }
         });
-        el.src.addEventListener('input', () => { S.note.markdown = el.src.value; markDirty(); });
+        el.src.addEventListener('input', () => { if (!S.note) return; S.note.markdown = el.src.value; markDirty(); });
 
         // Task checkboxes in Read mode: click toggles the box AND the "[ ]"/"[x]" in the
         // markdown source, kept in sync via markDirty() (same path as any other edit).
