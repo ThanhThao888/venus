@@ -39124,6 +39124,59 @@ window.DBP={
 .nv-pdf-embed-more:hover { background: var(--nv-hover); color: var(--text-dark); }
 .nv-pdf-embed-frame { display: block; width: 100%; height: 65vh; min-height: 320px; max-height: 720px; border: 0; background: var(--bg-white); }
 @media (max-width: 640px) { .nv-pdf-embed-frame { height: 55vh; } }
+/* Spreadsheet / generic file card — `[label](attachment://id)` for .xlsx/.xls/.csv. Save + download only. */
+.nv-file-card {
+    margin: 10px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 12px;
+    border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-light);
+}
+.nv-file-card-ico { font-size: 1.5rem; color: #2e8b57; flex-shrink: 0; }
+.nv-file-card-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.nv-file-card-name { font-weight: 600; font-size: 0.86rem; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-file-card-meta { color: var(--text-muted); font-size: 0.74rem; }
+.nv-file-card-dl {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+    background: var(--nv-btn-bg); color: var(--nv-btn-ink) !important; font-size: 0.78rem; font-weight: 700;
+    text-decoration: none !important; cursor: pointer;
+}
+.nv-file-card-dl:hover { filter: brightness(1.08); }
+.nv-file-card-pv {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark);
+    font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+}
+.nv-file-card-pv:hover, .nv-file-card-pv.nv-on { background: var(--nv-hover); border-color: var(--primary); }
+.nv-sheet-prev { flex: 0 0 100%; min-width: 0; font-size: 0.8rem; color: var(--text-muted); }
+.nv-sheet-bar { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.nv-sheet-tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.nv-sheet-copy {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark);
+    font: inherit; font-size: 0.74rem; font-weight: 700; cursor: pointer;
+}
+.nv-sheet-copy + .nv-sheet-copy { margin-left: 0; }
+.nv-sheet-copy:hover { background: var(--nv-hover); border-color: var(--primary); }
+.nv-sheet-tab {
+    padding: 4px 11px; border-radius: 8px 8px 0 0; border: 1px solid var(--border-color); background: var(--bg-white);
+    color: var(--text-muted); font: inherit; font-size: 0.76rem; font-weight: 600; cursor: pointer; max-width: 180px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nv-sheet-tab[aria-selected="true"] { background: var(--nv-hover); color: var(--text-dark); border-color: var(--primary); }
+.nv-sheet-scroll { overflow: auto; max-height: 420px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); }
+.nv-sheet-scroll table { border-collapse: collapse; width: max-content; min-width: 100%; margin: 0; font-size: 0.78rem; }
+.nv-sheet-scroll th, .nv-sheet-scroll td {
+    border: 1px solid var(--border-color); padding: 4px 9px; text-align: left; color: var(--text-dark);
+    max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nv-sheet-scroll thead th { position: sticky; top: 0; background: var(--bg-light); font-weight: 700; z-index: 1; }
+.nv-sheet-scroll tbody tr:nth-child(even) td { background: var(--bg-light); }
+.nv-sheet-scroll table { user-select: none; -webkit-user-select: none; cursor: cell; }
+.nv-sheet-scroll:focus { outline: none; }
+.nv-sheet-scroll th.nv-sel, .nv-sheet-scroll td.nv-sel, .nv-sheet-scroll tbody tr:nth-child(even) td.nv-sel {
+    background: var(--nv-hover) !important; outline: 1px solid var(--primary); outline-offset: -1px;
+}
+.nv-sheet-info { font-size: 0.72rem; color: var(--text-muted); align-self: center; margin-left: auto; }
+.nv-sheet-info + .nv-sheet-copy { margin-left: 0; }
+.nv-sheet-note { margin-top: 6px; font-size: 0.72rem; color: var(--text-muted); }
 .nv-attach-menu {
     position: fixed; z-index: 60; min-width: 200px; max-width: 260px;
     padding: 6px; border-radius: 12px; display: none;
@@ -40219,6 +40272,7 @@ kbd {
         <input type="file" id="nvImportFile" accept="application/json,.json" hidden>
         <input type="file" id="nvAttachInput" accept="image/*" multiple hidden>
         <input type="file" id="nvPdfInput" accept="application/pdf" multiple hidden>
+        <input type="file" id="nvFileInput" accept=".xlsx,.xlsm,.xlsb,.xls,.csv,.ods,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" multiple hidden>
     </aside>
 
     <!-- ── Main: library ⇄ document ── -->
@@ -40368,6 +40422,7 @@ kbd {
                         <button class="nv-tb nv-tb-txt" type="button" data-cmd="wikilink" data-tip="Link to note">[[ ]]</button>
                         <button class="nv-tb" type="button" data-cmd="image" data-tip="Image"><i class="fa-solid fa-image"></i></button>
                         <button class="nv-tb" type="button" data-cmd="pdf" data-tip="PDF"><i class="fa-solid fa-file-pdf"></i></button>
+                        <button class="nv-tb" type="button" data-cmd="file" data-tip="Excel / spreadsheet"><i class="fa-solid fa-file-excel"></i></button>
                         <span class="nv-tsep" aria-hidden="true"></span>
                         <button class="nv-tb" type="button" data-cmd="codeblock" data-tip="Code block"><i class="fa-solid fa-file-code"></i></button>
                         <button class="nv-tb" type="button" data-cmd="table" data-tip="Table"><i class="fa-solid fa-table"></i></button>
@@ -40558,7 +40613,7 @@ kbd {
             <div class="nv-stor-tabs" role="tablist">
                 <button class="nv-stor-tab" data-stor-tab="overview" type="button" role="tab">Overview</button>
                 <button class="nv-stor-tab" data-stor-tab="images" type="button" role="tab">Images</button>
-                <button class="nv-stor-tab" data-stor-tab="files" type="button" role="tab">Files/PDFs</button>
+                <button class="nv-stor-tab" data-stor-tab="files" type="button" role="tab">Files</button>
             </div>
             <span class="nv-grow"></span>
             <button class="nv-btn nv-btn-ghost" id="nvStorRefresh" type="button"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
@@ -41340,7 +41395,26 @@ kbd {
     // against the same `attachments` store, save the Blob untouched, verify it reads back.
     // Kept in the same store/id-space as images (content-addressed by SHA-256) so ref-counting,
     // storage accounting and backup/restore all work on PDFs for free, with no code of their own.
-    async function ingestPdfAttachment(file) {
+    // Spreadsheets (.xlsx/.xls/.csv…) ride the same pipeline as PDFs: stored byte-for-byte,
+    // content-addressed, ref-counted, backed up. The MIME is derived from the extension because
+    // browsers often report an empty file.type for Excel files.
+    const SHEET_EXT = {
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+        xlsb: 'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+        xls: 'application/vnd.ms-excel',
+        csv: 'text/csv',
+        ods: 'application/vnd.oasis.opendocument.spreadsheet'
+    };
+    function sheetMimeOf(file) {
+        if (!file) return null;
+        const m = /\.([a-z0-9]+)$/i.exec(file.name || '');
+        if (m && SHEET_EXT[m[1].toLowerCase()]) return SHEET_EXT[m[1].toLowerCase()];
+        return Object.values(SHEET_EXT).indexOf(file.type) !== -1 ? file.type : null;
+    }
+    function isSheetMime(mime) { return Object.values(SHEET_EXT).indexOf(mime) !== -1; }
+
+    async function ingestPdfAttachment(file, mimeOverride, defaultName) {
         const hash = await hashBlob(file);
         const existing = await dbFindAttachmentByHash(hash);
         if (existing) {
@@ -41353,14 +41427,14 @@ kbd {
             S.attachmentCache.delete(existing.id);
         }
         const rec = {
-            id: 'att_' + hash.slice(0, 24), hash, blob: file, mime: 'application/pdf',
-            size: file.size, filename: (file.name || 'document.pdf').trim() || 'document.pdf', createdAt: Date.now()
+            id: 'att_' + hash.slice(0, 24), hash, blob: file, mime: mimeOverride || 'application/pdf',
+            size: file.size, filename: (file.name || defaultName || 'document.pdf').trim() || defaultName || 'document.pdf', createdAt: Date.now()
         };
         await dbPutAttachment(rec);
         const verified = await dbGetAttachment(rec.id);
         if (!verified || !(verified.blob instanceof Blob) || verified.blob.size <= 0) {
             await dbDeleteAttachment(rec.id).catch(() => {});
-            throw attachError('The PDF could not be read back from browser storage. If this app is opened as a local file (file://), open it from a local web server instead.');
+            throw attachError('The file could not be read back from browser storage. If this app is opened as a local file (file://), open it from a local web server instead.');
         }
         S.attachmentCache.set(rec.id, verified);
         return verified;
@@ -41368,7 +41442,8 @@ kbd {
 
     async function ingestAttachment(file) {
         const isPdf = file && file.type === 'application/pdf';
-        if (!file || !(/^image\//.test(file.type) || isPdf)) throw attachError('Only images and PDFs can be attached right now.');
+        const sheetMime = sheetMimeOf(file);
+        if (!file || !(/^image\//.test(file.type) || isPdf || sheetMime)) throw attachError('Only images, PDFs and spreadsheets (.xlsx, .xls, .csv) can be attached.');
         if (file.size > ATTACH_MAX_SOURCE_BYTES) throw attachError('That file is too large to attach (25\u202fMB limit).');
 
         // Storage guard — checked here (not just in the UI) so drag/drop and paste both respect it.
@@ -41379,6 +41454,7 @@ kbd {
         } catch (e) { if (e && e.__attach) throw e; /* stats call itself failing shouldn't block a paste */ }
 
         if (isPdf) return ingestPdfAttachment(file);
+        if (sheetMime) return ingestPdfAttachment(file, sheetMime, 'spreadsheet.xlsx');
 
         const encoded = await encodeAttachmentImage(file).catch(() => null);
         if (!encoded) throw attachError('Could not read or encode that image.');
@@ -43236,6 +43312,8 @@ kbd {
             S.attachObjectUrls.push(url);
             if (rec.mime === 'application/pdf') {
                 renderPdfEmbed(a, rec, url);
+            } else if (isSheetMime(rec.mime)) {
+                renderFileCard(a, rec, url);
             } else {
                 // Any other non-image attachment reached via a plain link — just point it at a
                 // working blob: URL rather than leaving the inert "attachment://…" scheme in place.
@@ -43267,6 +43345,266 @@ kbd {
         const frame = wrap.querySelector('.nv-pdf-embed-frame');
         frame.title = name;
         frame.src = url;
+        wrap.querySelector('.nv-pdf-embed-more').addEventListener('click', (e) => {
+            e.preventDefault();
+            openAttachMenu(rec, e.currentTarget);
+        });
+        anchor.replaceWith(wrap);
+    }
+
+    /* ── Spreadsheet preview: SheetJS is fetched lazily on the first "Preview" click (never at
+       page load), reads only the first rows of each sheet, and renders through textContent so
+       cell contents can never inject markup. Read-only — the stored file is never modified. ── */
+    const SHEETJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    const SHEET_PREVIEW_ROWS = 200, SHEET_PREVIEW_COLS = 40;
+    let sheetJsPromise = null;
+    function loadSheetJs() {
+        if (window.XLSX) return Promise.resolve(window.XLSX);
+        if (!sheetJsPromise) sheetJsPromise = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = SHEETJS_URL; s.async = true;
+            s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('reader unavailable'));
+            s.onerror = () => { sheetJsPromise = null; s.remove(); reject(new Error('couldn\u2019t load the spreadsheet reader (offline?)')); };
+            document.head.appendChild(s);
+        });
+        return sheetJsPromise;
+    }
+    function sheetToTable(X, ws, onSel) {
+        const scroll = document.createElement('div');
+        scroll.className = 'nv-sheet-scroll';
+        const holder = document.createElement('div');
+        if (!ws || !ws['!ref']) { scroll.textContent = 'This sheet is empty.'; scroll.style.padding = '10px'; holder.appendChild(scroll); return holder; }
+        const rng = X.utils.decode_range(ws['!ref']);
+        const full = ws['!fullref'] ? X.utils.decode_range(ws['!fullref']) : rng;
+        const lastC = Math.min(rng.e.c, rng.s.c + SHEET_PREVIEW_COLS - 1);
+        const lastR = Math.min(rng.e.r, rng.s.r + SHEET_PREVIEW_ROWS - 1);
+        const rows = X.utils.sheet_to_json(ws, {
+            header: 1, raw: false, defval: '', blankrows: false,
+            range: X.utils.encode_range({ s: rng.s, e: { r: lastR, c: lastC } })
+        });
+        const width = lastC - rng.s.c + 1;
+        const table = document.createElement('table');
+        const grid = [];
+        const thead = document.createElement('thead'), tbody = document.createElement('tbody');
+        rows.forEach((row, ri) => {
+            const tr = document.createElement('tr');
+            const gr = []; grid.push(gr);
+            for (let c = 0; c < width; c++) {
+                const cell = document.createElement(ri === 0 ? 'th' : 'td');
+                cell.dataset.r = ri; cell.dataset.c = c; gr.push(cell);
+                const v = row[c];
+                cell.textContent = v == null ? '' : String(v);
+                if (cell.textContent) cell.title = cell.textContent;
+                tr.appendChild(cell);
+            }
+            (ri === 0 ? thead : tbody).appendChild(tr);
+        });
+        table.append(thead, tbody);
+        scroll.appendChild(table);
+        holder.appendChild(scroll);
+        // Cell-range selection: mouse drag or shift-click; on touch, tap one cell then another.
+        // Ctrl/Cmd+C copies the range as tab-separated text (which pastes into a note as a table).
+        scroll.tabIndex = 0;
+        let sel = null, anchor = null, dragging = false, ptype = 'mouse';
+        const paint = (on) => { if (sel) for (let r = sel.r1; r <= sel.r2; r++) for (let c = sel.c1; c <= sel.c2; c++) if (grid[r] && grid[r][c]) grid[r][c].classList.toggle('nv-sel', on); };
+        const setSel = (a, b) => {
+            paint(false);
+            sel = a && b ? { r1: Math.min(a.r, b.r), r2: Math.max(a.r, b.r), c1: Math.min(a.c, b.c), c2: Math.max(a.c, b.c) } : null;
+            paint(true);
+            holder.sel = sel;
+            if (onSel) onSel(sel);
+        };
+        const cellAt = (e) => {
+            const t = e.target && e.target.closest ? e.target.closest('th,td') : null;
+            return t && table.contains(t) ? { r: +t.dataset.r, c: +t.dataset.c } : null;
+        };
+        holder.sel = null;
+        holder.clearSel = () => { anchor = null; setSel(null, null); };
+        // Selected cells' text; when the range doesn't start at the sheet's header row, that row is prepended.
+        holder.selectedRows = (withHeader) => {
+            if (!sel) return null;
+            const pick = (r) => grid[r].slice(sel.c1, sel.c2 + 1).map((x) => x.textContent);
+            const out = [];
+            if (withHeader && sel.r1 > 0) out.push(pick(0));
+            for (let r = sel.r1; r <= sel.r2; r++) out.push(pick(r));
+            return out;
+        };
+        table.addEventListener('pointerdown', (e) => {
+            ptype = e.pointerType || 'mouse';
+            if (ptype !== 'mouse' || e.button !== 0) return;
+            const cell = cellAt(e); if (!cell) return;
+            e.preventDefault();
+            scroll.focus({ preventScroll: true });
+            if (e.shiftKey && anchor) setSel(anchor, cell); else { anchor = cell; setSel(cell, cell); }
+            dragging = true;
+            document.addEventListener('pointerup', () => { dragging = false; }, { once: true });
+        });
+        table.addEventListener('pointerover', (e) => { if (!dragging) return; const cell = cellAt(e); if (cell) setSel(anchor, cell); });
+        table.addEventListener('click', (e) => {
+            if (ptype === 'mouse') return;
+            const cell = cellAt(e); if (!cell) return;
+            const single = sel && sel.r1 === sel.r2 && sel.c1 === sel.c2;
+            if (single && anchor) setSel(anchor, cell); else { anchor = cell; setSel(cell, cell); }
+        });
+        scroll.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sel) { e.stopPropagation(); holder.clearSel(); } });
+        scroll.addEventListener('copy', (e) => {
+            const rowsSel = holder.selectedRows(false);
+            if (!rowsSel || !e.clipboardData) return;
+            e.clipboardData.setData('text/plain', rowsSel.map((r) => r.join('\t')).join('\n'));
+            e.preventDefault();
+        });
+        const totR = full.e.r - full.s.r + 1, totC = full.e.c - full.s.c + 1;
+        if (rows.length < totR || width < totC) {
+            const note = document.createElement('div');
+            note.className = 'nv-sheet-note';
+            note.textContent = 'Showing the first ' + rows.length + ' rows \u00d7 ' + width + ' columns of ' + totR + ' \u00d7 ' + totC + '. Download the file to see everything.';
+            holder.appendChild(note);
+        }
+        return holder;
+    }
+    function sheetRowsOf(X, ws) {   // same window the preview shows, as plain string rows
+        if (!ws || !ws['!ref']) return [];
+        const rng = X.utils.decode_range(ws['!ref']);
+        const lastC = Math.min(rng.e.c, rng.s.c + SHEET_PREVIEW_COLS - 1);
+        const lastR = Math.min(rng.e.r, rng.s.r + SHEET_PREVIEW_ROWS - 1);
+        return X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: false,
+            range: X.utils.encode_range({ s: rng.s, e: { r: lastR, c: lastC } }) });
+    }
+    // "Insert into note": writes the sheet as a Markdown table into the note's source, directly
+    // below the line holding this file's card (the card only exists in Read mode, where there is
+    // no visible caret). Same path as ticking a task box: edit S.note.markdown, sync the
+    // textarea, mark dirty, re-render. One-step Undo from the toast.
+    function insertSheetTableIntoNote(card, md, truncated) {
+        const n = S.note;
+        if (!n || S.viewRev || !el.read.contains(card)) { toast('Open the note in Read mode (not a version preview) to insert a table.'); return; }
+        const before = n.markdown, marker = 'attachment://' + card.dataset.att;
+        const k = Array.from(el.read.querySelectorAll('.nv-file-card')).filter((c) => c.dataset.att === card.dataset.att).indexOf(card);
+        const lines = before.split('\n');
+        let inFence = false, seen = 0, at = -1, off = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const l = lines[i];
+            if (/^\s*(`{3,}|~{3,})/.test(l)) inFence = !inFence;
+            else if (!inFence && l.indexOf(marker) !== -1) { if (seen === k) { at = off + l.length; break; } seen++; }
+            off += l.length + 1;
+        }
+        if (at === -1) at = before.length;   // link not found (unusual markup): append at the end
+        const after = before.slice(at);
+        const newMd = before.slice(0, at) + '\n\n' + md + (after === '' || after.startsWith('\n\n') ? '' : '\n') + after;
+        const sc = el.docScroll.scrollTop;
+        n.markdown = newMd; el.src.value = newMd;
+        markDirty();
+        renderInto(el.read, newMd);
+        el.docScroll.scrollTop = sc;
+        toast(truncated ? 'Table inserted below the file (first 200 rows \u00d7 40 columns).' : 'Table inserted below the file.', 'Undo', () => {
+            if (S.note !== n || n.markdown !== newMd) { toast('The note changed since — use version history to go back.'); return; }
+            n.markdown = before; el.src.value = before;
+            markDirty();
+            renderInto(el.read, before);
+        });
+    }
+    async function fillSheetPreview(panel, rec) {
+        panel.textContent = 'Loading preview\u2026';
+        try {
+            const X = await loadSheetJs();
+            const opts = { sheetRows: SHEET_PREVIEW_ROWS + 1, cellDates: true };
+            const wb = rec.mime === 'text/csv'
+                ? X.read(await rec.blob.text(), Object.assign({ type: 'string' }, opts))     // text() keeps UTF-8 intact
+                : X.read(await rec.blob.arrayBuffer(), Object.assign({ type: 'array' }, opts));
+            const names = wb.SheetNames || [];
+            if (!names.length) throw new Error('no sheets found');
+            panel.textContent = '';
+            const tabs = document.createElement('div');
+            tabs.className = 'nv-sheet-tabs';
+            tabs.setAttribute('role', 'tablist');
+            const body = document.createElement('div');
+            let cur = 0, tbl = null;
+            const bar = document.createElement('div');
+            bar.className = 'nv-sheet-bar';
+            const copy = document.createElement('button');
+            copy.type = 'button'; copy.className = 'nv-sheet-copy'; copy.title = 'Copy this sheet as a Markdown table';
+            copy.innerHTML = '<i class="fa-solid fa-copy" aria-hidden="true"></i> <span>Copy as Markdown</span>';
+            copy.addEventListener('click', async () => {
+                const md = rowsToMarkdownTable(currentRows());
+                if (!md) { toast(tbl && tbl.sel ? 'Select at least 2 columns to copy as a table.' : 'This sheet has no table to copy (needs 2+ rows and 2+ columns).'); return; }
+                try { await navigator.clipboard.writeText(md); toast(tbl && tbl.sel ? 'Selection copied as a Markdown table.' : 'Markdown table copied \u2014 paste it into any note.'); }
+                catch (err) { toast('Couldn\u2019t access the clipboard.'); }
+            });
+            // A selected range wins; the sheet's header row is added when the range starts below it.
+            const currentRows = () => (tbl && tbl.selectedRows && tbl.selectedRows(true)) || sheetRowsOf(X, wb.Sheets[names[cur]]);
+            const info = document.createElement('span');
+            info.className = 'nv-sheet-info';
+            const ins = document.createElement('button');
+            ins.type = 'button'; ins.className = 'nv-sheet-copy'; ins.title = 'Insert this sheet as a Markdown table below this file in the note';
+            ins.innerHTML = '<i class="fa-solid fa-table-list" aria-hidden="true"></i> <span>Insert into note</span>';
+            ins.addEventListener('click', () => {
+                const ws = wb.Sheets[names[cur]];
+                const md = rowsToMarkdownTable(currentRows());
+                if (!md) { toast(tbl && tbl.sel ? 'Select at least 2 columns to insert as a table.' : 'This sheet has no table to insert (needs 2+ rows and 2+ columns).'); return; }
+                insertSheetTableIntoNote(panel.closest('.nv-file-card'), md, !(tbl && tbl.sel) && !!(ws && ws['!fullref']) || (ws && ws['!ref'] && X.utils.decode_range(ws['!ref']).e.c >= SHEET_PREVIEW_COLS));
+            });
+            const btns = names.map((n, i) => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.className = 'nv-sheet-tab'; b.textContent = n; b.title = n;
+                b.setAttribute('role', 'tab');
+                b.addEventListener('click', () => show(i));
+                tabs.appendChild(b);
+                return b;
+            });
+            const show = (i) => {
+                cur = i;
+                btns.forEach((b, j) => b.setAttribute('aria-selected', j === i ? 'true' : 'false'));
+                body.textContent = '';
+                tbl = sheetToTable(X, wb.Sheets[names[i]], updateBar);
+                body.appendChild(tbl);
+                updateBar(null);
+            };
+            const updateBar = (s) => {
+                info.textContent = s ? (s.r2 - s.r1 + 1) + ' \u00d7 ' + (s.c2 - s.c1 + 1) + ' selected \u00b7 Esc to clear' : 'Drag or shift-click to select cells';
+                copy.querySelector('span').textContent = s ? 'Copy selection' : 'Copy as Markdown';
+                ins.querySelector('span').textContent = s ? 'Insert selection' : 'Insert into note';
+            };
+            if (names.length > 1) bar.appendChild(tabs);
+            bar.append(info, ins, copy);
+            panel.append(bar, body);
+            show(0);
+        } catch (e) {
+            panel.textContent = 'Couldn\u2019t preview this file' + (e && e.message ? ' (' + e.message + ')' : '') + '. You can still download it.';
+            throw e;
+        }
+    }
+
+    // Replaces a `[label](attachment://id)` anchor for a spreadsheet with a compact card:
+    // icon, filename, type + size, a Download button and the shared "…" menu (Save as / Delete).
+    function renderFileCard(anchor, rec, url) {
+        const name = (rec.filename || anchor.textContent || 'spreadsheet').replace(/^(\uD83D\uDCC4|\uD83D\uDCCA)\s*/, '');
+        const ext = ((/\.([a-z0-9]+)$/i.exec(name) || [])[1] || extFromMime(rec.mime)).toUpperCase();
+        const wrap = document.createElement('div');
+        wrap.className = 'nv-file-card';
+        wrap.dataset.att = rec.id;
+        wrap.innerHTML =
+            '<i class="fa-solid ' + (/csv$/i.test(ext) ? 'fa-file-csv' : 'fa-file-excel') + ' nv-file-card-ico" aria-hidden="true"></i>'
+            + '<div class="nv-file-card-txt"><span class="nv-file-card-name"></span><span class="nv-file-card-meta"></span></div>'
+            + '<button type="button" class="nv-file-card-pv" aria-expanded="false"><i class="fa-solid fa-table" aria-hidden="true"></i><span>Preview</span></button>'
+            + '<a class="nv-file-card-dl" role="button"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>'
+            + '<button type="button" class="nv-pdf-embed-more" aria-label="File options" title="File options"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>';
+        wrap.querySelector('.nv-file-card-name').textContent = name;
+        wrap.querySelector('.nv-file-card-name').title = name;
+        wrap.querySelector('.nv-file-card-meta').textContent = ext + ' \u00b7 ' + fmtBytes(rec.size);
+        const dl = wrap.querySelector('.nv-file-card-dl');
+        dl.href = url; dl.download = name;
+        const pv = wrap.querySelector('.nv-file-card-pv');
+        const panel = document.createElement('div');
+        panel.className = 'nv-sheet-prev';
+        panel.hidden = true;
+        wrap.appendChild(panel);
+        pv.addEventListener('click', () => {
+            const open = panel.hidden;
+            panel.hidden = !open;
+            pv.classList.toggle('nv-on', open);
+            pv.setAttribute('aria-expanded', open ? 'true' : 'false');
+            pv.querySelector('span').textContent = open ? 'Hide' : 'Preview';
+            if (open && !panel.dataset.ready) { panel.dataset.ready = '1'; fillSheetPreview(panel, rec).catch(() => { delete panel.dataset.ready; }); }
+        });
         wrap.querySelector('.nv-pdf-embed-more').addEventListener('click', (e) => {
             e.preventDefault();
             openAttachMenu(rec, e.currentTarget);
@@ -43306,7 +43644,7 @@ kbd {
         const noun = isImage ? 'image' : 'file';
         menu.innerHTML =
             '<div class="nv-attach-meta">' + esc((rec.filename ? rec.filename + ' \u00b7 ' : '') + dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || noun) + usageLine) + '</div>'
-            + '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>'
+            + (isSheetMime(rec.mime) ? '' : '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>')
             + (isImage ? '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>' : '')
             + '<button type="button" class="nv-act" data-act="save"><i class="fa-solid fa-download" aria-hidden="true"></i> Save as…</button>'
             + (canDelete ? '<button type="button" class="nv-act nv-danger" data-act="delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>' : '');
@@ -44552,6 +44890,8 @@ kbd {
     }
     const yamlStr = (s) => (/^[\w][\w .\-\/]*$/.test(s) && !/\s$/.test(s)) ? s : JSON.stringify(s);
     function extFromMime(mime) {
+        if (mime === 'application/pdf') return 'pdf';
+        if (isSheetMime(mime)) return Object.keys(SHEET_EXT).find((k) => SHEET_EXT[k] === mime);
         const m = /^image\/([a-z0-9.+-]+)/i.exec(mime || '');
         if (!m) return 'bin';
         return m[1].split('+')[0] === 'jpeg' ? 'jpg' : m[1].split('+')[0];
@@ -45404,6 +45744,7 @@ kbd {
         quote: toggleQuote, link: insertLink, wikilink: insertWikilink,
         image: () => { if (el.attachInput) el.attachInput.click(); },
         pdf: () => { if (el.pdfInput) el.pdfInput.click(); },
+        file: () => { if (el.fileInput) el.fileInput.click(); },
         codeblock: toggleCodeBlock,
         table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting,
         extract: extractSelectionToNote
@@ -45675,11 +46016,12 @@ kbd {
         const ta = el.src;
         for (const file of files) {
             const isPdf = file.type === 'application/pdf';
+            const isSheet = !isPdf && !!sheetMimeOf(file);
             const jobId = 'j' + (++attachJobSeq) + Date.now().toString(36);
             // A PDF is inserted as a plain markdown link (not `![]()`) — a browser can't decode a
             // PDF blob as an <img>, so it gets its own inline viewer at render time instead (see
             // resolveAttachments/renderPdfEmbed) rather than pretending to be a picture.
-            const placeholder = isPdf ? '[Uploading…](attachment-pending:' + jobId + ')' : '![Uploading…](attachment-pending:' + jobId + ')';
+            const placeholder = (isPdf || isSheet) ? '[Uploading…](attachment-pending:' + jobId + ')' : '![Uploading…](attachment-pending:' + jobId + ')';
             const s = ta.selectionStart, en = ta.selectionEnd;
             replaceRange(s, en, placeholder, s + placeholder.length);
             markDirty();
@@ -45689,6 +46031,9 @@ kbd {
                 if (isPdf) {
                     const label = (file.name || rec.filename || 'document.pdf').trim() || 'document.pdf';
                     md = '[\uD83D\uDCC4 ' + label + '](attachment://' + rec.id + ')';
+                } else if (isSheet) {
+                    const label = (file.name || rec.filename || 'spreadsheet').replace(/[\[\]]/g, '').trim() || 'spreadsheet';
+                    md = '[\uD83D\uDCCA ' + label + '](attachment://' + rec.id + ')';
                 } else {
                     const alt = (file.name || 'image').replace(/\.[a-z0-9]+$/i, '').trim() || 'image';
                     md = '![' + alt + '](attachment://' + rec.id + ')';
@@ -45703,8 +46048,122 @@ kbd {
             if (err) toast(err.message || 'Could not attach that file.');
         }
     }
+    /* ── Paste a table (Excel / Google Sheets / a web page) → Markdown table ──
+       Reads text/html first (exact cell text, colspan, in-cell line breaks), falling back to the
+       tab-separated text/plain that every spreadsheet also puts on the clipboard. A single cell,
+       a single row/column, or tab-indented code is left alone and pastes normally. ── */
+    let plainPasteOnce = false;   // Ctrl/Cmd+Shift+V = "paste as plain text", skip conversion once
+    function cleanTableCell(v) {
+        return String(v == null ? '' : v).normalize('NFC').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ')
+            .replace(/\u0001/g, '<br>').replace(/\s*<br>\s*/g, '<br>').replace(/^(<br>)+|(<br>)+$/g, '')
+            .replace(/\|/g, '\\|').trim();
+    }
+    function parseTsv(text) {
+        const rows = []; let row = [], cell = '', q = false;
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            if (q) {
+                if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+                else if (ch === '\n') cell += '\u0001';
+                else if (ch !== '\r') cell += ch;
+            } else if (ch === '"' && cell === '') q = true;
+            else if (ch === '\t') { row.push(cell); cell = ''; }
+            else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); cell = ''; rows.push(row); row = []; }
+            else cell += ch;
+        }
+        if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+        return rows;
+    }
+    function rowsFromHtml(html) {
+        let doc;
+        try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return null; }
+        const tbl = doc.querySelector('table');
+        if (!tbl) return null;
+        // Only treat it as "a table paste" when the table is (nearly) all of what was copied —
+        // otherwise a web page with a table plus paragraphs would silently lose the paragraphs.
+        const bodyLen = (doc.body.textContent || '').replace(/\s+/g, '').length;
+        const tblLen = (tbl.textContent || '').replace(/\s+/g, '').length;
+        if (!tblLen || tblLen < bodyLen * 0.9) return null;
+        const rows = [];
+        tbl.querySelectorAll('tr').forEach((tr) => {
+            if (tr.closest('table') !== tbl) return;   // skip nested tables' rows
+            const cells = [];
+            Array.from(tr.children).forEach((c) => {
+                if (!/^(TD|TH)$/.test(c.tagName)) return;
+                const clone = c.cloneNode(true);
+                clone.querySelectorAll('br').forEach((b) => b.replaceWith('\u0001'));
+                cells.push(clone.textContent);
+                for (let k = 1; k < (parseInt(c.getAttribute('colspan'), 10) || 1); k++) cells.push('');
+            });
+            rows.push(cells);
+        });
+        return rows;
+    }
+    function rowsToMarkdownTable(rows) {
+        const n = Math.max(0, ...rows.map((r) => r.length));
+        rows = rows.map((r) => Array.from({ length: n }, (_, i) => cleanTableCell(r[i])));
+        rows = rows.filter((r) => r.some(Boolean));
+        if (rows.length < 2 || n < 2) return null;
+        const keep = [];
+        for (let c = 0; c < n; c++) if (rows.some((r) => r[c])) keep.push(c);
+        if (keep.length < 2) return null;
+        rows = rows.map((r) => keep.map((c) => r[c]));
+        const numRe = /^[-+(]?[$€£¥₫]?\s?\d[\d.,\s]*%?\)?$/;
+        const align = keep.map((_, c) => {
+            const vals = rows.slice(1).map((r) => r[c]).filter(Boolean);
+            return vals.length && vals.every((v) => numRe.test(v)) ? '---:' : '---';
+        });
+        // Pad cells so the columns line up in the raw (Edit) view; capped so one long cell can't
+        // stretch every other row. Renders identically — Markdown ignores the extra spaces.
+        const w = keep.map((_, c) => Math.min(30, Math.max(3, ...rows.map((r) => r[c].length))));
+        const pad = (t, c) => align[c] === '---:' ? t.padStart(w[c]) : t.padEnd(w[c]);
+        const line = (r) => '| ' + r.map(pad).join(' | ') + ' |';
+        const sep = '| ' + align.map((a, c) => a === '---:' ? '-'.repeat(w[c] - 1) + ':' : '-'.repeat(w[c])).join(' | ') + ' |';
+        return [line(rows[0]), sep].concat(rows.slice(1).map(line)).join('\n');
+    }
+    function tableMarkdownFromClipboard(cd) {
+        if (!cd) return null;
+        const html = cd.getData('text/html') || '';
+        const plain = cd.getData('text/plain') || '';
+        let rows = /<table[\s>]/i.test(html) ? rowsFromHtml(html) : null;
+        if (!rows) {
+            if (plain.indexOf('\t') === -1) return null;
+            rows = parseTsv(plain.replace(/(\r?\n)+$/, ''));
+            const widths = new Set(rows.map((r) => r.length));
+            if (rows.length < 2 || widths.size !== 1 || rows[0].length < 2) return null;   // ragged = probably code
+        }
+        return rowsToMarkdownTable(rows);
+    }
+    function insertPastedTable(md, plain) {
+        const ta = el.src, v = ta.value, s = ta.selectionStart, en = ta.selectionEnd;
+        const before = v.slice(0, s), after = v.slice(en);
+        if (((before.match(/^\s*(```|~~~)/gm) || []).length) % 2 === 1) return false;   // inside a code fence: paste as-is
+        const pre = before === '' || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+        const suf = after === '' ? '\n' : after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+        const text = pre + md + suf;
+        replaceRange(s, en, text, s + text.length);
+        markDirty();
+        toast('Pasted as a table', 'Paste as text', () => {
+            ta.focus();
+            try { document.execCommand('undo'); } catch (err) { /* fall through */ }
+            const p = ta.selectionStart;
+            replaceRange(p, p, plain, p + plain.length);
+            markDirty();
+        });
+        return true;
+    }
     async function onEditorPaste(e) {
         const ta = el.src, s = ta.selectionStart, en = ta.selectionEnd;
+        const forcePlain = plainPasteOnce; plainPasteOnce = false;
+        if (!forcePlain) {
+            const tableMd = tableMarkdownFromClipboard(e.clipboardData);
+            if (tableMd) {   // checked before images: Excel also puts a screenshot of the range on the clipboard
+                e.preventDefault();
+                if (insertPastedTable(tableMd, e.clipboardData.getData('text/plain'))) return;
+                const p = ta.selectionStart; replaceRange(p, ta.selectionEnd, e.clipboardData.getData('text/plain'), p + e.clipboardData.getData('text/plain').length); markDirty();
+                return;
+            }
+        }
         const imgFiles = getImageFilesFromClipboard(e.clipboardData);
         if (imgFiles.length) { e.preventDefault(); insertAttachments(imgFiles); return; }
         const t = ((e.clipboardData && e.clipboardData.getData('text/plain')) || '').trim();
@@ -46661,10 +47120,10 @@ kbd {
     }
     function storFileRowHtml(it) {
         const unused = !it.noteIds.length && !it.revIds.length;
-        const name = it.rec.filename || (it.rec.id + '.pdf');
+        const name = it.rec.filename || (it.rec.id + '.' + extFromMime(it.rec.mime));
         const usage = unused ? '' : (' \u00b7 ' + (it.noteIds.length ? 'Used in ' + it.noteIds.length + (it.noteIds.length === 1 ? ' note' : ' notes') : 'In version history only'));
         return '<button type="button" class="nv-stor-filerow">'
-            + '<span class="nv-stor-fileicon"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i></span>'
+            + '<span class="nv-stor-fileicon"><i class="fa-solid ' + (isSheetMime(it.rec.mime) ? 'fa-file-excel' : 'fa-file-pdf') + '" aria-hidden="true"></i></span>'
             + '<span class="nv-stor-filebody">'
             + '<span class="nv-stor-filename">' + esc(name) + '</span>'
             + '<span class="nv-stor-filemeta">' + esc(fmtBytes(it.rec.size)) + usage + '</span>'
@@ -46712,7 +47171,7 @@ kbd {
         }
         if (S.stor.tab !== 'files') return;   // the panel moved on while this was loading
         if (!items.length) {
-            el.storBody.innerHTML = storFilesToolbarHtml() + '<div class="nv-stor-unsupported"><i class="fa-regular fa-file-pdf" aria-hidden="true"></i>No PDFs attached to any note yet.</div>';
+            el.storBody.innerHTML = storFilesToolbarHtml() + '<div class="nv-stor-unsupported"><i class="fa-regular fa-file-pdf" aria-hidden="true"></i>No PDFs or spreadsheets attached to any note yet.</div>';
             wireStorFilesToolbar();
             return;
         }
@@ -46870,7 +47329,7 @@ kbd {
         el = {
             fab: $('nvFab'), overlay: $('nvOverlay'), app: $('nvApp'), scrim: $('nvScrim'),
             side: $('nvSide'), sideScroll: $('nvSideScroll'), search: $('nvSearch'), clear: $('nvClear'),
-            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), attachInput: $('nvAttachInput'), pdfInput: $('nvPdfInput'),
+            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), attachInput: $('nvAttachInput'), pdfInput: $('nvPdfInput'), fileInput: $('nvFileInput'),
             themeBtn: $('nvThemeBtn'), themeMenu: $('nvThemeMenu'),
             lib: $('nvLib'), libScroll: $('nvLibScroll'), libTitle: $('nvLibTitle'), libSub: $('nvLibSub'), list: $('nvList'),
             docView: $('nvDocView'), docScroll: $('nvDocScroll'), title: $('nvTitle'), docMeta: $('nvDocMeta'),
@@ -47127,10 +47586,13 @@ kbd {
         });
         el.src.addEventListener('keydown', onEditorKey);
         el.src.addEventListener('paste', onEditorPaste);
+        el.src.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && String(e.key).toLowerCase() === 'v') { plainPasteOnce = true; setTimeout(() => { plainPasteOnce = false; }, 800); }
+        });
         el.src.addEventListener('dragover', (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) e.preventDefault(); });
         el.src.addEventListener('drop', (e) => {
             const files = e.dataTransfer && e.dataTransfer.files
-                ? Array.from(e.dataTransfer.files).filter((f) => /^image\//.test(f.type) || f.type === 'application/pdf') : [];
+                ? Array.from(e.dataTransfer.files).filter((f) => /^image\//.test(f.type) || f.type === 'application/pdf' || !!sheetMimeOf(f)) : [];
             if (!files.length) return;
             e.preventDefault();
             insertAttachments(files);   // inserts at the current selection — dropping doesn't move the caret in a plain <textarea>
@@ -47147,6 +47609,13 @@ kbd {
                 const files = Array.from(el.pdfInput.files || []);
                 if (files.length) insertAttachments(files);
                 el.pdfInput.value = '';
+            });
+        }
+        if (el.fileInput) {
+            el.fileInput.addEventListener('change', () => {
+                const files = Array.from(el.fileInput.files || []);
+                if (files.length) insertAttachments(files);
+                el.fileInput.value = '';
             });
         }
         ['keyup', 'mouseup', 'input', 'focus'].forEach((ev) => el.src.addEventListener(ev, () => { refreshToolbar(); checkWlTrigger(); }));
