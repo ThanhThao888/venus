@@ -43015,13 +43015,34 @@ kbd {
                           callouts) are flagged "Same source region" even when titles/text differ.
        Not included: embedding / semantic matching (would need a model download — a future "deep scan"). */
     /*DUP2-PURE-START*/
-    const DUP_HIGH = 85, DUP_REVIEW = 70, DUP_MAX_TOKENS = 8000, DUP_KEY = 100000;
+    const DUP_HIGH = 85, DUP_REVIEW = 70, DUP_MAX_TOKENS = 200000, DUP_K = 8192, DUP_WORDS = 20000, DUP_KEY = 100000;   // K = bottom-k sketch size: a note up to 8192 distinct shingles is compared exactly, a bigger one by its 8192 smallest hashes
     function dupNorm(md) {
         return String(md || '').normalize('NFC').replace(/\r\n?/g, '\n')
             .replace(/^\uFEFF?---\n[\s\S]*?\n---\n/, '').replace(SOURCE_HEADER_RE, '')
             .replace(/attachment:\/\/[A-Za-z0-9_-]+/g, 'attachment://').replace(/\s+/g, ' ').trim();
     }
-    const dupTokens = (norm) => fold(norm).replace(/<[^>]+>/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean).slice(0, DUP_MAX_TOKENS);
+    // Scripts written without spaces. A \p{M} (Thai/Indic vowel + tone signs) is part of its word, and a Han/kana/Thai run must be cut into words.
+    const DUP_NOSPACE = /([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u30fc\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]+)/u;
+    const dupSeg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+    function dupCut(run) {
+        if (dupSeg) { const o = []; for (const g of dupSeg.segment(run)) if (g.isWordLike) o.push(g.segment); if (o.length) return o; }
+        const cs = Array.from(run); if (cs.length < 2) return [run];       // no Segmenter: overlapping character pairs
+        const o = []; for (let i = 0; i + 1 < cs.length; i++) o.push(cs[i] + cs[i + 1]); return o;
+    }
+    function dupTokens(norm) {
+        const out = [];
+        for (const part of fold(norm).replace(/<[^>]+>/g, ' ').split(/[^\p{L}\p{M}\p{N}]+/u)) {
+            if (!part) continue;
+            const bits = part.split(DUP_NOSPACE);
+            for (let i = 0; i < bits.length; i++) {
+                if (!bits[i]) continue;
+                if (i & 1) for (const w of dupCut(bits[i])) out.push(w); else out.push(bits[i]);
+            }
+            if (out.length >= DUP_MAX_TOKENS) { out.length = DUP_MAX_TOKENS; break; }
+        }
+        return out;
+    }
+    const dupWordOk = (w) => w.length > 2 || (w.length === 2 && DUP_NOSPACE.test(w));   // a 2-character Chinese/Japanese/Thai word is a real word
     const dupH = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
     function dupShingles(tokens) {
         const out = new Set();
@@ -43056,26 +43077,46 @@ kbd {
         }
         return lvl;
     }
+    // Bottom-k sketch: the K smallest shingle hashes (sorted). `card` keeps the exact distinct-shingle count.
+    function dupSketch(set) { const a = Uint32Array.from(set); a.sort(); return a.length > DUP_K ? a.slice(0, DUP_K) : a; }
+    function dupHas(arr, x) { let lo = 0, hi = arr.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m] === x) return true; if (arr[m] < x) lo = m + 1; else hi = m - 1; } return false; }
+    // A, B = features { sk, card }. Returns { j: Jaccard, c: share of the smaller note found in the other, small }.
+    // Both sketches complete → exact. Otherwise Jaccard comes from the K smallest hashes of the union (valid because each side's
+    // K smallest hashes contain every union-bottom-K hash that belongs to it), and containment is measured only where the
+    // truncated sketch can actually see (hashes ≤ its largest kept hash); too few samples → 0, never a guess.
     function dupOverlap(A, B) {
-        if (!A.size || !B.size) return { j: 0, c: 0, small: 0 };
-        const [s, b] = A.size <= B.size ? [A, B] : [B, A]; let inter = 0;
-        for (const x of s) if (b.has(x)) inter++;
-        return { j: inter / (A.size + B.size - inter), c: inter / s.size, small: s.size };
+        const a = A.sk, b = B.sk, small = Math.min(A.card, B.card);
+        if (!a.length || !b.length) return { j: 0, c: 0, small: 0 };
+        const fullA = a.length >= A.card, fullB = b.length >= B.card, lim = fullA && fullB ? Infinity : DUP_K;
+        let i = 0, k = 0, u = 0, both = 0;
+        while (u < lim && (i < a.length || k < b.length)) {
+            const x = i < a.length ? a[i] : 4294967296, y = k < b.length ? b[k] : 4294967296;
+            if (x === y) { both++; i++; k++; } else if (x < y) i++; else k++;
+            u++;
+        }
+        const j = u ? both / u : 0;
+        if (fullA && fullB) return { j, c: both / small, small };
+        if (fullA !== fullB) {
+            const sh = fullA ? a : b, lg = fullA ? b : a, cut = lg[lg.length - 1];
+            let seen = 0, hit = 0; for (const h of sh) { if (h > cut) break; seen++; if (dupHas(lg, h)) hit++; }
+            return { j, c: seen >= 8 ? hit / seen : 0, small };
+        }
+        return { j, c: Math.min(1, (j / (1 + j)) * (A.card + B.card) / small), small };
     }
     const dupFeatCache = new Map();
     function dupFeat(n) {
         let e = dupFeatCache.get(n.id);
         if (e && e.u === n.updatedAt && e.l === n.markdown.length) return e;
-        const norm = dupNorm(n.markdown), tokens = dupTokens(norm);
-        e = { u: n.updatedAt, l: n.markdown.length, norm, nTok: tokens.length, sh: dupShingles(tokens), words: new Set(tokens.filter((w) => w.length > 2)), fp: dupFingerprint(n) };
+        const norm = dupNorm(n.markdown), tokens = dupTokens(norm), full = dupShingles(tokens);
+        e = { u: n.updatedAt, l: n.markdown.length, norm, nTok: tokens.length, sk: dupSketch(full), card: full.size, cov: full.size > DUP_K ? DUP_K / full.size : 1, words: new Set(tokens.slice(0, DUP_WORDS).filter(dupWordOk)), fp: dupFingerprint(n) };
         dupFeatCache.set(n.id, e);
         return e;
     }
     function comparePair(a, b) {
         const fa = dupFeat(a), fb = dupFeat(b);
         const exact = fa.norm.length >= 12 && fa.norm === fb.norm;
-        const titleSim = diceSim(a.title, b.title);
-        const o = dupOverlap(fa.sh, fb.sh), wj = jaccardSets(fa.words, fb.words);
+        const titleSim = (fold(String(a.title || '').trim()) && fold(String(b.title || '').trim())) ? diceSim(a.title, b.title) : 0;   // two untitled notes are not "same title"
+        const o = dupOverlap(fa, fb), wj = (fa.words.size && fb.words.size) ? jaccardSets(fa.words, fb.words) : 0;   // jaccardSets(∅,∅) is 1: two empty / all-short-token notes must not look identical
         const lenRatio = Math.min(fa.nTok, fb.nTok) / Math.max(1, Math.max(fa.nTok, fb.nTok));
         const contained = o.small >= 12 && o.c >= 0.9 && lenRatio < 0.7;
         const contentSim = exact ? 1 : Math.max(o.j, wj * 0.85, contained ? o.c * 0.9 : 0);
@@ -43109,15 +43150,15 @@ kbd {
         feats.forEach((f, i) => { if (f.norm.length >= 12) { const g = byNorm.get(f.norm); if (g) g.push(i); else byNorm.set(f.norm, [i]); } });
         for (const g of byNorm.values()) { if (g.length < 2) continue; if (g.length <= 40) allPairs(g); else for (let q = 1; q < g.length; q++) add(g[0], g[q]); }   // a pile of identical notes: pair each with the first
         // 2 inverted shingle index (hash-sampled only when the vault is huge)
-        let total = 0; feats.forEach((f) => { total += f.sh.size; });
+        let total = 0; feats.forEach((f) => { total += f.sk.length; });
         const mod = Math.max(1, Math.ceil(total / 400000)), post = new Map();
-        const sampled = feats.map((f, i) => { let c = 0; for (const h of f.sh) if (h % mod === 0) { c++; const p = post.get(h); if (p) p.push(i); else post.set(h, [i]); } return c; });
+        const sampled = feats.map((f, i) => { let c = 0; for (const h of f.sk) if (h % mod === 0) { c++; const p = post.get(h); if (p) p.push(i); else post.set(h, [i]); } return c; });
         const shared = new Map();
         for (const ids of post.values()) {
             if (ids.length < 2 || ids.length > 30) continue;
             for (let x = 0; x < ids.length; x++) for (let y = x + 1; y < ids.length; y++) { const k = ids[x] * K + ids[y]; shared.set(k, (shared.get(k) || 0) + 1); }
         }
-        shared.forEach((cnt, k) => { const x = Math.floor(k / K), y = k % K; if (cnt >= Math.max(2, 0.25 * Math.min(sampled[x], sampled[y]))) keys.add(k); });
+        shared.forEach((cnt, k) => { const x = Math.floor(k / K), y = k % K; if (cnt >= Math.max(2, 0.25 * Math.min(sampled[x], sampled[y]) * Math.min(feats[x].cov, feats[y].cov))) keys.add(k); });
         // 3 same PDF region
         const byFp = new Map();
         feats.forEach((f, i) => { for (const [file, ps] of f.fp.pages) for (const p of ps) { const k = file + '|' + p, g = byFp.get(k); if (g) g.push(i); else byFp.set(k, [i]); } });
@@ -43207,6 +43248,7 @@ kbd {
         for (const { note: n } of targets) {
             const hits = extractWikilinks(n.markdown).filter((l) => fold(l.title) === key);
             if (!hits.length) continue;
+            await snapshot({ id: n.id, title: n.title, markdown: n.markdown }, { label: 'before-relink' });   // never throws; keeps the old text one click away in History
             let md = n.markdown;
             hits.sort((a, b) => b.index - a.index).forEach((h) => {
                 const repl = h.alias ? ('[[' + newTitle + '|' + h.alias + ']]') : ('[[' + newTitle + ']]');
@@ -43282,6 +43324,8 @@ kbd {
         'before-replace': 'Before Find & Replace',
         original: 'Before your first edit',
         'before-restore': 'Before a restore',
+        'before merge': 'Before a merge',
+        'before-relink': 'Before links were updated',
         restore: 'After a restore'
     };
     const revRange = (id) => IDBKeyRange.bound([id, 0], [id, Number.MAX_SAFE_INTEGER]);
@@ -49124,17 +49168,40 @@ kbd {
             + '<button class="nv-dup-swap" type="button" data-dup-act="swap" data-pair="' + esc(r.key) + '">keep the other one instead</button>'
             + '</div></div>';
     }
+    /* "Keep both" is remembered across sessions (localStorage). It lapses after 90 days, when either note is gone, or when
+       the pair has become clearly more similar (+10 points) than it was when dismissed. Undo restores it at once. */
+    const DUP_DISMISS_KEY = 'nv.dup.dismissed.v1', DUP_DISMISS_MS = 90 * 864e5, DUP_RISE = 0.10;
+    function dupDismissLoad() { try { const o = JSON.parse(localStorage.getItem(DUP_DISMISS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+    function dupDismissSave(o) { try { localStorage.setItem(DUP_DISMISS_KEY, JSON.stringify(o)); } catch (e) { /* storage blocked: this session's Set still works */ } }
+    function dupApplyDismissals() {
+        const saved = dupDismissLoad(), now = Date.now(), ids = new Set(S.notes.map((n) => n.id)), cur = new Map(S.dup.results.map((r) => [r.key, r]));
+        let dirty = false; S.dup.dismissed = new Set();
+        for (const k of Object.keys(saved)) {
+            const v = saved[k], r = cur.get(k);
+            if (!v || now - v.at > DUP_DISMISS_MS || !ids.has(v.a) || !ids.has(v.b) || (r && r.score >= v.s + DUP_RISE)) { delete saved[k]; dirty = true; }
+            else S.dup.dismissed.add(k);
+        }
+        if (dirty) dupDismissSave(saved);
+    }
+    function dupDismiss(key) {
+        const r = dupPairFor(key); if (!r) return;
+        const saved = dupDismissLoad(); saved[key] = { a: r.a.id, b: r.b.id, at: Date.now(), s: r.score };
+        dupDismissSave(saved); S.dup.dismissed.add(key);
+    }
+    function dupUndismiss(key) { const saved = dupDismissLoad(); delete saved[key]; dupDismissSave(saved); S.dup.dismissed.delete(key); }
+    function dupRestoreAll() { dupDismissSave({}); S.dup.dismissed = new Set(); }
     function renderDupList() {
         if (!el.dupBody) return;
         if (!S.dup.scanned) { el.dupBody.innerHTML = '<div class="nv-dup-loading">Scanning your notes…</div>'; return; }
-        const visible = S.dup.results.filter((r) => !S.dup.dismissed.has(r.key));
+        const visible = S.dup.results.filter((r) => !S.dup.dismissed.has(r.key)), hid = S.dup.results.length - visible.length;
+        const hidHtml = hid ? '<p class="nv-dup-hint">' + hid + (hid === 1 ? ' pair is' : ' pairs are') + ' hidden because you kept both. <button type="button" class="nv-btn nv-btn-ghost" data-dup-act="restore">Show again</button></p>' : '';
         if (!visible.length) {
-            el.dupBody.innerHTML = '<div class="nv-dup-empty"><i class="fa-solid fa-champagne-glasses" aria-hidden="true"></i>No likely duplicates found — your vault looks tidy.</div>';
+            el.dupBody.innerHTML = '<div class="nv-dup-empty"><i class="fa-solid fa-champagne-glasses" aria-hidden="true"></i>No likely duplicates found — your vault looks tidy.</div>' + hidHtml;
             return;
         }
         el.dupBody.innerHTML =
             '<p class="nv-dup-hint">Scores are a heuristic (0–100), not a probability: EXACT = identical text; HIGH ≥ 85; REVIEW 70–84; LOW below. Matched by content, title, tags, source and PDF page region. The starred note is kept when you merge — use “keep the other one instead” to flip it first.</p>'
-            + visible.map(dupCardHtml).join('');
+            + visible.map(dupCardHtml).join('') + hidHtml;
     }
     function renderDupCompare(key) {
         const r = dupPairFor(key);
@@ -49158,6 +49225,7 @@ kbd {
         try { S.dup.results = findDuplicateCandidates(); }
         catch (e) { console.warn('Notes Vault: duplicate scan failed', e); S.dup.results = []; }
         S.dup.scanned = true;
+        dupApplyDismissals();
         renderDupBody();
     }
     async function openDupModal() {
@@ -49775,7 +49843,8 @@ kbd {
         if (act === 'compare') { S.dup.compareKey = key; renderDupBody(); }
         else if (act === 'back') { S.dup.compareKey = null; renderDupBody(); }
         else if (act === 'swap') { S.dup.swapped.has(key) ? S.dup.swapped.delete(key) : S.dup.swapped.add(key); renderDupBody(); }
-        else if (act === 'keep') { S.dup.dismissed.add(key); renderDupBody(); }
+        else if (act === 'keep') { dupDismiss(key); renderDupBody(); toast('Kept both — hidden until they become much more similar (or 90 days).', 'Undo', () => { dupUndismiss(key); renderDupBody(); }); }
+        else if (act === 'restore') { dupRestoreAll(); renderDupBody(); }
         else if (act === 'merge') {
             if (S.dup.merging) return;                       // double-click / Enter-repeat must not open two merges
             const r = dupPairFor(key);
@@ -50427,7 +50496,7 @@ kbd {
         // Find duplicates modal
         el.dupClose.addEventListener('click', closeDupModal);
         el.dupScrim.addEventListener('click', closeDupModal);
-        el.dupRescan.addEventListener('click', () => { S.dup.dismissed.clear(); S.dup.swapped.clear(); S.dup.compareKey = null; scanDuplicates(); });
+        el.dupRescan.addEventListener('click', () => { S.dup.swapped.clear(); S.dup.compareKey = null; scanDuplicates(); });
         el.dupBody.addEventListener('click', handleDupAction);
         // Find & Replace modal
         wireFr();
