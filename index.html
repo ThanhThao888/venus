@@ -49034,6 +49034,45 @@ kbd {
         el.mdDir.addEventListener('change', async () => { const fl = Array.from(el.mdDir.files || []); el.mdDir.value = ''; await importMarkdownFiles(fl, true); });
         el.pdfNote.addEventListener('change', async () => { const fl = Array.from(el.pdfNote.files || []); el.pdfNote.value = ''; await importPdfAsNotes(fl); });
 
+        /* Drag & drop files anywhere in the vault: .pdf → note (text / OCR), .md/.txt → note.
+           Dropping straight onto the editor in Edit mode keeps its old behaviour (a PDF is
+           attached inline at the cursor) — that handler runs first and marks the event handled. */
+        (function wireVaultDrop() {
+            const app = document.getElementById('nvApp');
+            if (!app) return;
+            let depth = 0, hint = null;
+            const hasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+            const isPdfF = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+            const isMdF = (f) => /\.(md|markdown|mdown|txt)$/i.test(f.name);
+            const showHint = () => {
+                if (hint) return;
+                hint = document.createElement('div');
+                hint.textContent = 'Drop .pdf or .md files to import them as notes';
+                hint.style.cssText = 'position:fixed;inset:12px;z-index:99999;pointer-events:none;display:flex;align-items:center;justify-content:center;'
+                    + 'border:3px dashed var(--primary,#db2777);border-radius:18px;background:rgba(219,39,119,.10);color:var(--primary,#db2777);'
+                    + 'font:600 1.1rem system-ui,sans-serif;text-align:center;padding:20px;backdrop-filter:blur(2px);';
+                app.appendChild(hint);
+            };
+            const hideHint = () => { depth = 0; if (hint) { hint.remove(); hint = null; } };
+            app.addEventListener('dragenter', (e) => { if (hasFiles(e)) { depth++; showHint(); } });
+            app.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+            app.addEventListener('dragleave', (e) => { if (hasFiles(e) && --depth <= 0) hideHint(); });
+            app.addEventListener('drop', (e) => {
+                hideHint();
+                if (e.defaultPrevented || !hasFiles(e)) return;
+                e.preventDefault();
+                const fl = Array.from(e.dataTransfer.files);
+                const pdfs = fl.filter(isPdfF), mds = fl.filter((f) => !isPdfF(f) && isMdF(f));
+                if (!pdfs.length && !mds.length) { toast('Drop .pdf, .md or .txt files to import them as notes.'); return; }
+                (async () => {
+                    if (mds.length) await importMarkdownFiles(mds, false);
+                    if (pdfs.length) await importPdfAsNotes(pdfs);
+                })();
+            });
+            window.addEventListener('dragend', hideHint);
+            window.addEventListener('drop', hideHint);
+        })();
+
         // Find duplicates modal
         el.dupClose.addEventListener('click', closeDupModal);
         el.dupScrim.addEventListener('click', closeDupModal);
