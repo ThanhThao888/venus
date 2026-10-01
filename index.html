@@ -34310,6 +34310,902 @@ window.DBP={
         </script>
         <!-- ===== END WELLNESS & HABIT TRACKER ===== -->
 
+<!-- ===== ENGLISH DAILY ===== -->
+<style>
+    /* English Daily — SAKURA MIST wrapper, same surface as Strategic Roadmap / Sleep Tracker. */
+    #englishDailyCard {
+        background: linear-gradient(135deg, #fdf5f9 0%, #fdf1f7 50%, #f9a8d422 100%) !important;
+        border: 1px solid rgba(219,113,175,0.28) !important;
+        border-radius: 18px !important;
+        box-shadow: 0 4px 24px rgba(219,39,119,0.10), var(--shadow-md) !important;
+        backdrop-filter: none !important;
+        --bg-light: #fdf1f7;
+        --bg-white: #ffffff;
+        --border-color: rgba(219,113,175,0.28);
+    }
+    .dark-mode #englishDailyCard {
+        background: linear-gradient(135deg, #241823 0%, #2d1c2b 60%, #221722 100%) !important;
+        border-color: rgba(244,114,182,0.28) !important;
+        box-shadow: 0 4px 24px rgba(244,114,182,0.10), var(--shadow-md) !important;
+        --bg-light: #241823;
+        --bg-white: #2a1f2c;
+        --border-color: rgba(244,114,182,0.25);
+    }
+    #englishDailyCard .sidebar-title { color: #9d2867; margin-bottom: 0; }
+    .dark-mode #englishDailyCard .sidebar-title { color: #f9a8d4; }
+
+    #englishDailyCard button { font-family: inherit; }
+    #englishDailyCard button:focus-visible,
+    #englishDailyCard select:focus-visible,
+    #englishDailyCard input:focus-visible,
+    #englishDailyCard textarea:focus-visible,
+    #englishDailyCard summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+    .ed-badge {
+        font-size: 0.72rem; font-weight: 700; padding: 2px 9px; border-radius: 12px;
+        background: rgba(219,113,175,0.15); color: var(--primary); white-space: nowrap;
+    }
+    .ed-ctx { margin: 12px 0 10px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.45; }
+    .ed-ctx strong { color: var(--text-dark); font-weight: 650; }
+
+    /* mode switch */
+    .ed-modes {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px;
+        background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 12px;
+    }
+    .ed-mode-btn {
+        border: 0; background: transparent; color: var(--text-muted); cursor: pointer;
+        padding: 7px 6px; border-radius: 9px; font-size: 0.8rem; font-weight: 600;
+        transition: background .15s, color .15s;
+    }
+    .ed-mode-btn:hover { color: var(--text-dark); }
+    .ed-mode-btn[aria-pressed="true"] { background: var(--bg-white); color: #9d2867; box-shadow: 0 1px 4px rgba(219,39,119,0.15); }
+    .dark-mode .ed-mode-btn[aria-pressed="true"] { color: #f9a8d4; }
+
+    /* week + streak */
+    .ed-week { margin-bottom: 14px; }
+    .ed-week-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px; }
+    .ed-week-top b { color: var(--text-dark); font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+    .ed-bar { height: 7px; border-radius: 6px; background: var(--bg-light); border: 1px solid var(--border-color); overflow: hidden; }
+    .ed-bar > i { display: block; height: 100%; background: linear-gradient(90deg, #f29ab9, var(--primary)); border-radius: 6px; transition: width .3s; }
+
+    .ed-note { font-size: 0.8rem; color: var(--text-muted); background: var(--bg-light); border: 1px dashed var(--border-color); border-radius: 10px; padding: 9px 11px; margin-bottom: 12px; line-height: 1.5; }
+
+    /* block rail — the sequence is the point, so the rail is a real timeline */
+    .ed-rail { list-style: none; margin: 0 0 12px; padding: 0; }
+    .ed-block { position: relative; padding: 0 0 12px 40px; min-height: 30px; }
+    .ed-block:not(:last-child)::before {
+        content: ''; position: absolute; left: 13px; top: 30px; bottom: 0; width: 2px; background: var(--border-color);
+    }
+    .ed-node {
+        position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; padding: 0;
+        border: 2px solid var(--border-color); background: var(--bg-white); color: #fff; cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center; font-size: 0.72rem;
+        transition: transform .15s, background .15s, border-color .15s;
+    }
+    .ed-node:hover { border-color: var(--primary); }
+    .ed-node .icon-svg, .ed-node i { color: inherit; }
+    .ed-block.is-done .ed-node { background: var(--primary); border-color: var(--primary); }
+    .dark-mode .ed-block.is-done .ed-node { color: #2a1420; }
+    .ed-block.is-current .ed-node { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(209,123,150,0.18); }
+    .ed-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+    .ed-label { font-weight: 650; font-size: 0.88rem; color: var(--text-dark); display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .ed-label i { color: var(--primary); font-size: 0.8rem; width: 14px; text-align: center; }
+    .ed-min { font-size: 0.75rem; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ed-spacer { flex: 1; }
+    .ed-block.is-done .ed-label { color: var(--text-muted); font-weight: 600; }
+    .ed-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 1px; overflow-wrap: anywhere; }
+    .ed-ghost {
+        border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.75rem;
+        padding: 3px 7px; border-radius: 7px; white-space: nowrap;
+    }
+    .ed-ghost:hover { background: var(--bg-light); color: var(--text-dark); }
+
+    .ed-focus {
+        margin-top: 6px; background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 14px; padding: 12px;
+    }
+    .ed-prompt { font-size: 0.85rem; line-height: 1.55; color: var(--text-dark); margin: 0 0 10px; }
+    .ed-skill-wrap { margin-bottom: 10px; }
+    .ed-skill-wrap label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px; }
+    .ed-select, .ed-input, .ed-textarea {
+        width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 8px;
+        background: var(--bg-light); color: var(--text-dark); font-size: 0.8rem; font-family: inherit;
+    }
+    .ed-textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+    .ed-timer-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .ed-timer {
+        font-size: 2rem; font-weight: 700; letter-spacing: 0.02em; color: #9d2867; min-width: 4.4ch;
+        font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .dark-mode .ed-timer { color: #f9a8d4; }
+    .ed-btn {
+        border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer;
+        padding: 7px 13px; border-radius: 10px; font-size: 0.82rem; font-weight: 650;
+        transition: background .15s, color .15s;
+    }
+    .ed-btn:hover { background: rgba(209,123,150,0.12); }
+    .ed-btn.primary { background: var(--primary); color: #fff; }
+    .ed-btn.primary:hover { filter: brightness(0.95); background: var(--primary); }
+    .dark-mode .ed-btn.primary { color: #2a1420; }
+    .ed-break { font-size: 0.78rem; color: var(--text-muted); margin: 0 0 8px; }
+
+    /* immersion */
+    .ed-section { border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 4px; }
+    .ed-section h4 { margin: 0 0 6px; font-size: 0.82rem; color: var(--text-dark); font-weight: 650; }
+    .ed-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .ed-chip {
+        border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark); cursor: pointer;
+        padding: 5px 11px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
+    }
+    .ed-chip:hover { border-color: var(--primary); color: var(--primary); }
+    .ed-hint { font-size: 0.74rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.45; }
+
+    /* footer forms */
+    .ed-details { border-top: 1px solid var(--border-color); margin-top: 12px; padding-top: 10px; }
+    .ed-details > summary { cursor: pointer; font-size: 0.82rem; font-weight: 650; color: var(--text-dark); list-style: none; display: flex; align-items: center; gap: 8px; }
+    .ed-details > summary::-webkit-details-marker { display: none; }
+    .ed-details > summary::before { content: '\25B8'; color: var(--text-muted); transition: transform .15s; display: inline-block; }
+    .ed-details[open] > summary::before { transform: rotate(90deg); }
+    .ed-details-body { padding: 10px 0 2px; }
+    .ed-q { font-size: 0.82rem; color: var(--text-dark); margin: 0 0 6px; line-height: 1.5; }
+    .ed-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .ed-field label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px; }
+    .ed-check { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; color: var(--text-dark); margin: 4px 0; cursor: pointer; }
+    .ed-history { margin: 10px 0 0; padding: 0; list-style: none; }
+    .ed-history li { font-size: 0.76rem; color: var(--text-muted); padding: 6px 0; border-top: 1px dashed var(--border-color); line-height: 1.5; overflow-wrap: anywhere; }
+    .ed-history li b { color: var(--text-dark); font-weight: 650; }
+
+    @media (max-width: 420px) {
+        .ed-grid { grid-template-columns: 1fr; }
+        .ed-timer { font-size: 1.7rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        #englishDailyCard * { transition: none !important; }
+    }
+</style>
+
+<div class="sidebar-card" id="englishDailyCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="EnglishDaily.toggleCollapse()">
+        <h3 class="sidebar-title"><i class="fa-solid fa-comments"></i> English Daily</h3>
+        <div style="display:flex;align-items:center;gap:8px;">
+            <span class="ed-badge" id="edBadge">M1</span>
+            <span id="edCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;">&#9660;</span>
+        </div>
+    </div>
+    <div id="edBody"></div>
+</div>
+
+<script>
+const EnglishDaily = (function () {
+    const KEY = 'englishDaily_v1';
+    const CAREER = 'english';
+
+    /* ── program calendar (mirrors the Roadmap's 8 English phases) ── */
+    const PHASE_INFO = {
+        1: { cefr: 'A2 → B1',  name: 'Foundation Engine' },
+        2: { cefr: 'B1 → B2',  name: 'Real-World English' },
+        3: { cefr: 'B2 → C1',  name: 'Think in English' },
+        4: { cefr: 'C1',       name: 'Functional C1' },
+        5: { cefr: 'IELTS',    name: 'Diagnostic' },
+        6: { cefr: 'IELTS',    name: 'Skill Engineering' },
+        7: { cefr: 'IELTS',    name: 'Full IELTS Mode' },
+        8: { cefr: 'IELTS 8.0', name: 'Exam Simulation' }
+    };
+
+    /* ── block families: which Roadmap skills they feed, and what to actually do ── */
+    const FAM = {
+        listen: {
+            label: 'Nghe', icon: 'fa-headphones',
+            skills: ['listen_graded', 'listen_broadcast', 'listen_conv', 'listen_prof', 'listen_accent', 'ielts_listen', 'ielts_weekly'],
+            prompts: [
+                'Nghe 1 clip chậm 5–7 phút, chưa xem phụ đề. Sau đó xem transcript, nghe lại đoạn khó, rồi kể lại ý chính bằng tiếng Anh.',
+                'Nghe 1 video hoặc podcast 8–10 phút: nghe thường, xem transcript, nghe lại. Cuối cùng tóm tắt 1 phút thành tiếng.',
+                'Nghe 1 cuộc phỏng vấn hoặc bài giảng 10–15 phút. Ghi 3 lập luận chính rồi nói lại bằng lời của bạn.',
+                'Nghe họp, call hoặc tin tài chính ở tốc độ thật. Tách ý chính, ẩn ý và thái độ người nói, rồi phản biện 1 điểm.'
+            ],
+            bad: 'Nghe 1 clip ngắn. Không cần làm gì thêm.'
+        },
+        speak: {
+            label: 'Nói', icon: 'fa-microphone',
+            skills: ['speak_daily', 'arg_structure', 'fluency_auto', 'speak_conv', 'speak_spont', 'speak_prof', 'speak_interact', 'speak_present', 'speak_qa', 'speak_technical', 'real_world', 'ielts_speak'],
+            prompts: [
+                'Trả lời 5 câu hỏi về bản thân, rồi nói liền 2 phút về 1 chủ đề (routine, work, goals). Ghi âm.',
+                'Nói 5–7 phút về 1 chủ đề (education, money, technology). Theo cấu trúc ý kiến → lý do → ví dụ → hệ quả. Ghi âm.',
+                'Bốc 1 câu hỏi ngẫu nhiên, chuẩn bị 30 giây, nói 10 phút. Ghi âm và chọn 3 lỗi cần sửa.',
+                'Độc thoại 15 phút về 1 câu hỏi khó (ví dụ: nhà nước có nên quản lý AI?). Chuẩn bị 30 giây, không script.'
+            ],
+            bad: 'Nói to 3 phút về hôm nay của bạn. Không cần hoàn hảo.'
+        },
+        read: {
+            label: 'Đọc và chunks', icon: 'fa-book-open',
+            skills: ['read_graded', 'read_press', 'read_cross', 'read_synthesis', 'read_critical', 'ielts_read'],
+            prompts: [
+                'Đọc 1 bài learner A2–B1. Gạch 8–10 chunks, đoán nghĩa rồi mới tra, và đặt 1 câu cho mỗi chunk.',
+                'Đọc 1 bài business hoặc economics hơi khó hơn mức thoải mái. Chọn 8–12 chunks, tra nghĩa, rồi dùng lại trong 1 đoạn tóm tắt.',
+                'Đọc 1 bài dài (FT, Economist, Bloomberg). Viết luận điểm chính và 1 phản biện trong 5 câu.',
+                'Đọc 2 nguồn về cùng 1 chủ đề. Tổng hợp thành 1 luận điểm kèm bằng chứng, rồi nêu giới hạn của nó.'
+            ],
+            bad: 'Đọc 1 đoạn ngắn và gạch 3 chunks.'
+        },
+        grammar: {
+            label: 'Grammar', icon: 'fa-diagram-project',
+            skills: ['gram_core', 'gram_advanced'],
+            prompts: [
+                'Học 1 cấu trúc (tense, modal hoặc câu hỏi), làm 10 câu, rồi tự viết 5 câu về cuộc sống của bạn.',
+                'Học 1 cấu trúc phức (conditionals, passive, relative clause), rồi viết lại 5 câu cũ cho dài và rõ hơn.',
+                'Viết lại 1 đoạn ngắn theo 3 cách: đơn giản, chuyên nghiệp, súc tích.',
+                'Sửa các lỗi lặp lại trong error log, rồi viết 5 câu mới dùng đúng cấu trúc đó.'
+            ]
+        },
+        write: {
+            label: 'Viết', icon: 'fa-pen-nib',
+            skills: ['write_sentence', 'write_biz', 'write_exec', 'write_finreport', 'write_memo', 'ielts_w1', 'ielts_w2'],
+            prompts: [
+                'Viết 5–8 câu về chủ đề hôm nay. Đọc lại, sửa 3 lỗi và ghi vào notebook.',
+                'Viết 1 đoạn 120–150 từ theo cấu trúc claim → reason → example → consequence.',
+                'Viết email hoặc đoạn giải thích 200–250 từ, rồi viết lại ngắn hơn 30%.',
+                'Viết 1 đoạn phân tích 300–400 từ (finance, economics hoặc IELTS Task 2) và tự chấm theo 4 tiêu chí.'
+            ]
+        },
+        shadow: {
+            label: 'Shadowing và phát âm', icon: 'fa-wave-square',
+            skills: ['pron_phonology', 'prosody', 'shadowing', 'fluency_auto'],
+            prompts: [
+                'Chọn clip 30–60 giây. Nghe, đọc transcript, nghe lại, nói song song, rồi ghi âm và so nhịp.',
+                'Shadowing 1 clip 1–2 phút, tập trung vào linking, reductions và nhấn câu. Ghi âm và so sánh.',
+                'Shadowing 1 đoạn hội thoại thật (interview). Bắt nhịp nghỉ, cảm xúc và chỗ nhấn mạnh.',
+                'Shadowing 1 đoạn phát biểu hoặc họp 2–3 phút, rồi tự nói lại ý chính với cùng nhịp đó.'
+            ]
+        },
+        vocab: {
+            label: 'Từ vựng và chunks', icon: 'fa-layer-group',
+            skills: ['vocab_core', 'vocab_gen_biz', 'vocab_colloc', 'vocab_phrasal', 'vocab_fin', 'vocab_active', 'ielts_acad_vocab', 'vocab_legal'],
+            prompts: [
+                'Ôn 10–15 chunks hôm nay (Anki hoặc notebook), rồi đặt câu nói to cho từng chunk.',
+                'Ôn chunks và collocations. Dùng ít nhất 8 chunks trong 1 đoạn nói 2 phút.',
+                'Ôn chunks tài chính và kinh tế. Dùng chúng trong 1 lập luận nói 3 phút.',
+                'Ôn 10 chunks C1 và 5 cụm lập luận (concede, challenge, reframe). Dùng hết trong 1 cuộc tranh luận tự đóng.'
+            ]
+        },
+        speak2: {
+            label: 'Kể lại và giải thích', icon: 'fa-comment-dots',
+            skills: ['speak_daily', 'arg_structure', 'fluency_auto', 'speak_conv', 'speak_spont', 'speak_prof', 'speak_interact', 'speak_present', 'speak_qa', 'speak_technical', 'real_world', 'ielts_speak'],
+            prompts: [
+                'Kể lại điều bạn vừa nghe hoặc đọc hôm nay trong 2 phút, không nhìn ghi chú.',
+                'Giải thích 1 khái niệm (ví dụ: inflation) cho 3 người: học sinh 12 tuổi, sinh viên, nhà đầu tư.',
+                'Tranh luận hai phía của 1 vấn đề trong 5 phút, dùng 4 câu đồng ý hoặc phản biện.',
+                'Mô phỏng họp, đàm phán hoặc phỏng vấn 10 phút, tự đóng cả hai vai.'
+            ]
+        },
+        test: {
+            label: 'Mini test cuối tuần', icon: 'fa-clipboard-check',
+            skills: ['speak_daily', 'arg_structure', 'fluency_auto', 'speak_conv', 'speak_spont', 'speak_prof', 'speak_interact', 'speak_present', 'speak_qa', 'speak_technical', 'real_world', 'ielts_speak'],
+            prompts: [
+                'Nói 2 phút không chuẩn bị và viết 6 câu. So với tuần trước.',
+                'Nói 5 phút và viết 1 đoạn. Ghi âm, rồi so với tuần trước.',
+                'Nói 10 phút. Đếm số lần ngập ngừng và từ bị lặp.',
+                'Làm 1 phần mock IELTS hoặc nói 15 phút. Ghi lại lý do mất điểm.'
+            ]
+        }
+    };
+
+    /* ── tiny helpers ── */
+    const pad = n => String(n).padStart(2, '0');
+    const dkey = (d = new Date()) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const parseKey = k => { const p = k.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); };
+    const addDays = (d, n) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() + n); return x; };
+    const mondayOf = d => addDays(d, -((d.getDay() + 6) % 7));
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmtClock = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return pad(Math.floor(s / 60)) + ':' + pad(s % 60); };
+    const fmtHours = h => { const m = Math.round(h * 60); return m < 60 ? m + ' phút' : Math.floor(m / 60) + 'h' + (m % 60 ? pad(m % 60) : ''); };
+    const notify = (msg, type) => { if (typeof showNotification === 'function') showNotification(msg, type || 'info'); };
+
+    /* ── state ── */
+    /* The stored JSON can come from anywhere (an imported backup, an older build, a hand edit),
+       so rebuild every field from scratch instead of trusting its shape. */
+    const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    const num = (v, d) => { v = Number(v); return Number.isFinite(v) ? v : d; };
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    function load() {
+        let raw = {};
+        try { raw = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { raw = {}; }
+        if (!isObj(raw)) raw = {};
+
+        const st = {
+            startDate: (typeof raw.startDate === 'string' && DATE_RE.test(raw.startDate) && !isNaN(parseKey(raw.startDate).getTime())) ? raw.startDate : dkey(),
+            weeklyGoal: Math.max(5, Math.min(60, num(raw.weeklyGoal, 32))),
+            immersionCounts: raw.immersionCounts !== false,
+            days: {}, reflections: {}, checkpoints: {}, timer: null,
+            collapsed: !!raw.collapsed
+        };
+
+        if (isObj(raw.days)) Object.keys(raw.days).forEach(k => {
+            const d = raw.days[k];
+            if (!DATE_RE.test(k) || !isObj(d)) return;
+            const blocks = {};
+            if (isObj(d.blocks)) Object.keys(d.blocks).forEach(id => {
+                const b = d.blocks[id];
+                if (!isObj(b)) return;
+                blocks[id] = {
+                    done: !!b.done,
+                    skill: typeof b.skill === 'string' ? b.skill : undefined,
+                    hrs: Math.max(0, num(b.hrs, 0)), xp: Math.max(0, num(b.xp, 0)),
+                    min: Math.max(0, num(b.min, 0)), at: num(b.at, 0)
+                };
+            });
+            st.days[k] = {
+                mode: ['normal', 'bad', 'rest'].includes(d.mode) ? d.mode : 'normal',
+                blocks: blocks,
+                immersion: (Array.isArray(d.immersion) ? d.immersion : []).filter(e => isObj(e) && num(e.min, 0) > 0).map(e => ({
+                    min: num(e.min, 0), skill: typeof e.skill === 'string' ? e.skill : '',
+                    hrs: Math.max(0, num(e.hrs, 0)), xp: Math.max(0, num(e.xp, 0)), at: num(e.at, 0)
+                })),
+                lastDoneAt: num(d.lastDoneAt, 0)
+            };
+        });
+
+        if (isObj(raw.reflections)) Object.keys(raw.reflections).forEach(k => {
+            const r = raw.reflections[k];
+            if (DATE_RE.test(k) && isObj(r) && typeof r.text === 'string') st.reflections[k] = { text: r.text, at: num(r.at, 0) };
+        });
+
+        if (isObj(raw.checkpoints)) Object.keys(raw.checkpoints).forEach(k => {
+            const c = raw.checkpoints[k];
+            if (!/^m\d{1,2}$/.test(k) || !isObj(c)) return;
+            const scale = v => Math.max(0, Math.min(5, Math.round(num(v, 0))));
+            st.checkpoints[k] = {
+                speakMin: Math.max(0, num(c.speakMin, 0)), listen: scale(c.listen), read: scale(c.read), translate: scale(c.translate),
+                recorded: !!c.recorded, note: typeof c.note === 'string' ? c.note : '', at: num(c.at, 0)
+            };
+        });
+
+        const t = raw.timer;
+        if (isObj(t) && typeof t.blockId === 'string' && typeof t.dateKey === 'string' && DATE_RE.test(t.dateKey)) {
+            st.timer = {
+                blockId: t.blockId, dateKey: t.dateKey,
+                remainingMs: Math.max(0, num(t.remainingMs, 0)),
+                endAt: t.running ? num(t.endAt, 0) : null,
+                running: !!t.running
+            };
+        }
+        return st;
+    }
+    let S = load();
+    let focusId = null;
+    let tickHandle = null;
+    const drafts = {};
+
+    function save() {
+        try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage full or blocked */ }
+    }
+
+    function dayState(k) {
+        k = k || dkey();
+        if (!S.days[k]) S.days[k] = { mode: parseKey(k).getDay() === 0 ? 'rest' : 'normal', blocks: {}, immersion: [], lastDoneAt: 0 };
+        return S.days[k];
+    }
+
+    /* ── where the learner is in the 24-month program ── */
+    function monthIndex() {
+        const a = parseKey(S.startDate), b = new Date();
+        let m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+        if (b.getDate() < a.getDate()) m--;
+        return Math.max(1, Math.min(24, m + 1));
+    }
+    const phaseNum = () => Math.min(8, Math.floor((monthIndex() - 1) / 3) + 1);
+    const promptTier = () => Math.min(4, phaseNum()) - 1;
+
+    /* ── blocks ── */
+    function blocksFor(mode, date) {
+        date = date || new Date();
+        if (mode === 'rest') return [];
+        if (mode === 'bad') {
+            return [
+                { id: 'b1', family: 'listen', min: 20 },
+                { id: 'b2', family: 'speak', min: 20 },
+                { id: 'b3', family: 'read', min: 20 }
+            ];
+        }
+        const wd = date.getDay();
+        const mwf = wd === 1 || wd === 3 || wd === 5;
+        return [
+            { id: 'n1', family: 'listen', min: 40 },
+            { id: 'n2', family: 'speak', min: 40 },
+            { id: 'n3', family: 'read', min: 40 },
+            { id: 'n4', family: mwf ? 'grammar' : 'write', min: 40 },
+            { id: 'n5', family: 'shadow', min: 40 },
+            { id: 'n6', family: wd === 6 ? 'test' : (wd === 2 || wd === 4) ? 'speak2' : 'vocab', min: 40 }
+        ];
+    }
+
+    function promptFor(b, mode) {
+        const f = FAM[b.family];
+        if (mode === 'bad' && f.bad) return f.bad;
+        return f.prompts[promptTier()];
+    }
+
+    /* ── skills: read targets from skillsData, status from the Roadmap ── */
+    function allSkills() {
+        const c = (typeof skillsData !== 'undefined') && skillsData[CAREER];
+        return c ? c.categories : {};
+    }
+    function targetOf(name) {
+        let t = 0;
+        Object.values(allSkills()).forEach(cat => cat.skills.forEach(s => { if (s.name === name) t = s.targetHours || 10; }));
+        return t;
+    }
+    const hoursOf = name => (typeof studyHours !== 'undefined' && studyHours[CAREER] && studyHours[CAREER][name]) || 0;
+
+    function suggestSkill(family) {
+        if (typeof StrategicRoadmap === 'undefined' || !StrategicRoadmap.getMilestones) return '';
+        const byId = {};
+        StrategicRoadmap.getMilestones(CAREER).forEach(m => { byId[m.id] = m.name; });
+        for (const id of FAM[family].skills) {
+            const name = byId[id];
+            if (!name) continue;
+            const st = StrategicRoadmap.getMilestoneStatus(CAREER, id);
+            if (!st || st.done || st.locked) continue;
+            if (hoursOf(name) >= targetOf(name)) continue;
+            return name;
+        }
+        return '';
+    }
+
+    /* ── logging hours into the app's own study-hours system (same effects as "Add time") ── */
+    function refreshApp(touchedChart) {
+        try { if (typeof loadSkills === 'function' && typeof currentCareer !== 'undefined') loadSkills(currentCareer); } catch (e) {}
+        try { if (typeof updateStats === 'function') updateStats(); } catch (e) {}
+        try { if (typeof updateGamificationStats === 'function') updateGamificationStats(); } catch (e) {}
+        try { if (typeof updateChart === 'function') updateChart(); } catch (e) {}
+        try { if (typeof updateGoals === 'function') updateGoals(); } catch (e) {}
+        if (touchedChart) { try { if (typeof updateDailyStreak === 'function') updateDailyStreak(); } catch (e) {} }
+    }
+    function persistApp() {
+        try { localStorage.setItem('studyHours', JSON.stringify(studyHours)); } catch (e) {}
+        try { localStorage.setItem('gamification', JSON.stringify(gamification)); } catch (e) {}
+        try { if (typeof triggerBackup === 'function') triggerBackup(); } catch (e) {}
+    }
+
+    function logHours(skillName, hours) {
+        if (!skillName || !(hours > 0) || typeof studyHours === 'undefined') return { hrs: 0, xp: 0 };
+        const cur = hoursOf(skillName);
+        const add = Math.round(Math.max(0, Math.min(hours, targetOf(skillName) - cur)) * 10000) / 10000;
+        if (add <= 0) return { hrs: 0, xp: 0 };
+        if (!studyHours[CAREER]) studyHours[CAREER] = {};
+        studyHours[CAREER][skillName] = cur + add;
+        const xp = Math.floor(add * 10);
+        gamification.points += xp;
+        gamification.level = Math.floor(gamification.points / 100) + 1;
+        persistApp();
+        try { if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours) StrategicRoadmap.recordExternalHours(CAREER, add); } catch (e) {}
+        try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(add); } catch (e) {}
+        refreshApp(true);
+        try { if (typeof checkAchievements === 'function') checkAchievements(CAREER, skillName, studyHours[CAREER][skillName]); } catch (e) {}
+        return { hrs: add, xp: xp };
+    }
+
+    function unlogHours(skillName, hrs, xp) {
+        if (!skillName || !(hrs > 0) || typeof studyHours === 'undefined') return;
+        const cur = hoursOf(skillName);
+        const sub = Math.min(hrs, cur);
+        if (sub <= 0) return;
+        const left = Math.round((cur - sub) * 10000) / 10000;
+        if (left <= 0) delete studyHours[CAREER][skillName]; else studyHours[CAREER][skillName] = left;
+        gamification.points = Math.max(0, gamification.points - (xp || 0));
+        gamification.level = Math.floor(gamification.points / 100) + 1;
+        persistApp();
+        try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(-sub); } catch (e) {}
+        refreshApp(false);
+    }
+
+    /* ── day math ── */
+    function dayMinutes(k) {
+        const d = S.days[k];
+        if (!d) return 0;
+        let m = 0;
+        Object.values(d.blocks || {}).forEach(b => { if (b && b.done) m += b.min || 0; });
+        (d.immersion || []).forEach(e => { m += e.min || 0; });
+        return m;
+    }
+    const kept = k => dayMinutes(k) >= 60;
+
+    function weekHours() {
+        const mon = mondayOf(new Date());
+        let m = 0;
+        for (let i = 0; i < 7; i++) m += dayMinutes(dkey(addDays(mon, i)));
+        return m / 60;
+    }
+
+    function streak() {
+        const today = new Date();
+        const start = parseKey(S.startDate);
+        let cur = kept(dkey(today)) ? today : addDays(today, -1);
+        let n = 0, guard = 0;
+        while (cur >= start && guard++ < 800) {
+            const k = dkey(cur);
+            if (kept(k)) n++;
+            else if (cur.getDay() !== 0) break;   // a missed Sunday is recovery, not a break
+            cur = addDays(cur, -1);
+        }
+        return n;
+    }
+
+    /* ── block actions ── */
+    function findBlock(id) {
+        const d = dayState();
+        return blocksFor(d.mode).find(b => b.id === id);
+    }
+    function chosenSkill(d, b) {
+        const rec = d.blocks[b.id];
+        return (rec && rec.skill !== undefined) ? rec.skill : suggestSkill(b.family);
+    }
+
+    function completeBlock(id) {
+        const d = dayState();
+        const b = findBlock(id);
+        if (!b || (d.blocks[id] && d.blocks[id].done)) return;
+        const skill = chosenSkill(d, b);
+        const r = logHours(skill, b.min / 60);
+        d.blocks[id] = { done: true, skill: skill, hrs: r.hrs, xp: r.xp, min: b.min, at: Date.now() };
+        d.lastDoneAt = Date.now();
+        if (S.timer && S.timer.blockId === id) { S.timer = null; }
+        focusId = null;
+        save(); stopTickIfIdle(); render();
+        const list = blocksFor(d.mode);
+        if (list.every(x => d.blocks[x.id] && d.blocks[x.id].done)) {
+            notify('Xong tất cả block hôm nay.', 'achievement');
+        } else if (skill && r.hrs === 0) {
+            notify('Skill này đã đủ giờ. Block vẫn tính vào tuần, nhưng không cộng thêm vào skill.', 'info');
+        } else {
+            notify('Xong block ' + FAM[b.family].label.toLowerCase() + ' (' + b.min + ' phút).', 'success');
+        }
+    }
+
+    function undoBlock(id) {
+        const d = dayState();
+        const rec = d.blocks[id];
+        if (!rec || !rec.done) return;
+        if (rec.skill && rec.hrs > 0) unlogHours(rec.skill, rec.hrs, rec.xp);
+        d.blocks[id] = { skill: rec.skill };
+        save(); render();
+    }
+
+    function setSkill(id, name) {
+        const d = dayState();
+        d.blocks[id] = Object.assign({}, d.blocks[id], { skill: name });
+        save();
+    }
+
+    function setMode(mode) {
+        const d = dayState();
+        if (d.mode === mode) return;
+        d.mode = mode;
+        focusId = null;
+        if (S.timer && !blocksFor(mode).some(b => b.id === S.timer.blockId)) { S.timer = null; stopTickIfIdle(); }
+        save(); render();
+    }
+
+    function focusBlock(id) { focusId = id; render(); }
+
+    /* ── timer ── */
+    function chime() {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            const c = new Ctx();
+            [660, 880].forEach((f, i) => {
+                const t0 = c.currentTime + i * 0.22;
+                const o = c.createOscillator(), g = c.createGain();
+                o.type = 'sine'; o.frequency.value = f;
+                g.gain.setValueAtTime(0.0001, t0);
+                g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+                o.connect(g); g.connect(c.destination);
+                o.start(t0); o.stop(t0 + 0.4);
+            });
+            setTimeout(() => { try { c.close(); } catch (e) {} }, 1200);
+        } catch (e) { /* audio not available */ }
+    }
+
+    function timerLeft() {
+        const t = S.timer;
+        if (!t) return 0;
+        return t.running ? Math.max(0, t.endAt - Date.now()) : t.remainingMs;
+    }
+
+    function startTimer(id) {
+        const b = findBlock(id);
+        if (!b) return;
+        const d = dayState();
+        if (S.timer && S.timer.blockId === id) {
+            S.timer.endAt = Date.now() + S.timer.remainingMs;
+            S.timer.running = true;
+        } else {
+            S.timer = { blockId: id, dateKey: dkey(), remainingMs: b.min * 60000, endAt: Date.now() + b.min * 60000, running: true };
+        }
+        if (!d.blocks[id]) d.blocks[id] = {};
+        save(); startTick(); render();
+    }
+    function pauseTimer() {
+        if (!S.timer || !S.timer.running) return;
+        S.timer.remainingMs = Math.max(0, S.timer.endAt - Date.now());
+        S.timer.running = false; S.timer.endAt = null;
+        save(); stopTickIfIdle(); render();
+    }
+    function resetTimer() {
+        S.timer = null;
+        save(); stopTickIfIdle(); render();
+    }
+
+    function tick() {
+        if (!S.timer || !S.timer.running) { stopTickIfIdle(); return; }
+        const left = S.timer.endAt - Date.now();
+        if (left <= 0) {
+            const id = S.timer.blockId;
+            chime();
+            completeBlock(id);
+            return;
+        }
+        const el = document.getElementById('edTimerText');
+        if (el) el.textContent = fmtClock(left);
+    }
+    function startTick() { if (!tickHandle) tickHandle = setInterval(tick, 500); }
+    function stopTickIfIdle() {
+        if ((!S.timer || !S.timer.running) && tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+    }
+
+    /* ── immersion (passive listening, movies, podcasts) ── */
+    function addImmersion(min) {
+        const d = dayState();
+        const skill = S.immersionCounts ? suggestSkill('listen') : '';
+        const r = logHours(skill, min / 60);
+        d.immersion.push({ min: min, skill: skill, hrs: r.hrs, xp: r.xp, at: Date.now() });
+        save(); render();
+    }
+    function undoImmersion() {
+        const d = dayState();
+        const e = d.immersion.pop();
+        if (!e) return;
+        if (e.skill && e.hrs > 0) unlogHours(e.skill, e.hrs, e.xp);
+        save(); render();
+    }
+
+    /* ── reflection + monthly checkpoint + settings ── */
+    const weekKey = () => dkey(mondayOf(new Date()));
+
+    function saveReflection() {
+        const v = (document.getElementById('edReflect') || {}).value || '';
+        if (!v.trim()) { notify('Hãy viết ít nhất một câu.', 'error'); return; }
+        S.reflections[weekKey()] = { text: v.trim(), at: Date.now() };
+        drafts.reflect = undefined;
+        save(); render();
+        notify('Đã lưu tổng kết tuần.', 'success');
+    }
+
+    function saveCheckpoint() {
+        const val = id => (document.getElementById(id) || {}).value;
+        const cp = {
+            speakMin: parseFloat(val('edCpSpeak')) || 0,
+            listen: parseInt(val('edCpListen'), 10) || 0,
+            read: parseInt(val('edCpRead'), 10) || 0,
+            translate: parseInt(val('edCpTrans'), 10) || 0,
+            recorded: !!(document.getElementById('edCpRec') || {}).checked,
+            note: (val('edCpNote') || '').trim(),
+            at: Date.now()
+        };
+        S.checkpoints['m' + monthIndex()] = cp;
+        save(); render();
+        notify('Đã lưu checkpoint tháng ' + monthIndex() + '.', 'success');
+    }
+
+    function setStart(v) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return;
+        S.startDate = v; save(); render();
+    }
+    function setGoal(v) {
+        const n = Math.max(5, Math.min(60, parseFloat(v) || 32));
+        S.weeklyGoal = n; save(); render();
+    }
+    function setImmersionCounts(on) { S.immersionCounts = !!on; save(); }
+
+    function toggleCollapse() { S.collapsed = !S.collapsed; save(); applyCollapse(); }
+    function applyCollapse() {
+        const body = document.getElementById('edBody'), icon = document.getElementById('edCollapseIcon');
+        if (body) body.style.display = S.collapsed ? 'none' : '';
+        if (icon) icon.style.transform = S.collapsed ? 'rotate(-90deg)' : '';
+    }
+
+    /* ── render ── */
+    function skillOptions(selected) {
+        let html = '<option value="">Không cộng vào skill nào</option>';
+        Object.entries(allSkills()).forEach(([cat, c]) => {
+            html += '<optgroup label="' + esc(cat) + '">';
+            c.skills.forEach(s => {
+                const cur = hoursOf(s.name), tgt = s.targetHours || 10;
+                const full = cur >= tgt ? ' (đủ giờ)' : '';
+                html += '<option value="' + esc(s.name) + '"' + (s.name === selected ? ' selected' : '') + '>'
+                      + esc(s.name) + ' · ' + Math.round(cur) + '/' + tgt + 'h' + full + '</option>';
+            });
+            html += '</optgroup>';
+        });
+        return html;
+    }
+
+    function blockHtml(b, d, isCurrent, mode) {
+        const f = FAM[b.family];
+        const rec = d.blocks[b.id] || {};
+        const done = !!rec.done;
+        const cls = 'ed-block' + (done ? ' is-done' : '') + (isCurrent ? ' is-current' : '');
+        const node = done
+            ? '<button type="button" class="ed-node" onclick="EnglishDaily.undoBlock(\'' + b.id + '\')" aria-label="Bỏ đánh dấu xong: ' + esc(f.label) + '" title="Bấm để hoàn tác"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>'
+            : '<button type="button" class="ed-node" onclick="EnglishDaily.completeBlock(\'' + b.id + '\')" aria-label="Đánh dấu xong: ' + esc(f.label) + '" title="Đánh dấu xong"></button>';
+
+        if (done) {
+            const sk = rec.skill ? esc(rec.skill) : 'không gắn skill';
+            return '<li class="' + cls + '">' + node
+                + '<div class="ed-row"><span class="ed-label"><i class="fa-solid ' + f.icon + '"></i>' + esc(f.label) + '</span><span class="ed-spacer"></span><span class="ed-min">' + b.min + ' phút</span></div>'
+                + '<div class="ed-sub">' + sk + '</div></li>';
+        }
+
+        if (!isCurrent) {
+            return '<li class="' + cls + '">' + node
+                + '<div class="ed-row"><span class="ed-label"><i class="fa-solid ' + f.icon + '"></i>' + esc(f.label) + '</span><span class="ed-spacer"></span><span class="ed-min">' + b.min + ' phút</span>'
+                + '<button type="button" class="ed-ghost" onclick="EnglishDaily.focusBlock(\'' + b.id + '\')">Làm trước</button></div></li>';
+        }
+
+        const t = (S.timer && S.timer.blockId === b.id) ? S.timer : null;
+        const left = t ? timerLeft() : b.min * 60000;
+        const running = !!(t && t.running);
+        const paused = !!(t && !t.running);
+        const skill = chosenSkill(d, b);
+        const recent = d.lastDoneAt && (Date.now() - d.lastDoneAt < 15 * 60000);
+        const breakHint = recent && mode === 'normal'
+            ? '<p class="ed-break">Nghỉ 10–15 phút rồi làm tiếp. Đi bộ, uống nước, nhìn ra ngoài. Đừng mở Shorts.</p>' : '';
+        const mainBtn = running
+            ? '<button type="button" class="ed-btn" onclick="EnglishDaily.pauseTimer()">Tạm dừng</button>'
+            : '<button type="button" class="ed-btn primary" onclick="EnglishDaily.startTimer(\'' + b.id + '\')">' + (paused ? 'Tiếp tục' : 'Bắt đầu ' + b.min + ' phút') + '</button>';
+        const resetBtn = t ? '<button type="button" class="ed-ghost" onclick="EnglishDaily.resetTimer()">Đặt lại</button>' : '';
+
+        return '<li class="' + cls + '">' + node
+            + '<div class="ed-row"><span class="ed-label"><i class="fa-solid ' + f.icon + '"></i>' + esc(f.label) + '</span><span class="ed-spacer"></span><span class="ed-min">' + b.min + ' phút</span></div>'
+            + '<div class="ed-focus">' + breakHint
+            + '<p class="ed-prompt">' + esc(promptFor(b, mode)) + '</p>'
+            + '<div class="ed-skill-wrap"><label for="edSkill' + b.id + '">Cộng giờ vào skill</label>'
+            + '<select class="ed-select" id="edSkill' + b.id + '" onchange="EnglishDaily.setSkill(\'' + b.id + '\', this.value)">' + skillOptions(skill) + '</select></div>'
+            + '<div class="ed-timer-row"><span class="ed-timer" id="edTimerText" role="timer">' + fmtClock(left) + '</span>' + mainBtn
+            + '<button type="button" class="ed-btn" onclick="EnglishDaily.completeBlock(\'' + b.id + '\')">Xong rồi</button>' + resetBtn + '</div>'
+            + '</div></li>';
+    }
+
+    function reflectionHtml(isRestDay) {
+        const wk = weekKey();
+        const cur = S.reflections[wk];
+        const txt = drafts.reflect !== undefined ? drafts.reflect : (cur ? cur.text : '');
+        const past = Object.keys(S.reflections).filter(k => k !== wk).sort().reverse().slice(0, 4);
+        return '<details class="ed-details"' + (isRestDay ? ' open' : '') + '><summary>Tổng kết tuần' + (cur ? ' (đã lưu)' : '') + '</summary><div class="ed-details-body">'
+            + '<p class="ed-q">Tuần này bạn làm được gì bằng tiếng Anh mà tháng trước chưa làm được?</p>'
+            + '<textarea class="ed-textarea" id="edReflect" oninput="EnglishDaily._draft(\'reflect\', this.value)" placeholder="Ví dụ: nói liền 5 phút về inflation mà không dừng.">' + esc(txt) + '</textarea>'
+            + '<div style="margin-top:8px;"><button type="button" class="ed-btn primary" onclick="EnglishDaily.saveReflection()">Lưu tổng kết</button></div>'
+            + (past.length ? '<ul class="ed-history">' + past.map(k => '<li><b>Tuần ' + esc(k) + '</b><br>' + esc(S.reflections[k].text) + '</li>').join('') + '</ul>' : '')
+            + '</div></details>';
+    }
+
+    function checkpointHtml() {
+        const idx = monthIndex();
+        const cp = S.checkpoints['m' + idx] || {};
+        const scale = (id, label, val) => '<div class="ed-field"><label for="' + id + '">' + label + '</label><select class="ed-select" id="' + id + '">'
+            + '<option value="">—</option>' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + (val === n ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>';
+        const hist = Object.keys(S.checkpoints).sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10)).slice(-6);
+        return '<details class="ed-details"><summary>Checkpoint tháng ' + idx + (S.checkpoints['m' + idx] ? ' (đã lưu)' : '') + '</summary><div class="ed-details-body">'
+            + '<div class="ed-grid">'
+            + '<div class="ed-field"><label for="edCpSpeak">Nói liền lâu nhất (phút)</label><input class="ed-input" id="edCpSpeak" type="number" min="0" step="0.5" value="' + (cp.speakMin || '') + '"></div>'
+            + scale('edCpListen', 'Nghe: hiểu được bao nhiêu (1–5)', cp.listen)
+            + scale('edCpRead', 'Đọc: bài khó nhất đọc được (1–5)', cp.read)
+            + scale('edCpTrans', 'Dịch từ tiếng Việt (1 = luôn dịch, 5 = gần như không)', cp.translate)
+            + '</div>'
+            + '<label class="ed-check"><input type="checkbox" id="edCpRec"' + (cp.recorded ? ' checked' : '') + '> Tháng này đã ghi âm một bài nói và nghe lại</label>'
+            + '<div class="ed-field" style="margin-top:6px;"><label for="edCpNote">Ghi chú</label><textarea class="ed-textarea" id="edCpNote" style="min-height:48px;">' + esc(cp.note || '') + '</textarea></div>'
+            + '<div style="margin-top:8px;"><button type="button" class="ed-btn primary" onclick="EnglishDaily.saveCheckpoint()">Lưu checkpoint</button></div>'
+            + (hist.length ? '<ul class="ed-history">' + hist.map(k => { const c = S.checkpoints[k]; return '<li><b>Tháng ' + esc(k.slice(1)) + '</b> · nói ' + (c.speakMin || 0) + ' phút · nghe ' + (c.listen || '–') + ' · đọc ' + (c.read || '–') + ' · dịch ' + (c.translate || '–') + (c.recorded ? ' · có ghi âm' : '') + (c.note ? '<br>' + esc(c.note) : '') + '</li>'; }).join('') + '</ul>' : '')
+            + '</div></details>';
+    }
+
+    function settingsHtml() {
+        return '<details class="ed-details"><summary>Cài đặt</summary><div class="ed-details-body">'
+            + '<div class="ed-grid">'
+            + '<div class="ed-field"><label for="edStart">Ngày bắt đầu lộ trình</label><input class="ed-input" id="edStart" type="date" value="' + esc(S.startDate) + '" onchange="EnglishDaily.setStart(this.value)"></div>'
+            + '<div class="ed-field"><label for="edGoal">Mục tiêu giờ mỗi tuần</label><input class="ed-input" id="edGoal" type="number" min="5" max="60" step="1" value="' + S.weeklyGoal + '" onchange="EnglishDaily.setGoal(this.value)"></div>'
+            + '</div>'
+            + '<label class="ed-check"><input type="checkbox" id="edImmCounts"' + (S.immersionCounts ? ' checked' : '') + ' onchange="EnglishDaily.setImmersionCounts(this.checked)"> Immersion cũng cộng giờ vào skill Nghe</label>'
+            + '</div></details>';
+    }
+
+    function render() {
+        const root = document.getElementById('edBody');
+        if (!root) return;
+
+        // a timer left over from another day is meaningless
+        if (S.timer && S.timer.dateKey !== dkey()) { S.timer = null; save(); }
+
+        const d = dayState();
+        const mode = d.mode;
+        const blocks = blocksFor(mode);
+        const idx = monthIndex(), ph = phaseNum(), info = PHASE_INFO[ph];
+        const badge = document.getElementById('edBadge');
+        if (badge) badge.textContent = 'M' + idx + ' · ' + info.cefr;
+
+        const doneCount = blocks.filter(b => d.blocks[b.id] && d.blocks[b.id].done).length;
+        let current = null;
+        if (focusId) { const f = blocks.find(b => b.id === focusId); if (f && !(d.blocks[f.id] && d.blocks[f.id].done)) current = f; }
+        if (!current) current = blocks.find(b => !(d.blocks[b.id] && d.blocks[b.id].done)) || null;
+
+        const wh = weekHours(), goal = S.weeklyGoal, pct = Math.min(100, Math.round(wh / goal * 100));
+        const st = streak();
+        const todayMin = dayMinutes(dkey());
+
+        let html = '';
+        html += '<div class="ed-ctx"><strong>Tháng ' + idx + '</strong> · ' + esc(info.cefr) + ' · ' + esc(info.name)
+              + '<br>Hôm nay ' + (blocks.length ? doneCount + '/' + blocks.length + ' block · ' : '') + fmtHours(todayMin / 60)
+              + (st ? ' · chuỗi ' + st + ' ngày' : '') + '</div>';
+
+        html += '<div class="ed-modes" role="group" aria-label="Chế độ hôm nay">'
+              + [['normal', 'Bình thường'], ['bad', 'Bad day'], ['rest', 'Nghỉ']].map(m =>
+                  '<button type="button" class="ed-mode-btn" aria-pressed="' + (mode === m[0]) + '" onclick="EnglishDaily.setMode(\'' + m[0] + '\')">' + m[1] + '</button>').join('')
+              + '</div>';
+
+        html += '<div class="ed-week"><div class="ed-week-top"><span>Tuần này</span><span><b>' + (Math.round(wh * 10) / 10) + '</b> / ' + goal + ' giờ</span></div>'
+              + '<div class="ed-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></div></div>';
+
+        if (mode === 'bad') {
+            html += '<div class="ed-note">Bad Brain Day: chỉ 3 block × 20 phút. Làm xong là đủ, chuỗi ngày vẫn giữ.</div>';
+        } else if (mode === 'rest') {
+            html += '<div class="ed-note">Ngày nghỉ: không học nghiêm túc. Xem phim, nghe podcast hay đọc gì tùy bạn. Nếu muốn, ghi lại thời gian immersion bên dưới.</div>';
+        }
+
+        if (blocks.length) {
+            html += '<ol class="ed-rail">' + blocks.map(b => blockHtml(b, d, current && b.id === current.id, mode)).join('') + '</ol>';
+            if (!current) html += '<div class="ed-note">Xong hết block hôm nay. Thêm immersion bên dưới nếu còn sức.</div>';
+        }
+
+        const immTotal = (d.immersion || []).reduce((s, e) => s + (e.min || 0), 0);
+        html += '<div class="ed-section"><h4>Immersion thụ động</h4><div class="ed-chips">'
+              + [15, 30, 60].map(m => '<button type="button" class="ed-chip" onclick="EnglishDaily.addImmersion(' + m + ')">+' + m + ' phút</button>').join('')
+              + (immTotal ? '<button type="button" class="ed-ghost" onclick="EnglishDaily.undoImmersion()">Hoàn tác lần cuối</button>' : '')
+              + '</div><p class="ed-hint">' + (immTotal ? 'Hôm nay: ' + fmtHours(immTotal / 60) + '. ' : '')
+              + 'Nghe khi đi bộ, nấu ăn, dọn nhà hoặc di chuyển.</p></div>';
+
+        html += reflectionHtml(mode === 'rest');
+        html += checkpointHtml();
+        html += settingsHtml();
+
+        root.innerHTML = html;
+        applyCollapse();
+    }
+
+    function init() {
+        // resume a running timer, or drop one that expired while the page was closed
+        if (S.timer) {
+            if (S.timer.dateKey !== dkey()) S.timer = null;
+            else if (S.timer.running && S.timer.endAt <= Date.now()) S.timer = null;
+            save();
+        }
+        render();
+        if (S.timer && S.timer.running) startTick();
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else setTimeout(init, 0);
+
+    return {
+        render, setMode, completeBlock, undoBlock, setSkill, focusBlock,
+        startTimer, pauseTimer, resetTimer,
+        addImmersion, undoImmersion,
+        saveReflection, saveCheckpoint, setStart, setGoal, setImmersionCounts,
+        toggleCollapse,
+        _draft: (k, v) => { drafts[k] = v; }
+    };
+})();
+</script>
+<!-- ===== END ENGLISH DAILY ===== -->
+
         <!-- ===== 🗺️ STRATEGIC ROADMAP MODULE ===== -->
         <style>
             /* ── Strategic Roadmap — SAKURA MIST outer wrapper (đồng bộ với
@@ -59855,7 +60751,7 @@ kbd {
                     ${marks.map(mark => `
                         <div class="goal-milestone-dot ${hit.includes(mark) || progressPercent >= mark ? 'hit' : ''}"
                              style="left:${mark}%;" title="${mark}% milestone${hit.includes(mark) ? ' — reached' : ''}">
-                            ${hit.includes(mark) ? '<i class="fa-solid fa-check"></i>' : ''}
+                            ${hit.includes(mark) ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : ''}
                         </div>
                     `).join('')}
                 </div>
