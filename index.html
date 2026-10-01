@@ -41404,6 +41404,7 @@ kbd {
                         <button class="nv-tb nv-tb-txt" type="button" data-cmd="wikilink" data-tip="Link to note">[[ ]]</button>
                         <button class="nv-tb" type="button" data-cmd="image" data-tip="Image"><i class="fa-solid fa-image"></i></button>
                         <button class="nv-tb" type="button" data-cmd="pdf" data-tip="PDF"><i class="fa-solid fa-file-pdf"></i></button>
+                        <button class="nv-tb" type="button" data-cmd="pdfcrop" data-tip="Extract region from PDF (crop → text / table / OCR)"><i class="fa-solid fa-crop"></i></button>
                         <button class="nv-tb" type="button" data-cmd="file" data-tip="Excel / spreadsheet"><i class="fa-solid fa-file-excel"></i></button>
                         <span class="nv-tsep" aria-hidden="true"></span>
                         <button class="nv-tb" type="button" data-cmd="codeblock" data-tip="Code block"><i class="fa-solid fa-file-code"></i></button>
@@ -44628,6 +44629,7 @@ kbd {
             '<div class="nv-attach-meta">' + esc((rec.filename ? rec.filename + ' \u00b7 ' : '') + dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || noun) + usageLine) + '</div>'
             + (isSheetMime(rec.mime) ? '' : '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>')
             + (isImage ? '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>' : '')
+            + (/pdf/i.test(rec.mime || '') && context === 'note' ? '<button type="button" class="nv-act" data-act="crop"><i class="fa-solid fa-crop" aria-hidden="true"></i> Extract region…</button>' : '')
             + '<button type="button" class="nv-act" data-act="save"><i class="fa-solid fa-download" aria-hidden="true"></i> Save as…</button>'
             + (canDelete ? '<button type="button" class="nv-act nv-danger" data-act="delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>' : '');
         document.body.appendChild(menu);
@@ -44652,6 +44654,8 @@ kbd {
                         flash('Image copied');
                     } else { flash('Copy isn’t supported in this browser'); }
                 } catch (err) { flash('Couldn’t copy that image'); }
+            } else if (act === 'crop') {
+                openPdfCrop({ id: rec.id, name: rec.filename || 'document.pdf', blob: rec.blob });
             } else if (act === 'save') {
                 const ext = (rec.mime && rec.mime.split('/')[1]) || 'webp';
                 const url = URL.createObjectURL(rec.blob);
@@ -46455,7 +46459,11 @@ kbd {
        browser — nothing is uploaded). The original PDF is also attached at the top of the note,
        so Read mode shows the viewer above the extracted text. OCR is never automatic: it's slow
        and imperfect, so it asks first. */
-    const PDFJS_VER = '3.11.174';
+    // Pinned exact versions (current releases): pdf.js 6.3.289 and Tesseract.js 7.0.0 — Tesseract 7 is
+    // ~15–35% faster than 6. pdf.js 4+ ships as ES modules only (no global <script> build), so it is
+    // loaded with a dynamic import(); browsers too old for the modern build get pdf.js's "legacy" build.
+    const PDFJS_VER = '6.3.289';
+    const TESS_VER = '7.0.0';
     let pdfJsPromise = null, tessPromise = null;
     function loadScriptOnce(src) {
         return new Promise((resolve, reject) => {
@@ -46467,20 +46475,20 @@ kbd {
         });
     }
     function loadPdfJs() {
-        if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions.workerSrc) return Promise.resolve(window.pdfjsLib);
         if (!pdfJsPromise) pdfJsPromise = (async () => {
-            const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_VER + '/';
-            if (!window.pdfjsLib) await loadScriptOnce(base + 'pdf.min.js');
+            const modern = typeof Promise.withResolvers === 'function' && typeof Array.prototype.at === 'function' && typeof structuredClone === 'function';
+            const base = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + PDFJS_VER + (modern ? '' : '/legacy') + '/build/';
+            const lib = await import(base + 'pdf.min.mjs');
             // A worker can't be started straight from another origin, so wrap it in a same-origin blob URL.
-            const code = await (await fetch(base + 'pdf.worker.min.js')).text();
-            window.pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-            return window.pdfjsLib;
+            const code = await (await fetch(base + 'pdf.worker.min.mjs')).text();
+            lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+            return lib;
         })().catch((e) => { pdfJsPromise = null; throw e; });
         return pdfJsPromise;
     }
     function loadTesseract() {
         if (window.Tesseract) return Promise.resolve(window.Tesseract);
-        if (!tessPromise) tessPromise = loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js')
+        if (!tessPromise) tessPromise = loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@' + TESS_VER + '/dist/tesseract.min.js')
             .then(() => window.Tesseract).catch((e) => { tessPromise = null; throw e; });
         return tessPromise;
     }
@@ -46507,6 +46515,93 @@ kbd {
             prev = l;
         }
         return paras.map(mdEscapePara).join('\n\n');
+    }
+    /* OCR is never presented as truth. Every OCR'd page is written into the note as a ⚠ warning
+       box (clearly different from plain, native-text pages) with a confidence score and a list of
+       what to double-check — numbers, decimal points, %, currency symbols, table-like layouts.
+       Individual numbers Tesseract is unsure about (<80%) are highlighted inline, because one
+       misread digit ("1.05%" → "10.5%" → "105%") can wreck a whole analysis. A summary box at the
+       top of the note says how many pages were native text vs OCR. */
+    const OCR_LOW_WORD = 80;
+    const escOcrWord = (w) => w.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/([\\`*_~\[\]])/g, '\\$1');
+    function ocrPageToMarkdown(pageNo, data) {
+        const paras = [], wordConf = [];
+        let nums = 0, decimals = 0, pcts = 0, cur = 0, lowNums = 0, numericLines = 0, tableHint = false;
+        const startEsc = (t) => t.replace(/^(\s*)([#>*+\-]|\d+[.)])(?=\s)/, '$1\\$2');
+        const flagWord = (w) => {
+            const raw = String(w.text || '').trim();
+            if (!raw) return '';
+            const esc = escOcrWord(raw);
+            if (/%/.test(raw)) pcts++;
+            if (/[$€£¥₫]|^(?:VND|VNĐ|USD|EUR|đ|vnd)$/i.test(raw)) cur++;
+            if (/\d/.test(raw)) {
+                nums++;
+                if (/\d[.,]\d/.test(raw)) decimals++;
+                if (typeof w.confidence === 'number' && w.confidence < OCR_LOW_WORD) {
+                    lowNums++;
+                    return '<mark title="OCR confidence ' + Math.round(w.confidence) + '% \u2014 verify against the PDF">' + esc + '</mark>';
+                }
+            }
+            return esc;
+        };
+        if (Array.isArray(data.blocks)) {
+            for (const b of data.blocks) {
+                if (/TABLE/i.test(b.blocktype || '')) tableHint = true;
+                for (const p of b.paragraphs || []) {
+                    const lineTxt = [];
+                    for (const l of p.lines || []) {
+                        let numericInLine = 0;
+                        const ws = (l.words || []).map((w) => {
+                            if (/\d/.test(w.text || '')) numericInLine++;
+                            if (typeof w.confidence === 'number') wordConf.push(w.confidence);
+                            return flagWord(w);
+                        }).filter(Boolean);
+                        if (numericInLine >= 3) numericLines++;
+                        if (ws.length) lineTxt.push(ws.join(' '));
+                    }
+                    const t = lineTxt.join(' ').trim();
+                    if (t) paras.push(startEsc(t));
+                }
+            }
+        } else {
+            // No word-level data available: keep the text, still flag what we can by pattern.
+            (data.text || '').split(/\n\s*\n/).map((q) => q.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean).forEach((q) => {
+                nums += (q.match(/\d+/g) || []).length; decimals += (q.match(/\d[.,]\d/g) || []).length;
+                pcts += (q.match(/%/g) || []).length; cur += (q.match(/[$€£¥₫]/g) || []).length;
+                paras.push(mdEscapePara(q));
+            });
+        }
+        if (!paras.length) return { md: '', page: pageNo, conf: 0 };
+        if (numericLines >= 3) tableHint = true;
+        let conf = typeof data.confidence === 'number' ? data.confidence : (wordConf.length ? wordConf.reduce((a, c) => a + c, 0) / wordConf.length : 0);
+        conf = Math.max(0, Math.min(100, Math.round(conf)));
+        const filled = Math.round(conf / 10), bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
+        const level = conf >= 90 ? 'good' : conf >= 75 ? 'fair' : 'LOW';
+        const issues = [];
+        if (nums) issues.push('numbers (' + nums + ')');
+        if (decimals) issues.push('decimal points / separators (' + decimals + ')');
+        if (pcts) issues.push('% values (' + pcts + ')');
+        if (cur) issues.push('currency symbols (' + cur + ')');
+        if (tableHint) issues.push('table-like layout');
+        const lines = ['[!warning] OCR text \u2014 page ' + pageNo + ' \u00b7 ' + level + ' confidence ' + conf + '%',
+            '`' + bar + '` ' + conf + '% \u2014 accuracy may be imperfect. Verify against the original PDF.'];
+        if (issues.length) lines.push('\u26a0 Potential issues: ' + issues.join(' \u00b7 '));
+        if (lowNums) lines.push('\u26a0 ' + lowNums + ' low-confidence number' + (lowNums === 1 ? '' : 's') + ' highlighted in the text below.');
+        if (decimals || pcts || cur) lines.push('A misread decimal point changes a value 10\u00d7 or 100\u00d7 (1.05% vs 10.5% vs 105%).');
+        lines.push('');
+        paras.forEach((t, k) => { if (k) lines.push(''); lines.push(t); });
+        return { md: lines.map((l) => (l === '' ? '>' : '> ' + l)).join('\n'), page: pageNo, conf, lowNums, issues };
+    }
+    function pdfImportSummary(total, nativeCount, ocrStats, skipped) {
+        const lines = ['[!info] PDF import \u2014 ' + (ocrStats.length ? 'native text + OCR' : 'native text only')];
+        if (nativeCount) lines.push('**Native text:** ' + nativeCount + ' of ' + total + ' page' + (total === 1 ? '' : 's') + ', extracted from the PDF itself (exact).');
+        if (ocrStats.length) {
+            const avg = Math.round(ocrStats.reduce((a, o) => a + o.conf, 0) / ocrStats.length);
+            lines.push('**OCR text:** ' + ocrStats.length + ' page' + (ocrStats.length === 1 ? '' : 's') + ' read from images, average confidence ' + avg + '%. They appear in \u26a0 warning boxes.');
+            lines.push('OCR can misread digits, decimal points, % and currency symbols \u2014 check every figure against the attached original.');
+        }
+        if (skipped.length) lines.push('**Skipped:** ' + skipped.length + ' page' + (skipped.length === 1 ? '' : 's') + ' with no text (' + skipped.slice(0, 10).join(', ') + (skipped.length > 10 ? ', \u2026' : '') + ').');
+        return lines.map((l) => '> ' + l).join('\n') + '\n\n';
     }
     /* Clear OCR prompt for scanned PDF pages (replaces the browser's plain confirm box).
        Resolves { action: 'ocr' | 'skip' | 'cancel', lang }. Esc = cancel; clicking the dimmed
@@ -46559,7 +46654,7 @@ kbd {
                     <li>Runs <b>in your browser</b> with Tesseract.js \u2014 nothing is uploaded.</li>
                     <li>The first time it downloads language data (a few MB to ~20 MB).</li>
                     <li>Roughly 5\u201320 seconds per page, so about <b>${Math.max(1, Math.round(n * 12 / 60))} min</b> for ${n} page${n === 1 ? '' : 's'}.</li>
-                    <li>Accuracy depends on scan quality; check the result.</li>
+                    <li>OCR is <b>not exact</b>: pages appear in a <b>⚠ warning box</b> with a confidence score, and numbers, decimals, %, currency and table-like text are flagged for you to verify.</li>
                   </ul>
                   <label class="nv-ocr-lbl" for="nvOcrLang">OCR language</label>
                   <select class="nv-ocr-sel" id="nvOcrLang">
@@ -46597,7 +46692,7 @@ kbd {
         let pdfjs;
         try { toast('Loading PDF reader…'); pdfjs = await loadPdfJs(); }
         catch (e) { alert('Could not load the PDF reader: ' + (e.message || e)); return; }
-        let ocrWorker = null, ocrLang = '', made = 0, failed = 0, lastId = null;
+        let ocrWorker = null, ocrLang = '', ocrTotal = 0, made = 0, failed = 0, lastId = null;
         try {
             for (const f of files) {
                 try {
@@ -46609,7 +46704,7 @@ kbd {
                         pages[i] = await pdfPageText(page);
                         if (pages[i].replace(/\s/g, '').length < 25) blank.push(i);
                     }
-                    let usedOcr = false;
+                    let usedOcr = false; const ocrStats = [];
                     const choice = blank.length ? await askOcrModal({ fileName: f.name, total: N, blank }) : { action: 'skip', lang: 'vie+eng' };
                     if (choice.action === 'cancel') continue;
                     if (choice.action === 'ocr') {
@@ -46628,9 +46723,11 @@ kbd {
                                 const vp = page.getViewport({ scale: Math.min(2.5, 2600 / base.width) });
                                 const cv = document.createElement('canvas');
                                 cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
-                                await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-                                const { data } = await ocrWorker.recognize(cv);
-                                pages[i] = (data.text || '').split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean).map(mdEscapePara).join('\n\n');
+                                await page.render({ canvas: cv, viewport: vp }).promise;
+                                const { data } = await ocrWorker.recognize(cv, {}, { blocks: true });
+                                const rec = ocrPageToMarkdown(i, data);
+                                pages[i] = rec.md;
+                                if (rec.md) ocrStats.push(rec);
                                 cv.width = cv.height = 0;
                             }
                             usedOcr = true;
@@ -46642,17 +46739,424 @@ kbd {
                     let head = '';
                     try { const rec = await ingestAttachment(f); head = '[\uD83D\uDCC4 ' + (f.name || 'document.pdf') + '](attachment://' + rec.id + ')\n\n'; } catch (e) { /* attach is a bonus */ }
                     const text = pages.slice(1).filter(Boolean).join('\n\n---\n\n');
+                    const summary = pdfImportSummary(N, N - blank.length, ocrStats, blank.filter((i) => !pages[i]));
                     const when = f.lastModified || Date.now();
                     const id = uid();
-                    await restoreNotesList([{ id, title, markdown: head + (text || '*No text could be extracted from this PDF.*'), type: 'General',
+                    await restoreNotesList([{ id, title, markdown: head + summary + (text || '*No text could be extracted from this PDF.*'), type: 'General',
                         tags: usedOcr ? ['pdf', 'ocr'] : ['pdf'], pinned: false, createdAt: Date.now(), updatedAt: Date.now() }]);
-                    made++; lastId = id;
+                    made++; ocrTotal += ocrStats.length; lastId = id;
                 } catch (e) { console.warn('Notes Vault: PDF import failed', f.name, e); failed++; }
             }
         } finally { if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e) { /* ignore */ } } }
         if (!made && !failed) { toast('PDF import cancelled.'); return; }
-        toast('Imported ' + made + ' PDF note' + (made === 1 ? '' : 's') + (failed ? ' — ' + failed + ' couldn\u2019t be read (encrypted or damaged?)' : '') + '.');
+        toast('Imported ' + made + ' PDF note' + (made === 1 ? '' : 's') + (failed ? ' — ' + failed + ' couldn\u2019t be read (encrypted or damaged?)' : '') + (ocrTotal ? ' — OCR used on ' + ocrTotal + ' page' + (ocrTotal === 1 ? '' : 's') + ': review the ⚠ warning boxes.' : '') + '.');
         if (made === 1 && lastId) openNote(lastId);
+    }
+
+    /* ── Extract a region of a PDF page (drag a box → text / table → caret) ─────────────────────────
+       Light preview (pdf.js, zoomable), rubber-band selection kept in page units (so zoom never loses
+       it), then:  1) the box has a native text layer → exact text, no OCR at all (instant);
+                   2) otherwise ONLY the cropped area is rendered at 2.5× into a small canvas and read by
+                      Tesseract (sub-second, no header/footer noise).
+       Both paths yield positioned words, so the same layout step can turn them into a Markdown table
+       (columns found from the rows' cell gaps) or paragraphs. Result is editable, then inserted at the
+       caret; the modal stays open so several regions can be collected in a row. ─────────────────── */
+    const PC_OCR_SCALE = 2.5, PC_MARK_OPEN = '\uE000', PC_MARK_CLOSE = '\uE001';
+    /*PC-PURE-START*/
+    const pcMul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+        a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
+    // Keep the text items whose vertical centre is inside the box; a line cut mid-way is sliced by character.
+    function pcClip(items, s) {
+        const out = [];
+        for (const it of items) {
+            const cy = (it.y0 + it.y1) / 2, n = it.str.length;
+            if (!n || cy < s.y0 || cy > s.y1 || it.x1 <= s.x0 || it.x0 >= s.x1) continue;
+            const cw = (it.x1 - it.x0) / n;
+            const lo = Math.max(0, Math.ceil((s.x0 - it.x0) / cw - 0.5)), hi = Math.min(n - 1, Math.floor((s.x1 - it.x0) / cw - 0.5));
+            if (hi < lo) continue;
+            const str = it.str.slice(lo, hi + 1);
+            if (str.trim()) out.push({ str, x0: it.x0 + lo * cw, x1: it.x0 + (hi + 1) * cw, y0: it.y0, y1: it.y1 });
+        }
+        return out;
+    }
+    const pcTxt = (it) => (it.conf != null && it.conf < OCR_LOW_WORD && /\d/.test(it.str)) ? PC_MARK_OPEN + it.str.trim() + PC_MARK_CLOSE : it.str;
+    function pcJoin(its) {
+        let t = '', prev = null;
+        for (const it of its) {
+            const s = pcTxt(it);
+            if (prev && !/\s$/.test(t) && !/^\s/.test(s) && (it.ocr || it.x0 - prev.x1 > (prev.y1 - prev.y0) * 0.12)) t += ' ';
+            t += s; prev = it;
+        }
+        return t.replace(/\s+/g, ' ').trim();
+    }
+    function pcLines(items) {
+        const hs = items.map((i) => i.y1 - i.y0).sort((a, b) => a - b), mh = hs[hs.length >> 1] || 10;
+        const sorted = items.slice().sort((a, b) => (a.y0 + a.y1) - (b.y0 + b.y1)), lines = [];
+        for (const it of sorted) {
+            const cy = (it.y0 + it.y1) / 2, ln = lines[lines.length - 1];
+            if (ln && Math.abs(cy - ln.cy) <= mh * 0.6) { ln.cy = (ln.cy * ln.its.length + cy) / (ln.its.length + 1); ln.its.push(it); }
+            else lines.push({ cy, its: [it] });
+        }
+        lines.forEach((l) => { l.its.sort((a, b) => a.x0 - b.x0); l.y0 = Math.min(...l.its.map((i) => i.y0)); l.y1 = Math.max(...l.its.map((i) => i.y1)); });
+        return { lines, mh };
+    }
+    // A "cell" = words closer than ~0.9 line-heights; a wider gap starts the next column.
+    function pcCells(line, mh) {
+        const cells = []; let c = null, last = null;
+        for (const it of line.its) {
+            if (c && it.x0 - last.x1 <= mh * 0.9) { c.its.push(it); c.x1 = Math.max(c.x1, it.x1); }
+            else { c = { its: [it], x0: it.x0, x1: it.x1 }; cells.push(c); }
+            last = it;
+        }
+        cells.forEach((k) => { k.t = pcJoin(k.its); });
+        return cells;
+    }
+    const PC_NUM = /^[(\-\u2212\u2013+]?\s?\d[\d.,\s]*\s?[%)x]*$/;
+    function pcTable(lines, mh, force) {
+        const rows = lines.map((l) => pcCells(l, mh)), multi = rows.filter((r) => r.length >= 2);
+        if (multi.length < 2 || (!force && multi.length < rows.length * 0.5)) return null;
+        // Column count = the most common cell count among multi-cell rows; ONLY those rows define the
+        // column boundaries (a stray single-cell title or a merged header must not shift them).
+        const freq = {}; multi.forEach((r) => { freq[r.length] = (freq[r.length] || 0) + 1; });
+        let k = 0, best = 0;
+        Object.keys(freq).forEach((n) => { if (freq[n] > best || (freq[n] === best && +n > k)) { best = freq[n]; k = +n; } });
+        let ref = rows.filter((r) => r.length === k);
+        if (ref.length < 2) { if (!force) return null; ref = [multi.reduce((a, r) => (r.length > a.length ? r : a))]; k = ref[0].length; }
+        const cols = [];
+        for (let i = 0; i < k; i++) cols.push({ x0: Math.min(...ref.map((r) => r[i].x0)), x1: Math.max(...ref.map((r) => r[i].x1)) });
+        // Single-cell rows before/after the table (caption, source note) are text, NOT a header row.
+        const first = rows.findIndex((r) => r.length >= 2), last = rows.length - 1 - rows.slice().reverse().findIndex((r) => r.length >= 2);
+        const grid = rows.slice(first, last + 1).map((r) => {
+            const a = new Array(k).fill('');
+            r.forEach((c) => {
+                let j = 0, bo = -Infinity;
+                cols.forEach((col, i) => { const ov = Math.min(c.x1, col.x1) - Math.max(c.x0, col.x0); if (ov > bo) { bo = ov; j = i; } });
+                a[j] = a[j] ? a[j] + ' ' + c.t : c.t;
+            });
+            return a;
+        });
+        const ce = (t) => t.replace(/\|/g, '\\|').replace(/</g, '\\<');
+        const al = cols.map((_, i) => {
+            const v = grid.slice(1).map((r) => r[i]).filter(Boolean);
+            return v.length && v.filter((x) => PC_NUM.test(x.split(PC_MARK_OPEN).join('').split(PC_MARK_CLOSE).join(''))).length >= v.length * 0.8 ? '---:' : '---';
+        });
+        const row = (r) => '| ' + r.map(ce).join(' | ') + ' |';
+        const tbl = [row(grid[0]), '| ' + al.join(' | ') + ' |'].concat(grid.slice(1).map(row)).join('\n');
+        const txt = (r) => mdEscapePara(r.map((c) => c.t).join(' '));
+        return rows.slice(0, first).map(txt).concat([tbl], rows.slice(last + 1).map(txt)).join('\n\n');
+    }
+    function pcParas(lines, mh) {
+        const out = []; let prev = null;
+        for (const l of lines) {
+            const t = pcJoin(l.its); if (!t) continue;
+            if (!prev || l.y0 - prev.y1 > mh * 0.9) out.push(t); else out[out.length - 1] += ' ' + t;
+            prev = l;
+        }
+        return out.map(mdEscapePara).join('\n\n');
+    }
+    const pcFin = (t) => t.split(PC_MARK_OPEN).join('<mark title="Low OCR confidence \u2014 verify against the PDF">').split(PC_MARK_CLOSE).join('</mark>');
+    function pcLayout(items, mode) {
+        if (!items.length) return { md: '', table: false };
+        const { lines, mh } = pcLines(items);
+        if (mode !== 'text') { const t = pcTable(lines, mh, mode === 'table'); if (t) return { md: pcFin(t), table: true }; }
+        return { md: pcFin(pcParas(lines, mh)), table: false };
+    }
+    /*PC-PURE-END*/
+
+    function pcStyle() {
+        if (document.getElementById('nvcStyle')) return;
+        const st = document.createElement('style'); st.id = 'nvcStyle';
+        st.textContent = `
+        .nvc-scrim { position: fixed; inset: 0; z-index: 100000; background: rgba(20,12,18,.55); display: flex; align-items: center; justify-content: center; padding: 10px; }
+        .nvc { width: min(100%, 1200px); height: min(100%, 900px); display: flex; flex-direction: column; background: var(--bg-white,#fff); color: var(--text-dark,#222); border: 1px solid var(--border-color,#ddd); border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.35); overflow: hidden; outline: 0; }
+        .nvc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border-color,#ddd); background: var(--bg-light,#f5f5f5); font-size: .85rem; }
+        .nvc-bar select, .nvc-side select { max-width: 200px; padding: 5px 7px; border-radius: 7px; border: 1px solid var(--border-color,#ccc); background: var(--bg-white,#fff); color: inherit; font: inherit; }
+        .nvc-sp { flex: 1; }
+        .nvc-ib { min-width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border-color,#ccc); background: var(--bg-white,#fff); color: inherit; cursor: pointer; }
+        .nvc-ib:hover, .nvc-ib[aria-pressed="true"] { background: var(--primary,#db2777); color: #fff; border-color: transparent; }
+        .nvc-pg { width: 52px; padding: 5px; border-radius: 7px; border: 1px solid var(--border-color,#ccc); background: var(--bg-white,#fff); color: inherit; text-align: center; font: inherit; }
+        .nvc-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 340px; }
+        .nvc-stage { position: relative; overflow: auto; background: #7d7d86; padding: 12px; }
+        .nvc-wrap { position: relative; margin: 0 auto; background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,.4); }
+        .nvc-cv { display: block; width: 100%; height: 100%; }
+        .nvc-ov { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
+        .nvc.nvc-pan .nvc-ov { touch-action: pan-x pan-y; }
+        .nvc-box { position: absolute; border: 2px solid var(--primary,#db2777); background: rgba(219,39,119,.14); pointer-events: none; }
+        .nvc-empty { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; color: #fff; text-align: center; padding: 20px; }
+        .nvc-side { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-left: 1px solid var(--border-color,#ddd); min-height: 0; }
+        .nvc-side label { display: flex; flex-direction: column; gap: 3px; font-size: .75rem; font-weight: 600; }
+        .nvc-side .nvc-chk { flex-direction: row; align-items: center; gap: 6px; font-weight: 500; }
+        .nvc-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .nvc-opts label:first-child { grid-column: 1 / -1; }
+        .nvc-side select { max-width: none; width: 100%; }
+        .nvc-status { font-size: .8rem; color: var(--text-muted,#666); min-height: 1.2em; }
+        .nvc-out { flex: 1; min-height: 120px; resize: none; padding: 9px; border-radius: 8px; border: 1px solid var(--border-color,#ccc); background: var(--bg-white,#fff); color: inherit; font: .82rem/1.45 ui-monospace, Consolas, monospace; }
+        .nvc-foot { display: flex; gap: 8px; justify-content: flex-end; }
+        .nvc-hint { font-size: .72rem; color: var(--text-muted,#666); }
+        @media (max-width: 760px) { .nvc-main { grid-template-columns: 1fr; grid-template-rows: 1fr 46%; } .nvc-side { border-left: 0; border-top: 1px solid var(--border-color,#ddd); } .nvc-out { min-height: 60px; } }`;
+        document.head.appendChild(st);
+    }
+
+    async function openPdfCrop(src) {
+        if (!S.note) { toast('Open or create a note first.'); return; }
+        if (document.querySelector('.nvc-scrim')) return;
+        if (S.mode !== 'edit') setMode('edit', false);
+        pcStyle();
+        let pdfjs;
+        try { toast('Loading PDF reader…'); pdfjs = await loadPdfJs(); }
+        catch (e) { alert('Could not load the PDF reader: ' + (e.message || e)); return; }
+        // PDFs already attached to this note (+ the one the caller passed in) are offered directly.
+        const srcs = [];
+        if (src && src.blob) srcs.push(src);
+        try {
+            const seen = new Set(srcs.map((x) => x.id));
+            for (const m of (S.note.markdown || '').matchAll(/attachment:\/\/([A-Za-z0-9_-]+)/g)) {
+                if (seen.has(m[1])) continue; seen.add(m[1]);
+                const r = await dbGetAttachment(m[1]);
+                if (r && /pdf/i.test(r.mime || '') && r.blob) srcs.push({ id: r.id, name: r.filename || 'document.pdf', blob: r.blob });
+            }
+        } catch (e) { /* attachments are optional */ }
+
+        const P = { doc: null, name: '', page: 1, n: 0, zoom: 1, fit: 'init', w: 0, h: 0, sel: null, cache: new Map(), run: 0, rtok: 0, task: null, worker: null, wlang: '', last: null };
+        const scrim = document.createElement('div'); scrim.className = 'nvc-scrim';
+        scrim.innerHTML = `
+          <div class="nvc" tabindex="-1" role="dialog" aria-modal="true" aria-label="Extract region from PDF">
+            <div class="nvc-bar">
+              <b><i class="fa-solid fa-crop" aria-hidden="true"></i> Extract region</b>
+              <select class="nvc-src" title="PDF"></select>
+              <button type="button" class="nvc-ib" data-a="open" title="Open a PDF file…"><i class="fa-solid fa-folder-open"></i></button>
+              <span class="nvc-sp"></span>
+              <button type="button" class="nvc-ib" data-a="prev" title="Previous page (PageUp)"><i class="fa-solid fa-chevron-left"></i></button>
+              <input class="nvc-pg" type="number" min="1" value="1" aria-label="Page"><span class="nvc-of"></span>
+              <button type="button" class="nvc-ib" data-a="next" title="Next page (PageDown)"><i class="fa-solid fa-chevron-right"></i></button>
+              <button type="button" class="nvc-ib" data-a="zout" title="Zoom out (-)"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+              <span class="nvc-zv">100%</span>
+              <button type="button" class="nvc-ib" data-a="zin" title="Zoom in (+)"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+              <button type="button" class="nvc-ib" data-a="fit" title="Fit width"><i class="fa-solid fa-arrows-left-right"></i></button>
+              <button type="button" class="nvc-ib" data-a="pan" aria-pressed="false" title="Touch: scroll the page instead of selecting"><i class="fa-solid fa-hand"></i></button>
+              <button type="button" class="nvc-ib" data-a="close" title="Close (Esc)"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="nvc-main">
+              <div class="nvc-stage">
+                <div class="nvc-wrap"><canvas class="nvc-cv"></canvas><div class="nvc-ov"><div class="nvc-box" hidden></div></div></div>
+                <div class="nvc-empty"><div>Choose a PDF, then drag a box around the paragraph, chart caption or table you want.</div><button type="button" class="nv-btn nv-btn-primary" data-a="open"><i class="fa-solid fa-folder-open"></i> Open PDF…</button></div>
+              </div>
+              <div class="nvc-side">
+                <div class="nvc-opts">
+                  <label>Read with<select class="nvc-method"><option value="auto">Auto — text layer, else OCR</option><option value="ocr">Always OCR (image)</option></select></label>
+                  <label>Layout<select class="nvc-layout"><option value="auto">Auto</option><option value="table">Table</option><option value="text">Paragraph</option></select></label>
+                  <label>OCR language<select class="nvc-lang"><option value="vie+eng">Vietnamese + English</option><option value="eng">English</option><option value="vie">Vietnamese</option></select></label>
+                </div>
+                <div class="nvc-status" aria-live="polite">Drag on the page to select a region.</div>
+                <textarea class="nvc-out" spellcheck="false" placeholder="Extracted Markdown appears here — edit it before inserting."></textarea>
+                <label class="nvc-chk"><input type="checkbox" class="nvc-srcline" checked> Add source line (file, page)</label>
+                <div class="nvc-foot"><button type="button" class="nv-btn" data-a="clear">Clear</button><button type="button" class="nv-btn nv-btn-primary" data-a="insert"><i class="fa-solid fa-arrow-right-to-bracket"></i> Insert at cursor</button></div>
+                <div class="nvc-hint">Drag = new box · drag inside = move · Ctrl+Enter = insert · Esc = clear / close</div>
+              </div>
+            </div>
+          </div>`;
+        document.body.appendChild(scrim);
+        const q = (s) => scrim.querySelector(s);
+        const dlg = q('.nvc'), stage = q('.nvc-stage'), wrap = q('.nvc-wrap'), cv = q('.nvc-cv'), ov = q('.nvc-ov'), box = q('.nvc-box'), empty = q('.nvc-empty'),
+            selSrc = q('.nvc-src'), pgIn = q('.nvc-pg'), pgOf = q('.nvc-of'), zv = q('.nvc-zv'), out = q('.nvc-out'), stat = q('.nvc-status'),
+            method = q('.nvc-method'), layoutSel = q('.nvc-layout'), langSel = q('.nvc-lang'), srcChk = q('.nvc-srcline');
+        const status = (t, spin) => { stat.innerHTML = (spin ? '<i class="fa-solid fa-spinner fa-spin"></i> ' : '') + esc(t); };
+        const addOpt = (s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = s.name; selSrc.appendChild(o); };
+        srcs.forEach(addOpt);
+        if (!srcs.length) selSrc.hidden = true;
+
+        const drawBox = () => {
+            const s = P.sel; box.hidden = !s;
+            if (!s) return;
+            box.style.left = s.x0 * P.zoom + 'px'; box.style.top = s.y0 * P.zoom + 'px';
+            box.style.width = (s.x1 - s.x0) * P.zoom + 'px'; box.style.height = (s.y1 - s.y0) * P.zoom + 'px';
+        };
+        const render = async () => {
+            const tok = ++P.rtok;
+            if (P.task) { try { P.task.cancel(); await P.task.promise; } catch (e) { /* cancelled */ } P.task = null; }
+            const page = await P.doc.getPage(P.page); if (tok !== P.rtok) return;
+            const v1 = page.getViewport({ scale: 1 }); P.w = v1.width; P.h = v1.height;
+            if (P.fit) { P.zoom = Math.max(0.4, Math.min(P.fit === 'w' ? 3 : 1, (stage.clientWidth - 24) / P.w)); P.fit = null; }
+            const dpr = Math.min(window.devicePixelRatio || 1, 2), vp = page.getViewport({ scale: P.zoom * dpr });
+            cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+            wrap.style.width = P.w * P.zoom + 'px'; wrap.style.height = P.h * P.zoom + 'px';
+            zv.textContent = Math.round(P.zoom * 100) + '%';
+            const task = page.render({ canvas: cv, viewport: vp }); P.task = task;
+            try { await task.promise; } catch (e) { if (!/cancel/i.test((e && (e.name || e.message)) || '')) console.warn('Notes Vault: crop preview', e); }
+            if (P.task === task) P.task = null;
+            drawBox();
+        };
+        const goPage = async (n) => {
+            if (!P.doc) return;
+            n = Math.max(1, Math.min(P.n, Math.round(+n) || 1));
+            P.page = n; P.sel = null; P.last = null; pgIn.value = n; drawBox();
+            await render();
+        };
+        const zoomBy = (f) => { P.zoom = Math.max(0.4, Math.min(4, P.zoom * f)); render(); };
+        const loadSource = async (s) => {
+            status('Opening PDF…', true);
+            try {
+                if (P.doc) { try { P.doc.destroy(); } catch (e) { /* ignore */ } }
+                P.cache.clear(); P.sel = null; P.last = null; out.value = ''; P.fit = 'init';
+                P.doc = await pdfjs.getDocument({ data: new Uint8Array(await s.blob.arrayBuffer()) }).promise;
+                P.name = s.name; P.n = P.doc.numPages; pgIn.max = P.n; pgOf.textContent = '/ ' + P.n;
+                empty.hidden = true; status('Drag on the page to select a region.');
+                await goPage(1);
+            } catch (e) { console.warn('Notes Vault: crop open', e); status('Could not open that PDF (encrypted or damaged?).'); }
+        };
+
+        // ── words in page units (scale 1, origin top-left) ──
+        const nativeItems = async (page) => {
+            if (P.cache.has(page.pageNumber)) return P.cache.get(page.pageNumber);
+            const tc = await page.getTextContent(), vt = page.getViewport({ scale: 1 }).transform, items = [];
+            for (const it of tc.items) {
+                if (typeof it.str !== 'string' || !it.str.trim()) continue;
+                const t = pcMul(vt, it.transform), h = Math.hypot(t[2], t[3]) || Math.abs(it.height) || 10;
+                items.push({ str: it.str, x0: t[4], x1: t[4] + (it.width || 0), y0: t[5] - h, y1: t[5] });
+            }
+            P.cache.set(page.pageNumber, items); return items;
+        };
+        const getWorker = async (lang) => {
+            if (P.worker && P.wlang === lang) return P.worker;
+            if (P.worker) { try { await P.worker.terminate(); } catch (e) { /* ignore */ } P.worker = null; }
+            status('Loading OCR engine… (first use downloads language data)', true);
+            const T = await loadTesseract();
+            P.worker = await T.createWorker(lang, 1, { logger: (m) => { if (m.status === 'recognizing text') status('OCR… ' + Math.round(m.progress * 100) + '%', true); } });
+            P.wlang = lang;
+            try { await P.worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }); } catch (e) { /* defaults are fine */ }
+            return P.worker;
+        };
+        // Render ONLY the selected rectangle (padded) into its own small canvas, then OCR it.
+        const ocrItems = async (page, s) => {
+            const pad = 3, x0 = Math.max(0, s.x0 - pad), y0 = Math.max(0, s.y0 - pad), x1 = Math.min(P.w, s.x1 + pad), y1 = Math.min(P.h, s.y1 + pad);
+            const sc = Math.min(PC_OCR_SCALE, 3200 / (x1 - x0)), vp = page.getViewport({ scale: sc });
+            const c = document.createElement('canvas'); c.width = Math.ceil((x1 - x0) * sc); c.height = Math.ceil((y1 - y0) * sc);
+            await page.render({ canvas: c, viewport: vp, transform: [1, 0, 0, 1, -x0 * sc, -y0 * sc] }).promise;
+            const worker = await getWorker(langSel.value);
+            status('OCR…', true);
+            const { data } = await worker.recognize(c, {}, { blocks: true });
+            c.width = c.height = 0;
+            const items = [], confs = [];
+            for (const b of data.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) for (const w of l.words || []) {
+                const str = String(w.text || '').trim(); if (!str || !w.bbox) continue;
+                if (typeof w.confidence === 'number') confs.push(w.confidence);
+                items.push({ str, ocr: true, conf: w.confidence, x0: x0 + w.bbox.x0 / sc, x1: x0 + w.bbox.x1 / sc, y0: y0 + w.bbox.y0 / sc, y1: y0 + w.bbox.y1 / sc });
+            }
+            const avg = confs.length ? confs.reduce((a, v) => a + v, 0) / confs.length : 0;
+            const conf = Math.max(0, Math.min(100, Math.round(typeof data.confidence === 'number' ? data.confidence : avg)));
+            // No word boxes (unexpected build): keep the plain text so the user still gets something.
+            return { items, conf, text: items.length ? null : mdEscapePara((data.text || '').replace(/\s*\n\s*/g, ' ').trim()) };
+        };
+        const compose = () => {
+            const L = P.last; if (!L) return;
+            const lay = L.text != null ? { md: L.text, table: false } : pcLayout(L.items, layoutSel.value);
+            let t = lay.md;
+            if (!t) { out.value = ''; status('No text found in that box — try a slightly larger one.'); return; }
+            if (L.ocr) t = '> [!warning] OCR text \u00b7 page ' + L.page + ' \u00b7 confidence ' + L.conf + '%\n> Check numbers, decimals, % and currency against the PDF.\n\n' + t;
+            if (srcChk.checked) t += '\n\n*Source: ' + P.name.replace(/[*_\[\]]/g, '\\$&') + ', p. ' + L.page + '*';
+            out.value = t;
+            status((L.ocr ? 'OCR \u00b7 confidence ' + L.conf + '%' : 'Native text (exact)') + (lay.table ? ' \u00b7 table detected' : '') + ' \u00b7 ' + L.ms + ' ms');
+        };
+        const extract = async () => {
+            const s = P.sel; if (!s || !P.doc) return;
+            const run = ++P.run, t0 = performance.now();
+            try {
+                status('Reading…', true);
+                const page = await P.doc.getPage(P.page);
+                let items = null, ocr = false, conf = 0, text = null;
+                if (method.value === 'auto') {
+                    const clipped = pcClip(await nativeItems(page), s);
+                    if (clipped.reduce((n, i) => n + i.str.trim().length, 0) >= 2) items = clipped;
+                }
+                if (!items) { const r = await ocrItems(page, s); items = r.items; conf = r.conf; text = r.text; ocr = true; }
+                if (run !== P.run) return;
+                P.last = { items, text, ocr, conf, page: P.page, ms: Math.round(performance.now() - t0) };
+                compose();
+            } catch (e) { console.warn('Notes Vault: crop extract', e); if (run === P.run) status('Extraction failed: ' + (e.message || e)); }
+        };
+        const insert = () => {
+            const t = out.value.trim(); if (!t) { status('Nothing to insert yet — select a region first.'); return; }
+            const ta = el.src, v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, b = v.slice(0, s), a = v.slice(e);
+            const pre = b && !/\n\n$/.test(b) ? (/\n$/.test(b) ? '\n' : '\n\n') : '';
+            const post = a ? (/^\n\n/.test(a) ? '' : /^\n/.test(a) ? '\n' : '\n\n') : '\n';
+            const txt = pre + t + post;
+            replaceRange(s, e, txt, s + txt.length);
+            markDirty(); toast('Inserted from page ' + (P.last ? P.last.page : P.page));
+            P.sel = null; drawBox(); dlg.focus(); status('Inserted. Select another region, or close.');
+        };
+
+        // ── rubber-band selection (mouse / pen / touch) ──
+        let drag = null;
+        const pt = (e) => { const r = ov.getBoundingClientRect(); return { x: Math.max(0, Math.min(P.w, (e.clientX - r.left) / P.zoom)), y: Math.max(0, Math.min(P.h, (e.clientY - r.top) / P.zoom)) }; };
+        ov.addEventListener('pointerdown', (e) => {
+            if (!P.doc || e.button > 0 || (e.pointerType === 'touch' && dlg.classList.contains('nvc-pan'))) return;
+            const p = pt(e), s = P.sel;
+            drag = s && p.x >= s.x0 && p.x <= s.x1 && p.y >= s.y0 && p.y <= s.y1 ? { mv: true, ox: p.x, oy: p.y, s0: { ...s } } : { mv: false, ax: p.x, ay: p.y };
+            if (!drag.mv) P.sel = null;
+            ov.setPointerCapture(e.pointerId); e.preventDefault();
+        });
+        ov.addEventListener('pointermove', (e) => {
+            if (!drag) return;
+            const p = pt(e);
+            if (drag.mv) {
+                const s0 = drag.s0, dx = Math.max(-s0.x0, Math.min(P.w - s0.x1, p.x - drag.ox)), dy = Math.max(-s0.y0, Math.min(P.h - s0.y1, p.y - drag.oy));
+                P.sel = { x0: s0.x0 + dx, x1: s0.x1 + dx, y0: s0.y0 + dy, y1: s0.y1 + dy };
+            } else P.sel = { x0: Math.min(drag.ax, p.x), x1: Math.max(drag.ax, p.x), y0: Math.min(drag.ay, p.y), y1: Math.max(drag.ay, p.y) };
+            drawBox();
+        });
+        const endDrag = () => {
+            if (!drag) return; drag = null;
+            if (P.sel && (P.sel.x1 - P.sel.x0) * P.zoom < 8 || P.sel && (P.sel.y1 - P.sel.y0) * P.zoom < 8) { P.sel = null; drawBox(); return; }
+            if (P.sel) extract();
+        };
+        ov.addEventListener('pointerup', endDrag);
+        ov.addEventListener('pointercancel', () => { drag = null; });
+
+        const fileIn = document.createElement('input'); fileIn.type = 'file'; fileIn.accept = '.pdf,application/pdf'; fileIn.hidden = true; scrim.appendChild(fileIn);
+        fileIn.addEventListener('change', () => {
+            const f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (!f) return;
+            const s = { id: null, name: f.name, blob: f }; srcs.push(s); addOpt(s, srcs.length - 1);
+            selSrc.hidden = false; selSrc.value = srcs.length - 1; loadSource(s);
+        });
+        selSrc.addEventListener('change', () => loadSource(srcs[+selSrc.value]));
+        pgIn.addEventListener('change', () => goPage(pgIn.value));
+        [method, langSel].forEach((x) => x.addEventListener('change', () => { if (P.sel) extract(); }));
+        layoutSel.addEventListener('change', compose);
+        srcChk.addEventListener('change', compose);
+
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); if (P.sel) { P.sel = null; drawBox(); } else close(); return; }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); insert(); return; }
+            if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+            if (e.key === 'PageDown' || e.key === 'ArrowRight') goPage(P.page + 1);
+            else if (e.key === 'PageUp' || e.key === 'ArrowLeft') goPage(P.page - 1);
+            else if (e.key === '+' || e.key === '=') zoomBy(1.25);
+            else if (e.key === '-') zoomBy(0.8);
+        };
+        document.addEventListener('keydown', onKey, true);
+        function close() {
+            document.removeEventListener('keydown', onKey, true);
+            P.run++; P.rtok++;
+            if (P.worker) { P.worker.terminate().catch(() => {}); P.worker = null; }
+            if (P.doc) { try { P.doc.destroy(); } catch (e) { /* ignore */ } }
+            scrim.remove(); el.src.focus();
+        }
+        scrim.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-a]'); if (!b) return;
+            const a = b.dataset.a;
+            if (a === 'open') fileIn.click();
+            else if (a === 'close') close();
+            else if (a === 'prev') goPage(P.page - 1);
+            else if (a === 'next') goPage(P.page + 1);
+            else if (a === 'zin') zoomBy(1.25);
+            else if (a === 'zout') zoomBy(0.8);
+            else if (a === 'fit') { P.fit = 'w'; render(); }
+            else if (a === 'pan') b.setAttribute('aria-pressed', String(dlg.classList.toggle('nvc-pan')));
+            else if (a === 'clear') { P.sel = null; P.last = null; out.value = ''; drawBox(); status('Drag on the page to select a region.'); }
+            else if (a === 'insert') insert();
+        });
+        dlg.focus();
+        if (srcs.length) loadSource(srcs[0]); else fileIn.click();
     }
 
     /* Import Markdown: each .md/.markdown/.txt file becomes a new note. Reads the same YAML
@@ -47049,7 +47553,7 @@ kbd {
         ul: () => setList('ul'), ol: () => setList('ol'), task: () => setList('task'),
         quote: toggleQuote, link: insertLink, wikilink: insertWikilink,
         image: () => { if (el.attachInput) el.attachInput.click(); },
-        pdf: () => { if (el.pdfInput) el.pdfInput.click(); },
+        pdf: () => { if (el.pdfInput) el.pdfInput.click(); }, pdfcrop: () => openPdfCrop(),
         file: () => { if (el.fileInput) el.fileInput.click(); },
         codeblock: toggleCodeBlock,
         table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting,
@@ -47902,6 +48406,7 @@ kbd {
         add(V, 'impmd', 'file-import', 'Import .md files…', () => el.mdFile.click(), { kw: 'import markdown obsidian open upload txt' });
         add(V, 'impmddir', 'folder-open', 'Import .md folder…', () => el.mdDir.click(), { kw: 'import markdown obsidian vault folder bulk' });
         add(V, 'imppdf', 'file-pdf', 'Import PDF as note (text / OCR)…', () => el.pdfNote.click(), { kw: 'import pdf extract text ocr scan convert' });
+        add(V, 'pdfcrop', 'crop', 'Extract region from PDF (crop → text / OCR)…', () => openPdfCrop(), { kw: 'crop region snip select pdf ocr table chart paragraph extract' });
         add(V, 'persist', 'shield-alt', 'Protect from browser cleanup', requestPersist, { kw: 'storage persistent', more: true });
         if (S.trash.length) add(V, 'empty', 'trash', 'Empty Trash', emptyTrash, { kw: 'delete forever purge', danger: true });
         add(V, 'close', 'xmark', 'Close Notes Vault', close, { kw: 'exit quit hide', more: true });
