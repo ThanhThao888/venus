@@ -41237,6 +41237,9 @@ kbd {
                 <button class="nv-ib" id="nvGear" type="button" title="Backup &amp; storage" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-gear"></i></button>
                 <div class="nv-menu nv-up" id="nvGearMenu" role="menu">
                     <button class="nv-act" role="menuitem" data-gear="exportmd"><i class="fa-solid fa-folder-tree"></i> Export notes as .md files…</button>
+                    <button class="nv-act" role="menuitem" data-gear="importmd"><i class="fa-solid fa-file-import"></i> Import .md files…</button>
+                    <button class="nv-act" role="menuitem" data-gear="importmddir"><i class="fa-solid fa-folder-open"></i> Import .md folder…</button>
+                    <button class="nv-act" role="menuitem" data-gear="importpdf"><i class="fa-solid fa-file-pdf"></i> Import PDF as note (text / OCR)…</button>
                     <button class="nv-act" role="menuitem" data-gear="export"><i class="fa-solid fa-download"></i> Export backup (JSON)</button>
                     <button class="nv-act" role="menuitem" data-gear="import"><i class="fa-solid fa-upload"></i> Import backup…</button>
                     <button class="nv-act" role="menuitem" data-gear="persist"><i class="fa-solid fa-shield-halved"></i> Protect from browser cleanup</button>
@@ -41246,6 +41249,9 @@ kbd {
             </div>
         </div>
         <input type="file" id="nvImportFile" accept="application/json,.json" hidden>
+        <input type="file" id="nvImportMdFile" accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain" multiple hidden>
+        <input type="file" id="nvImportMdDir" webkitdirectory multiple hidden>
+        <input type="file" id="nvImportPdfNote" accept=".pdf,application/pdf" multiple hidden>
         <input type="file" id="nvAttachInput" accept="image/*" multiple hidden>
         <input type="file" id="nvPdfInput" accept="application/pdf" multiple hidden>
         <input type="file" id="nvFileInput" accept=".xlsx,.xlsm,.xlsb,.xls,.csv,.ods,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" multiple hidden>
@@ -44979,6 +44985,7 @@ kbd {
         list.push(
             { id: 'md', icon: 'file-arrow-down', label: 'Export .md' },
             { id: 'txt', icon: 'file-lines', label: 'Export .txt' },
+            { id: 'pdf', icon: 'file-pdf', label: 'Export .pdf' },
             { id: 'hist', icon: 'clock-rotate-left', label: 'Version history' },
             { id: 'del', icon: 'trash', label: 'Move to Trash', danger: true }
         );
@@ -46153,6 +46160,68 @@ kbd {
         return true;
     }
 
+    /* Export a note as PDF: the note is rendered with the normal Read-mode renderer into a hidden
+       #nvPrintRoot, then the browser's own print engine is invoked — "Save as PDF" in the print
+       dialog. That keeps Vietnamese/Unicode text, code highlighting, tables, math and attached
+       images exactly as in Read mode (no bundled PDF library, nothing extra to load). Only the
+       print root is visible while printing; the dialog's default filename is the note's title. */
+    function ensurePrintStyle() {
+        if (document.getElementById('nvPrintStyle')) return;
+        const st = document.createElement('style');
+        st.id = 'nvPrintStyle';
+        st.textContent = `
+        #nvPrintRoot { display: none; }
+        @page { margin: 16mm 15mm; }
+        @media print {
+            html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+            body > *:not(#nvPrintRoot) { display: none !important; }
+            #nvPrintRoot { display: block !important; position: static !important; width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 !important;
+                background: #fff !important; color: #111 !important; font-size: 11pt; line-height: 1.65;
+                --text-dark: #111; --text-muted: #555; --bg-light: #f4f4f5; --bg-card: #fff; --border-color: #d4d4d8; --primary: #9d2867; }
+            #nvPrintRoot .nv-print-title { font-size: 22pt; line-height: 1.25; margin: 0 0 4pt; color: #111; }
+            #nvPrintRoot .nv-print-meta { font-size: 9pt; color: #666; margin: 0 0 14pt; padding-bottom: 8pt; border-bottom: 1px solid #d4d4d8; }
+            #nvPrintRoot h1, #nvPrintRoot h2, #nvPrintRoot h3, #nvPrintRoot h4 { break-after: avoid; page-break-after: avoid; color: #111; }
+            #nvPrintRoot pre, #nvPrintRoot blockquote, #nvPrintRoot img, #nvPrintRoot tr, #nvPrintRoot svg { break-inside: avoid; page-break-inside: avoid; }
+            #nvPrintRoot pre { white-space: pre-wrap !important; word-break: break-word; overflow: visible !important; background: #f4f4f5 !important; border: 1px solid #e4e4e7; }
+            #nvPrintRoot img { max-width: 100% !important; height: auto !important; }
+            #nvPrintRoot .nv-tablewrap { overflow: visible !important; }
+            #nvPrintRoot table { border-collapse: collapse; max-width: 100%; }
+            #nvPrintRoot a { color: #9d2867; text-decoration: underline; }
+            #nvPrintRoot .nv-pdf-embed-frame, #nvPrintRoot .nv-pdf-embed-more { display: none !important; }
+            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }`;
+        document.head.appendChild(st);
+    }
+    async function exportNotePdf(n) {
+        await flushSave();
+        ensurePrintStyle();
+        const old = document.getElementById('nvPrintRoot'); if (old) old.remove();
+        const root = document.createElement('div');
+        root.id = 'nvPrintRoot';
+        root.className = 'nv-prose';
+        const h = document.createElement('h1'); h.className = 'nv-print-title'; h.textContent = n.title || 'Untitled note';
+        const meta = document.createElement('div'); meta.className = 'nv-print-meta';
+        meta.textContent = [normType(n.type), (n.tags || []).map((t) => '#' + t).join(' '), new Date(n.updatedAt).toLocaleDateString()].filter(Boolean).join('  ·  ');
+        const body = document.createElement('div');
+        root.append(h, meta, body);
+        renderInto(body, n.markdown || '', false);
+        document.body.appendChild(root);
+        // Wait (max ~4s) for attached images to resolve and math to typeset before opening the dialog.
+        const t0 = Date.now();
+        while (Date.now() - t0 < 4000) {
+            const imgs = Array.from(body.querySelectorAll('img'));
+            if (imgs.every((im) => !/^attachment:/.test(im.getAttribute('src') || '') && im.complete)) break;
+            await new Promise((r) => setTimeout(r, 80));
+        }
+        try { if (window.MathJax && window.MathJax.typesetPromise) await window.MathJax.typesetPromise([body]); } catch (e) { /* print anyway */ }
+        const prevTitle = document.title;
+        document.title = slugify(n.title) || 'note';
+        const done = () => { window.removeEventListener('afterprint', done); document.title = prevTitle; root.remove(); };
+        window.addEventListener('afterprint', done);
+        toast('In the print dialog, choose “Save as PDF” as the destination.');
+        setTimeout(() => window.print(), 250);
+    }
+
     async function runAction(id) {
         const n = S.note;
         if (!n) return;
@@ -46186,6 +46255,8 @@ kbd {
         } else if (id === 'md') {
             await flushSave();
             download(await toMarkdownFile(n), slugify(n.title) + '.md', 'text/markdown');
+        } else if (id === 'pdf') {
+            await exportNotePdf(n);
         } else if (id === 'txt') {
             download((n.title ? n.title + '\n\n' : '') + n.markdown, slugify(n.title) + '.txt', 'text/plain');
         } else if (id === 'hist') {
@@ -46378,6 +46449,178 @@ kbd {
         try { await restoreFileLinksList(payload && payload.fileLinks); } catch (e) { console.warn('Notes Vault: file link restore skipped', e); }
         return result;
     }
+    /* Import PDF as a note. Text PDFs: the selectable text is read with pdf.js (loaded lazily on
+       first use). Pages with no selectable text (scans, photos) are offered OCR with Tesseract.js
+       (Vietnamese + English; loaded lazily, downloads language data on first use, runs in the
+       browser — nothing is uploaded). The original PDF is also attached at the top of the note,
+       so Read mode shows the viewer above the extracted text. OCR is never automatic: it's slow
+       and imperfect, so it asks first. */
+    const PDFJS_VER = '3.11.174';
+    let pdfJsPromise = null, tessPromise = null;
+    function loadScriptOnce(src) {
+        return new Promise((resolve, reject) => {
+            const sc = document.createElement('script');
+            sc.src = src; sc.async = true;
+            sc.onload = resolve;
+            sc.onerror = () => { sc.remove(); reject(new Error('Couldn\u2019t load ' + src.split('/').slice(-1)[0] + ' (offline?)')); };
+            document.head.appendChild(sc);
+        });
+    }
+    function loadPdfJs() {
+        if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions.workerSrc) return Promise.resolve(window.pdfjsLib);
+        if (!pdfJsPromise) pdfJsPromise = (async () => {
+            const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_VER + '/';
+            if (!window.pdfjsLib) await loadScriptOnce(base + 'pdf.min.js');
+            // A worker can't be started straight from another origin, so wrap it in a same-origin blob URL.
+            const code = await (await fetch(base + 'pdf.worker.min.js')).text();
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+            return window.pdfjsLib;
+        })().catch((e) => { pdfJsPromise = null; throw e; });
+        return pdfJsPromise;
+    }
+    function loadTesseract() {
+        if (window.Tesseract) return Promise.resolve(window.Tesseract);
+        if (!tessPromise) tessPromise = loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js')
+            .then(() => window.Tesseract).catch((e) => { tessPromise = null; throw e; });
+        return tessPromise;
+    }
+    const mdEscapePara = (t) => t.replace(/</g, '\\<').replace(/^(\s*)([#>*+\-]|\d+[.)])(?=\s)/, '$1\\$2');
+    // pdf.js text items → paragraphs: items on one baseline form a line; lines close together
+    // join into one paragraph (so wrapped lines don't become hard breaks), a bigger gap starts a new one.
+    async function pdfPageText(page) {
+        const tc = await page.getTextContent();
+        const lines = []; let cur = null;
+        for (const it of tc.items) {
+            if (typeof it.str !== 'string') continue;
+            const y = it.transform[5], h = Math.abs(it.height) || Math.abs(it.transform[3]) || 10;
+            if (!cur || Math.abs(y - cur.y) > h * 0.5) { if (cur) lines.push(cur); cur = { y, h, t: '' }; }
+            cur.t += it.str;
+            if (it.hasEOL) { lines.push(cur); cur = null; }
+        }
+        if (cur) lines.push(cur);
+        const paras = []; let prev = null;
+        for (const l of lines) {
+            const t = l.t.replace(/\s+/g, ' ').trim();
+            if (!t) continue;
+            if (!prev || Math.abs(prev.y - l.y) > prev.h * 1.9) paras.push(t);
+            else paras[paras.length - 1] += ' ' + t;
+            prev = l;
+        }
+        return paras.map(mdEscapePara).join('\n\n');
+    }
+    async function importPdfAsNotes(fileList) {
+        const files = Array.from(fileList || []).filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+        if (!files.length) return;
+        let pdfjs;
+        try { toast('Loading PDF reader…'); pdfjs = await loadPdfJs(); }
+        catch (e) { alert('Could not load the PDF reader: ' + (e.message || e)); return; }
+        let ocrWorker = null, made = 0, failed = 0, lastId = null;
+        try {
+            for (const f of files) {
+                try {
+                    const doc = await pdfjs.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+                    const N = doc.numPages, pages = new Array(N + 1).fill(''), blank = [];
+                    for (let i = 1; i <= N; i++) {
+                        toast(f.name + ' — reading page ' + i + '/' + N + '…');
+                        const page = await doc.getPage(i);
+                        pages[i] = await pdfPageText(page);
+                        if (pages[i].replace(/\s/g, '').length < 25) blank.push(i);
+                    }
+                    let usedOcr = false;
+                    if (blank.length && confirm(f.name + '\n\n' + blank.length + ' of ' + N + ' page(s) have no selectable text (probably scanned).\n\nRun OCR (Vietnamese + English) on them? It runs in your browser, downloads language data the first time, and can take a while.')) {
+                        try {
+                            if (!ocrWorker) {
+                                toast('Loading OCR engine…');
+                                const T = await loadTesseract();
+                                ocrWorker = await T.createWorker('vie+eng', 1, { logger: (m) => { if (m.status === 'recognizing text') toast('OCR… ' + Math.round(m.progress * 100) + '%'); } });
+                            }
+                            for (let k = 0; k < blank.length; k++) {
+                                const i = blank[k];
+                                toast(f.name + ' — OCR page ' + i + ' (' + (k + 1) + '/' + blank.length + ')…');
+                                const page = await doc.getPage(i);
+                                const base = page.getViewport({ scale: 1 });
+                                const vp = page.getViewport({ scale: Math.min(2.5, 2600 / base.width) });
+                                const cv = document.createElement('canvas');
+                                cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+                                await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+                                const { data } = await ocrWorker.recognize(cv);
+                                pages[i] = (data.text || '').split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean).map(mdEscapePara).join('\n\n');
+                                cv.width = cv.height = 0;
+                            }
+                            usedOcr = true;
+                        } catch (e) { console.warn('Notes Vault: OCR failed', e); alert('OCR failed: ' + (e.message || e) + '\nThe note will be created with the text that could be read.'); }
+                    }
+                    let title = '';
+                    try { const md = await doc.getMetadata(); title = ((md.info && md.info.Title) || '').trim(); } catch (e) { /* no metadata */ }
+                    if (!title || title.length > 150) title = f.name.replace(/\.pdf$/i, '');
+                    let head = '';
+                    try { const rec = await ingestAttachment(f); head = '[\uD83D\uDCC4 ' + (f.name || 'document.pdf') + '](attachment://' + rec.id + ')\n\n'; } catch (e) { /* attach is a bonus */ }
+                    const text = pages.slice(1).filter(Boolean).join('\n\n---\n\n');
+                    const when = f.lastModified || Date.now();
+                    const id = uid();
+                    await restoreNotesList([{ id, title, markdown: head + (text || '*No text could be extracted from this PDF.*'), type: 'General',
+                        tags: usedOcr ? ['pdf', 'ocr'] : ['pdf'], pinned: false, createdAt: Date.now(), updatedAt: Date.now() }]);
+                    made++; lastId = id;
+                } catch (e) { console.warn('Notes Vault: PDF import failed', f.name, e); failed++; }
+            }
+        } finally { if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e) { /* ignore */ } } }
+        toast('Imported ' + made + ' PDF note' + (made === 1 ? '' : 's') + (failed ? ' — ' + failed + ' couldn\u2019t be read (encrypted or damaged?)' : '') + '.');
+        if (made === 1 && lastId) openNote(lastId);
+    }
+
+    /* Import Markdown: each .md/.markdown/.txt file becomes a new note. Reads the same YAML
+       frontmatter Export writes (title, type, tags, course, deadline, career, skill, created,
+       updated), so Export → Import round-trips. Title falls back to the first "# heading", then
+       the filename. For folder imports, files with no `type:` take their parent folder's name.
+       Files whose title + text already match an existing note are skipped, so re-importing
+       the same files never makes duplicates. */
+    async function importMarkdownFiles(fileList, fromFolder) {
+        const files = Array.from(fileList || []).filter((f) => /\.(md|markdown|mdown|txt)$/i.test(f.name) && !/(^|\/)\./.test(f.webkitRelativePath || ''));
+        if (!files.length) { alert('No Markdown files (.md, .markdown, .txt) found.'); return; }
+        const seen = new Set(S.notes.concat(S.trash).map(sigOf));
+        const list = []; let dup = 0, failed = 0;
+        const now = Date.now();
+        for (const f of files) {
+            try {
+                const text = (await f.text()).replace(/^\uFEFF/, '');
+                const { body: rawBody, data } = extractFrontmatter(text);
+                let body = rawBody.replace(/^(?:[ \t]*\r?\n)+/, '');
+                const fm = FRONTMATTER_RE.exec(text);
+                const fmDate = (k) => {
+                    const m = fm && new RegExp('^' + k + ':\\s*["\']?([^"\'\\r\\n]+)', 'm').exec(fm[1]);
+                    const t = m ? Date.parse(m[1].trim()) : NaN;
+                    return isNaN(t) ? 0 : t;
+                };
+                const h1 = /^#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/.exec(body);
+                let title = (data && data.title) || (h1 && h1[1].trim()) || f.name.replace(/\.[^.]+$/, '');
+                // Export adds "# Title" when the note had none — drop it again so it isn't doubled.
+                if (data && data.title && h1 && h1[1].trim() === data.title) body = body.slice(h1[0].length).replace(/^(?:[ \t]*\r?\n)+/, '');
+                let type = data && data.type;
+                if (!type && fromFolder && f.webkitRelativePath) {
+                    const parts = f.webkitRelativePath.split('/');
+                    if (parts.length > 2) type = parts[parts.length - 2];
+                }
+                const hit = data && data.skill ? findSkillMatch(data.skill, data.career) : null;
+                const sig = sigOf({ title, markdown: body });
+                if (seen.has(sig)) { dup++; continue; }
+                seen.add(sig);
+                const t0 = f.lastModified || now;
+                list.push({
+                    id: uid(), title, markdown: body, type: type || 'General',
+                    tags: (data && data.tags) || [], pinned: false,
+                    createdAt: fmDate('created') || t0, updatedAt: fmDate('updated') || t0,
+                    course: data && data.course, deadline: data && data.deadline,
+                    linkedCareer: hit ? hit.career : '', linkedSkill: hit ? hit.skill : ''
+                });
+            } catch (e) { console.warn('Notes Vault: could not read', f.name, e); failed++; }
+        }
+        if (list.length) await restoreNotesList(list);
+        const msg = 'Imported ' + list.length + ' note' + (list.length === 1 ? '' : 's')
+            + (dup ? ' — ' + dup + ' skipped (already in the vault)' : '')
+            + (failed ? ' — ' + failed + ' couldn\u2019t be read' : '') + '.';
+        if (list.length || dup || failed) toast(msg);
+    }
+
     function importJson(file) {
         if (!file) return;
         const reader = new FileReader();
@@ -47548,6 +47791,7 @@ kbd {
             }
             add(T, 'md', 'file-arrow-down', 'Export as .md', () => runAction('md'), { kw: 'download markdown obsidian' });
             add(T, 'txt', 'file-lines', 'Export as .txt', () => runAction('txt'), { kw: 'download text plain', more: true });
+            add(T, 'pdf', 'file-pdf', 'Export as .pdf', () => runAction('pdf'), { kw: 'download pdf print save document' });
             add(T, 'back', 'arrow-left', 'Back to notes', leaveDoc, { kw: 'close library list', keys: ['esc'] });
             add(T, 'del', 'trash', 'Move to Trash', () => runAction('del'), { kw: 'delete remove', danger: true });
             if (S.mode === 'edit' && !S.viewRev) {            // formatting: found by typing, kept out of the default list
@@ -47568,6 +47812,9 @@ kbd {
         add(V, 'exportmd', 'folder-tree', 'Export notes as .md files…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
         add(V, 'exp', 'download', 'Export backup (JSON)', exportAllJson, { kw: 'backup save download all' });
         add(V, 'imp', 'upload', 'Import backup…', () => el.importFile.click(), { kw: 'backup restore load json', more: true });
+        add(V, 'impmd', 'file-import', 'Import .md files…', () => el.mdFile.click(), { kw: 'import markdown obsidian open upload txt' });
+        add(V, 'impmddir', 'folder-open', 'Import .md folder…', () => el.mdDir.click(), { kw: 'import markdown obsidian vault folder bulk' });
+        add(V, 'imppdf', 'file-pdf', 'Import PDF as note (text / OCR)…', () => el.pdfNote.click(), { kw: 'import pdf extract text ocr scan convert' });
         add(V, 'persist', 'shield-alt', 'Protect from browser cleanup', requestPersist, { kw: 'storage persistent', more: true });
         if (S.trash.length) add(V, 'empty', 'trash', 'Empty Trash', emptyTrash, { kw: 'delete forever purge', danger: true });
         add(V, 'close', 'xmark', 'Close Notes Vault', close, { kw: 'exit quit hide', more: true });
@@ -48305,7 +48552,7 @@ kbd {
         el = {
             fab: $('nvFab'), overlay: $('nvOverlay'), app: $('nvApp'), scrim: $('nvScrim'),
             side: $('nvSide'), sideScroll: $('nvSideScroll'), search: $('nvSearch'), clear: $('nvClear'),
-            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), attachInput: $('nvAttachInput'), pdfInput: $('nvPdfInput'), fileInput: $('nvFileInput'),
+            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), mdFile: $('nvImportMdFile'), mdDir: $('nvImportMdDir'), pdfNote: $('nvImportPdfNote'), attachInput: $('nvAttachInput'), pdfInput: $('nvPdfInput'), fileInput: $('nvFileInput'),
             themeBtn: $('nvThemeBtn'), themeMenu: $('nvThemeMenu'),
             lib: $('nvLib'), libScroll: $('nvLibScroll'), libTitle: $('nvLibTitle'), libSub: $('nvLibSub'), list: $('nvList'),
             docView: $('nvDocView'), docScroll: $('nvDocScroll'), title: $('nvTitle'), docMeta: $('nvDocMeta'),
@@ -48775,11 +49022,17 @@ kbd {
             if (b.dataset.gear === 'exportmd') exportCurrentView();
             else if (b.dataset.gear === 'export') exportAllJson();
             else if (b.dataset.gear === 'import') el.importFile.click();
+            else if (b.dataset.gear === 'importmd') el.mdFile.click();
+            else if (b.dataset.gear === 'importmddir') el.mdDir.click();
+            else if (b.dataset.gear === 'importpdf') el.pdfNote.click();
             else if (b.dataset.gear === 'persist') requestPersist();
             else if (b.dataset.gear === 'dupes') openDupModal();
             else if (b.dataset.gear === 'storage') openStorModal();
         });
         el.importFile.addEventListener('change', () => importJson(el.importFile.files[0]));
+        el.mdFile.addEventListener('change', async () => { const fl = Array.from(el.mdFile.files || []); el.mdFile.value = ''; await importMarkdownFiles(fl, false); });
+        el.mdDir.addEventListener('change', async () => { const fl = Array.from(el.mdDir.files || []); el.mdDir.value = ''; await importMarkdownFiles(fl, true); });
+        el.pdfNote.addEventListener('change', async () => { const fl = Array.from(el.pdfNote.files || []); el.pdfNote.value = ''; await importPdfAsNotes(fl); });
 
         // Find duplicates modal
         el.dupClose.addEventListener('click', closeDupModal);
