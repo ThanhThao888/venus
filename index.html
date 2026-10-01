@@ -49277,22 +49277,49 @@ kbd {
         for (const x of r) { const l = out[out.length - 1]; if (l && x[0] <= l[1]) l[1] = Math.max(l[1], x[1]); else out.push([x[0], x[1]]); }
         return out;
     }
-    // spec: { find, caseI, word, accents, raw } → [{ s, e }] (non-overlapping, ascending)
+    // Accent-insensitive folding WITH an explicit index map (no reliance on fold() keeping lengths equal). The text is cut into
+    // clusters (a base character + its combining marks); a cluster folds to NFD, marks dropped, lower-cased, đ→d, and every folded
+    // unit remembers the [start, end) of the ORIGINAL cluster it came from. So a match can never start or stop inside a character,
+    // whether the note stores "â" as one code point (NFC) or as a + U+0302 (NFD).
+    function frFoldMap(text) {
+        if (!/[^\x00-\x7f]/.test(text)) return { h: text.toLowerCase(), st: null, en: null };   // ASCII: identity map
+        const parts = [], st = [], en = [];
+        for (const m of text.matchAll(/\P{M}\p{M}*|\p{M}+/gu)) {
+            const a = m.index, b = a + m[0].length;
+            const f = m[0].normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase().replace(/đ/g, 'd');
+            parts.push(f); for (let k = 0; k < f.length; k++) { st.push(a); en.push(b); }
+        }
+        return { h: parts.join(''), st, en };
+    }
+    // spec: { find, caseI, word, accents, raw } → [{ s, e }] (non-overlapping, ascending; ORIGINAL-text offsets, ready for frApply)
     function frMatches(text, spec) {
         if (!spec.find || !text) return [];
-        const hay = spec.accents ? fold(text) : text, needle = spec.accents ? fold(spec.find) : spec.find;
-        let re;
-        try { re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'), spec.accents ? 'g' : (spec.caseI ? 'giu' : 'g')); } catch (e) { return []; }
-        const isW = (ch) => !!ch && /[\p{L}\p{N}_]/u.test(ch);
-        const out = []; let m, prot = null, pi = 0;
-        while ((m = re.exec(hay))) {
-            const s = m.index, e = s + m[0].length;
-            if (e === s) { re.lastIndex++; continue; }
-            if (spec.word && (isW(text[s - 1]) || isW(text[e]))) { re.lastIndex = s + 1; continue; }
+        const isMark = (ch) => !!ch && /\p{M}/u.test(ch), isW = (ch) => !!ch && /[\p{L}\p{M}\p{N}_]/u.test(ch);
+        let next;
+        if (spec.accents) {
+            const fm = frFoldMap(text), needle = frFoldMap(spec.find).h;
+            if (!needle) return [];
+            next = (from) => {
+                const i = fm.h.indexOf(needle, from); if (i < 0) return null;
+                const j = i + needle.length - 1;
+                return { s: fm.st ? fm.st[i] : i, e: fm.en ? fm.en[j] : j + 1, fs: i, fe: i + needle.length };
+            };
+        } else {
+            let re;
+            try { re = new RegExp(spec.find.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'), spec.caseI ? 'giu' : 'g'); } catch (e) { return []; }
+            next = (from) => { re.lastIndex = from; const m = re.exec(text); return m ? { s: m.index, e: m.index + m[0].length, fs: m.index, fe: m.index + m[0].length } : null; };
+        }
+        const endsInMark = isMark(spec.find.slice(-1));
+        const out = []; let c, from = 0, last = 0, prot = null, pi = 0;
+        while ((c = next(from))) {
+            const { s, e } = c; from = c.fe;
+            if (e <= s || s < last) { from = c.fs + 1; continue; }
+            if (spec.word && (isW(text[s - 1]) || isW(text[e]))) { from = c.fs + 1; continue; }
+            if (!spec.accents && !endsInMark && isMark(text[e])) { from = c.fs + 1; continue; }   // would stop in the middle of "a + ̂"
             if (!prot) prot = frProtect(text, spec.raw);
             while (pi < prot.length && prot[pi][1] <= s) pi++;
             if (pi < prot.length && prot[pi][0] < e) continue;
-            out.push({ s, e });
+            out.push({ s, e }); last = e;
         }
         return out;
     }
@@ -90531,7 +90558,7 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 </script>
 
 <style id="card-title-sync">
-/* Chỉ đồng bộ TIÊU ĐỀ các card tracker. Không đụng My Tracker, Notes Vault, modal, nội dung card. */
+
 .sidebar-card:not([id^="nv"]):not(#yourProgressCard):not(#goalsSection) > .sidebar-title,
 .sidebar-card:not([id^="nv"]):not(#yourProgressCard):not(#goalsSection) > .sidebar-title .sidebar-title-text {
   font-family: 'Nunito', 'Inter', system-ui, sans-serif;
