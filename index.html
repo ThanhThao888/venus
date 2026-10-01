@@ -46658,9 +46658,9 @@ kbd {
                   </ul>
                   <label class="nv-ocr-lbl" for="nvOcrLang">OCR language</label>
                   <select class="nv-ocr-sel" id="nvOcrLang">
-                    <option value="vie+eng">Vietnamese + English</option>
+                    <option value="vie">Vietnamese only (best for Vietnamese documents)</option>
+                    <option value="vie+eng">Vietnamese + English (mixed documents)</option>
                     <option value="eng">English only (faster, best for English text)</option>
-                    <option value="vie">Vietnamese only</option>
                   </select>
                 </div>
                 <div class="nv-ocr-foot">
@@ -46686,6 +46686,124 @@ kbd {
             scrim.querySelector('[data-a="ocr"]').focus();
         });
     }
+    /* ── OCR pipeline v2 ─────────────────────────────────────────────────────────────────────────
+       Why: the old pipeline rendered scans at ~180 DPI and left Tesseract.js on its own PSM default.
+       Now: (1) render at 300 DPI, (2) set PSM / DPI / interword spaces EXPLICITLY on every call,
+       (3) score the result (confidence, implausible tokens, missing Vietnamese diacritics) and ONLY if
+       it is below OCR_GOOD re-read a cleaned copy (deskew + contrast stretch + adaptive threshold)
+       and keep whichever read scores higher, (4) table/form pages are rebuilt as a grid instead of
+       being flattened into prose. Preprocessing never runs on pages that already read well. ────── */
+    /*OCR2-PURE-START*/
+    const OCR_DPI = 300, OCR_MAX_SIDE = 4600, OCR_GOOD = 85;
+    const VI_VOWEL = /[aeiouyàáạảãâấầậẩẫăắằặẳẵèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹ]/i;
+    const VI_DIAC = /[àáạảãâấầậẩẫăắằặẳẵèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹđ]/i;
+    const ocrScaleFor = (wPt, hPt) => Math.min(OCR_DPI / 72, OCR_MAX_SIDE / Math.max(wPt, hPt));
+    function ocrWords(data) {
+        const out = [];
+        for (const b of (data && data.blocks) || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) for (const w of l.words || [])
+            if (w && String(w.text || '').trim()) out.push(w);
+        return out;
+    }
+    // 0-100: 60% mean word confidence, 25% share of implausible tokens, 15% Vietnamese diacritic density.
+    function ocrQuality(data, lang) {
+        const ws = ocrWords(data);
+        if (!ws.length) return { score: 0, conf: 0, bad: 1, dia: 0, n: 0 };
+        let sum = 0, bad = 0, dia = 0, alpha = 0;
+        for (const w of ws) {
+            const t = String(w.text).trim(); sum += typeof w.confidence === 'number' ? w.confidence : 70;
+            const letters = t.replace(/[^A-Za-zÀ-ỹĐđ]/g, '');
+            if ((letters.length >= 3 && !VI_VOWEL.test(letters) && letters !== letters.toUpperCase()) || (t.length >= 2 && /^[^\p{L}\p{N}]+$/u.test(t) && !/^[-\u2013\u2014.,;:()%\/\u2026"'\u201c\u201d]+$/.test(t))) bad++;
+            if (letters.length >= 2) { alpha++; if (VI_DIAC.test(t)) dia++; }
+        }
+        const n = ws.length, conf = sum / n, wantsVi = /vie/.test(lang || '');
+        const diaScore = wantsVi && alpha >= 12 ? Math.min(1, (dia / alpha) / 0.3) : 1;
+        const score = Math.round(Math.max(0, Math.min(100, 0.6 * conf + 25 * (1 - Math.min(1, (bad / n) * 4)) + 15 * diaScore)));
+        return { score, conf: Math.round(conf), bad: bad / n, dia: alpha ? dia / alpha : 0, n };
+    }
+    // Skew (degrees, rotate-by value) from the sharpest row projection of dark pixels; g = gray, any size.
+    function ocrSkewAngle(g, w, h) {
+        let m = 0; for (let i = 0; i < g.length; i++) m += g[i]; m /= g.length;
+        const xs = [], ys = [];
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (g[y * w + x] < m * 0.7) { xs.push(x); ys.push(y); }
+        if (xs.length < 200) return 0;
+        let best = 0, bs = -1;
+        for (let a = -3; a <= 3.001; a += 0.25) {
+            const r = a * Math.PI / 180, c = Math.cos(r), s = Math.sin(r), rows = new Float32Array(h + w + 2), off = w * 0.05 + 1;
+            for (let i = 0; i < xs.length; i++) rows[Math.max(0, Math.round(xs[i] * s + ys[i] * c + off))]++;
+            let sc = 0; for (let i = 0; i < rows.length; i++) sc += rows[i] * rows[i];
+            if (sc > bs) { bs = sc; best = a; }
+        }
+        return best;
+    }
+    // Contrast stretch (1%–99%) then local-mean threshold via an integral image. Returns a 0/255 array.
+    function ocrBinarize(g, w, h) {
+        const n = w * h, hist = new Uint32Array(256);
+        for (let i = 0; i < n; i++) hist[g[i]]++;
+        let lo = 0, hi = 255, acc = 0;
+        while (lo < 255 && (acc += hist[lo]) < n * 0.01) lo++;
+        acc = 0; while (hi > 0 && (acc += hist[hi]) < n * 0.01) hi--;
+        if (hi - lo < 30) { lo = 0; hi = 255; }
+        const k = 255 / (hi - lo), W = w + 1, I = new Uint32Array(W * (h + 1)), s = new Uint8Array(n);
+        for (let i = 0; i < n; i++) s[i] = Math.max(0, Math.min(255, (g[i] - lo) * k));
+        for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += s[y * w + x]; I[(y + 1) * W + x + 1] = I[y * W + x + 1] + row; } }
+        const r = Math.max(15, Math.round(w / 60)), out = new Uint8Array(n);
+        for (let y = 0; y < h; y++) {
+            const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+            for (let x = 0; x < w; x++) {
+                const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+                const mean = (I[y1 * W + x1] - I[y0 * W + x1] - I[y1 * W + x0] + I[y0 * W + x0]) / ((x1 - x0) * (y1 - y0));
+                out[y * w + x] = s[y * w + x] < mean * 0.88 ? 0 : 255;
+            }
+        }
+        return out;
+    }
+    /*OCR2-PURE-END*/
+    function ocrEnhance(cv) {
+        const w = cv.width, h = cv.height, sc = Math.min(1, 700 / w), sw = Math.max(1, Math.round(w * sc)), sh = Math.max(1, Math.round(h * sc));
+        const gray = (d, n) => { const g = new Uint8Array(n); for (let i = 0, p = 0; i < n; i++, p += 4) g[i] = (d[p] * 77 + d[p + 1] * 150 + d[p + 2] * 29) >> 8; return g; };
+        const t = document.createElement('canvas'); t.width = sw; t.height = sh;
+        const tc = t.getContext('2d', { willReadFrequently: true }); tc.drawImage(cv, 0, 0, sw, sh);
+        const ang = ocrSkewAngle(gray(tc.getImageData(0, 0, sw, sh).data, sw * sh), sw, sh); t.width = t.height = 0;
+        const o = document.createElement('canvas'); o.width = w; o.height = h;
+        const c = o.getContext('2d', { willReadFrequently: true });
+        c.fillStyle = '#fff'; c.fillRect(0, 0, w, h);
+        if (Math.abs(ang) >= 0.4) { c.translate(w / 2, h / 2); c.rotate(ang * Math.PI / 180); c.drawImage(cv, -w / 2, -h / 2); c.setTransform(1, 0, 0, 1, 0, 0); }
+        else c.drawImage(cv, 0, 0);
+        const im = c.getImageData(0, 0, w, h), bin = ocrBinarize(gray(im.data, w * h), w, h);
+        for (let i = 0, p = 0; i < bin.length; i++, p += 4) { im.data[p] = im.data[p + 1] = im.data[p + 2] = bin[i]; im.data[p + 3] = 255; }
+        c.putImageData(im, 0, 0);
+        return o;
+    }
+    // Read once with an explicit PSM; if the quality score is under OCR_GOOD, read a cleaned copy too and keep the better one.
+    async function ocrBest(worker, cv, lang, psm) {
+        const run = async (c) => {
+            await worker.setParameters({ tessedit_pageseg_mode: String(psm), preserve_interword_spaces: '1', user_defined_dpi: String(OCR_DPI) });
+            return (await worker.recognize(c, {}, { blocks: true })).data;
+        };
+        let data = await run(cv), q = ocrQuality(data, lang), used = cv, retried = false;
+        if (q.score < OCR_GOOD) {
+            retried = true;
+            const e = ocrEnhance(cv), d2 = await run(e), q2 = ocrQuality(d2, lang);
+            if (q2.score > q.score) { data = d2; q = q2; used = e; } else e.width = e.height = 0;
+        }
+        return { data, q, retried, cv: used };
+    }
+    // A page that reads as a grid (many rows with the same number of cells) becomes a Markdown table.
+    function ocrTablePage(pageNo, data) {
+        const items = ocrWords(data).filter((w) => w.bbox).map((w) => ({ str: String(w.text).trim(), ocr: true, conf: w.confidence, x0: w.bbox.x0, x1: w.bbox.x1, y0: w.bbox.y0, y1: w.bbox.y1 }));
+        const lay = pcLayout(items, 'auto');
+        if (!lay.table) return null;
+        const conf = Math.max(0, Math.min(100, Math.round(typeof data.confidence === 'number' ? data.confidence : 0)));
+        return { md: '> [!warning] OCR table \u00b7 page ' + pageNo + ' \u00b7 confidence ' + conf + '%\n> Table / form page rebuilt as a grid \u2014 verify columns and every figure against the PDF.\n\n' + lay.md,
+            page: pageNo, conf, lowNums: 0, issues: ['table-like layout'] };
+    }
+    // Native text that is empty OR garbled (broken font maps give \uFFFD / private-use glyphs) needs OCR.
+    function pdfPageNeedsOcr(t) {
+        const s = String(t || '').replace(/\s/g, '');
+        if (s.length < 25) return true;
+        return ((s.match(/[\uFFFD\uE000-\uF8FF\u0000-\u0008]/g) || []).length / s.length) > 0.08;
+    }
+
     async function importPdfAsNotes(fileList) {
         const files = Array.from(fileList || []).filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
         if (!files.length) return;
@@ -46702,7 +46820,7 @@ kbd {
                         toast(f.name + ' — reading page ' + i + '/' + N + '…');
                         const page = await doc.getPage(i);
                         pages[i] = await pdfPageText(page);
-                        if (pages[i].replace(/\s/g, '').length < 25) blank.push(i);
+                        if (pdfPageNeedsOcr(pages[i])) blank.push(i);
                     }
                     let usedOcr = false; const ocrStats = [];
                     const choice = blank.length ? await askOcrModal({ fileName: f.name, total: N, blank }) : { action: 'skip', lang: 'vie+eng' };
@@ -46720,15 +46838,16 @@ kbd {
                                 toast(f.name + ' — OCR page ' + i + ' (' + (k + 1) + '/' + blank.length + ')…');
                                 const page = await doc.getPage(i);
                                 const base = page.getViewport({ scale: 1 });
-                                const vp = page.getViewport({ scale: Math.min(2.5, 2600 / base.width) });
+                                const vp = page.getViewport({ scale: ocrScaleFor(base.width, base.height) });
                                 const cv = document.createElement('canvas');
                                 cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
                                 await page.render({ canvas: cv, viewport: vp }).promise;
-                                const { data } = await ocrWorker.recognize(cv, {}, { blocks: true });
-                                const rec = ocrPageToMarkdown(i, data);
+                                const r = await ocrBest(ocrWorker, cv, ocrLang, 3);
+                                const rec = ocrTablePage(i, r.data) || ocrPageToMarkdown(i, r.data);
+                                if (rec.md) rec.md = rec.md.replace('%', '% \u00b7 quality ' + r.q.score + '/100' + (r.retried ? ' (re-read after cleanup)' : ''));
                                 pages[i] = rec.md;
                                 if (rec.md) ocrStats.push(rec);
-                                cv.width = cv.height = 0;
+                                cv.width = cv.height = 0; if (r.cv !== cv) r.cv.width = r.cv.height = 0;
                             }
                             usedOcr = true;
                         } catch (e) { console.warn('Notes Vault: OCR failed', e); alert('OCR failed: ' + (e.message || e) + '\nThe note will be created with the text that could be read.'); }
@@ -46761,7 +46880,7 @@ kbd {
        Both paths yield positioned words, so the same layout step can turn them into a Markdown table
        (columns found from the rows' cell gaps) or paragraphs. Result is editable, then inserted at the
        caret; the modal stays open so several regions can be collected in a row. ─────────────────── */
-    const PC_OCR_SCALE = 2.5, PC_MARK_OPEN = '\uE000', PC_MARK_CLOSE = '\uE001';
+    const PC_MARK_OPEN = '\uE000', PC_MARK_CLOSE = '\uE001';
     /*PC-PURE-START*/
     const pcMul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
         a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
@@ -46945,7 +47064,7 @@ kbd {
                 <div class="nvc-opts">
                   <label>Read with<select class="nvc-method"><option value="auto">Auto — text layer, else OCR</option><option value="ocr">Always OCR (image)</option></select></label>
                   <label>Layout<select class="nvc-layout"><option value="auto">Auto</option><option value="table">Table</option><option value="text">Paragraph</option></select></label>
-                  <label>OCR language<select class="nvc-lang"><option value="vie+eng">Vietnamese + English</option><option value="eng">English</option><option value="vie">Vietnamese</option></select></label>
+                  <label>OCR language<select class="nvc-lang"><option value="vie">Vietnamese</option><option value="vie+eng">Vietnamese + English</option><option value="eng">English</option></select></label>
                 </div>
                 <div class="nvc-status" aria-live="polite">Drag on the page to select a region.</div>
                 <textarea class="nvc-out" spellcheck="false" placeholder="Extracted Markdown appears here — edit it before inserting."></textarea>
@@ -47023,19 +47142,18 @@ kbd {
             const T = await loadTesseract();
             P.worker = await T.createWorker(lang, 1, { logger: (m) => { if (m.status === 'recognizing text') status('OCR… ' + Math.round(m.progress * 100) + '%', true); } });
             P.wlang = lang;
-            try { await P.worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }); } catch (e) { /* defaults are fine */ }
             return P.worker;
         };
         // Render ONLY the selected rectangle (padded) into its own small canvas, then OCR it.
         const ocrItems = async (page, s) => {
             const pad = 3, x0 = Math.max(0, s.x0 - pad), y0 = Math.max(0, s.y0 - pad), x1 = Math.min(P.w, s.x1 + pad), y1 = Math.min(P.h, s.y1 + pad);
-            const sc = Math.min(PC_OCR_SCALE, 3200 / (x1 - x0)), vp = page.getViewport({ scale: sc });
+            const sc = Math.min(OCR_DPI / 72, OCR_MAX_SIDE / (x1 - x0), OCR_MAX_SIDE / (y1 - y0)), vp = page.getViewport({ scale: sc });
             const c = document.createElement('canvas'); c.width = Math.ceil((x1 - x0) * sc); c.height = Math.ceil((y1 - y0) * sc);
             await page.render({ canvas: c, viewport: vp, transform: [1, 0, 0, 1, -x0 * sc, -y0 * sc] }).promise;
             const worker = await getWorker(langSel.value);
             status('OCR…', true);
-            const { data } = await worker.recognize(c, {}, { blocks: true });
-            c.width = c.height = 0;
+            const r = await ocrBest(worker, c, langSel.value, 6), data = r.data;
+            c.width = c.height = 0; if (r.cv !== c) r.cv.width = r.cv.height = 0;
             const items = [], confs = [];
             for (const b of data.blocks || []) for (const p of b.paragraphs || []) for (const l of p.lines || []) for (const w of l.words || []) {
                 const str = String(w.text || '').trim(); if (!str || !w.bbox) continue;
@@ -47045,17 +47163,17 @@ kbd {
             const avg = confs.length ? confs.reduce((a, v) => a + v, 0) / confs.length : 0;
             const conf = Math.max(0, Math.min(100, Math.round(typeof data.confidence === 'number' ? data.confidence : avg)));
             // No word boxes (unexpected build): keep the plain text so the user still gets something.
-            return { items, conf, text: items.length ? null : mdEscapePara((data.text || '').replace(/\s*\n\s*/g, ' ').trim()) };
+            return { items, conf, score: r.q.score, retried: r.retried, text: items.length ? null : mdEscapePara((data.text || '').replace(/\s*\n\s*/g, ' ').trim()) };
         };
         const compose = () => {
             const L = P.last; if (!L) return;
             const lay = L.text != null ? { md: L.text, table: false } : pcLayout(L.items, layoutSel.value);
             let t = lay.md;
             if (!t) { out.value = ''; status('No text found in that box — try a slightly larger one.'); return; }
-            if (L.ocr) t = '> [!warning] OCR text \u00b7 page ' + L.page + ' \u00b7 confidence ' + L.conf + '%\n> Check numbers, decimals, % and currency against the PDF.\n\n' + t;
+            if (L.ocr) t = '> [!warning] OCR text \u00b7 page ' + L.page + ' \u00b7 confidence ' + L.conf + '% \u00b7 quality ' + L.score + '/100\n> Check numbers, decimals, % and currency against the PDF.\n\n' + t;
             if (srcChk.checked) t += '\n\n*Source: ' + P.name.replace(/[*_\[\]]/g, '\\$&') + ', p. ' + L.page + '*';
             out.value = t;
-            status((L.ocr ? 'OCR \u00b7 confidence ' + L.conf + '%' : 'Native text (exact)') + (lay.table ? ' \u00b7 table detected' : '') + ' \u00b7 ' + L.ms + ' ms');
+            status((L.ocr ? 'OCR \u00b7 quality ' + L.score + '/100' + (L.retried ? ' (re-read after cleanup)' : '') : 'Native text (exact)') + (lay.table ? ' \u00b7 table detected' : '') + ' \u00b7 ' + L.ms + ' ms');
         };
         const extract = async () => {
             const s = P.sel; if (!s || !P.doc) return;
@@ -47063,14 +47181,14 @@ kbd {
             try {
                 status('Reading…', true);
                 const page = await P.doc.getPage(P.page);
-                let items = null, ocr = false, conf = 0, text = null;
+                let items = null, ocr = false, conf = 0, text = null, score = 0, retried = false;
                 if (method.value === 'auto') {
                     const clipped = pcClip(await nativeItems(page), s);
                     if (clipped.reduce((n, i) => n + i.str.trim().length, 0) >= 2) items = clipped;
                 }
-                if (!items) { const r = await ocrItems(page, s); items = r.items; conf = r.conf; text = r.text; ocr = true; }
+                if (!items) { const r = await ocrItems(page, s); items = r.items; conf = r.conf; text = r.text; score = r.score; retried = r.retried; ocr = true; }
                 if (run !== P.run) return;
-                P.last = { items, text, ocr, conf, page: P.page, ms: Math.round(performance.now() - t0) };
+                P.last = { items, text, ocr, conf, score, retried, page: P.page, ms: Math.round(performance.now() - t0) };
                 compose();
             } catch (e) { console.warn('Notes Vault: crop extract', e); if (run === P.run) status('Extraction failed: ' + (e.message || e)); }
         };
