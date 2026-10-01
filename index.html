@@ -46508,13 +46508,96 @@ kbd {
         }
         return paras.map(mdEscapePara).join('\n\n');
     }
+    /* Clear OCR prompt for scanned PDF pages (replaces the browser's plain confirm box).
+       Resolves { action: 'ocr' | 'skip' | 'cancel', lang }. Esc = cancel; clicking the dimmed
+       background does nothing, so a stray click can't start (or abort) a long job. */
+    function askOcrModal({ fileName, total, blank }) {
+        return new Promise((resolve) => {
+            if (!document.getElementById('nvOcrStyle')) {
+                const st = document.createElement('style');
+                st.id = 'nvOcrStyle';
+                st.textContent = `
+                .nv-ocr-scrim { position: fixed; inset: 0; z-index: 100000; background: rgba(40,20,32,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+                .nv-ocr { width: min(100%, 520px); max-height: 92vh; overflow-y: auto; background: var(--bg-white, #fff); color: var(--text-dark, #222); border: 1px solid var(--border-color, #ddd);
+                    border-radius: 16px; box-shadow: 0 28px 70px -20px rgba(74,50,64,.55); font-family: var(--nv-sans, system-ui, sans-serif); }
+                .nv-ocr-head { display: flex; gap: 12px; align-items: flex-start; padding: 18px 20px 12px; }
+                .nv-ocr-ico { width: 38px; height: 38px; flex: none; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--bg-light, #f5f5f5); color: var(--primary, #db2777); font-size: 1.1rem; }
+                .nv-ocr-title { margin: 0; font-size: 1.05rem; font-weight: 700; line-height: 1.3; }
+                .nv-ocr-file { margin: 2px 0 0; font-size: .82rem; color: var(--text-muted, #666); word-break: break-word; }
+                .nv-ocr-body { padding: 0 20px 6px; font-size: .9rem; line-height: 1.55; }
+                .nv-ocr-pages { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--bg-light, #f5f5f5); border: 1px solid var(--border-color, #ddd); }
+                .nv-ocr-pages b { color: var(--primary, #db2777); }
+                .nv-ocr-list { margin: 8px 0 0; padding-left: 18px; font-size: .84rem; color: var(--text-muted, #666); }
+                .nv-ocr-list li { margin: 2px 0; }
+                .nv-ocr-lbl { display: block; margin: 12px 0 4px; font-size: .8rem; font-weight: 600; }
+                .nv-ocr-sel { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--bg-white, #fff); color: inherit; font: inherit; }
+                .nv-ocr-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 14px 20px 18px; }
+                .nv-ocr-foot .nv-btn { padding: 8px 14px; }`;
+                document.head.appendChild(st);
+            }
+            // 54,55,56,60 → "54–56, 60"
+            const ranges = []; let a = blank[0], b = blank[0];
+            for (let i = 1; i <= blank.length; i++) {
+                if (blank[i] === b + 1) { b = blank[i]; continue; }
+                ranges.push(a === b ? String(a) : a + '\u2013' + b);
+                a = b = blank[i];
+            }
+            const shown = ranges.length > 12 ? ranges.slice(0, 12).join(', ') + ', \u2026 (+' + (ranges.length - 12) + ' more)' : ranges.join(', ');
+            const n = blank.length;
+            const scrim = document.createElement('div');
+            scrim.className = 'nv-ocr-scrim';
+            scrim.innerHTML = `
+              <div class="nv-ocr" role="dialog" aria-modal="true" aria-labelledby="nvOcrTitle">
+                <div class="nv-ocr-head">
+                  <div class="nv-ocr-ico"><i class="fa-solid fa-file-image" aria-hidden="true"></i></div>
+                  <div><h3 class="nv-ocr-title" id="nvOcrTitle">Some pages have no selectable text</h3><p class="nv-ocr-file"></p></div>
+                </div>
+                <div class="nv-ocr-body">
+                  <div class="nv-ocr-pages"><b>${n} of ${total}</b> page${total === 1 ? '' : 's'} look scanned or image-only: <span class="nv-ocr-pg"></span></div>
+                  <div>OCR (optical character recognition) can read the text from those pages as images:</div>
+                  <ul class="nv-ocr-list">
+                    <li>Runs <b>in your browser</b> with Tesseract.js \u2014 nothing is uploaded.</li>
+                    <li>The first time it downloads language data (a few MB to ~20 MB).</li>
+                    <li>Roughly 5\u201320 seconds per page, so about <b>${Math.max(1, Math.round(n * 12 / 60))} min</b> for ${n} page${n === 1 ? '' : 's'}.</li>
+                    <li>Accuracy depends on scan quality; check the result.</li>
+                  </ul>
+                  <label class="nv-ocr-lbl" for="nvOcrLang">OCR language</label>
+                  <select class="nv-ocr-sel" id="nvOcrLang">
+                    <option value="vie+eng">Vietnamese + English</option>
+                    <option value="eng">English only (faster, best for English text)</option>
+                    <option value="vie">Vietnamese only</option>
+                  </select>
+                </div>
+                <div class="nv-ocr-foot">
+                  <button type="button" class="nv-btn nv-btn-ghost" data-a="cancel">Cancel import</button>
+                  <button type="button" class="nv-btn" data-a="skip">Skip \u2014 import text only</button>
+                  <button type="button" class="nv-btn nv-btn-primary" data-a="ocr"><i class="fa-solid fa-wand-magic-sparkles"></i> Run OCR on ${n} page${n === 1 ? '' : 's'}</button>
+                </div>
+              </div>`;
+            scrim.querySelector('.nv-ocr-file').textContent = fileName;
+            scrim.querySelector('.nv-ocr-pg').textContent = (n === 1 ? 'page ' : 'pages ') + shown;
+            const prevFocus = document.activeElement;
+            const finish = (action) => {
+                const lang = scrim.querySelector('#nvOcrLang').value;
+                document.removeEventListener('keydown', onKey, true);
+                scrim.remove();
+                if (prevFocus && prevFocus.focus) { try { prevFocus.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+                resolve({ action, lang });
+            };
+            const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish('cancel'); } };
+            scrim.addEventListener('click', (e) => { const b = e.target.closest('[data-a]'); if (b) finish(b.dataset.a); });
+            document.addEventListener('keydown', onKey, true);
+            (document.getElementById('nvApp') || document.body).appendChild(scrim);
+            scrim.querySelector('[data-a="ocr"]').focus();
+        });
+    }
     async function importPdfAsNotes(fileList) {
         const files = Array.from(fileList || []).filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
         if (!files.length) return;
         let pdfjs;
         try { toast('Loading PDF reader…'); pdfjs = await loadPdfJs(); }
         catch (e) { alert('Could not load the PDF reader: ' + (e.message || e)); return; }
-        let ocrWorker = null, made = 0, failed = 0, lastId = null;
+        let ocrWorker = null, ocrLang = '', made = 0, failed = 0, lastId = null;
         try {
             for (const f of files) {
                 try {
@@ -46527,12 +46610,15 @@ kbd {
                         if (pages[i].replace(/\s/g, '').length < 25) blank.push(i);
                     }
                     let usedOcr = false;
-                    if (blank.length && confirm(f.name + '\n\n' + blank.length + ' of ' + N + ' page(s) have no selectable text (probably scanned).\n\nRun OCR (Vietnamese + English) on them? It runs in your browser, downloads language data the first time, and can take a while.')) {
+                    const choice = blank.length ? await askOcrModal({ fileName: f.name, total: N, blank }) : { action: 'skip', lang: 'vie+eng' };
+                    if (choice.action === 'cancel') continue;
+                    if (choice.action === 'ocr') {
                         try {
+                            if (ocrWorker && ocrLang !== choice.lang) { try { await ocrWorker.terminate(); } catch (e) { /* ignore */ } ocrWorker = null; }
                             if (!ocrWorker) {
                                 toast('Loading OCR engine…');
                                 const T = await loadTesseract();
-                                ocrWorker = await T.createWorker('vie+eng', 1, { logger: (m) => { if (m.status === 'recognizing text') toast('OCR… ' + Math.round(m.progress * 100) + '%'); } });
+                                ocrLang = choice.lang; ocrWorker = await T.createWorker(choice.lang, 1, { logger: (m) => { if (m.status === 'recognizing text') toast('OCR… ' + Math.round(m.progress * 100) + '%'); } });
                             }
                             for (let k = 0; k < blank.length; k++) {
                                 const i = blank[k];
@@ -46564,6 +46650,7 @@ kbd {
                 } catch (e) { console.warn('Notes Vault: PDF import failed', f.name, e); failed++; }
             }
         } finally { if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e) { /* ignore */ } } }
+        if (!made && !failed) { toast('PDF import cancelled.'); return; }
         toast('Imported ' + made + ' PDF note' + (made === 1 ? '' : 's') + (failed ? ' — ' + failed + ' couldn\u2019t be read (encrypted or damaged?)' : '') + '.');
         if (made === 1 && lastId) openNote(lastId);
     }
