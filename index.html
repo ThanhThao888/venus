@@ -40412,6 +40412,19 @@ const EnglishDaily = (function () {
 .nv-stor-filename { font-size: 0.86rem; font-weight: 600; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nv-stor-filemeta { font-size: 0.74rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .nv-stor-filerow .nv-stor-badge-unused { position: static; margin-left: auto; flex-shrink: 0; }
+/* "Which note is this file in?" chips — click one to jump to that note. */
+.nv-stor-notes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.nv-stor-notelink {
+    display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 9px; border-radius: 999px;
+    font-size: 0.76rem; font-weight: 600; color: var(--primary-dark); background: rgba(var(--primary-rgb), 0.1);
+    border: 1px solid rgba(var(--primary-rgb), 0.25); cursor: pointer;
+}
+.nv-stor-notelink:hover, .nv-stor-notelink:focus-visible { background: rgba(var(--primary-rgb), 0.2); border-color: var(--primary); outline: none; }
+.nv-stor-notelink > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+.nv-stor-notelink.nv-static { cursor: default; color: var(--text-muted); background: var(--bg-white); border-color: var(--border-color); font-weight: 500; }
+.nv-stor-notelink.nv-static:hover { background: var(--bg-white); border-color: var(--border-color); }
+.nv-stor-filerow { align-items: flex-start; }
+.nv-stor-filerow .nv-stor-badge-unused { align-self: center; }
 .nv-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 0.77rem; color: var(--text-muted); white-space: nowrap; }
 .nv-row-acts { position: relative; z-index: 2; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
 .nv-row:hover .nv-row-acts, .nv-row:focus-within .nv-row-acts { opacity: 1; }
@@ -49856,18 +49869,36 @@ kbd {
         else items.sort((a, b) => b.rec.size - a.rec.size);   // 'size' — largest first, the default
         return items;
     }
+    // One chip per note that holds this attachment. Live notes are clickable (jump to the note);
+    // notes in Trash or already gone are shown greyed-out so the file's owner is never a mystery.
+    function storNoteChipsHtml(it) {
+        const chip = (id, history) => {
+            const live = S.notes.find((n) => n.id === id);
+            const trashed = !live && (S.trash || []).find((n) => n.id === id);
+            const title = (live || trashed || {}).title || (live || trashed ? 'Untitled note' : 'Deleted note');
+            const label = (history ? 'History: ' : '') + title + (trashed ? ' (in Trash)' : '');
+            const icon = history ? 'fa-clock-rotate-left' : 'fa-note-sticky';
+            if (live) return '<span class="nv-stor-notelink" role="link" tabindex="0" data-open-note="' + esc(id) + '" title="Open this note"><i class="fa-regular ' + icon + '" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
+            return '<span class="nv-stor-notelink nv-static" title="This note can’t be opened from here"><i class="fa-regular ' + icon + '" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
+        };
+        const ids = Array.from(new Set(it.noteIds));
+        const hist = Array.from(new Set(it.revIds)).filter((id) => !ids.includes(id));
+        if (!ids.length && !hist.length) return '';
+        return '<span class="nv-stor-notes">' + ids.map((id) => chip(id, false)).join('') + hist.map((id) => chip(id, true)).join('') + '</span>';
+    }
     function storFileRowHtml(it) {
         const unused = !it.noteIds.length && !it.revIds.length;
         const name = it.rec.filename || (it.rec.id + '.' + extFromMime(it.rec.mime));
         const usage = unused ? '' : (' \u00b7 ' + (it.noteIds.length ? 'Used in ' + it.noteIds.length + (it.noteIds.length === 1 ? ' note' : ' notes') : 'In version history only'));
-        return '<button type="button" class="nv-stor-filerow">'
+        return '<div class="nv-stor-filerow" role="button" tabindex="0">'
             + '<span class="nv-stor-fileicon"><i class="fa-solid ' + (isSheetMime(it.rec.mime) ? 'fa-file-excel' : 'fa-file-pdf') + '" aria-hidden="true"></i></span>'
             + '<span class="nv-stor-filebody">'
-            + '<span class="nv-stor-filename">' + esc(name) + '</span>'
+            + '<span class="nv-stor-filename" title="' + esc(name) + '">' + esc(name) + '</span>'
             + '<span class="nv-stor-filemeta">' + esc(fmtBytes(it.rec.size)) + usage + '</span>'
+            + storNoteChipsHtml(it)
             + '</span>'
             + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
-            + '</button>';
+            + '</div>';
     }
     function storFilesToolbarHtml() {
         return '<div class="nv-stor-toolbar">'
@@ -49891,8 +49922,25 @@ kbd {
         Array.from(list.children).forEach((row, i) => {
             const it = items[i];
             if (!it) return;
-            row.addEventListener('click', () => {
-                openAttachMenu(it.rec, row, { context: 'manager', noteCount: it.noteIds.length, revCount: it.revIds.length, onDeleted: renderStorFiles });
+            const openMenu = () => openAttachMenu(it.rec, row, { context: 'manager', noteCount: it.noteIds.length, revCount: it.revIds.length, onDeleted: renderStorFiles });
+            row.addEventListener('click', (e) => {
+                const link = e.target.closest('[data-open-note]');
+                if (link) {            // jump to the note that holds this file
+                    e.stopPropagation();
+                    const id = link.getAttribute('data-open-note');
+                    closeStorModal();
+                    openNote(id);
+                    return;
+                }
+                if (e.target.closest('.nv-stor-notelink')) return;   // greyed-out chip: do nothing
+                openMenu();
+            });
+            row.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                const link = e.target.closest('[data-open-note]');
+                if (link) { closeStorModal(); openNote(link.getAttribute('data-open-note')); }
+                else if (e.target === row) openMenu();
             });
         });
     }
