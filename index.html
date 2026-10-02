@@ -40529,6 +40529,28 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 .nv-prose code { font-family: var(--nv-mono); font-size: 0.84em; padding: 1px 6px; border-radius: 5px; background: rgba(var(--primary-rgb), 0.13); }
 .nv-prose pre { position: relative; margin: 1.2em 0; padding: 14px 16px; overflow-x: auto; border-radius: 12px; background: var(--bg-light); border: 1px solid var(--border-color); line-height: 1.6; }
 .nv-prose pre code { padding: 0; background: none; font-size: 0.85rem; }
+/* Quick-copy icon: top-left of every code block (Read mode). The top padding reserves a slim header strip. */
+.nv-prose pre.nv-has-copy { padding-top: 42px; }
+.nv-code-copy {
+    position: absolute; top: 7px; left: 9px; z-index: 2; width: 28px; height: 28px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; cursor: pointer;
+    border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-muted); opacity: 0.8;
+}
+.nv-code-copy:hover, .nv-code-copy:focus-visible { opacity: 1; color: var(--primary); border-color: var(--primary); outline: none; }
+.nv-code-copy.nv-done { opacity: 1; color: var(--nv-ok); border-color: var(--nv-ok); }
+/* A ```markdown block holds prose, not code — wrap long lines instead of forcing a horizontal scroll. */
+.nv-prose pre[data-lang="markdown"] code, .nv-prose pre[data-lang="md"] code { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Image size controls inside the image menu */
+.nv-attach-size { padding: 8px 10px 6px; border-bottom: 1px solid var(--border-color); margin-bottom: 4px; }
+.nv-attach-sizelabel { display: flex; justify-content: space-between; font-size: 0.76rem; color: var(--text-muted); margin-bottom: 6px; }
+.nv-attach-sizelabel b { color: var(--text-dark); font-variant-numeric: tabular-nums; }
+.nv-attach-sizebtns { display: flex; gap: 4px; margin-bottom: 8px; }
+.nv-attach-sizebtns button {
+    flex: 1; padding: 4px 0; font-size: 0.76rem; font-weight: 600; cursor: pointer; border-radius: 7px;
+    border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark);
+}
+.nv-attach-sizebtns button:hover { border-color: var(--primary); color: var(--primary-dark); }
+.nv-attach-size input[type="range"] { width: 100%; accent-color: var(--primary); }
 .nv-prose pre[data-lang]::before {
     content: attr(data-lang); position: absolute; top: 9px; right: 14px; z-index: 1;
     padding: 1px 8px; border-radius: 999px; background: var(--bg-white); color: var(--text-muted);
@@ -41473,6 +41495,7 @@ kbd {
                         <button class="nv-tb" type="button" data-cmd="file" data-tip="Excel / spreadsheet"><i class="fa-solid fa-file-excel"></i></button>
                         <span class="nv-tsep" aria-hidden="true"></span>
                         <button class="nv-tb" type="button" data-cmd="codeblock" data-tip="Code block"><i class="fa-solid fa-file-code"></i></button>
+                        <button class="nv-tb" type="button" data-cmd="mdblock" data-tip="Wrap selection in a markdown block"><i class="fa-brands fa-markdown"></i></button>
                         <button class="nv-tb" type="button" data-cmd="table" data-tip="Table"><i class="fa-solid fa-table"></i></button>
                         <button class="nv-tb" type="button" data-cmd="callout" data-tip="Callout"><i class="fa-solid fa-circle-exclamation"></i></button>
                         <button class="nv-tb" type="button" data-cmd="hr" data-tip="Divider"><i class="fa-solid fa-minus"></i></button>
@@ -44468,6 +44491,7 @@ kbd {
             w.appendChild(tb);
         });
         highlightCode(tpl.content);
+        addCodeCopyButtons(tpl.content);
         convertCallouts(tpl.content);
         // GFM task checkboxes ("- [ ] …") come out of marked as disabled <input>s. The
         // `checked` HTML attribute always survives (marked writes it, DOMPurify keeps it),
@@ -44486,6 +44510,7 @@ kbd {
         // "#id" navigation (no target="_blank", which would open a blank new tab instead of
         // scrolling) — they're same-document jumps, not external links.
         renderFootnotes(tpl.content, footnoteDefs);
+        applyImageSizes(tpl.content);
         target.replaceChildren(tpl.content);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
         return resolveAttachments(target, attachOpts);
@@ -44891,8 +44916,12 @@ kbd {
         const canDelete = context === 'note' || (context === 'manager' && !opts.noteCount && !opts.revCount);
         const isImage = /^image\//.test(rec.mime || '');
         const noun = isImage ? 'image' : 'file';
+        const canResize = isImage && context === 'note' && !S.viewRev && !!S.note && imgEl && imgEl.tagName === 'IMG';
         menu.innerHTML =
             '<div class="nv-attach-meta">' + esc((rec.filename ? rec.filename + ' \u00b7 ' : '') + dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || noun) + usageLine) + '</div>'
+            + (canResize ? '<div class="nv-attach-size"><div class="nv-attach-sizelabel"><span>Size</span><b data-size-val></b></div>'
+                + '<div class="nv-attach-sizebtns"><button type="button" data-size="240">S</button><button type="button" data-size="480">M</button><button type="button" data-size="720">L</button><button type="button" data-size="0" title="Original / fit width">Full</button></div>'
+                + '<input type="range" min="80" max="1200" step="10" data-size-range aria-label="Image width"></div>' : '')
             + (isSheetMime(rec.mime) ? '' : '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>')
             + (isImage ? '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>' : '')
             + (/pdf/i.test(rec.mime || '') && context === 'note' ? '<button type="button" class="nv-act" data-act="crop"><i class="fa-solid fa-crop" aria-hidden="true"></i> Extract region…</button>' : '')
@@ -44904,6 +44933,28 @@ kbd {
         const left = Math.min(window.innerWidth - menu.offsetWidth - 8, r.left);
         menu.style.top = Math.max(8, top) + 'px';
         menu.style.left = Math.max(8, left) + 'px';
+        if (canResize) {
+            const range = menu.querySelector('[data-size-range]'), val = menu.querySelector('[data-size-val]');
+            const current = () => Math.round(imgEl.getBoundingClientRect().width) || (rec.width || 480);
+            const show = (w) => { val.textContent = w ? w + ' px' : 'Full width'; };
+            const startW = imgEl.getAttribute('data-nv-w') ? +imgEl.getAttribute('data-nv-w') : 0;
+            range.value = String(Math.min(1200, Math.max(80, startW || current())));
+            show(startW);
+            const apply = (w, commit) => {
+                imgEl.style.width = w ? w + 'px' : '';
+                imgEl.style.maxWidth = '100%';
+                if (w) imgEl.setAttribute('data-nv-w', String(w)); else imgEl.removeAttribute('data-nv-w');
+                show(w);
+                if (commit && !setImageWidthInMarkdown(rec, imgEl, w)) flash('Couldn’t resize this image');
+            };
+            range.addEventListener('input', () => apply(+range.value, false));      // live preview
+            range.addEventListener('change', () => apply(+range.value, true));     // save to the note
+            menu.querySelectorAll('[data-size]').forEach((btn) => btn.addEventListener('click', () => {
+                const w = +btn.getAttribute('data-size');
+                if (w) range.value = String(w);
+                apply(w, true);
+            }));
+        }
         menu.addEventListener('click', async (e) => {
             const btn = e.target.closest('[data-act]');
             if (!btn) return;
@@ -44965,6 +45016,69 @@ kbd {
 
     // Syntax-highlight fenced code blocks (```js, ```py, …) with highlight.js, and tag each
     // block with its detected language for the little corner label. No-op if hljs failed to load.
+    // Adds the quick-copy icon (top-left) to every code block. The click itself is handled by one
+    // delegated listener (see initCodeCopy) so it works in Read mode, previews and compare views alike.
+    function addCodeCopyButtons(root) {
+        root.querySelectorAll('pre > code').forEach((code) => {
+            const pre = code.parentElement;
+            if (pre.querySelector(':scope > .nv-code-copy')) return;
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'nv-code-copy'; b.title = 'Copy'; b.setAttribute('aria-label', 'Copy code');
+            b.innerHTML = '<i class="fa-regular fa-copy" aria-hidden="true"></i>';
+            pre.classList.add('nv-has-copy');
+            pre.insertBefore(b, code);
+        });
+    }
+    function initCodeCopy() {
+        if (window.__nvCodeCopyBound) return;
+        window.__nvCodeCopyBound = true;
+        document.addEventListener('click', async (e) => {
+            const b = e.target.closest('.nv-code-copy');
+            if (!b) return;
+            e.preventDefault(); e.stopPropagation();
+            const code = b.parentElement && b.parentElement.querySelector('code');
+            const ok = await copyText(code ? code.textContent : '');
+            b.classList.toggle('nv-done', ok);
+            b.innerHTML = ok ? '<i class="fa-solid fa-check" aria-hidden="true"></i>' : '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+            b.title = ok ? 'Copied' : 'Couldn’t copy';
+            setTimeout(() => { b.classList.remove('nv-done'); b.innerHTML = '<i class="fa-regular fa-copy" aria-hidden="true"></i>'; b.title = 'Copy'; }, 1500);
+        }, true);
+    }
+    // Obsidian-style sizing: ![alt|300](src) renders the image 300px wide (and the "|300" never shows as alt text).
+    function applyImageSizes(root) {
+        root.querySelectorAll('img').forEach((img) => {
+            const m = /^(.*?)\s*\|\s*(\d{2,4})(?:x\d{2,4})?\s*$/.exec(img.getAttribute('alt') || '');
+            if (!m) return;
+            img.setAttribute('alt', m[1]);
+            img.setAttribute('data-nv-w', m[2]);
+            img.style.width = m[2] + 'px';
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+        });
+    }
+    // Writes the new width into the note's markdown (as ![alt|WIDTH](attachment://id)); width 0 = original size.
+    // When the same image appears several times, the clicked one is matched by its position in the page.
+    function setImageWidthInMarkdown(rec, imgEl, width) {
+        if (!S.note || S.viewRev) return false;
+        const id = rec.id;
+        const imgs = Array.from(el.read.querySelectorAll('img[data-nv-attach="' + id + '"]'));
+        let idx = imgs.indexOf(imgEl); if (idx < 0) idx = 0;
+        const re = new RegExp('!\\[([^\\]]*)\\]\\(attachment://' + id + '(?=[\\s)])', 'g');
+        let n = -1, changed = false;
+        const md = S.note.markdown.replace(re, (full, alt) => {
+            n++;
+            if (n !== idx) return full;
+            changed = true;
+            const base = alt.replace(/\s*\|\s*\d{2,4}(?:x\d{2,4})?\s*$/, '');
+            return '![' + base + (width ? '|' + width : '') + '](attachment://' + id;
+        });
+        if (!changed) return false;
+        S.note.markdown = md;
+        if (el.src) el.src.value = md;
+        markDirty();
+        return true;
+    }
+
     function highlightCode(root) {
         if (!window.hljs) return;
         root.querySelectorAll('pre > code').forEach((block) => {
@@ -46575,6 +46689,8 @@ kbd {
             #nvPrintRoot table { border-collapse: collapse; max-width: 100%; }
             #nvPrintRoot a { color: #9d2867; text-decoration: underline; }
             #nvPrintRoot .nv-pdf-embed-frame, #nvPrintRoot .nv-pdf-embed-more { display: none !important; }
+            #nvPrintRoot .nv-code-copy { display: none !important; }
+            #nvPrintRoot pre.nv-has-copy { padding-top: 14px !important; }
             * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }`;
         document.head.appendChild(st);
@@ -47996,6 +48112,36 @@ kbd {
         else replaceRange(a, b, '```\n' + block + '\n```', a + 4, a + 4 + block.length);
     }
 
+    // Gathers the selected text (several long paragraphs, say) into ONE fenced ```markdown block.
+    //  · nothing selected + caret in a paragraph → that whole paragraph is wrapped
+    //  · nothing selected on a blank line       → an empty block, caret inside
+    //  · selection already sits inside a ```markdown fence → unwrap (toggle)
+    //  · text that itself contains ``` fences   → a longer outer fence is used so nothing breaks
+    function wrapAsMarkdownBlock() {
+        const ta = el.src, v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
+        let { a, b } = lineRange(v, s, e);
+        const prevStart = a > 0 ? lineStart(v, a - 1) : -1;
+        const prevLine = a > 0 ? v.slice(prevStart, a - 1) : null;
+        const nextEnd = b < v.length ? lineEnd(v, b + 1) : -1;
+        const nextLine = b < v.length ? v.slice(b + 1, nextEnd) : null;
+        if (prevLine !== null && nextLine !== null && /^\s*(`{3,}|~{3,})\s*(markdown|md)\s*$/i.test(prevLine) && /^\s*(`{3,}|~{3,})\s*$/.test(nextLine)) {
+            const inner = v.slice(a, b);                                  // already wrapped → unwrap
+            replaceRange(prevStart, nextEnd, inner, prevStart, prevStart + inner.length);
+            return;
+        }
+        if (s === e && v.slice(a, b).trim()) {                            // caret only → grow to the whole paragraph
+            while (a > 0) { const ps = lineStart(v, a - 1); if (!v.slice(ps, a - 1).trim()) break; a = ps; }
+            while (b < v.length) { const ne = lineEnd(v, b + 1); if (!v.slice(b + 1, ne).trim()) break; b = ne; }
+        }
+        const block = v.slice(a, b);
+        let longest = 0;
+        (block.match(/^[ \t]*`{3,}/gm) || []).forEach((m) => { longest = Math.max(longest, m.trim().length); });
+        const fence = '`'.repeat(Math.max(3, longest + 1));
+        const head = fence + 'markdown\n';
+        if (!block.trim()) replaceRange(a, b, head + '\n' + fence, a + head.length);
+        else replaceRange(a, b, head + block + '\n' + fence, a + head.length, a + head.length + block.length);
+    }
+
     function insertWikilink() {
         const ta = el.src, v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, sel = v.slice(s, e);
         if (sel && !sel.includes('\n')) replaceRange(s, e, '[[' + sel + ']]', s + 2, s + 2 + sel.length);
@@ -48060,7 +48206,7 @@ kbd {
         image: () => { if (el.attachInput) el.attachInput.click(); },
         pdf: () => { if (el.pdfInput) el.pdfInput.click(); }, pdfcrop: () => openPdfCrop(),
         file: () => { if (el.fileInput) el.fileInput.click(); },
-        codeblock: toggleCodeBlock,
+        codeblock: toggleCodeBlock, mdblock: wrapAsMarkdownBlock,
         table: insertTable, hr: insertDivider, callout: insertCallout, clear: clearFormatting,
         extract: extractSelectionToNote
     };
@@ -48895,7 +49041,7 @@ kbd {
                     ['bold', 'bold', 'Bold', ['mod', 'B']], ['italic', 'italic', 'Italic', ['mod', 'I']],
                     ['strike', 'strikethrough', 'Strikethrough', ['mod', 'shift', 'X']], ['code', 'code', 'Inline code', ['mod', '`']],
                     ['ul', 'list-ul', 'Bulleted list'], ['ol', 'list-ol', 'Numbered list'], ['task', 'list-check', 'Checklist'],
-                    ['quote', 'quote-left', 'Quote'], ['codeblock', 'file-code', 'Code block'], ['table', 'table', 'Table'],
+                    ['quote', 'quote-left', 'Quote'], ['codeblock', 'file-code', 'Code block'], ['mdblock', 'file-lines', 'Wrap selection in a markdown block'], ['table', 'table', 'Table'],
                     ['callout', 'circle-exclamation', 'Callout'], ['hr', 'minus', 'Divider'], ['link', 'link', 'Insert link', ['mod', 'K']],
                     ['extract', 'scissors', 'Extract selection to new note']]
                     .forEach(([c, ic, lb, keys]) => add('Format', 'fmt-' + c, ic, lb, () => runCmd(c), { more: true, keys, kw: 'format markdown insert' }));
@@ -50340,6 +50486,7 @@ kbd {
         // Task checkboxes in Read mode: click toggles the box AND the "[ ]"/"[x]" in the
         // markdown source, kept in sync via markDirty() (same path as any other edit).
         // Wikilinks in Read mode: open the target note, or create it if it doesn't exist yet.
+        initCodeCopy();
         el.read.addEventListener('click', (e) => {
             const wl = e.target.closest('.nv-wikilink');
             if (wl) { e.preventDefault(); openOrCreateByTitle(wl.dataset.wikilink); return; }
