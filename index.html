@@ -40330,13 +40330,15 @@ const EnglishDaily = (function () {
 .nv-stor-scrim { position: absolute; inset: 0; z-index: 55; background: rgba(40, 20, 32, 0.4); }
 .nv-stor {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 56;
-    width: min(480px, 92vw); max-height: 84vh; display: flex; flex-direction: column;
+    width: min(1100px, 96vw); height: min(88vh, 880px); max-height: 92vh; display: flex; flex-direction: column;
     background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 16px;
     box-shadow: var(--shadow-lg); overflow: hidden;
 }
 .nv-stor-bar { display: flex; align-items: center; gap: 8px; padding: 12px 10px 12px 18px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
 .nv-stor-bartitle { font-family: var(--nv-display); font-weight: 700; font-size: 1rem; color: var(--text-dark); display: flex; align-items: center; gap: 8px; }
-.nv-stor-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 20px; }
+.nv-stor-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 22px 24px; }
+/* Overview is text/rows, not a gallery — keep it readable instead of stretching across the wide modal. */
+.nv-stor[data-tab="overview"] .nv-stor-body > * { max-width: 680px; margin-left: auto; margin-right: auto; }
 @media (max-width: 620px) {
     .nv-stor { top: 0; left: 0; transform: none; width: 100%; height: 100%; max-height: none; border-radius: 0; border: 0; }
 }
@@ -40368,16 +40370,26 @@ const EnglishDaily = (function () {
 .nv-stor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 4px; }
 .nv-stor-select, .nv-stor-check { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); }
 .nv-stor-select select { font-size: 0.82rem; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark); }
-.nv-stor-imggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 12px; }
+.nv-stor-imggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; margin-top: 12px; }
 .nv-stor-imgcard {
     position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 0;
     padding: 0; border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden;
     background: var(--bg-light); cursor: pointer; text-align: left;
 }
 .nv-stor-imgcard:hover { border-color: var(--primary); }
-.nv-stor-imgthumb-wrap { aspect-ratio: 1 / 1; display: block; background: var(--bg-light); }
+.nv-stor-imgthumb-wrap { aspect-ratio: 4 / 3; display: block; background: var(--bg-light); }
 .nv-stor-imgthumb { width: 100%; height: 100%; object-fit: cover; display: block; }
-.nv-stor-imgmeta { padding: 4px 6px; font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-imgmeta { padding: 6px 8px; font-size: 0.76rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-tick { display: none; position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%;
+    align-items: center; justify-content: center; font-size: 0.7rem; color: transparent;
+    background: rgba(255,255,255,0.9); border: 2px solid var(--primary); }
+.nv-stor-imggrid.nv-selmode .nv-stor-imgcard:not(.nv-locked) .nv-stor-tick { display: flex; }
+.nv-stor-imggrid.nv-selmode .nv-stor-imgcard.nv-locked { opacity: 0.4; cursor: not-allowed; }
+.nv-stor-imgcard.nv-sel { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+.nv-stor-imgcard.nv-sel .nv-stor-tick { background: var(--primary); color: #fff; }
+.nv-stor-toolbar .nv-stor-spacer { flex: 1; }
+.nv-stor-toolbar .nv-btn.nv-stor-del { color: var(--nv-danger); }
+.nv-stor-toolbar .nv-btn.nv-stor-del:disabled { opacity: 0.45; cursor: not-allowed; }
 .nv-stor-badge-unused {
     position: absolute; top: 5px; left: 5px; padding: 2px 6px; border-radius: 999px;
     background: rgba(192, 54, 74, 0.85); color: #fff; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em;
@@ -41826,7 +41838,7 @@ kbd {
             rows: [], total: 0, skip: new Set(), confirm: null, undo: null, cur: null, busy: false,
             snapped: new Set(), timer: 0, pendingIn: false, prevFocus: null
         },
-        stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', fileSort: 'size', fileFilter: 'all', objectUrls: [] },   // Manage storage panel
+        stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', fileSort: 'size', fileFilter: 'all', objectUrls: [], selMode: false, sel: new Set() },   // Manage storage panel
         linkPicker: { open: false, type: '', id: '', title: '', career: '', query: '', prevFocus: null },
         storageStats: null,                       // last getVaultStorageStats() result, cached for the compact indicator + panel
         noteAttachRefCache: new Map(),            // noteId → Set(attachment id) last synced to attachmentRefs — lets flushSave diff cheaply
@@ -44406,7 +44418,7 @@ kbd {
     }
 
     /* ═════════════ Markdown → reading view ═════════════ */
-    function renderInto(target, md, interactive) {
+    function renderInto(target, md, interactive, attachOpts) {
         if (!md.trim()) {
             target.innerHTML = '<p class="nv-blank">Nothing here yet — switch to Edit and start writing.</p>';
             return;
@@ -44463,16 +44475,22 @@ kbd {
         renderFootnotes(tpl.content, footnoteDefs);
         target.replaceChildren(tpl.content);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
-        resolveAttachments(target);
+        return resolveAttachments(target, attachOpts);
     }
 
     // Swaps every <img src="attachment://ID"> left over from marked/DOMPurify for a real
     // blob: URL read out of the attachments store, and wires the click-to-open popover.
     // Object URLs from the *previous* render are revoked first — nothing here is cached
     // across renders, since the note being shown can change at any time.
-    async function resolveAttachments(target) {
-        S.attachObjectUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } });
-        S.attachObjectUrls = [];
+    async function resolveAttachments(target, opts) {
+        // `opts.urls` = isolated mode (PDF export): blob: URLs go into the caller's own array and the
+        // Read view's URLs are left alone — otherwise exporting would revoke the on-screen images.
+        const sink = opts && opts.urls ? opts.urls : null;
+        if (!sink) {
+            S.attachObjectUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } });
+            S.attachObjectUrls = [];
+        }
+        const urlSink = sink || S.attachObjectUrls;
         const imgs = Array.from(target.querySelectorAll('img[src^="attachment://"]'));
         for (const img of imgs) {
             const id = img.getAttribute('src').slice('attachment://'.length);
@@ -44500,7 +44518,7 @@ kbd {
                 img.alt = (img.alt || 'image') + ' (attachment could not be opened)';
                 continue;
             }
-            S.attachObjectUrls.push(url);
+            urlSink.push(url);
             img.src = url;
             img.setAttribute('data-nv-attach', id);
             img.addEventListener('click', (e) => { e.preventDefault(); openAttachMenu(rec, img); });
@@ -44527,7 +44545,7 @@ kbd {
             S.attachmentCache.set(id, rec);
             let url;
             try { url = URL.createObjectURL(rec.blob); } catch (e) { continue; }
-            S.attachObjectUrls.push(url);
+            urlSink.push(url);
             if (rec.mime === 'application/pdf') {
                 renderPdfEmbed(a, rec, url);
             } else if (isSheetMime(rec.mime)) {
@@ -46560,19 +46578,23 @@ kbd {
         meta.textContent = [normType(n.type), (n.tags || []).map((t) => '#' + t).join(' '), new Date(n.updatedAt).toLocaleDateString()].filter(Boolean).join('  ·  ');
         const body = document.createElement('div');
         root.append(h, meta, body);
-        renderInto(body, n.markdown || '', false);
+        // The root MUST be in the document before rendering: resolveAttachments() bails out when
+        // target.isConnected is false, leaving every attached image with its src stripped (the
+        // broken "image" / grey placeholder that showed up in the exported PDF).
         document.body.appendChild(root);
-        // Wait (max ~4s) for attached images to resolve and math to typeset before opening the dialog.
-        const t0 = Date.now();
-        while (Date.now() - t0 < 4000) {
-            const imgs = Array.from(body.querySelectorAll('img'));
-            if (imgs.every((im) => !/^attachment:/.test(im.getAttribute('src') || '') && im.complete)) break;
-            await new Promise((r) => setTimeout(r, 80));
-        }
+        const printUrls = [];
+        try { await renderInto(body, n.markdown || '', false, { urls: printUrls }); } catch (e) { console.warn('Notes Vault: print render failed', e); }
+        // Wait until every image is really decoded (blob: URLs resolve async), max ~6s.
+        const imgs = Array.from(body.querySelectorAll('img'));
+        imgs.forEach((im) => { im.loading = 'eager'; });
+        await Promise.race([
+            Promise.all(imgs.map((im) => (im.src && im.decode ? im.decode().catch(() => {}) : Promise.resolve()))),
+            new Promise((r) => setTimeout(r, 6000))
+        ]);
         try { if (window.MathJax && window.MathJax.typesetPromise) await window.MathJax.typesetPromise([body]); } catch (e) { /* print anyway */ }
         const prevTitle = document.title;
         document.title = slugify(n.title) || 'note';
-        const done = () => { window.removeEventListener('afterprint', done); document.title = prevTitle; root.remove(); };
+        const done = () => { window.removeEventListener('afterprint', done); document.title = prevTitle; root.remove(); printUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } }); };
         window.addEventListener('afterprint', done);
         toast('In the print dialog, choose “Save as PDF” as the destination.');
         setTimeout(() => window.print(), 250);
@@ -49598,6 +49620,8 @@ kbd {
     async function renderStorBody() {
         if (!el.storBody) return;
         updateStorTabsUI();
+        el.stor.dataset.tab = S.stor.tab;
+        if (S.stor.tab !== 'images') { S.stor.selMode = false; S.stor.sel.clear(); }
         if (S.stor.tab === 'images') return renderStorImages();
         if (S.stor.tab === 'files') return renderStorFiles();
         return renderStorOverview();
@@ -49698,7 +49722,8 @@ kbd {
     }
     function storImgCardHtml(it) {
         const unused = !it.noteIds.length && !it.revIds.length;
-        return '<button type="button" class="nv-stor-imgcard">'
+        return '<button type="button" class="nv-stor-imgcard' + (unused ? '' : ' nv-locked') + '">'
+            + '<span class="nv-stor-tick"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
             + '<span class="nv-stor-imgthumb-wrap"><img class="nv-stor-imgthumb" alt="" loading="lazy"></span>'
             + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
             + '<span class="nv-stor-imgmeta">' + esc(fmtBytes(it.rec.size)) + '</span>'
@@ -49712,6 +49737,12 @@ kbd {
             + '<option value="old"' + (S.stor.imgSort === 'old' ? ' selected' : '') + '>Oldest first</option>'
             + '</select></label>'
             + '<label class="nv-stor-check"><input type="checkbox" id="nvStorImgUnused"' + (S.stor.imgFilter === 'unused' ? ' checked' : '') + '> Unused only</label>'
+            + '<span class="nv-stor-spacer"></span>'
+            + (S.stor.selMode
+                ? '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorImgSelUnused"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Select all unused</button>'
+                  + '<button type="button" class="nv-btn nv-btn-ghost nv-stor-del" id="nvStorImgDelSel" disabled><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete selected (0)</button>'
+                  + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorImgSelCancel">Cancel</button>'
+                : '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorImgSelBtn"><i class="fa-regular fa-square-check" aria-hidden="true"></i> Select</button>')
             + '</div>';
     }
     function wireStorImagesToolbar() {
@@ -49719,6 +49750,46 @@ kbd {
         if (sortSel) sortSel.addEventListener('change', () => { S.stor.imgSort = sortSel.value; renderStorImages(); });
         const unusedChk = $('nvStorImgUnused');
         if (unusedChk) unusedChk.addEventListener('change', () => { S.stor.imgFilter = unusedChk.checked ? 'unused' : 'all'; renderStorImages(); });
+        const selBtn = $('nvStorImgSelBtn');
+        if (selBtn) selBtn.addEventListener('click', () => { S.stor.selMode = true; S.stor.sel.clear(); renderStorImages(); });
+        const cancelBtn = $('nvStorImgSelCancel');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => { S.stor.selMode = false; S.stor.sel.clear(); renderStorImages(); });
+        const allUnused = $('nvStorImgSelUnused');
+        if (allUnused) allUnused.addEventListener('click', () => {
+            const cards = Array.from(document.querySelectorAll('#nvStorImgGrid .nv-stor-imgcard:not(.nv-locked)'));
+            cards.forEach((c) => { if (c._storId) { S.stor.sel.add(c._storId); c.classList.add('nv-sel'); } });
+            updateStorSelUI();
+        });
+        const delBtn = $('nvStorImgDelSel');
+        if (delBtn) delBtn.addEventListener('click', deleteSelectedStorImages);
+    }
+    function updateStorSelUI() {
+        const b = $('nvStorImgDelSel');
+        if (!b) return;
+        const n = S.stor.sel.size;
+        b.disabled = !n;
+        b.innerHTML = '<i class="fa-solid fa-trash" aria-hidden="true"></i> Delete selected (' + n + ')';
+    }
+    async function deleteSelectedStorImages() {
+        const ids = Array.from(S.stor.sel);
+        if (!ids.length) return;
+        if (!confirm('Delete ' + ids.length + (ids.length === 1 ? ' unused image' : ' unused images') + ' permanently? This cannot be undone.')) return;
+        // Re-check against fresh usage data so an image that got referenced in the meantime is never removed.
+        let ok = 0, skipped = 0;
+        try {
+            const fresh = new Map((await getAttachmentsOverview()).map((it) => [it.rec.id, it]));
+            for (const id of ids) {
+                const it = fresh.get(id);
+                if (!it || it.noteIds.length || it.revIds.length) { skipped++; continue; }
+                await dbDeleteAttachment(id).catch(() => {});
+                await dbDeleteAttachmentRefs(id).catch(() => {});
+                ok++;
+            }
+        } catch (e) { console.warn('Notes Vault: bulk delete failed', e); flash('Couldn’t delete the selected images'); }
+        S.stor.sel.clear();
+        S.stor.selMode = false;
+        flash('Deleted ' + ok + (ok === 1 ? ' image' : ' images') + (skipped ? ' — skipped ' + skipped + ' still in use' : ''));
+        renderStorImages();
     }
     async function hydrateStorImageThumbs(items) {
         const grid = $('nvStorImgGrid');
@@ -49731,10 +49802,21 @@ kbd {
             S.stor.objectUrls.push(url);
             const img = card.querySelector('img');
             if (img) img.src = url;
+            card._storId = it.rec.id;
+            const locked = !!(it.noteIds.length || it.revIds.length);
+            if (S.stor.sel.has(it.rec.id)) card.classList.add('nv-sel');
             card.addEventListener('click', () => {
+                if (S.stor.selMode) {
+                    if (locked) { flash('Still used in a note or its history — can’t delete'); return; }
+                    if (S.stor.sel.has(it.rec.id)) { S.stor.sel.delete(it.rec.id); card.classList.remove('nv-sel'); }
+                    else { S.stor.sel.add(it.rec.id); card.classList.add('nv-sel'); }
+                    updateStorSelUI();
+                    return;
+                }
                 openAttachMenu(it.rec, card, { context: 'manager', noteCount: it.noteIds.length, revCount: it.revIds.length, onDeleted: renderStorImages });
             });
         });
+        updateStorSelUI();
     }
     async function renderStorImages() {
         revokeStorObjectUrls();
@@ -49761,7 +49843,7 @@ kbd {
         const summary = '<p class="nv-stor-note" style="margin-top:0;">' + items.length + (items.length === 1 ? ' image' : ' images') + ' \u00b7 ' + fmtBytes(totalBytes) + ' total' + (unusedCount ? ' \u00b7 ' + unusedCount + ' unused' : '') + '</p>';
         const cards = filtered.length ? filtered.map(storImgCardHtml).join('') : '';
         el.storBody.innerHTML = storImagesToolbarHtml() + summary
-            + (filtered.length ? '<div class="nv-stor-imggrid" id="nvStorImgGrid">' + cards + '</div>' : '<div class="nv-stor-unsupported">No unused images — nice and tidy.</div>');
+            + (filtered.length ? '<div class="nv-stor-imggrid' + (S.stor.selMode ? ' nv-selmode' : '') + '" id="nvStorImgGrid">' + cards + '</div>' : '<div class="nv-stor-unsupported">No unused images — nice and tidy.</div>');
         wireStorImagesToolbar();
         await hydrateStorImageThumbs(filtered);
     }
@@ -49860,6 +49942,7 @@ kbd {
         el.stor.hidden = true;
         el.storScrim.hidden = true;
         revokeStorObjectUrls();
+        S.stor.selMode = false; S.stor.sel.clear();
         const f = S.stor.prevFocus; S.stor.prevFocus = null;
         refocus(f);
     }
