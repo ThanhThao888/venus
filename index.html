@@ -46672,13 +46672,20 @@ kbd {
         st.id = 'nvPrintStyle';
         st.textContent = `
         #nvPrintRoot { display: none; }
-        @page { margin: 16mm 15mm; }
+        /* margin:0 makes Chrome/Edge skip their automatic header & footer (date, title, page URL, page number).
+           The visual margins come from #nvPrintRoot's side padding + repeating spacer rows (.nv-pt-*) instead. */
+        @page { margin: 0; }
         @media print {
             html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
             body > *:not(#nvPrintRoot) { display: none !important; }
-            #nvPrintRoot { display: block !important; position: static !important; width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 !important;
+            #nvPrintRoot { display: block !important; position: static !important; width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 15mm !important;
                 background: #fff !important; color: #111 !important; font-size: 11pt; line-height: 1.65;
                 --text-dark: #111; --text-muted: #555; --bg-light: #f4f4f5; --bg-card: #fff; --border-color: #d4d4d8; --primary: #9d2867; }
+            #nvPrintRoot table.nv-pt { display: table; width: 100%; max-width: none; border-collapse: collapse; table-layout: fixed; }
+            #nvPrintRoot table.nv-pt > thead { display: table-header-group; }
+            #nvPrintRoot table.nv-pt > tfoot { display: table-footer-group; }
+            #nvPrintRoot table.nv-pt > thead > tr > td, #nvPrintRoot table.nv-pt > tfoot > tr > td { height: 16mm; padding: 0; border: 0; background: none; }
+            #nvPrintRoot table.nv-pt > tbody > tr > td { padding: 0; border: 0; background: none; vertical-align: top; }
             #nvPrintRoot .nv-print-title { font-size: 22pt; line-height: 1.25; margin: 0 0 4pt; color: #111; }
             #nvPrintRoot .nv-print-meta { font-size: 9pt; color: #666; margin: 0 0 14pt; padding-bottom: 8pt; border-bottom: 1px solid #d4d4d8; }
             #nvPrintRoot h1, #nvPrintRoot h2, #nvPrintRoot h3, #nvPrintRoot h4 { break-after: avoid; page-break-after: avoid; color: #111; }
@@ -46703,10 +46710,14 @@ kbd {
         root.id = 'nvPrintRoot';
         root.className = 'nv-prose';
         const h = document.createElement('h1'); h.className = 'nv-print-title'; h.textContent = n.title || 'Untitled note';
-        const meta = document.createElement('div'); meta.className = 'nv-print-meta';
-        meta.textContent = [normType(n.type), (n.tags || []).map((t) => '#' + t).join(' '), new Date(n.updatedAt).toLocaleDateString()].filter(Boolean).join('  ·  ');
         const body = document.createElement('div');
-        root.append(h, meta, body);
+        // Only the note itself is exported: title + content. No folder/date line, no app link, no URL.
+        // Real <table> with empty header/footer rows: Chrome repeats those on every printed page, which
+        // gives top/bottom margins on ALL pages even though @page margin is 0 (see ensurePrintStyle).
+        const pt = document.createElement('table'); pt.className = 'nv-pt'; pt.setAttribute('role', 'presentation');
+        pt.innerHTML = '<thead><tr><td></td></tr></thead><tbody><tr><td></td></tr></tbody><tfoot><tr><td></td></tr></tfoot>';
+        pt.querySelector('tbody td').append(h, body);
+        root.appendChild(pt);
         // The root MUST be in the document before rendering: resolveAttachments() bails out when
         // target.isConnected is false, leaving every attached image with its src stripped (the
         // broken "image" / grey placeholder that showed up in the exported PDF).
@@ -46716,6 +46727,17 @@ kbd {
         // Wait until every image is really decoded (blob: URLs resolve async), max ~6s.
         const imgs = Array.from(body.querySelectorAll('img'));
         imgs.forEach((im) => { im.loading = 'eager'; });
+        // Inline every attached image as a data: URL. The print engine (and Chrome's preview, which
+        // re-lays-out the page whenever a print setting changes) then never depends on a blob: URL that
+        // could be revoked or not yet resolved. The temporary blob URLs are released right away.
+        await Promise.all(imgs.filter((im) => /^blob:/.test(im.src || '')).map(async (im) => {
+            try {
+                const blob = await (await fetch(im.src)).blob();
+                const dataUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
+                im.src = dataUrl;
+            } catch (e) { console.warn('Notes Vault: could not inline an image for PDF', e); }
+        }));
+        printUrls.splice(0).forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } });
         await Promise.race([
             Promise.all(imgs.map((im) => (im.src && im.decode ? im.decode().catch(() => {}) : Promise.resolve()))),
             new Promise((r) => setTimeout(r, 6000))
