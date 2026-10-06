@@ -91907,4 +91907,41 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
   letter-spacing: 0;
 }
 </style>
+<style id="fabAutoHideCSS">
+/* Điện thoại: 4 nút nổi (Notes Vault, Quote, Brain Dump, Daily Plan) luôn đè lên nội dung
+   (vd. vòng tròn tiến độ 1/7). Cuộn xuống -> trượt ra mép màn hình; cuộn lên -> hiện lại. */
+@media (max-width: 600px) {
+  #nvFab, #quoteFab, #bdFab, #dbpTriggerBtn { transition-property: transform, opacity, box-shadow, background; }
+  body.fabs-away #nvFab, body.fabs-away #quoteFab { transform: translateX(-76px) !important; opacity: 0; pointer-events: none; }
+  body.fabs-away #bdFab, body.fabs-away #dbpTriggerBtn { transform: translateX(76px) !important; opacity: 0; pointer-events: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.fabs-away #nvFab, body.fabs-away #quoteFab, body.fabs-away #bdFab, body.fabs-away #dbpTriggerBtn { transition: none !important; }
+}
+</style>
+<script id="fabAutoHideJS">
+(function () {
+  var lastY = window.pageYOffset, ticking = false, mq = window.matchMedia('(max-width: 600px)');
+  var ids = ['nvFab', 'quoteFab', 'bdFab', 'dbpTriggerBtn'];
+  function anyOpen() {
+    for (var i = 0; i < ids.length; i++) {
+      var e = document.getElementById(ids[i]);
+      if (e && e.getAttribute('aria-expanded') === 'true') return true;
+    }
+    return false;
+  }
+  function update() {
+    ticking = false;
+    var y = window.pageYOffset, dy = y - lastY;
+    var nearBottom = document.documentElement.scrollHeight - y - window.innerHeight < 120;
+    if (!mq.matches || y < 200 || nearBottom || anyOpen()) document.body.classList.remove('fabs-away');
+    else if (dy > 8) document.body.classList.add('fabs-away');
+    else if (dy < -8) document.body.classList.remove('fabs-away');
+    if (Math.abs(dy) > 8) lastY = y;
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+})();
+</script>
 </body>
