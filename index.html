@@ -31596,6 +31596,10 @@ window.DBP={
                     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                         <button onclick="exportSleepSessionsCSV()" aria-label="Xuất toàn bộ dữ liệu giấc ngủ ra file CSV"
                             style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-download"></use></svg> CSV</button>
+                        <button onclick="sleepBackupExport()" title="Backup riêng cho Sleep Tracker (JSON) — dùng để chuyển sang thiết bị khác" aria-label="Backup dữ liệu giấc ngủ ra file JSON"
+                            style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-download"></use></svg> Backup</button>
+                        <button onclick="sleepBackupPickFile()" title="Nhập dữ liệu giấc ngủ từ file backup (gộp, không ghi đè)" aria-label="Nhập dữ liệu giấc ngủ từ file backup"
+                            style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-upload"></use></svg> Nhập</button>
                         <button onclick="copySleepContextForAI()" title="Copy for AI" aria-label="Copy Sleep + Study Context for AI"
                             style="font-size:0.72rem; padding:5px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg></button>
                         <input type="text" id="sleepHistorySearch" oninput="renderSleepHistory()" placeholder="Tìm ghi chú..." aria-label="Tìm kiếm ghi chú trong lịch sử giấc ngủ"
@@ -40380,6 +40384,15 @@ const EnglishDaily = (function () {
 .nv-stor-imgthumb-wrap { aspect-ratio: 4 / 3; display: block; background: var(--bg-light); }
 .nv-stor-imgthumb { width: 100%; height: 100%; object-fit: cover; display: block; }
 .nv-stor-imgmeta { padding: 6px 8px; font-size: 0.76rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-rowtick { display: none; flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center; font-size: 0.7rem;
+    color: transparent; background: var(--bg-white); border: 2px solid var(--primary); align-self: center; }
+.nv-stor-filelist.nv-selmode .nv-stor-filerow:not(.nv-locked) .nv-stor-rowtick { display: flex; }
+.nv-stor-filelist.nv-selmode .nv-stor-filerow.nv-locked { opacity: 0.45; cursor: not-allowed; }
+.nv-stor-filerow.nv-sel { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+.nv-stor-filerow.nv-sel .nv-stor-rowtick { background: var(--primary); color: #fff; }
+.nv-stor-notes.nv-compact { flex-direction: column; align-items: flex-start; margin: 0; padding: 0 8px 8px; gap: 4px; }
+.nv-stor-notes.nv-compact .nv-stor-notelink { max-width: 100%; font-size: 0.72rem; }
+.nv-stor-notes.nv-compact .nv-stor-notelink > span { max-width: 130px; }
 .nv-stor-tick { display: none; position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%;
     align-items: center; justify-content: center; font-size: 0.7rem; color: transparent;
     background: rgba(255,255,255,0.9); border: 2px solid var(--primary); }
@@ -40538,6 +40551,33 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 }
 .nv-code-copy:hover, .nv-code-copy:focus-visible { opacity: 1; color: var(--primary); border-color: var(--primary); outline: none; }
 .nv-code-copy.nv-done { opacity: 1; color: var(--nv-ok); border-color: var(--nv-ok); }
+.nv-prose pre.nv-has-copy[data-lang]::before { display: none; }          /* the real language button below replaces the static label */
+.nv-code-lang {
+    position: absolute; top: 9px; right: 12px; z-index: 2; max-width: 40%; padding: 1px 9px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-muted); opacity: 0.85;
+    font-family: var(--nv-sans); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nv-code-lang:hover, .nv-code-lang:focus-visible { opacity: 1; color: var(--primary); border-color: var(--primary); outline: none; }
+.nv-lang-menu {
+    position: fixed; z-index: 10150; min-width: 150px; max-height: 280px; overflow-y: auto; padding: 5px; border-radius: 12px;
+    background: var(--bg-white); border: 1px solid var(--border-color); box-shadow: 0 12px 34px rgba(0,0,0,0.28);
+}
+.nv-lang-menu button { display: block; width: 100%; padding: 6px 10px; text-align: left; border: 0; border-radius: 8px; background: none; color: var(--text-dark); font: inherit; font-size: 0.84rem; cursor: pointer; }
+.nv-lang-menu button:hover, .nv-lang-menu button:focus-visible { background: rgba(var(--primary-rgb), 0.12); outline: none; }
+.nv-lang-menu button.nv-cur { font-weight: 700; color: var(--primary-dark); }
+/* Long code blocks start collapsed (copy still copies everything); expanded again in print/PDF. */
+.nv-prose pre.nv-collapsed { max-height: 360px; overflow: hidden; }
+.nv-prose pre.nv-collapsed::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 90px; pointer-events: none; z-index: 1;
+    background: linear-gradient(to bottom, transparent, var(--bg-light) 85%);
+}
+.nv-code-toggle {
+    display: block; margin: 10px auto 0; padding: 3px 14px; border-radius: 999px; cursor: pointer; font-family: var(--nv-sans); font-size: 0.74rem; font-weight: 700;
+    border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-muted);
+}
+.nv-code-toggle:hover, .nv-code-toggle:focus-visible { color: var(--primary); border-color: var(--primary); outline: none; }
+.nv-prose pre.nv-collapsed > .nv-code-toggle { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); margin: 0; z-index: 3; }
 /* A ```markdown block holds prose, not code — wrap long lines instead of forcing a horizontal scroll. */
 .nv-prose pre[data-lang="markdown"] code, .nv-prose pre[data-lang="md"] code { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Image size controls inside the image menu */
@@ -40551,6 +40591,65 @@ mark.nv-hit { background: var(--nv-hit); color: inherit; border-radius: 3px; pad
 }
 .nv-attach-sizebtns button:hover { border-color: var(--primary); color: var(--primary-dark); }
 .nv-attach-size input[type="range"] { width: 100%; accent-color: var(--primary); }
+.nv-pdfopt-scrim { position: fixed; inset: 0; z-index: 10200; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,0.45); }
+.nv-pdfopt { width: min(380px, 100%); border-radius: 16px; padding: 18px 20px 16px; background: var(--bg-white); color: var(--text-dark); border: 1px solid var(--border-color); box-shadow: 0 18px 50px rgba(0,0,0,0.35); }
+.nv-pdfopt h3 { margin: 0 0 12px; font-size: 1.05rem; }
+.nv-pdfopt-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 0.9rem; }
+.nv-pdfopt-row select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); font: inherit; }
+.nv-pdfopt-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--primary); }
+.nv-pdfopt-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.nv-pdfopt-acts button { padding: 7px 16px; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); }
+.nv-pdfopt-acts button.nv-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.nv-pdfopt-hint { margin: 8px 0 0; font-size: 0.76rem; color: var(--text-muted); }
+/* Drag handle that floats on the bottom-right corner of an attached image (Read mode). */
+.nv-img-handle {
+    position: fixed; z-index: 10100; width: 22px; height: 22px; display: none; align-items: center; justify-content: center;
+    border-radius: 7px; border: 2px solid var(--bg-white); background: var(--primary); color: #fff; font-size: 0.62rem;
+    cursor: nwse-resize; touch-action: none; box-shadow: 0 2px 8px rgba(0,0,0,0.3); user-select: none;
+}
+.nv-img-handle.nv-show { display: flex; }
+/* Alignment + captions (alt text "name|300|center", caption stored as the markdown title). */
+.nv-prose img[data-nv-align] { display: block; }
+.nv-prose img[data-nv-align="left"] { margin: 0.8em auto 0.8em 0; }
+.nv-prose img[data-nv-align="center"] { margin: 0.8em auto; }
+.nv-prose img[data-nv-align="right"] { margin: 0.8em 0 0.8em auto; }
+.nv-prose figure.nv-fig { display: block; width: fit-content; max-width: 100%; margin: 1em 0; }
+.nv-prose figure.nv-fig[data-align="center"] { margin: 1em auto; }
+.nv-prose figure.nv-fig[data-align="right"] { margin: 1em 0 1em auto; }
+.nv-prose figure.nv-fig > img { display: block; margin: 0; max-width: 100%; }
+.nv-prose figure.nv-fig > figcaption { margin-top: 6px; text-align: center; font-size: 0.86em; line-height: 1.45; color: var(--text-muted); }
+.nv-attach-sizebtns button.nv-on { background: rgba(var(--primary-rgb), 0.18); border-color: var(--primary); color: var(--primary-dark); }
+/* Lightbox */
+::highlight(nv-find) { background-color: rgba(255, 214, 0, 0.5); color: inherit; }
+::highlight(nv-find-cur) { background-color: rgba(255, 126, 0, 0.8); color: #000; }
+.nv-find {
+    position: fixed; z-index: 10080; top: 66px; right: 28px; display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: 12px;
+    background: var(--bg-white); border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0,0,0,0.22);
+}
+.nv-find[hidden] { display: none; }
+.nv-find input { width: 210px; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); font: inherit; font-size: 0.88rem; }
+.nv-find input:focus { outline: none; border-color: var(--primary); }
+.nv-find .nv-find-count { min-width: 46px; text-align: center; font-size: 0.78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-find .nv-find-count.nv-none { color: var(--nv-danger); }
+.nv-find button { min-width: 28px; height: 28px; padding: 0 6px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 700; }
+.nv-find button:hover, .nv-find button:focus-visible { background: rgba(var(--primary-rgb), 0.14); color: var(--primary-dark); outline: none; }
+.nv-find button.nv-on { background: rgba(var(--primary-rgb), 0.22); border-color: var(--primary); color: var(--primary-dark); }
+@media (max-width: 620px) { .nv-find { left: 10px; right: 10px; top: 56px; } .nv-find input { flex: 1; width: auto; min-width: 0; } }
+@media print { .nv-find { display: none !important; } }
+.nv-lightbox { position: fixed; inset: 0; z-index: 10300; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; background: rgba(10,6,9,0.88); }
+.nv-lightbox .nv-lb-stage { max-width: 100%; max-height: calc(100vh - 90px); overflow: auto; display: flex; }
+.nv-lightbox img { margin: auto; max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; border-radius: 6px; cursor: zoom-in; background: #fff; }
+.nv-lightbox.nv-full .nv-lb-stage { display: block; }
+.nv-lightbox.nv-full img { max-width: none; max-height: none; cursor: zoom-out; }
+.nv-lightbox .nv-lb-cap { margin-top: 12px; max-width: 80ch; text-align: center; font-size: 0.9rem; color: #eee; }
+.nv-lightbox .nv-lb-x { position: absolute; top: 14px; right: 16px; width: 38px; height: 38px; border-radius: 50%; border: 0; cursor: pointer; font-size: 1.1rem; background: rgba(255,255,255,0.16); color: #fff; }
+.nv-lightbox .nv-lb-x:hover { background: rgba(255,255,255,0.3); }
+.nv-img-handle .nv-img-w {
+    display: none; position: absolute; right: 26px; bottom: 0; padding: 2px 7px; border-radius: 6px; white-space: nowrap;
+    font-size: 0.72rem; font-weight: 700; background: rgba(0,0,0,0.78); color: #fff; font-variant-numeric: tabular-nums;
+}
+.nv-img-handle.nv-drag .nv-img-w { display: block; }
+@media print { .nv-img-handle { display: none !important; } }
 .nv-prose pre[data-lang]::before {
     content: attr(data-lang); position: absolute; top: 9px; right: 14px; z-index: 1;
     padding: 1px 8px; border-radius: 999px; background: var(--bg-white); color: var(--text-muted);
@@ -40993,6 +41092,8 @@ kbd {
 .nv-fr-acts, .nv-fr-confirm .nv-fr-cacts { display: flex; flex-wrap: wrap; gap: 8px; }
 .nv-fr-confirm { border: 1px solid var(--primary); border-radius: 12px; padding: 12px 14px; background: var(--primary-light); }
 .nv-fr-confirm strong { display: block; font-size: 0.92rem; color: var(--text-dark); margin-bottom: 4px; }
+.nv-fr-confirm p.nv-fr-scope { margin: 0 0 6px; color: var(--text-dark); }
+.nv-fr-confirm p.nv-fr-scope b { font-weight: 600; }
 .nv-fr-confirm p { margin: 0 0 10px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; }
 .nv-fr-undo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-muted); border-top: 1px dashed var(--border-color); padding-top: 10px; }
 .nv-fr-hint { margin: 0; font-size: 0.74rem; color: var(--text-muted); line-height: 1.45; }
@@ -41874,7 +41975,7 @@ kbd {
             rows: [], total: 0, skip: new Set(), confirm: null, undo: null, cur: null, busy: false,
             snapped: new Set(), timer: 0, pendingIn: false, prevFocus: null
         },
-        stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', fileSort: 'size', fileFilter: 'all', objectUrls: [], selMode: false, sel: new Set() },   // Manage storage panel
+        stor: { open: false, prevFocus: null, tab: 'overview', imgSort: 'size', imgFilter: 'all', fileSort: 'size', fileFilter: 'all', objectUrls: [], selMode: false, sel: new Set(), fSelMode: false, fSel: new Map() },   // Manage storage panel
         linkPicker: { open: false, type: '', id: '', title: '', career: '', query: '', prevFocus: null },
         storageStats: null,                       // last getVaultStorageStats() result, cached for the compact indicator + panel
         noteAttachRefCache: new Map(),            // noteId → Set(attachment id) last synced to attachmentRefs — lets flushSave diff cheaply
@@ -44530,6 +44631,16 @@ kbd {
         }
         const urlSink = sink || S.attachObjectUrls;
         const imgs = Array.from(target.querySelectorAll('img[src^="attachment://"]'));
+        // Read every attachment the note needs from IndexedDB in ONE parallel batch (they used to be fetched one at a time,
+        // so a note with 30 pictures waited for 30 sequential database round-trips).
+        {
+            const need = new Set();
+            target.querySelectorAll('img[src^="attachment://"]').forEach((i) => need.add(i.getAttribute('src').slice('attachment://'.length)));
+            target.querySelectorAll('a[href^="attachment://"]').forEach((a) => need.add(a.getAttribute('href').slice('attachment://'.length)));
+            await Promise.all(Array.from(need).filter((id) => !S.attachmentCache.has(id)).map((id) =>
+                dbGetAttachment(id).then((rec) => { if (rec && rec.blob instanceof Blob && rec.blob.size > 0) S.attachmentCache.set(id, rec); }).catch(() => {})));
+            if (!target.isConnected) return;
+        }
         for (const img of imgs) {
             const id = img.getAttribute('src').slice('attachment://'.length);
             img.removeAttribute('src');
@@ -44557,6 +44668,7 @@ kbd {
                 continue;
             }
             urlSink.push(url);
+            if (!sink) { img.decoding = 'async'; img.loading = 'lazy'; }   // on-screen Read view only — printing forces eager
             img.src = url;
             img.setAttribute('data-nv-attach', id);
             img.addEventListener('click', (e) => { e.preventDefault(); openAttachMenu(rec, img); });
@@ -44921,8 +45033,11 @@ kbd {
             '<div class="nv-attach-meta">' + esc((rec.filename ? rec.filename + ' \u00b7 ' : '') + dims + fmtBytes(rec.size) + ' \u00b7 ' + (rec.mime || noun) + usageLine) + '</div>'
             + (canResize ? '<div class="nv-attach-size"><div class="nv-attach-sizelabel"><span>Size</span><b data-size-val></b></div>'
                 + '<div class="nv-attach-sizebtns"><button type="button" data-size="240">S</button><button type="button" data-size="480">M</button><button type="button" data-size="720">L</button><button type="button" data-size="0" title="Original / fit width">Full</button></div>'
-                + '<input type="range" min="80" max="1200" step="10" data-size-range aria-label="Image width"></div>' : '')
+                + '<input type="range" min="80" max="1200" step="10" data-size-range aria-label="Image width">'
+                + '<div class="nv-attach-sizebtns" style="margin:8px 0 0"><button type="button" data-align="left" title="Align left"><i class="fa-solid fa-align-left"></i></button><button type="button" data-align="center" title="Center"><i class="fa-solid fa-align-center"></i></button><button type="button" data-align="right" title="Align right"><i class="fa-solid fa-align-right"></i></button></div></div>' : '')
             + (isSheetMime(rec.mime) ? '' : '<button type="button" class="nv-act" data-act="open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open</button>')
+            + (isImage ? '<button type="button" class="nv-act" data-act="zoom"><i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i> View full size</button>' : '')
+            + (canResize ? '<button type="button" class="nv-act" data-act="caption"><i class="fa-regular fa-comment-dots" aria-hidden="true"></i> Caption…</button>' : '')
             + (isImage ? '<button type="button" class="nv-act" data-act="copy"><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy</button>' : '')
             + (/pdf/i.test(rec.mime || '') && context === 'note' ? '<button type="button" class="nv-act" data-act="crop"><i class="fa-solid fa-crop" aria-hidden="true"></i> Extract region…</button>' : '')
             + '<button type="button" class="nv-act" data-act="save"><i class="fa-solid fa-download" aria-hidden="true"></i> Save as…</button>'
@@ -44949,6 +45064,16 @@ kbd {
             };
             range.addEventListener('input', () => apply(+range.value, false));      // live preview
             range.addEventListener('change', () => apply(+range.value, true));     // save to the note
+            const curAlign = imgEl.getAttribute('data-nv-align') || '';
+            menu.querySelectorAll('[data-align]').forEach((btn) => {
+                if (btn.getAttribute('data-align') === curAlign) btn.classList.add('nv-on');
+                btn.addEventListener('click', async () => {
+                    const a = btn.getAttribute('data-align');
+                    closeAttachMenu();
+                    if (!updateImageInMarkdown(rec, imgEl, { align: a === curAlign ? '' : a })) { flash('Couldn’t align this image'); return; }
+                    await rerenderKeepScroll();
+                });
+            });
             menu.querySelectorAll('[data-size]').forEach((btn) => btn.addEventListener('click', () => {
                 const w = +btn.getAttribute('data-size');
                 if (w) range.value = String(w);
@@ -44971,6 +45096,14 @@ kbd {
                         flash('Image copied');
                     } else { flash('Copy isn’t supported in this browser'); }
                 } catch (err) { flash('Couldn’t copy that image'); }
+            } else if (act === 'zoom') {
+                const cap = imgEl.getAttribute && imgEl.getAttribute('data-nv-cap');
+                openLightbox(rec.blob, cap || '');
+            } else if (act === 'caption') {
+                const v = window.prompt('Caption under the image (empty = remove)', imgEl.getAttribute('data-nv-cap') || '');
+                if (v === null) return;
+                if (!updateImageInMarkdown(rec, imgEl, { caption: v.trim() })) { flash('Couldn’t set the caption'); return; }
+                await rerenderKeepScroll();
             } else if (act === 'crop') {
                 openPdfCrop({ id: rec.id, name: rec.filename || 'document.pdf', blob: rec.blob });
             } else if (act === 'save') {
@@ -44991,7 +45124,7 @@ kbd {
                 if (S.note && S.mode === 'edit') {
                     // Matches both the image syntax (`![alt](attachment://id)`) and the plain-link
                     // syntax used for PDFs/other files (`[label](attachment://id)`).
-                    const md = S.note.markdown.replace(new RegExp('!?\\[[^\\]]*\\]\\(attachment://' + rec.id + '\\)'), '');
+                    const md = S.note.markdown.replace(new RegExp('!?\\[[^\\]]*\\]\\(attachment://' + rec.id + '(?:\\s+"[^"]*")?\\)'), '');
                     S.note.markdown = md;
                     if (el.src) el.src.value = md;
                     markDirty();
@@ -45027,12 +45160,104 @@ kbd {
             b.innerHTML = '<i class="fa-regular fa-copy" aria-hidden="true"></i>';
             pre.classList.add('nv-has-copy');
             pre.insertBefore(b, code);
+            // language chip (click to change the fence's language in the note)
+            const lb = document.createElement('button');
+            lb.type = 'button'; lb.className = 'nv-code-lang'; lb.title = 'Change language';
+            lb.textContent = pre.getAttribute('data-lang') || 'text';
+            pre.insertBefore(lb, code);
+            // long blocks: collapsed by default
+            const lines = (code.textContent || '').replace(/\n$/, '').split('\n').length;
+            if (lines > CODE_COLLAPSE_LINES) {
+                pre.classList.add('nv-collapsed');
+                pre.setAttribute('data-nv-lines', String(lines));
+                const t = document.createElement('button');
+                t.type = 'button'; t.className = 'nv-code-toggle'; t.textContent = 'Show all ' + lines + ' lines';
+                pre.appendChild(t);
+            }
         });
+    }
+    const CODE_COLLAPSE_LINES = 18;
+    const CODE_LANGS = ['markdown', 'text', 'javascript', 'typescript', 'python', 'sql', 'json', 'html', 'css', 'bash', 'java', 'cpp', 'yaml'];
+    function closeLangMenu() { const m = document.querySelector('.nv-lang-menu'); if (m) m.remove(); }
+    // Rewrites the info string of the Nth code block in the note's markdown. The Nth <pre> of the Read view is matched to
+    // the Nth code token of the markdown; if the two lists disagree the change is refused instead of guessing.
+    async function setCodeLangInMarkdown(pre, lang) {
+        if (!S.note || S.viewRev || !el.read.contains(pre) || !window.marked || !marked.lexer) return false;
+        const pres = Array.from(el.read.querySelectorAll('pre > code')).map((c) => c.parentElement);
+        const idx = pres.indexOf(pre);
+        const tokens = [];
+        const walk = (list) => (list || []).forEach((t) => {
+            if (t.type === 'code') tokens.push(t);
+            else if (t.type === 'list') (t.items || []).forEach((it) => walk(it.tokens));
+            else if (t.tokens && t.type !== 'paragraph' && t.type !== 'heading') walk(t.tokens);
+        });
+        walk(marked.lexer(S.note.markdown));
+        if (idx < 0 || tokens.length !== pres.length) return false;
+        const t = tokens[idx];
+        if (t.codeBlockStyle === 'indented') return false;
+        let cursor = 0, at = -1;
+        for (let i = 0; i <= idx; i++) {
+            const f = S.note.markdown.indexOf(tokens[i].raw, cursor);
+            if (f < 0) { if (i === idx) return false; continue; }
+            if (i === idx) at = f; else cursor = f + tokens[i].raw.length;
+        }
+        if (at < 0) return false;
+        const m = /^([ \t]*)(`{3,}|~{3,})[^\n]*/.exec(t.raw);
+        if (!m) return false;
+        const newRaw = m[1] + m[2] + (lang === 'text' ? '' : lang) + t.raw.slice(m[0].length);
+        const md = S.note.markdown.slice(0, at) + newRaw + S.note.markdown.slice(at + t.raw.length);
+        S.note.markdown = md;
+        if (el.src) el.src.value = md;
+        markDirty();
+        return true;
+    }
+    function openLangMenu(btn) {
+        closeLangMenu();
+        const pre = btn.closest('pre');
+        const cur = (pre.getAttribute('data-lang') || 'text').toLowerCase();
+        const m = document.createElement('div');
+        m.className = 'nv-lang-menu';
+        const list = CODE_LANGS.includes(cur) ? CODE_LANGS : [cur].concat(CODE_LANGS);
+        m.innerHTML = list.map((l) => '<button type="button" data-lang-pick="' + esc(l) + '"' + (l === cur ? ' class="nv-cur"' : '') + '>' + esc(l) + '</button>').join('')
+            + '<button type="button" data-lang-pick="__other">Other…</button>';
+        document.body.appendChild(m);
+        const r = btn.getBoundingClientRect();
+        m.style.left = Math.max(8, Math.min(innerWidth - 170, r.right - 150)) + 'px';
+        m.style.top = Math.max(8, Math.min(innerHeight - 290, r.bottom + 6)) + 'px';
+        m.addEventListener('click', async (e) => {
+            const pick = e.target.closest('[data-lang-pick]');
+            if (!pick) return;
+            let lang = pick.getAttribute('data-lang-pick');
+            closeLangMenu();
+            if (lang === '__other') {
+                lang = (window.prompt('Language (e.g. rust, go, php; empty = none)', cur === 'text' ? '' : cur) || '').trim().toLowerCase();
+                if (!/^[a-z0-9_+#.-]{0,30}$/.test(lang)) { flash('Invalid language name'); return; }
+                if (!lang) lang = 'text';
+            }
+            const sc = (function () { let n = el.read; while (n && n !== document.body) { const o = getComputedStyle(n).overflowY; if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n; n = n.parentElement; } return null; })();
+            const st = sc ? sc.scrollTop : 0;
+            if (!(await setCodeLangInMarkdown(pre, lang))) { flash('Can’t change the language of this block here — edit the fence in Edit mode'); return; }
+            await renderInto(el.read, S.note.markdown);
+            if (sc) sc.scrollTop = st;
+        });
+        setTimeout(() => {
+            const off = (e) => { if (!e.target.closest('.nv-lang-menu')) { closeLangMenu(); document.removeEventListener('pointerdown', off, true); } };
+            document.addEventListener('pointerdown', off, true);
+        }, 0);
     }
     function initCodeCopy() {
         if (window.__nvCodeCopyBound) return;
         window.__nvCodeCopyBound = true;
         document.addEventListener('click', async (e) => {
+            const tg = e.target.closest('.nv-code-toggle');
+            if (tg) {
+                e.preventDefault(); e.stopPropagation();
+                const pre = tg.closest('pre'), open = pre.classList.toggle('nv-collapsed');
+                tg.textContent = open ? 'Show all ' + (pre.getAttribute('data-nv-lines') || '') + ' lines' : 'Show less';
+                return;
+            }
+            const lg = e.target.closest('.nv-code-lang');
+            if (lg) { e.preventDefault(); e.stopPropagation(); openLangMenu(lg); return; }
             const b = e.target.closest('.nv-code-copy');
             if (!b) return;
             e.preventDefault(); e.stopPropagation();
@@ -45045,32 +45270,324 @@ kbd {
         }, true);
     }
     // Obsidian-style sizing: ![alt|300](src) renders the image 300px wide (and the "|300" never shows as alt text).
+    // alt text may end with |WIDTH and/or |left|center|right  →  "name|300|center"
+    function parseImgAlt(alt) {
+        const parts = String(alt || '').split('|').map((x) => x.trim());
+        let w = 0, align = '', i = parts.length - 1;
+        for (; i >= 1; i--) {
+            const t = parts[i].toLowerCase();
+            if (/^\d{2,4}(?:x\d{2,4})?$/.test(t)) { if (!w) w = parseInt(t, 10); else break; }
+            else if (t === 'left' || t === 'center' || t === 'right') { if (!align) align = t; else break; }
+            else break;
+        }
+        return { base: parts.slice(0, i + 1).join('|'), w, align };
+    }
+    function buildImgAlt(base, w, align) { return base + (w ? '|' + w : '') + (align ? '|' + align : ''); }
     function applyImageSizes(root) {
         root.querySelectorAll('img').forEach((img) => {
-            const m = /^(.*?)\s*\|\s*(\d{2,4})(?:x\d{2,4})?\s*$/.exec(img.getAttribute('alt') || '');
-            if (!m) return;
-            img.setAttribute('alt', m[1]);
-            img.setAttribute('data-nv-w', m[2]);
-            img.style.width = m[2] + 'px';
-            img.style.maxWidth = '100%';
-            img.style.height = 'auto';
+            const p = parseImgAlt(img.getAttribute('alt') || '');
+            const isAtt = /^attachment:/.test(img.getAttribute('src') || '');
+            const cap = isAtt ? (img.getAttribute('title') || '').trim() : '';
+            if (!p.w && !p.align && !cap) return;
+            img.setAttribute('alt', p.base);
+            if (p.w) {
+                img.setAttribute('data-nv-w', String(p.w));
+                img.style.width = p.w + 'px'; img.style.maxWidth = '100%'; img.style.height = 'auto';
+            }
+            if (cap) {
+                img.removeAttribute('title');
+                img.setAttribute('data-nv-cap', cap);
+                const fig = document.createElement('figure'); fig.className = 'nv-fig';
+                if (p.align) fig.setAttribute('data-align', p.align);
+                if (p.align) img.setAttribute('data-nv-align', p.align);
+                const par = img.parentElement;
+                const only = par && par.tagName === 'P' && Array.from(par.childNodes).every((n) => n === img || (n.nodeType === 3 && !n.textContent.trim()));
+                (only ? par : img).replaceWith(fig);
+                const fc = document.createElement('figcaption'); fc.textContent = cap;
+                fig.append(img, fc);
+            } else if (p.align) {
+                img.setAttribute('data-nv-align', p.align);
+            }
+        });
+    }
+    // Re-renders the Read view without losing the scroll position (used after align / caption edits).
+    async function rerenderKeepScroll() {
+        let n = el.read, sc = null;
+        while (n && n !== document.body) { const o = getComputedStyle(n).overflowY; if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) { sc = n; break; } n = n.parentElement; }
+        const st = sc ? sc.scrollTop : 0;
+        await renderInto(el.read, S.note.markdown);
+        if (sc) sc.scrollTop = st;
+    }
+    /* ── Find in note (Read mode) ─ Ctrl/Cmd+F. Accent- and case-insensitive by default (typing "lien lac" finds
+       "liên lạc"); matches may span inline formatting (bold/italic/links) but never two paragraphs. Highlights use the
+       CSS Custom Highlight API, so the rendered note is never modified. ── */
+    const NF = { bar: null, input: null, count: null, matches: [], cur: -1, caseS: false, accS: false, timer: 0, watch: 0, mo: null, open: false };
+    function foldChar(ch, caseS, accS) {
+        if (/\s/.test(ch)) return ' ';
+        let c = ch;
+        if (!accS) {
+            if (ch === '\u0111') c = 'd'; else if (ch === '\u0110') c = 'D';
+            else c = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        }
+        return caseS ? c : c.toLowerCase();
+    }
+    function noteFindCollect(root) {
+        const skip = 'button, script, style, .nv-code-copy, .nv-code-lang, .nv-code-toggle, .nv-img-handle';
+        const BLOCK = 'p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,figcaption,div,summary,dt,dd';
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [], chars = [], meta = [];
+        let prevBlock = null, nd;
+        while ((nd = walker.nextNode())) {
+            const par = nd.parentElement;
+            if (!par || par.closest(skip)) continue;
+            if (!nd.data.trim() && /^(UL|OL|TABLE|TBODY|THEAD|TR|DL)$/.test(par.tagName)) continue;
+            const blk = par.closest(BLOCK) || root;
+            if (prevBlock && blk !== prevBlock) { chars.push('\u0001'); meta.push(null); }
+            prevBlock = blk;
+            const ni = nodes.push(nd) - 1, data = nd.data;
+            for (let i = 0; i < data.length; i++) {
+                const f = foldChar(data[i], NF.caseS, NF.accS);
+                for (let k = 0; k < f.length; k++) { chars.push(f[k]); meta.push([ni, i]); }
+            }
+        }
+        return { nodes, hay: chars.join(''), meta };
+    }
+    function noteFindRun(keepCur) {
+        const q = NF.input.value;
+        NF.matches = []; if (!keepCur) NF.cur = -1;
+        if (q && S.note && el.read && el.read.offsetParent) {
+            const needle = Array.from(q).map((c) => foldChar(c, NF.caseS, NF.accS)).join('');
+            if (needle.trim()) {
+                const { nodes, hay, meta } = noteFindCollect(el.read);
+                let from = 0, at;
+                while (NF.matches.length < 2000 && (at = hay.indexOf(needle, from)) !== -1) {
+                    const a = meta[at], z = meta[at + needle.length - 1];
+                    from = at + Math.max(1, needle.length);
+                    if (!a || !z) continue;
+                    const r = document.createRange();
+                    try { r.setStart(nodes[a[0]], a[1]); r.setEnd(nodes[z[0]], z[1] + 1); } catch (e) { continue; }
+                    NF.matches.push(r);
+                }
+            }
+        }
+        if (NF.cur >= NF.matches.length) NF.cur = NF.matches.length - 1;
+        if (NF.cur < 0 && NF.matches.length) NF.cur = 0;
+        noteFindShow(!keepCur);
+    }
+    function noteFindPaint() {
+        if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined') return;
+        CSS.highlights.set('nv-find', new Highlight(...NF.matches.filter((_, i) => i !== NF.cur)));
+        if (NF.cur >= 0 && NF.matches[NF.cur]) CSS.highlights.set('nv-find-cur', new Highlight(NF.matches[NF.cur])); else CSS.highlights.delete('nv-find-cur');
+    }
+    function noteFindShow(scroll) {
+        const n = NF.matches.length;
+        NF.count.textContent = n ? (NF.cur + 1) + '/' + n + (n >= 2000 ? '+' : '') : (NF.input.value ? '0/0' : '');
+        NF.count.classList.toggle('nv-none', !n && !!NF.input.value.trim());
+        noteFindPaint();
+        if (scroll && NF.cur >= 0) noteFindScroll(NF.matches[NF.cur]);
+    }
+    function noteFindScroll(range) {
+        const base = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+        const pre = base && base.closest ? base.closest('pre.nv-collapsed') : null;
+        if (pre) { pre.classList.remove('nv-collapsed'); const t = pre.querySelector('.nv-code-toggle'); if (t) t.textContent = 'Show less'; }
+        let sc = el.read;
+        while (sc && sc !== document.body) { const o = getComputedStyle(sc).overflowY; if ((o === 'auto' || o === 'scroll') && sc.scrollHeight > sc.clientHeight) break; sc = sc.parentElement; }
+        const r = range.getBoundingClientRect();
+        if (!sc || sc === document.body) { if (base) base.scrollIntoView({ block: 'center' }); return; }
+        const cr = sc.getBoundingClientRect();
+        if (r.top < cr.top + 70 || r.bottom > cr.bottom - 70) sc.scrollTop += r.top - (cr.top + cr.height / 3);
+    }
+    function noteFindStep(d) {
+        if (!NF.matches.length) return;
+        NF.cur = (NF.cur + d + NF.matches.length) % NF.matches.length;
+        noteFindShow(true);
+    }
+    function noteFindClose() {
+        if (!NF.bar || !NF.open) return;
+        NF.open = false; NF.bar.hidden = true;
+        clearInterval(NF.watch); if (NF.mo) NF.mo.disconnect();
+        NF.matches = []; NF.cur = -1;
+        if (window.CSS && CSS.highlights) { CSS.highlights.delete('nv-find'); CSS.highlights.delete('nv-find-cur'); }
+    }
+    function noteFindCan() {
+        return !!(S.open && S.note && S.mode === 'read' && el.read && el.read.offsetParent && !document.querySelector('.nv-lightbox, .nv-pdfopt-scrim'));
+    }
+    function openNoteFind() {
+        if (!noteFindCan()) { flash('Open a note in Read mode to search inside it'); return; }
+        if (!NF.bar) {
+            const bar = document.createElement('div');
+            bar.className = 'nv-find'; bar.setAttribute('role', 'search'); bar.hidden = true;
+            bar.innerHTML = '<input type="text" placeholder="Find in note" aria-label="Find in note" spellcheck="false" autocomplete="off">'
+                + '<span class="nv-find-count" aria-live="polite"></span>'
+                + '<button type="button" data-f="prev" title="Previous (Shift+Enter)" aria-label="Previous match"><i class="fa-solid fa-chevron-up"></i></button>'
+                + '<button type="button" data-f="next" title="Next (Enter)" aria-label="Next match"><i class="fa-solid fa-chevron-down"></i></button>'
+                + '<button type="button" data-f="case" title="Match case">Aa</button>'
+                + '<button type="button" data-f="acc" title="Match accents (á ≠ a)">á</button>'
+                + '<button type="button" data-f="close" title="Close (Esc)" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>';
+            document.body.appendChild(bar);
+            NF.bar = bar; NF.input = bar.querySelector('input'); NF.count = bar.querySelector('.nv-find-count');
+            let t = 0;
+            NF.input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => noteFindRun(false), 80); });
+            NF.input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); noteFindStep(e.shiftKey ? -1 : 1); }
+                else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteFindClose(); }
+                e.stopPropagation();       // keep vault shortcuts from firing while typing
+            });
+            bar.addEventListener('click', (e) => {
+                const b = e.target.closest('[data-f]'); if (!b) return;
+                const f = b.getAttribute('data-f');
+                if (f === 'next') noteFindStep(1);
+                else if (f === 'prev') noteFindStep(-1);
+                else if (f === 'close') noteFindClose();
+                else if (f === 'case') { NF.caseS = !NF.caseS; b.classList.toggle('nv-on', NF.caseS); noteFindRun(false); }
+                else if (f === 'acc') { NF.accS = !NF.accS; b.classList.toggle('nv-on', NF.accS); noteFindRun(false); }
+            });
+        }
+        const sel = window.getSelection ? String(window.getSelection()) : '';
+        if (sel && sel.length < 80 && !/\n/.test(sel.trim())) NF.input.value = sel.trim();
+        NF.open = true; NF.bar.hidden = false;
+        NF.input.focus(); NF.input.select();
+        // re-run when the note re-renders; close if the user leaves Read mode / the note
+        if (!NF.mo) NF.mo = new MutationObserver(() => { clearTimeout(NF.timer); NF.timer = setTimeout(() => { if (NF.open) noteFindRun(true); }, 150); });
+        NF.mo.observe(el.read, { childList: true });
+        clearInterval(NF.watch);
+        NF.watch = setInterval(() => { if (NF.open && !noteFindCan()) noteFindClose(); }, 400);
+        noteFindRun(false);
+    }
+    function initNoteFind() {
+        if (window.__nvFindBound) return;
+        window.__nvFindBound = true;
+        document.addEventListener('keydown', (e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || (e.key !== 'f' && e.key !== 'F')) return;
+            if (!noteFindCan()) return;              // Edit mode / library view: leave the browser's own find alone
+            e.preventDefault(); e.stopPropagation();
+            openNoteFind();
+        }, true);
+    }
+    // Zoomable full-screen viewer: click the picture to toggle fit ↔ 100 %, click backdrop / Esc / × to close.
+    let lightboxOff = null;
+    function closeLightbox() { const lb = document.querySelector('.nv-lightbox'); if (lb) lb.remove(); if (lightboxOff) { lightboxOff(); lightboxOff = null; } }
+    function openLightbox(blobOrUrl, caption) {
+        closeLightbox(); closeAttachMenu();
+        const own = blobOrUrl instanceof Blob ? URL.createObjectURL(blobOrUrl) : null;
+        const lb = document.createElement('div');
+        lb.className = 'nv-lightbox'; lb.setAttribute('role', 'dialog'); lb.setAttribute('aria-modal', 'true'); lb.setAttribute('aria-label', 'Image viewer');
+        lb.innerHTML = '<button class="nv-lb-x" type="button" aria-label="Close" title="Close (Esc)"><i class="fa-solid fa-xmark"></i></button><div class="nv-lb-stage"><img alt=""></div>' + (caption ? '<div class="nv-lb-cap"></div>' : '');
+        lb.querySelector('img').src = own || blobOrUrl;
+        if (caption) lb.querySelector('.nv-lb-cap').textContent = caption;
+        document.body.appendChild(lb);
+        const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLightbox(); } };
+        document.addEventListener('keydown', onKey, true);
+        lightboxOff = () => { document.removeEventListener('keydown', onKey, true); if (own) URL.revokeObjectURL(own); };
+        lb.addEventListener('click', (e) => {
+            if (e.target.closest('.nv-lb-x') || e.target === lb || e.target.classList.contains('nv-lb-stage')) { closeLightbox(); return; }
+            if (e.target.tagName === 'IMG') lb.classList.toggle('nv-full');
+        });
+        lb.querySelector('.nv-lb-x').focus();
+    }
+    function initImageLightbox() {
+        if (window.__nvLbBound) return;
+        window.__nvLbBound = true;
+        el.read.addEventListener('dblclick', (e) => {
+            const img = e.target.closest && e.target.closest('img[data-nv-attach]');
+            if (!img) return;
+            e.preventDefault();
+            const rec = S.attachmentCache.get(img.getAttribute('data-nv-attach'));
+            openLightbox(rec && rec.blob instanceof Blob ? rec.blob : img.currentSrc || img.src, img.getAttribute('data-nv-cap') || '');
+        });
+    }
+    // Drag-to-resize: a single floating handle follows the hovered attached image (Read mode, live note only).
+    // Drag = live width + label; release = written into the markdown as ![alt|WIDTH](attachment://id).
+    // Double-click the handle to go back to the original / fit-width size.
+    function initImageResize() {
+        if (window.__nvImgResizeBound) return;
+        window.__nvImgResizeBound = true;
+        const hd = document.createElement('div');
+        hd.className = 'nv-img-handle'; hd.title = 'Drag to resize · double-click to reset';
+        hd.innerHTML = '<i class="fa-solid fa-expand" aria-hidden="true"></i><span class="nv-img-w"></span>';
+        document.body.appendChild(hd);
+        const label = hd.querySelector('.nv-img-w');
+        let cur = null, dragging = false, hideT = 0;
+        const eligible = (img) => img && img.tagName === 'IMG' && img.hasAttribute('data-nv-attach') && !!S.note && !S.viewRev && el.read.contains(img);
+        const place = () => {
+            if (!cur || !cur.isConnected) { hide(true); return; }
+            const r = cur.getBoundingClientRect();
+            const rr = el.read.getBoundingClientRect();
+            if (r.bottom < rr.top + 8 || r.top > rr.bottom - 8 || r.width < 40) { hd.classList.remove('nv-show'); return; }
+            hd.style.left = Math.round(Math.min(r.right, rr.right - 4) - 26) + 'px';
+            hd.style.top = Math.round(Math.min(r.bottom, rr.bottom - 4) - 26) + 'px';
+            hd.classList.add('nv-show');
+        };
+        const hide = (force) => { if (dragging && !force) return; clearTimeout(hideT); hd.classList.remove('nv-show', 'nv-drag'); cur = null; };
+        el.read.addEventListener('pointerover', (e) => {
+            const img = e.target.closest && e.target.closest('img[data-nv-attach]');
+            if (!eligible(img)) return;
+            clearTimeout(hideT); cur = img; place();
+        });
+        el.read.addEventListener('pointerout', (e) => {
+            if (dragging || e.relatedTarget === hd) return;
+            const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('img[data-nv-attach]') : null;
+            if (to) return;
+            hideT = setTimeout(() => { if (!hd.matches(':hover')) hide(); }, 250);
+        });
+        hd.addEventListener('pointerleave', () => { if (!dragging) hideT = setTimeout(() => { if (!cur || !cur.matches(':hover')) hide(); }, 250); });
+        hd.addEventListener('pointerenter', () => clearTimeout(hideT));
+        el.read.addEventListener('scroll', place, { passive: true });
+        window.addEventListener('resize', place);
+        hd.addEventListener('dblclick', () => {
+            if (!cur) return;
+            cur.style.width = ''; cur.removeAttribute('data-nv-w');
+            if (!setImageWidthInMarkdown({ id: cur.getAttribute('data-nv-attach') }, cur, 0)) flash('Couldn’t resize this image');
+            place();
+        });
+        hd.addEventListener('pointerdown', (e) => {
+            if (!cur || e.button > 0) return;
+            e.preventDefault(); e.stopPropagation();
+            dragging = true; hd.classList.add('nv-drag');
+            try { hd.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+            const img = cur, startX = e.clientX, startW = img.getBoundingClientRect().width;
+            let box = img.parentElement; if (box && box.tagName === 'FIGURE') box = box.parentElement;
+            const maxW = Math.max(120, Math.floor((box ? box.clientWidth : 1200) || 1200));
+            let w = Math.round(startW);
+            label.textContent = w + ' px';
+            const move = (ev) => {
+                w = Math.max(80, Math.min(maxW, Math.round(startW + (ev.clientX - startX))));
+                img.style.width = w + 'px'; img.style.maxWidth = '100%'; img.style.height = 'auto';
+                img.setAttribute('data-nv-w', String(w));
+                label.textContent = w + ' px';
+                place();
+            };
+            const up = () => {
+                hd.removeEventListener('pointermove', move);
+                hd.removeEventListener('pointerup', up);
+                hd.removeEventListener('pointercancel', up);
+                dragging = false; hd.classList.remove('nv-drag');
+                if (!setImageWidthInMarkdown({ id: img.getAttribute('data-nv-attach') }, img, w)) flash('Couldn’t resize this image');
+                place();
+            };
+            hd.addEventListener('pointermove', move);
+            hd.addEventListener('pointerup', up);
+            hd.addEventListener('pointercancel', up);
         });
     }
     // Writes the new width into the note's markdown (as ![alt|WIDTH](attachment://id)); width 0 = original size.
     // When the same image appears several times, the clicked one is matched by its position in the page.
-    function setImageWidthInMarkdown(rec, imgEl, width) {
+    function updateImageInMarkdown(rec, imgEl, ch) {
         if (!S.note || S.viewRev) return false;
         const id = rec.id;
         const imgs = Array.from(el.read.querySelectorAll('img[data-nv-attach="' + id + '"]'));
         let idx = imgs.indexOf(imgEl); if (idx < 0) idx = 0;
-        const re = new RegExp('!\\[([^\\]]*)\\]\\(attachment://' + id + '(?=[\\s)])', 'g');
+        const re = new RegExp('!\\[([^\\]]*)\\]\\(attachment://' + id + '(\\s+"[^"]*")?(?=\\s*\\))', 'g');
         let n = -1, changed = false;
-        const md = S.note.markdown.replace(re, (full, alt) => {
+        const md = S.note.markdown.replace(re, (full, alt, title) => {
             n++;
             if (n !== idx) return full;
             changed = true;
-            const base = alt.replace(/\s*\|\s*\d{2,4}(?:x\d{2,4})?\s*$/, '');
-            return '![' + base + (width ? '|' + width : '') + '](attachment://' + id;
+            const p = parseImgAlt(alt);
+            const w = ch.w !== undefined ? ch.w : p.w, al = ch.align !== undefined ? ch.align : p.align;
+            let t = title || '';
+            if (ch.caption !== undefined) t = ch.caption ? ' "' + ch.caption.replace(/"/g, '\u201d').replace(/\s*\n+\s*/g, ' ').trim() + '"' : '';
+            return '![' + buildImgAlt(p.base, w, al) + '](attachment://' + id + t;
         });
         if (!changed) return false;
         S.note.markdown = md;
@@ -45078,6 +45595,7 @@ kbd {
         markDirty();
         return true;
     }
+    function setImageWidthInMarkdown(rec, imgEl, width) { return updateImageInMarkdown(rec, imgEl, { w: width }); }
 
     function highlightCode(root) {
         if (!window.hljs) return;
@@ -46292,16 +46810,16 @@ kbd {
     async function portableizeAttachments(markdown, opts) {
         opts = opts || {};
         if (!markdown || markdown.indexOf('attachment://') === -1) return markdown;
-        const re = /!\[([^\]]*)\]\(attachment:\/\/([a-zA-Z0-9_-]+)\)/g;
+        const re = /!\[([^\]]*)\]\(attachment:\/\/([a-zA-Z0-9_-]+)(\s+"[^"]*")?\)/g;
         const cache = new Map();   // attachment id -> resolved target (filename or data URI), or null if unavailable
         let out = '', last = 0, m;
         while ((m = re.exec(markdown))) {
             out += markdown.slice(last, m.index);
             last = re.lastIndex;
-            const [full, alt, id] = m;
+            const [full, alt, id, ttl] = m;
             if (!cache.has(id)) cache.set(id, await resolveAttachmentForExport(id, opts));
             const target = cache.get(id);
-            out += target !== null ? ('![' + alt + '](' + target + ')') : full;
+            out += target !== null ? ('![' + alt + '](' + target + (ttl || '') + ')') : full;
         }
         return out + markdown.slice(last);
     }
@@ -46678,13 +47196,13 @@ kbd {
         @media print {
             html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
             body > *:not(#nvPrintRoot) { display: none !important; }
-            #nvPrintRoot { display: block !important; position: static !important; width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 15mm !important;
+            #nvPrintRoot { display: block !important; position: static !important; width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 var(--nv-pm-x, 15mm) !important;
                 background: #fff !important; color: #111 !important; font-size: 11pt; line-height: 1.65;
                 --text-dark: #111; --text-muted: #555; --bg-light: #f4f4f5; --bg-card: #fff; --border-color: #d4d4d8; --primary: #9d2867; }
             #nvPrintRoot table.nv-pt { display: table; width: 100%; max-width: none; border-collapse: collapse; table-layout: fixed; }
             #nvPrintRoot table.nv-pt > thead { display: table-header-group; }
             #nvPrintRoot table.nv-pt > tfoot { display: table-footer-group; }
-            #nvPrintRoot table.nv-pt > thead > tr > td, #nvPrintRoot table.nv-pt > tfoot > tr > td { height: 16mm; padding: 0; border: 0; background: none; }
+            #nvPrintRoot table.nv-pt > thead > tr > td, #nvPrintRoot table.nv-pt > tfoot > tr > td { height: var(--nv-pm-y, 16mm); padding: 0; border: 0; background: none; }
             #nvPrintRoot table.nv-pt > tbody > tr > td { padding: 0; border: 0; background: none; vertical-align: top; }
             #nvPrintRoot .nv-print-title { font-size: 22pt; line-height: 1.25; margin: 0 0 4pt; color: #111; }
             #nvPrintRoot .nv-print-meta { font-size: 9pt; color: #666; margin: 0 0 14pt; padding-bottom: 8pt; border-bottom: 1px solid #d4d4d8; }
@@ -46696,19 +47214,76 @@ kbd {
             #nvPrintRoot table { border-collapse: collapse; max-width: 100%; }
             #nvPrintRoot a { color: #9d2867; text-decoration: underline; }
             #nvPrintRoot .nv-pdf-embed-frame, #nvPrintRoot .nv-pdf-embed-more { display: none !important; }
-            #nvPrintRoot .nv-code-copy { display: none !important; }
+            #nvPrintRoot figure.nv-fig { break-inside: avoid; page-break-inside: avoid; }
+            #nvPrintRoot .nv-code-copy, #nvPrintRoot .nv-code-toggle, #nvPrintRoot .nv-code-lang { display: none !important; }
+            #nvPrintRoot pre.nv-collapsed { max-height: none !important; overflow: visible !important; }
+            #nvPrintRoot pre.nv-collapsed::after { display: none !important; }
+            #nvPrintRoot pre.nv-has-copy[data-lang]::before { display: block !important; }
             #nvPrintRoot pre.nv-has-copy { padding-top: 14px !important; }
             * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }`;
         document.head.appendChild(st);
     }
+    // ── PDF export options (remembered between exports) ──
+    const PDF_OPT_KEY = 'nvPdfOpts';
+    const PDF_OPT_DEFAULT = { paper: 'A4', orient: 'portrait', margin: 'normal', title: true, meta: false };
+    const PDF_MARGINS = { narrow: ['8mm', '8mm'], normal: ['15mm', '16mm'], wide: ['22mm', '24mm'] };   // [left/right, top/bottom]
+    function loadPdfOpts() {
+        try { return Object.assign({}, PDF_OPT_DEFAULT, JSON.parse(localStorage.getItem(PDF_OPT_KEY) || '{}')); } catch (e) { return Object.assign({}, PDF_OPT_DEFAULT); }
+    }
+    function askPdfOptions() {
+        const o = loadPdfOpts();
+        return new Promise((resolve) => {
+            const scrim = document.createElement('div');
+            scrim.className = 'nv-pdfopt-scrim';
+            const sel = (id, opts, v) => '<select id="' + id + '">' + opts.map((x) => '<option value="' + x[0] + '"' + (x[0] === v ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>';
+            scrim.innerHTML = '<div class="nv-pdfopt" role="dialog" aria-modal="true" aria-label="Export PDF">'
+                + '<h3>Export PDF</h3>'
+                + '<div class="nv-pdfopt-row"><label for="nvPoPaper">Paper</label>' + sel('nvPoPaper', [['A4', 'A4'], ['Letter', 'Letter'], ['A5', 'A5'], ['A3', 'A3']], o.paper) + '</div>'
+                + '<div class="nv-pdfopt-row"><label for="nvPoOrient">Orientation</label>' + sel('nvPoOrient', [['portrait', 'Portrait'], ['landscape', 'Landscape']], o.orient) + '</div>'
+                + '<div class="nv-pdfopt-row"><label for="nvPoMargin">Margins</label>' + sel('nvPoMargin', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']], o.margin) + '</div>'
+                + '<div class="nv-pdfopt-row"><label for="nvPoTitle">Include note title</label><input type="checkbox" id="nvPoTitle"' + (o.title ? ' checked' : '') + '></div>'
+                + '<div class="nv-pdfopt-row"><label for="nvPoMeta">Include folder &amp; date line</label><input type="checkbox" id="nvPoMeta"' + (o.meta ? ' checked' : '') + '></div>'
+                + '<p class="nv-pdfopt-hint">In the print window, set the destination to “Save as PDF”.</p>'
+                + '<div class="nv-pdfopt-acts"><button type="button" id="nvPoCancel">Cancel</button><button type="button" class="nv-primary" id="nvPoGo">Export</button></div>'
+                + '</div>';
+            document.body.appendChild(scrim);
+            const q = (id) => scrim.querySelector('#' + id);
+            const close = (val) => { document.removeEventListener('keydown', onKey, true); scrim.remove(); resolve(val); };
+            const go = () => {
+                const v = { paper: q('nvPoPaper').value, orient: q('nvPoOrient').value, margin: q('nvPoMargin').value, title: q('nvPoTitle').checked, meta: q('nvPoMeta').checked };
+                try { localStorage.setItem(PDF_OPT_KEY, JSON.stringify(v)); } catch (e) { /* ignore */ }
+                close(v);
+            };
+            const onKey = (e) => {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(null); }
+                else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); e.stopPropagation(); go(); }
+            };
+            document.addEventListener('keydown', onKey, true);
+            q('nvPoCancel').addEventListener('click', () => close(null));
+            q('nvPoGo').addEventListener('click', go);
+            scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) close(null); });
+            q('nvPoGo').focus();
+        });
+    }
     async function exportNotePdf(n) {
+        const opts = await askPdfOptions();
+        if (!opts) return;
         await flushSave();
         ensurePrintStyle();
+        // Page size is chosen per export; @page margin stays 0 (see ensurePrintStyle) so no browser header/footer/URL is printed.
+        const oldPage = document.getElementById('nvPrintPageStyle'); if (oldPage) oldPage.remove();
+        const pageStyle = document.createElement('style');
+        pageStyle.id = 'nvPrintPageStyle';
+        pageStyle.textContent = '@page { size: ' + opts.paper + ' ' + opts.orient + '; margin: 0; }';
+        document.head.appendChild(pageStyle);
+        const pm = PDF_MARGINS[opts.margin] || PDF_MARGINS.normal;
         const old = document.getElementById('nvPrintRoot'); if (old) old.remove();
         const root = document.createElement('div');
         root.id = 'nvPrintRoot';
         root.className = 'nv-prose';
+        root.style.setProperty('--nv-pm-x', pm[0]);
+        root.style.setProperty('--nv-pm-y', pm[1]);
         const h = document.createElement('h1'); h.className = 'nv-print-title'; h.textContent = n.title || 'Untitled note';
         const body = document.createElement('div');
         // Only the note itself is exported: title + content. No folder/date line, no app link, no URL.
@@ -46716,7 +47291,14 @@ kbd {
         // gives top/bottom margins on ALL pages even though @page margin is 0 (see ensurePrintStyle).
         const pt = document.createElement('table'); pt.className = 'nv-pt'; pt.setAttribute('role', 'presentation');
         pt.innerHTML = '<thead><tr><td></td></tr></thead><tbody><tr><td></td></tr></tbody><tfoot><tr><td></td></tr></tfoot>';
-        pt.querySelector('tbody td').append(h, body);
+        const cellEl = pt.querySelector('tbody td');
+        if (opts.title) cellEl.appendChild(h);
+        if (opts.meta) {
+            const meta = document.createElement('div'); meta.className = 'nv-print-meta';
+            meta.textContent = [n.folder, new Date(n.updatedAt || Date.now()).toLocaleDateString()].filter(Boolean).join(' \u00b7 ');
+            cellEl.appendChild(meta);
+        }
+        cellEl.appendChild(body);
         root.appendChild(pt);
         // The root MUST be in the document before rendering: resolveAttachments() bails out when
         // target.isConnected is false, leaving every attached image with its src stripped (the
@@ -46745,7 +47327,7 @@ kbd {
         try { if (window.MathJax && window.MathJax.typesetPromise) await window.MathJax.typesetPromise([body]); } catch (e) { /* print anyway */ }
         const prevTitle = document.title;
         document.title = slugify(n.title) || 'note';
-        const done = () => { window.removeEventListener('afterprint', done); document.title = prevTitle; root.remove(); printUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } }); };
+        const done = () => { window.removeEventListener('afterprint', done); document.title = prevTitle; root.remove(); pageStyle.remove(); printUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } }); };
         window.addEventListener('afterprint', done);
         toast('In the print dialog, choose “Save as PDF” as the destination.');
         setTimeout(() => window.print(), 250);
@@ -49053,6 +49635,7 @@ kbd {
             } else {
                 add(T, 'savefs', 'floppy-disk', FS_SUPPORTED ? 'Save .md to disk…' : 'Save .md (download)', () => runAction('savefs'), { kw: 'save disk file location obsidian', keys: ['mod', 'shift', 'S'] });
             }
+            if (S.mode === 'read') add(T, 'find', 'magnifying-glass', 'Find in note…', () => openNoteFind(), { kw: 'search text highlight inside this note', keys: ['mod', 'F'] });
             add(T, 'md', 'file-arrow-down', 'Export as .md', () => runAction('md'), { kw: 'download markdown obsidian' });
             add(T, 'txt', 'file-lines', 'Export as .txt', () => runAction('txt'), { kw: 'download text plain', more: true });
             add(T, 'pdf', 'file-pdf', 'Export as .pdf', () => runAction('pdf'), { kw: 'download pdf print save document' });
@@ -49538,6 +50121,18 @@ kbd {
         if (scope === 'folder') { const k = frFolderKey(); return k ? S.notes.filter((n) => !n.deletedAt && typeKey(n.type) === k) : []; }
         return S.notes.filter((n) => !n.deletedAt);
     }
+    function frScopeLabel(scope) {          // human-readable scope shown in the Replace All confirmation
+        if (scope === 'note') return S.note ? 'Current note \u2013 \u201c' + (((S.note.title || '').trim()) || 'Untitled note') + '\u201d' : 'Current note';
+        if (scope === 'folder') {
+            const fk = frFolderKey();
+            const nm = fk ? (S.note ? normType(S.note.type) : ((S.fmap && S.fmap.get(fk) && S.fmap.get(fk).label) || fk)) : '';
+            return nm ? 'Current folder \u2013 ' + nm : 'Current folder';
+        }
+        return 'All notes';
+    }
+    function frConfirmState(sel) {
+        return sel.length ? { total: frCount(sel), notes: sel.length, scope: frScopeLabel(S.fr.scope) } : null;
+    }
     function frSpec() {
         const f = S.fr;
         return { find: f.find, caseI: f.accents || f.caseI, word: f.word, accents: f.accents, raw: f.md };
@@ -49582,6 +50177,7 @@ kbd {
         if (f.confirm) {
             el.frConfirm.hidden = false;
             el.frConfirm.innerHTML = '<strong>Replace ' + plural(f.confirm.total, 'occurrence') + ' in ' + plural(f.confirm.notes, 'note') + '?</strong>'
+                + '<p class="nv-fr-scope"><b>Scope:</b> ' + esc(f.confirm.scope || frScopeLabel(f.scope)) + '</p>'
                 + '<p>“' + esc(f.find) + '” → “' + esc(f.repl) + '”. Each note is saved to its History first, and you can undo the whole batch afterwards.</p>'
                 + '<div class="nv-fr-cacts"><button class="nv-btn nv-btn-primary" type="button" data-fr-act="confirm"' + (f.busy ? ' disabled' : '') + '>Replace ' + f.confirm.total + '</button>'
                 + '<button class="nv-btn nv-btn-ghost" type="button" data-fr-act="cancel">Cancel</button></div>';
@@ -49703,7 +50299,7 @@ kbd {
         try {
             await settle(); frScan();
             const sel = frSelected();
-            f.confirm = sel.length ? { total: frCount(sel), notes: sel.length } : null;
+            f.confirm = frConfirmState(sel);
         } catch (e) { console.error('Notes Vault: replace failed', e); flash('Couldn’t prepare that'); }
         finally { f.busy = false; frRender(); const b = el.frConfirm.querySelector('[data-fr-act=confirm]'); if (b) b.focus(); }
     }
@@ -49713,7 +50309,7 @@ kbd {
         try {
             frScan();                                   // fresh against the live text, right before writing
             const sel = frSelected();
-            if (frCount(sel) !== c.total || sel.length !== c.notes) { f.confirm = sel.length ? { total: frCount(sel), notes: sel.length } : null; return; }   // something changed: ask again with the real numbers
+            if (frCount(sel) !== c.total || sel.length !== c.notes) { f.confirm = frConfirmState(sel); return; }   // something changed: ask again with the real numbers
             f.confirm = null;
             frDone(await frCommit(sel.map((r) => ({ n: r.n, ms: r.ms })), 'all'));
             f.cur = null;
@@ -49803,6 +50399,7 @@ kbd {
         updateStorTabsUI();
         el.stor.dataset.tab = S.stor.tab;
         if (S.stor.tab !== 'images') { S.stor.selMode = false; S.stor.sel.clear(); }
+        if (S.stor.tab !== 'files') { S.stor.fSelMode = false; S.stor.fSel.clear(); }
         if (S.stor.tab === 'images') return renderStorImages();
         if (S.stor.tab === 'files') return renderStorFiles();
         return renderStorOverview();
@@ -49908,6 +50505,7 @@ kbd {
             + '<span class="nv-stor-imgthumb-wrap"><img class="nv-stor-imgthumb" alt="" loading="lazy"></span>'
             + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
             + '<span class="nv-stor-imgmeta">' + esc(fmtBytes(it.rec.size)) + '</span>'
+            + storNoteChipsHtml(it, true)
             + '</button>';
     }
     function storImagesToolbarHtml() {
@@ -49986,7 +50584,15 @@ kbd {
             card._storId = it.rec.id;
             const locked = !!(it.noteIds.length || it.revIds.length);
             if (S.stor.sel.has(it.rec.id)) card.classList.add('nv-sel');
-            card.addEventListener('click', () => {
+            card.addEventListener('click', (e) => {
+                const link = e.target.closest && e.target.closest('[data-open-note]');
+                if (link && !S.stor.selMode) {           // jump straight to the note that uses this image
+                    e.stopPropagation();
+                    const id = link.getAttribute('data-open-note');
+                    closeStorModal();
+                    openNote(id);
+                    return;
+                }
                 if (S.stor.selMode) {
                     if (locked) { flash('Still used in a note or its history — can’t delete'); return; }
                     if (S.stor.sel.has(it.rec.id)) { S.stor.sel.delete(it.rec.id); card.classList.remove('nv-sel'); }
@@ -50039,26 +50645,32 @@ kbd {
     }
     // One chip per note that holds this attachment. Live notes are clickable (jump to the note);
     // notes in Trash or already gone are shown greyed-out so the file's owner is never a mystery.
-    function storNoteChipsHtml(it) {
+    function storNoteChipsHtml(it, compact) {
         const chip = (id, history) => {
             const live = S.notes.find((n) => n.id === id);
             const trashed = !live && (S.trash || []).find((n) => n.id === id);
             const title = (live || trashed || {}).title || (live || trashed ? 'Untitled note' : 'Deleted note');
             const label = (history ? 'History: ' : '') + title + (trashed ? ' (in Trash)' : '');
             const icon = history ? 'fa-clock-rotate-left' : 'fa-note-sticky';
-            if (live) return '<span class="nv-stor-notelink" role="link" tabindex="0" data-open-note="' + esc(id) + '" title="Open this note"><i class="fa-regular ' + icon + '" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
+            if (live) return '<span class="nv-stor-notelink" ' + (compact ? '' : 'role="link" tabindex="0" ') + 'data-open-note="' + esc(id) + '" title="Open this note"><i class="fa-regular ' + icon + '" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
             return '<span class="nv-stor-notelink nv-static" title="This note can’t be opened from here"><i class="fa-regular ' + icon + '" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
         };
         const ids = Array.from(new Set(it.noteIds));
         const hist = Array.from(new Set(it.revIds)).filter((id) => !ids.includes(id));
         if (!ids.length && !hist.length) return '';
-        return '<span class="nv-stor-notes">' + ids.map((id) => chip(id, false)).join('') + hist.map((id) => chip(id, true)).join('') + '</span>';
+        const all = ids.map((id) => chip(id, false)).concat(hist.map((id) => chip(id, true)));
+        if (compact && all.length > 2) {         // image cards are narrow: show two, summarise the rest
+            const rest = all.length - 2;
+            return '<span class="nv-stor-notes nv-compact">' + all.slice(0, 2).join('') + '<span class="nv-stor-notelink nv-static" title="' + rest + ' more"><span>+' + rest + ' more</span></span></span>';
+        }
+        return '<span class="' + (compact ? 'nv-stor-notes nv-compact' : 'nv-stor-notes') + '">' + all.join('') + '</span>';
     }
     function storFileRowHtml(it) {
         const unused = !it.noteIds.length && !it.revIds.length;
         const name = it.rec.filename || (it.rec.id + '.' + extFromMime(it.rec.mime));
         const usage = unused ? '' : (' \u00b7 ' + (it.noteIds.length ? 'Used in ' + it.noteIds.length + (it.noteIds.length === 1 ? ' note' : ' notes') : 'In version history only'));
-        return '<div class="nv-stor-filerow" role="button" tabindex="0">'
+        return '<div class="nv-stor-filerow' + (unused ? '' : ' nv-locked') + '" role="button" tabindex="0">'
+            + '<span class="nv-stor-rowtick"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
             + '<span class="nv-stor-fileicon"><i class="fa-solid ' + (isSheetMime(it.rec.mime) ? 'fa-file-excel' : 'fa-file-pdf') + '" aria-hidden="true"></i></span>'
             + '<span class="nv-stor-filebody">'
             + '<span class="nv-stor-filename" title="' + esc(name) + '">' + esc(name) + '</span>'
@@ -50076,6 +50688,12 @@ kbd {
             + '<option value="old"' + (S.stor.fileSort === 'old' ? ' selected' : '') + '>Oldest first</option>'
             + '</select></label>'
             + '<label class="nv-stor-check"><input type="checkbox" id="nvStorFileUnused"' + (S.stor.fileFilter === 'unused' ? ' checked' : '') + '> Unused only</label>'
+            + '<span class="nv-stor-spacer"></span>'
+            + (S.stor.fSelMode
+                ? '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorFileSelUnused"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Select all unused</button>'
+                  + '<button type="button" class="nv-btn nv-btn-ghost nv-stor-del" id="nvStorFileDelSel" disabled><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete selected (0)</button>'
+                  + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorFileSelCancel">Cancel</button>'
+                : '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorFileSelBtn"><i class="fa-regular fa-square-check" aria-hidden="true"></i> Select</button>')
             + '</div>';
     }
     function wireStorFilesToolbar() {
@@ -50083,6 +50701,47 @@ kbd {
         if (sortSel) sortSel.addEventListener('change', () => { S.stor.fileSort = sortSel.value; renderStorFiles(); });
         const unusedChk = $('nvStorFileUnused');
         if (unusedChk) unusedChk.addEventListener('change', () => { S.stor.fileFilter = unusedChk.checked ? 'unused' : 'all'; renderStorFiles(); });
+        const selBtn = $('nvStorFileSelBtn');
+        if (selBtn) selBtn.addEventListener('click', () => { S.stor.fSelMode = true; S.stor.fSel.clear(); renderStorFiles(); });
+        const cancelBtn = $('nvStorFileSelCancel');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => { S.stor.fSelMode = false; S.stor.fSel.clear(); renderStorFiles(); });
+        const allUnused = $('nvStorFileSelUnused');
+        if (allUnused) allUnused.addEventListener('click', () => {
+            document.querySelectorAll('#nvStorFileList .nv-stor-filerow:not(.nv-locked)').forEach((r) => { if (r._storId) { S.stor.fSel.set(r._storId, r._storSize || 0); r.classList.add('nv-sel'); } });
+            updateStorFileSelUI();
+        });
+        const delBtn = $('nvStorFileDelSel');
+        if (delBtn) delBtn.addEventListener('click', deleteSelectedStorFiles);
+    }
+    function updateStorFileSelUI() {
+        const b = $('nvStorFileDelSel');
+        if (!b) return;
+        const n = S.stor.fSel.size;
+        let bytes = 0; S.stor.fSel.forEach((v) => { bytes += v; });
+        b.disabled = !n;
+        b.innerHTML = '<i class="fa-solid fa-trash" aria-hidden="true"></i> Delete selected (' + n + (n ? ' \u00b7 ' + fmtBytes(bytes) : '') + ')';
+    }
+    async function deleteSelectedStorFiles() {
+        const ids = Array.from(S.stor.fSel.keys());
+        if (!ids.length) return;
+        let want = 0; S.stor.fSel.forEach((v) => { want += v; });
+        if (!confirm('Delete ' + ids.length + (ids.length === 1 ? ' unused file' : ' unused files') + ' (' + fmtBytes(want) + ') permanently? This cannot be undone.')) return;
+        // Re-check against fresh usage data so a file that got attached to a note in the meantime is never removed.
+        let ok = 0, skipped = 0, freed = 0;
+        try {
+            const fresh = new Map((await getAttachmentsOverview()).map((it) => [it.rec.id, it]));
+            for (const id of ids) {
+                const it = fresh.get(id);
+                if (!it || it.noteIds.length || it.revIds.length) { skipped++; continue; }
+                await dbDeleteAttachment(id).catch(() => {});
+                await dbDeleteAttachmentRefs(id).catch(() => {});
+                ok++; freed += it.rec.size || 0;
+            }
+        } catch (e) { console.warn('Notes Vault: bulk file delete failed', e); flash('Couldn’t delete the selected files'); }
+        S.stor.fSel.clear();
+        S.stor.fSelMode = false;
+        flash('Deleted ' + ok + (ok === 1 ? ' file' : ' files') + (ok ? ' — freed ' + fmtBytes(freed) : '') + (skipped ? ' — skipped ' + skipped + ' still in use' : ''));
+        renderStorFiles();
     }
     function wireStorFileRows(items) {
         const list = $('nvStorFileList');
@@ -50090,9 +50749,18 @@ kbd {
         Array.from(list.children).forEach((row, i) => {
             const it = items[i];
             if (!it) return;
-            const openMenu = () => openAttachMenu(it.rec, row, { context: 'manager', noteCount: it.noteIds.length, revCount: it.revIds.length, onDeleted: renderStorFiles });
+            row._storId = it.rec.id; row._storSize = it.rec.size || 0;
+            const locked = !!(it.noteIds.length || it.revIds.length);
+            if (S.stor.fSel.has(it.rec.id)) row.classList.add('nv-sel');
+            const toggleSel = () => {
+                if (locked) { flash('Still used in a note or its history — can’t delete'); return; }
+                if (S.stor.fSel.has(it.rec.id)) { S.stor.fSel.delete(it.rec.id); row.classList.remove('nv-sel'); }
+                else { S.stor.fSel.set(it.rec.id, it.rec.size || 0); row.classList.add('nv-sel'); }
+                updateStorFileSelUI();
+            };
+            const openMenu = () => { if (S.stor.fSelMode) { toggleSel(); return; } openAttachMenu(it.rec, row, { context: 'manager', noteCount: it.noteIds.length, revCount: it.revIds.length, onDeleted: renderStorFiles }); };
             row.addEventListener('click', (e) => {
-                const link = e.target.closest('[data-open-note]');
+                const link = !S.stor.fSelMode && e.target.closest('[data-open-note]');
                 if (link) {            // jump to the note that holds this file
                     e.stopPropagation();
                     const id = link.getAttribute('data-open-note');
@@ -50100,13 +50768,13 @@ kbd {
                     openNote(id);
                     return;
                 }
-                if (e.target.closest('.nv-stor-notelink')) return;   // greyed-out chip: do nothing
+                if (!S.stor.fSelMode && e.target.closest('.nv-stor-notelink')) return;   // greyed-out chip: do nothing
                 openMenu();
             });
             row.addEventListener('keydown', (e) => {
                 if (e.key !== 'Enter' && e.key !== ' ') return;
                 e.preventDefault();
-                const link = e.target.closest('[data-open-note]');
+                const link = !S.stor.fSelMode && e.target.closest('[data-open-note]');
                 if (link) { closeStorModal(); openNote(link.getAttribute('data-open-note')); }
                 else if (e.target === row) openMenu();
             });
@@ -50136,9 +50804,10 @@ kbd {
         const summary = '<p class="nv-stor-note" style="margin-top:0;">' + items.length + (items.length === 1 ? ' file' : ' files') + ' \u00b7 ' + fmtBytes(totalBytes) + ' total' + (unusedCount ? ' \u00b7 ' + unusedCount + ' unused' : '') + '</p>';
         const rows = filtered.length ? filtered.map(storFileRowHtml).join('') : '';
         el.storBody.innerHTML = storFilesToolbarHtml() + summary
-            + (filtered.length ? '<div class="nv-stor-filelist" id="nvStorFileList">' + rows + '</div>' : '<div class="nv-stor-unsupported">No unused files — nice and tidy.</div>');
+            + (filtered.length ? '<div class="nv-stor-filelist' + (S.stor.fSelMode ? ' nv-selmode' : '') + '" id="nvStorFileList">' + rows + '</div>' : '<div class="nv-stor-unsupported">No unused files — nice and tidy.</div>');
         wireStorFilesToolbar();
         wireStorFileRows(filtered);
+        updateStorFileSelUI();
     }
 
     async function openStorModal() {
@@ -50158,7 +50827,7 @@ kbd {
         el.stor.hidden = true;
         el.storScrim.hidden = true;
         revokeStorObjectUrls();
-        S.stor.selMode = false; S.stor.sel.clear();
+        S.stor.selMode = false; S.stor.sel.clear(); S.stor.fSelMode = false; S.stor.fSel.clear();
         const f = S.stor.prevFocus; S.stor.prevFocus = null;
         refocus(f);
     }
@@ -50509,6 +51178,9 @@ kbd {
         // markdown source, kept in sync via markDirty() (same path as any other edit).
         // Wikilinks in Read mode: open the target note, or create it if it doesn't exist yet.
         initCodeCopy();
+        initImageResize();
+        initImageLightbox();
+        initNoteFind();
         el.read.addEventListener('click', (e) => {
             const wl = e.target.closest('.nv-wikilink');
             if (wl) { e.preventDefault(); openOrCreateByTitle(wl.dataset.wikilink); return; }
@@ -67340,6 +68012,288 @@ document.addEventListener('DOMContentLoaded', function() {
             if (typeof showNotification === 'function') showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Đã xuất ${sorted.length} đêm ra CSV`, 'success');
         }
 
+        // ===== SLEEP-ONLY BACKUP / IMPORT =====
+        // File JSON riêng cho Sleep Tracker (đêm ngủ + nap + mục tiêu ngủ) — để chuyển dữ liệu giữa 2 thiết bị
+        // mà không cần dùng "Data Management" (backup toàn app). Import mặc định là GỘP: chỉ thêm đêm/nap chưa có
+        // (trùng id+giờ bắt đầu hoặc cùng phút bắt đầu = coi là cùng một đêm), không bao giờ ghi đè dữ liệu hiện có.
+        const SLEEP_BACKUP_APP = 'FinanceTracker-SleepTracker';
+        const SLEEP_BACKUP_SCHEMA = 1;
+        let sleepImportUndoTimer = null;
+
+        function sbCurrentNaps() { try { return Array.isArray(napSessions) ? napSessions : []; } catch (e) { return []; } }
+
+        function buildSleepBackup() {
+            return {
+                app: SLEEP_BACKUP_APP,
+                schema: SLEEP_BACKUP_SCHEMA,
+                exportedAt: new Date().toISOString(),
+                sleepSessions: getSortedSleepSessions(),
+                napSessions: sbCurrentNaps().slice().sort((a, b) => a.start - b.start),
+                settings: { sleepGoalHours: getSleepGoal() }
+            };
+        }
+
+        async function sleepBackupExport() {
+            const naps = sbCurrentNaps();
+            if ((!sleepSessions || !sleepSessions.length) && !naps.length) {
+                skAlert('Chưa có dữ liệu giấc ngủ nào để backup.');
+                return;
+            }
+            const data = buildSleepBackup();
+            const name = 'sleep-tracker-backup-' + toLocalDateStr(new Date()) + '.json';
+            const json = JSON.stringify(data, null, 1);
+            const summary = data.sleepSessions.length + ' đêm' + (data.napSessions.length ? ' + ' + data.napSessions.length + ' nap' : '');
+            // Điện thoại: mở bảng chia sẻ (AirDrop / Zalo / Drive / Mail…) để chuyển sang máy kia nhanh hơn là tải xuống.
+            try {
+                const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+                if (coarse && typeof File === 'function' && navigator.canShare && navigator.share) {
+                    const file = new File([json], name, { type: 'application/json' });
+                    if (navigator.canShare({ files: [file] })) {
+                        try {
+                            await navigator.share({ files: [file], title: 'Sleep Tracker backup' });
+                            showNotification('<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Đã chia sẻ backup (' + summary + ')', 'success');
+                            return;
+                        } catch (e) {
+                            if (e && e.name === 'AbortError') return;   // người dùng đóng bảng chia sẻ
+                        }
+                    }
+                }
+            } catch (e) { /* rơi xuống tải xuống bình thường */ }
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            showNotification('<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Đã xuất backup giấc ngủ (' + summary + ')', 'success');
+        }
+
+        function sbNormSession(s) {
+            if (!s || typeof s !== 'object') return null;
+            const start = Number(s.start), end = Number(s.end);
+            if (!isFinite(start) || !isFinite(end) || end <= start) return null;
+            if (start < 946684800000 || end > Date.now() + 2 * 86400000) return null;      // trước năm 2000 / xa trong tương lai
+            if (end - start > 48 * 3600000) return null;                                    // >48h: dữ liệu hỏng
+            const out = Object.assign({}, s, { start: start, end: end });
+            let d = Number(s.duration);
+            if (!isFinite(d) || d < 0) d = Math.max(0, +(((end - start) / 3600000) - ((Number(s.sol) || 0) / 60)).toFixed(2));
+            out.duration = d;
+            if (!out.startFormatted) out.startFormatted = new Date(start).toLocaleString('vi-VN');
+            if (!out.endFormatted) out.endFormatted = new Date(end).toLocaleString('vi-VN');
+            return out;
+        }
+        function sbNormNap(n) {
+            if (!n || typeof n !== 'object') return null;
+            const start = Number(n.start), end = Number(n.end);
+            if (!isFinite(start) || !isFinite(end) || end <= start || start < 946684800000 || end - start > 12 * 3600000) return null;
+            const out = Object.assign({}, n, { start: start, end: end });
+            let m = Number(n.durationMin);
+            if (!isFinite(m) || m < 0) m = Math.round((end - start) / 60000);
+            out.durationMin = m;
+            if (typeof out.note !== 'string') out.note = '';
+            return out;
+        }
+
+        // Cùng một đêm? — cùng id VÀ cùng giờ bắt đầu, hoặc bắt đầu lệch dưới 2 phút.
+        function sbPlanImport(rawSessions, rawNaps) {
+            const plan = { total: 0, invalid: 0, newSessions: [], dupSessions: 0, overlapNew: 0, napTotal: 0, napInvalid: 0, newNaps: [], dupNaps: 0 };
+            const near = (set, t) => { const k = Math.round(t / 60000); return set.has(k) || set.has(k - 1) || set.has(k + 1); };
+            const haveS = new Set(sleepSessions.map((s) => Math.round(s.start / 60000)));
+            const haveN = new Set(sbCurrentNaps().map((n) => Math.round(n.start / 60000)));
+            for (const raw of rawSessions) {
+                plan.total++;
+                const s = sbNormSession(raw);
+                if (!s) { plan.invalid++; continue; }
+                if (near(haveS, s.start)) { plan.dupSessions++; continue; }
+                haveS.add(Math.round(s.start / 60000));
+                s._overlaps = findOverlappingSleepSessions(s.start, s.end).length > 0;
+                if (s._overlaps) plan.overlapNew++;
+                plan.newSessions.push(s);
+            }
+            for (const raw of rawNaps) {
+                plan.napTotal++;
+                const n = sbNormNap(raw);
+                if (!n) { plan.napInvalid++; continue; }
+                if (near(haveN, n.start)) { plan.dupNaps++; continue; }
+                haveN.add(Math.round(n.start / 60000));
+                plan.newNaps.push(n);
+            }
+            return plan;
+        }
+
+        // Cho phép nhập: file backup riêng này, một mảng đêm ngủ thuần, hoặc bất kỳ JSON nào có khoá sleepSessions
+        // (ví dụ file backup toàn app) — khi đó chỉ phần giấc ngủ được lấy.
+        function sbParseFile(text) {
+            let obj;
+            try { obj = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { return { error: 'File không phải JSON hợp lệ.' }; }
+            let sessions = null, naps = [], settings = {};
+            if (Array.isArray(obj)) sessions = obj;
+            else if (obj && typeof obj === 'object') {
+                if (Array.isArray(obj.sleepSessions)) sessions = obj.sleepSessions;
+                if (Array.isArray(obj.napSessions)) naps = obj.napSessions;
+                if (obj.settings && typeof obj.settings === 'object') settings = obj.settings;
+            }
+            if (!sessions) return { error: 'Không tìm thấy dữ liệu giấc ngủ (sleepSessions) trong file này.' };
+            return { sessions: sessions, naps: naps, settings: settings, exportedAt: obj && obj.exportedAt, app: obj && obj.app };
+        }
+
+        function sleepBackupPickFile() {
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = '.json,application/json'; input.style.display = 'none';
+            document.body.appendChild(input);
+            input.addEventListener('change', async () => {
+                const f = input.files && input.files[0];
+                input.remove();
+                if (!f) return;
+                if (f.size > 30 * 1024 * 1024) { skAlert('File quá lớn để là backup giấc ngủ.'); return; }
+                let text;
+                try { text = await f.text(); } catch (e) { skAlert('Không đọc được file.'); return; }
+                const parsed = sbParseFile(text);
+                if (parsed.error) { skAlert(parsed.error); return; }
+                openSleepImportDialog(f.name, parsed);
+            });
+            input.click();
+        }
+
+        function openSleepImportDialog(fileName, parsed) {
+            const old = document.getElementById('sleepImportModal'); if (old) old.remove();
+            const plan = sbPlanImport(parsed.sessions, parsed.naps);
+            const when = parsed.exportedAt && !isNaN(Date.parse(parsed.exportedAt)) ? new Date(parsed.exportedAt).toLocaleString('vi-VN') : '';
+            const wrap = document.createElement('div');
+            wrap.id = 'sleepImportModal';
+            wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', 'Nhập dữ liệu giấc ngủ');
+            wrap.style.cssText = 'position:fixed;inset:0;z-index:20000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,0.5);';
+            const row = (label, a, b, c, d) => '<tr><td style="padding:4px 0;">' + label + '</td><td style="text-align:right;">' + a + '</td><td style="text-align:right;color:#10b981;font-weight:700;">' + b + '</td><td style="text-align:right;color:var(--text-muted);">' + c + '</td><td style="text-align:right;color:#ef4444;">' + d + '</td></tr>';
+            wrap.innerHTML =
+                '<div style="width:min(440px,100%);max-height:90vh;overflow:auto;background:var(--bg-white);color:var(--text-dark);border:1px solid var(--border-color);border-radius:16px;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,0.35);">'
+                + '<h3 style="margin:0 0 4px;font-size:1.05rem;">Nhập dữ liệu giấc ngủ</h3>'
+                + '<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;word-break:break-all;">' + escapeHtml(fileName) + (when ? ' · xuất lúc ' + escapeHtml(when) : '') + '</div>'
+                + '<table style="width:100%;font-size:0.84rem;border-collapse:collapse;"><thead><tr style="font-size:0.72rem;color:var(--text-muted);"><th style="text-align:left;font-weight:600;"></th><th style="text-align:right;font-weight:600;">Trong file</th><th style="text-align:right;font-weight:600;">Mới</th><th style="text-align:right;font-weight:600;">Đã có</th><th style="text-align:right;font-weight:600;">Lỗi</th></tr></thead><tbody>'
+                + row('Đêm ngủ', plan.total, plan.newSessions.length, plan.dupSessions, plan.invalid)
+                + row('Nap', plan.napTotal, plan.newNaps.length, plan.dupNaps, plan.napInvalid)
+                + '</tbody></table>'
+                + (plan.overlapNew ? '<div id="sleepImpOverlapBox" style="margin-top:10px;font-size:0.8rem;padding:8px 10px;border-radius:10px;background:rgba(245,158,11,0.14);"><b>' + plan.overlapNew + ' đêm mới chồng giờ</b> với đêm đã có trên máy này (có thể là cùng một đêm được ghi ở 2 máy).<label style="display:flex;gap:8px;align-items:center;margin-top:6px;cursor:pointer;"><input type="checkbox" id="sleepImpSkipOverlap" checked> Bỏ qua các đêm chồng giờ</label></div>' : '')
+                + '<div style="margin-top:12px;font-size:0.86rem;display:flex;flex-direction:column;gap:8px;">'
+                + '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;"><input type="radio" name="sleepImpMode" value="merge" checked style="margin-top:3px;"><span><b>Gộp</b> (khuyên dùng)<br><span style="font-size:0.78rem;color:var(--text-muted);">Chỉ thêm những đêm/nap còn thiếu. Dữ liệu đang có không bị đổi.</span></span></label>'
+                + '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;"><input type="radio" name="sleepImpMode" value="replace" style="margin-top:3px;"><span><b>Thay thế toàn bộ</b><br><span style="font-size:0.78rem;color:var(--text-muted);">Xoá dữ liệu giấc ngủ trên máy này, dùng đúng nội dung file (kèm mục tiêu ngủ). Có nút Hoàn tác sau đó.</span></span></label>'
+                + '</div>'
+                + '<div id="sleepImpMsg" style="margin-top:10px;font-size:0.8rem;color:var(--text-muted);min-height:1.2em;"></div>'
+                + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">'
+                + '<button type="button" id="sleepImpCancel" style="padding:7px 16px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-light);color:var(--text-dark);font-weight:600;cursor:pointer;">Hủy</button>'
+                + '<button type="button" id="sleepImpGo" style="padding:7px 16px;border-radius:10px;border:1px solid var(--primary);background:var(--primary);color:#fff;font-weight:600;cursor:pointer;">Nhập</button>'
+                + '</div></div>';
+            document.body.appendChild(wrap);
+            const q = (id) => wrap.querySelector('#' + id);
+            const mode = () => wrap.querySelector('input[name="sleepImpMode"]:checked').value;
+            const effective = () => {
+                const skip = !!(q('sleepImpSkipOverlap') && q('sleepImpSkipOverlap').checked);
+                return { sessions: plan.newSessions.filter((s) => !(skip && s._overlaps)), naps: plan.newNaps };
+            };
+            const refresh = () => {
+                const m = mode(), eff = effective(), box = q('sleepImpOverlapBox');
+                if (box) box.style.display = m === 'merge' ? '' : 'none';
+                const go = q('sleepImpGo'), msg = q('sleepImpMsg');
+                if (m === 'merge') {
+                    const nothing = !eff.sessions.length && !eff.naps.length;
+                    go.disabled = nothing; go.style.opacity = nothing ? '0.5' : '1';
+                    msg.style.color = 'var(--text-muted)';
+                    msg.textContent = nothing ? 'Không có gì mới để nhập — máy này đã có đủ dữ liệu trong file.' : 'Sẽ thêm ' + eff.sessions.length + ' đêm' + (eff.naps.length ? ' và ' + eff.naps.length + ' nap' : '') + '.';
+                } else {
+                    const valid = plan.total - plan.invalid;
+                    go.disabled = false; go.style.opacity = '1';
+                    msg.style.color = '#ef4444';
+                    msg.textContent = 'Dữ liệu hiện tại (' + sleepSessions.length + ' đêm, ' + sbCurrentNaps().length + ' nap) sẽ được thay bằng ' + valid + ' đêm' + (parsed.naps.length ? ' và ' + (plan.napTotal - plan.napInvalid) + ' nap' : '') + ' trong file.';
+                }
+            };
+            wrap.addEventListener('change', refresh);
+            const close = () => { document.removeEventListener('keydown', onKey, true); wrap.remove(); };
+            const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+            document.addEventListener('keydown', onKey, true);
+            q('sleepImpCancel').addEventListener('click', close);
+            wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) close(); });
+            q('sleepImpGo').addEventListener('click', () => {
+                const m = mode(), eff = effective();
+                close();
+                applySleepImport(m, eff, plan, parsed);
+            });
+            refresh();
+            q('sleepImpGo').focus();
+        }
+
+        function sbRefreshAll() {
+            const call = (n) => { try { if (typeof window[n] === 'function') window[n](); } catch (e) { console.warn('Sleep refresh failed:', n, e); } };
+            ['renderSleepHistory', 'renderSleepChart', 'renderSleepStats', 'updateCorrelationAnalytics', 'renderInsomniaAnalysis', 'renderNapWidget'].forEach(call);
+        }
+        function sbUniqueIds(list, taken) {
+            // Hai máy đều dùng Date.now() làm id — hiếm khi trùng, nhưng nếu trùng với đêm KHÁC thì cấp id mới.
+            let bump = Date.now();
+            list.forEach((x) => {
+                if (x.id === undefined || x.id === null || taken.has(x.id)) { while (taken.has(bump)) bump++; x.id = bump; }
+                taken.add(x.id);
+            });
+        }
+
+        function applySleepImport(mode, eff, plan, parsed) {
+            const before = {
+                sessions: sleepSessions.slice(), naps: sbCurrentNaps().slice(),
+                goal: localStorage.getItem(SLEEP_GOAL_KEY)
+            };
+            let newSessions, newNaps;
+            if (mode === 'replace') {
+                // Thay thế = toàn bộ đêm/nap hợp lệ trong file (đã loại trùng trong chính file), không phụ thuộc dữ liệu cũ.
+                const seen = new Set();
+                const okS = [], okN = [];
+                parsed.sessions.forEach((raw) => { const s = sbNormSession(raw); if (s) { const k = Math.round(s.start / 60000); if (!seen.has(k)) { seen.add(k); okS.push(s); } } });
+                const seenN = new Set();
+                parsed.naps.forEach((raw) => { const n = sbNormNap(raw); if (n) { const k = Math.round(n.start / 60000); if (!seenN.has(k)) { seenN.add(k); okN.push(n); } } });
+                sbUniqueIds(okS, new Set()); sbUniqueIds(okN, new Set());
+                okS.forEach((s) => delete s._overlaps);
+                newSessions = okS; newNaps = okN;
+            } else {
+                const takenS = new Set(sleepSessions.map((s) => s.id)), takenN = new Set(before.naps.map((n) => n.id));
+                const addS = eff.sessions.map((s) => { const c = Object.assign({}, s); delete c._overlaps; return c; });
+                const addN = eff.naps.map((n) => Object.assign({}, n));
+                sbUniqueIds(addS, takenS); sbUniqueIds(addN, takenN);
+                newSessions = sleepSessions.concat(addS); newNaps = before.naps.concat(addN);
+            }
+            sleepSessions = newSessions;
+            saveSleepData();
+            try { napSessions = newNaps; saveNapData(); } catch (e) { console.warn('Nap import failed', e); }
+            if (mode === 'replace' && parsed.settings && parsed.settings.sleepGoalHours !== undefined) {
+                const g = parseFloat(parsed.settings.sleepGoalHours);
+                if (!isNaN(g) && g >= 4 && g <= 12) {
+                    localStorage.setItem(SLEEP_GOAL_KEY, String(g));
+                    const inp = document.getElementById('sleepGoalInput'); if (inp) inp.value = g;
+                }
+            }
+            sbRefreshAll();
+            const added = mode === 'replace' ? newSessions.length : eff.sessions.length;
+            const addedN = mode === 'replace' ? newNaps.length : eff.naps.length;
+            showSleepImportUndo((mode === 'replace' ? 'Đã thay bằng ' : 'Đã nhập ') + added + ' đêm' + (addedN ? ' + ' + addedN + ' nap' : ''), before);
+        }
+
+        function showSleepImportUndo(message, before) {
+            const old = document.getElementById('sleepImportUndoToast'); if (old) old.remove();
+            if (sleepImportUndoTimer) clearTimeout(sleepImportUndoTimer);
+            const t = document.createElement('div');
+            t.id = 'sleepImportUndoToast'; t.setAttribute('role', 'status');
+            t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:20001;display:flex;gap:12px;align-items:center;max-width:min(92vw,460px);padding:10px 14px;border-radius:12px;background:var(--bg-white);color:var(--text-dark);border:1px solid var(--border-color);box-shadow:0 10px 30px rgba(0,0,0,0.3);font-size:0.88rem;';
+            t.innerHTML = '<span style="flex:1;">' + escapeHtml(message) + '</span><button type="button" style="flex-shrink:0;font-weight:700;padding:5px 12px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;">Hoàn tác</button>';
+            document.body.appendChild(t);
+            const done = () => { t.remove(); if (sleepImportUndoTimer) { clearTimeout(sleepImportUndoTimer); sleepImportUndoTimer = null; } };
+            t.querySelector('button').addEventListener('click', () => {
+                sleepSessions = before.sessions; saveSleepData();
+                try { napSessions = before.naps; saveNapData(); } catch (e) { /* ignore */ }
+                if (before.goal === null) localStorage.removeItem(SLEEP_GOAL_KEY); else localStorage.setItem(SLEEP_GOAL_KEY, before.goal);
+                const inp = document.getElementById('sleepGoalInput'); if (inp) inp.value = getSleepGoal();
+                sbRefreshAll();
+                done();
+                showNotification('<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Đã hoàn tác nhập dữ liệu', 'success');
+            });
+            sleepImportUndoTimer = setTimeout(done, 30000);
+        }
+
+
         // ===== Copy Sleep Context for AI — mirror pattern "<svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Copy Context for AI" đã có =====
         // Copy sleep + study context for AI — last 14 nights of sleep detail
         // (duration, debt vs goal, SE, SOL, quality, tags, notes) alongside
@@ -69024,12 +69978,80 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-save"></use></svg> Đã đặt mục tiêu: lên giường ${fmtT(bedTime)} → dậy ${fmtT(wakeTime)}. Sáng mai brief sẽ so sánh với thực tế.`, 'success');
         }
 
+        // ===== Chống quên tắt tracker =====
+        function sleepStaleHours() { return Math.max(getSleepGoal() + 3, 11); }
+
+        function closeWakeCheckModal() { const m = document.getElementById('wakeCheckModal'); if (m) m.remove(); }
+
+        function checkStaleSleepSession() {
+            try {
+                if (!isSleeping || !sleepStartTime) return;
+                if (document.getElementById('wakeCheckModal')) return;
+                const snooze = parseInt(localStorage.getItem('sleepWakeSnoozeUntil') || '0', 10);
+                if (snooze && Date.now() < snooze) return;
+                if ((Date.now() - sleepStartTime) / 3600000 > sleepStaleHours()) openWakeCheckModal('stale');
+            } catch (e) {}
+        }
+
+        function openWakeCheckModal(mode) {
+            closeWakeCheckModal();
+            const start = sleepStartTime;
+            const now = Date.now();
+            const goal = getSleepGoal();
+            const hrs = (now - start) / 3600000;
+            const pad = n => String(n).padStart(2, '0');
+            const toLocal = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+            const guess = Math.min(start + goal * 3600000, now);
+            const hh = Math.floor(hrs), mm = Math.round((hrs - hh) * 60);
+            const wrap = document.createElement('div');
+            wrap.id = 'wakeCheckModal';
+            wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:10200;padding:16px;';
+            wrap.innerHTML = `
+              <div role="dialog" aria-modal="true" style="background:var(--bg-white);color:var(--text-dark);border-radius:16px;padding:22px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:92vh;overflow:auto;">
+                <h3 style="margin:0 0 6px;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sun"></use></svg> Bạn đã dậy chưa?</h3>
+                <p style="margin:0 0 14px;color:var(--text-muted);font-size:.92rem;line-height:1.5;">Tracker đã chạy <b>${hh}h${pad(mm)}</b> (từ ${new Date(start).toLocaleString('vi-VN')}). ${mode==='stale' ? 'Có thể bạn quên bấm dừng.' : 'Phiên này dài bất thường — xác nhận giờ dậy thật để không bị lưu sai.'}</p>
+                <label style="font-size:.85rem;font-weight:600;">Giờ dậy thật</label>
+                <input type="datetime-local" id="wakeCheckInput" value="${toLocal(guess)}" min="${toLocal(start)}" max="${toLocal(now)}" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 4px;border:1px solid var(--border-color);border-radius:8px;font-size:1rem;background:var(--bg-light);color:var(--text-dark);">
+                <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:14px;">Gợi ý: giờ đi ngủ + mục tiêu ${goal}h. Sửa lại nếu nhớ giờ dậy khác.</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <button id="wakeCheckSave" style="padding:12px;border:none;border-radius:10px;background:var(--primary);color:#fff;font-weight:600;font-size:1rem;cursor:pointer;">Lưu với giờ dậy này</button>
+                  <button id="wakeCheckNow" style="padding:11px;border:1px solid var(--border-color);border-radius:10px;background:none;color:var(--text-dark);cursor:pointer;">Tôi vừa mới dậy (lấy giờ hiện tại)</button>
+                  ${mode==='stale' ? `<button id="wakeCheckStill" style="padding:11px;border:1px solid var(--border-color);border-radius:10px;background:none;color:var(--text-muted);cursor:pointer;">Vẫn đang ngủ — nhắc lại sau 1 giờ</button>` : ''}
+                  <button id="wakeCheckDiscard" style="padding:9px;border:none;background:none;color:#ef4444;cursor:pointer;font-size:.85rem;">Bỏ phiên này (không lưu)</button>
+                  <button id="wakeCheckClose" style="padding:6px;border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:.8rem;">Để sau</button>
+                </div>
+              </div>`;
+            document.body.appendChild(wrap);
+            const $ = id => wrap.querySelector('#' + id);
+            const finish = (endMs) => {
+                endMs = Math.min(Math.max(endMs, start + 60000), Date.now());
+                closeWakeCheckModal();
+                localStorage.removeItem('sleepWakeSnoozeUntil');
+                stopSleepTracking(false, endMs);
+            };
+            $('wakeCheckSave').onclick = () => {
+                const v = $('wakeCheckInput').value;
+                const t = v ? new Date(v).getTime() : NaN;
+                if (!isFinite(t) || t <= start || t > Date.now() + 60000) { showNotification('Giờ dậy phải nằm giữa lúc bắt đầu và bây giờ.', 'warning'); return; }
+                finish(t);
+            };
+            $('wakeCheckNow').onclick = () => { closeWakeCheckModal(); stopSleepTracking(false, Date.now()); };
+            const st = $('wakeCheckStill');
+            if (st) st.onclick = () => { localStorage.setItem('sleepWakeSnoozeUntil', String(Date.now() + 3600000)); closeWakeCheckModal(); };
+            $('wakeCheckDiscard').onclick = () => { closeWakeCheckModal(); stopSleepTracking(true); };
+            $('wakeCheckClose').onclick = closeWakeCheckModal;
+        }
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStaleSleepSession(); });
+        window.addEventListener('focus', () => checkStaleSleepSession());
+        window.addEventListener('pageshow', () => checkStaleSleepSession());
+
         function startSleepTracking() {
             if (isSleeping) return;
             sleepStartTime = Date.now();
             isSleeping = true;
             localStorage.setItem('sleepStartTime', sleepStartTime);
             localStorage.setItem('isSleeping', 'true');
+            localStorage.removeItem('sleepWakeSnoozeUntil');
             
             updateSleepUI();
             
@@ -69040,10 +70062,16 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('<svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> Sleep tracking started.', 'info');
         }
 
-        function stopSleepTracking(forceReset = false) {
+        function stopSleepTracking(forceReset = false, endOverride = null) {
             if (!isSleeping) return;
             
-            const endTime = Date.now();
+            // Quên tắt tracker (ADHD...)? Nếu đã chạy quá lâu thì KHÔNG lưu thẳng giờ hiện tại
+            // mà hỏi lại giờ dậy thật — tránh lưu những phiên 46h35.
+            if (!forceReset && endOverride == null && (Date.now() - sleepStartTime) / 3600000 > sleepStaleHours()) {
+                openWakeCheckModal('stop');
+                return;
+            }
+            const endTime = endOverride != null ? endOverride : Date.now();
             const durationMs = endTime - sleepStartTime;
             const durationHours = (durationMs / (1000 * 60 * 60));
 
@@ -70275,6 +71303,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <div style="font-size: 0.82rem; color: var(--text-muted);">
                                 ${session.startFormatted} → ${session.endFormatted}
                             </div>
+                            ${session.duration > 14 ? `<div style="margin-top:6px;font-size:.8rem;color:#ef4444;">⚠ Phiên ${session.duration}h có vẻ do quên tắt. <a href="#" onclick="editSleepSession(${session.id});return false;" style="color:#ef4444;font-weight:600;text-decoration:underline;">Sửa giờ dậy</a></div>` : ''}
                             ${safeNotes ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:5px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${safeNotes}"><svg class="icon-svg" aria-hidden="true"><use href="#icon-file-text"></use></svg> ${safeNotes}</div>` : ''}
                         </div>
                         <div style="display: flex; gap: 4px; margin-left:8px; flex-shrink:0;">
@@ -71434,6 +72463,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (sleepInterval) clearInterval(sleepInterval);
                 sleepInterval = setInterval(updateSleepDisplay, 1000);
                 updateSleepDisplay();
+                setTimeout(checkStaleSleepSession, 600);
             } else {
                 updateSleepUI();
             }
