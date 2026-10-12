@@ -85686,11 +85686,26 @@ window.fcRenderTagChips = fcRenderTagChips;
 // ===== SLEEP QUICK-JUMP CHIP =====
 // On open, a small floating chip (live clock) appears at the bottom of the screen.
 // Tap it -> expands Sleep Tracker if collapsed and smooth-scrolls straight to it.
-// It disappears once tapped, closed, or once the card has been on screen.
+// It disappears once tapped or once the card has been on screen. The ✕ hides it for the rest of the day,
+// and it stays hidden on days when last night's sleep is already logged.
 (function(){
   const CARD_ID = 'sleepTrackerCard';
   let chip = null, timer = null, io = null, done = false;
   const pad = n => String(n).padStart(2, '0');
+  const HIDE_KEY = 'sleepJumpHideDate';
+  const dayKey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+
+  // Skip the chip today if: the user hid it for today, or last night's sleep is already logged
+  // (a session that ended today) and no sleep is currently running.
+  function hiddenToday(){
+    const today = dayKey(new Date());
+    try { if (localStorage.getItem(HIDE_KEY) === today) return true; } catch (e) {}
+    try {
+      if ((typeof isSleeping !== 'undefined') && isSleeping) return false;
+      if (Array.isArray(sleepSessions) && sleepSessions.some(x => x && x.end && dayKey(new Date(x.end)) === today)) return true;
+    } catch (e) {}
+    return false;
+  }
 
   function injectStyle(){
     if (document.getElementById('sleepJumpStyle')) return;
@@ -85766,6 +85781,7 @@ window.fcRenderTagChips = fcRenderTagChips;
   function build(){
     const card = document.getElementById(CARD_ID);
     if (done || chip || !card || !card.offsetParent) return;
+    if (hiddenToday()) { done = true; return; }
     injectStyle();
     chip = document.createElement('div');
     chip.id = 'sleepJumpChip';
@@ -85776,9 +85792,12 @@ window.fcRenderTagChips = fcRenderTagChips;
         '<span class="sj-sub"><i class="fa-solid fa-bed" aria-hidden="true"></i><span class="sj-sub-text">Sleep Tracker</span>' +
         '<i class="fa-solid fa-arrow-down" aria-hidden="true"></i></span>' +
       '</button>' +
-      '<button type="button" id="sleepJumpX" aria-label="Dismiss">✕</button>';
+      '<button type="button" id="sleepJumpX" aria-label="Hide for today" title="Hide for today">✕</button>';
     chip.querySelector('#sleepJumpGo').addEventListener('click', jump);
-    chip.querySelector('#sleepJumpX').addEventListener('click', dismiss);
+    chip.querySelector('#sleepJumpX').addEventListener('click', () => {
+      try { localStorage.setItem(HIDE_KEY, dayKey(new Date())); } catch (e) {}
+      dismiss();
+    });
     document.body.appendChild(chip);
     render();
     timer = setInterval(render, 1000);
