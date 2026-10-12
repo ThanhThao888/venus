@@ -31605,11 +31605,11 @@ window.DBP={
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
                     <h4 style="font-size: 1rem; font-weight: 600; color: var(--text-dark); margin:0;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-scroll-text"></use></svg> Recent Sessions</h4>
                     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                        <button onclick="exportSleepSessionsCSV()" title="Xuất toàn bộ dữ liệu giấc ngủ ra file CSV" aria-label="Export all sleep data to CSV"
+                        <button onclick="exportSleepSessionsCSV()" title="Export all sleep data to a CSV file" aria-label="Export all sleep data to CSV"
                             style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;">CSV</button>
-                        <button onclick="sleepBackupExport()" title="Backup riêng cho Sleep Tracker (JSON) — dùng để chuyển sang thiết bị khác" aria-label="Back up sleep data to JSON"
+                        <button onclick="sleepBackupExport()" title="Sleep Tracker-only backup (JSON) — use it to move to another device" aria-label="Back up sleep data to JSON"
                             style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;">Backup</button>
-                        <button onclick="sleepBackupPickFile()" title="Nhập dữ liệu giấc ngủ từ file backup (gộp, không ghi đè)" aria-label="Import sleep data from a backup file"
+                        <button onclick="sleepBackupPickFile()" title="Import sleep data from a backup file (merges, does not overwrite)" aria-label="Import sleep data from a backup file"
                             style="font-size:0.72rem; padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap;">Import</button>
                         <button onclick="copySleepContextForAI()" title="Copy for AI" aria-label="Copy Sleep + Study Context for AI"
                             style="font-size:0.72rem; padding:5px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg></button>
@@ -69381,13 +69381,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const streakColor = d.shortStreak === 0 ? '#10b981' : d.shortStreak <= 2 ? '#f59e0b' : '#ef4444';
             const napTile = d.napCount > 0
                 ? tile('icon-sun', '#f59e0b', `${Math.round(d.napCreditMin)}m`, `Nap payback · ${d.napCount} naps`,
-                    `${d.napCount} nap (${Math.round(d.napMinutesTotal)} phút) trả được ${Math.round(d.napCreditMin)} phút nợ sau khi chiết khấu theo thời lượng và giờ nap`)
+                    `${d.napCount} nap(s) (${Math.round(d.napMinutesTotal)} min) repaid ${Math.round(d.napCreditMin)} min of sleep debt after discounting by nap length and time of day`)
                 : '';
             const tilesHtml = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(132px, 1fr)); gap:8px; margin-top:12px;">
-                ${tile('icon-moon', avgColor, `${d.avgHours.toFixed(1)}h`, 'Avg / night', `Giờ ngủ thực trung bình ${d.logged} đêm có log (mục tiêu ${d.goal}h, chênh ${d.avgGap >= 0 ? '+' : '−'}${Math.abs(d.avgGap).toFixed(1)}h)`)}
-                ${tile('icon-bed', shortColor, `${d.shortNights}/${d.logged}`, 'Short nights', `Số đêm ngủ ít hơn mục tiêu quá ${SLEEP_DEBT_CFG.tolerance * 60} phút`)}
-                ${tile('icon-triangle-alert', worstColor, d.worst ? `${d.worst.hours.toFixed(1)}h` : '—', d.worst ? `Shortest · ${sleepDateLabelDM(d.worst.date)}` : 'Shortest', 'Đêm ngủ ít nhất trong sổ (ngày thức dậy)')}
-                ${tile('icon-flame', streakColor, d.shortStreak, 'Consecutive short nights', 'Số đêm thiếu giờ liên tiếp tính đến đêm gần nhất')}
+                ${tile('icon-moon', avgColor, `${d.avgHours.toFixed(1)}h`, 'Avg / night', `Average actual sleep over ${d.logged} logged nights (goal ${d.goal}h, gap ${d.avgGap >= 0 ? '+' : '−'}${Math.abs(d.avgGap).toFixed(1)}h)`)}
+                ${tile('icon-bed', shortColor, `${d.shortNights}/${d.logged}`, 'Short nights', `Nights with sleep more than ${SLEEP_DEBT_CFG.tolerance * 60} min below goal`)}
+                ${tile('icon-triangle-alert', worstColor, d.worst ? `${d.worst.hours.toFixed(1)}h` : '—', d.worst ? `Shortest · ${sleepDateLabelDM(d.worst.date)}` : 'Shortest', 'Shortest night in the ledger (by wake date)')}
+                ${tile('icon-flame', streakColor, d.shortStreak, 'Consecutive short nights', 'Number of consecutive short nights up to the most recent night')}
                 ${napTile}
             </div>`;
 
@@ -69482,21 +69482,21 @@ document.addEventListener('DOMContentLoaded', function() {
                         tooltip: {
                             filter: item => item.datasetIndex === 1,
                             callbacks: {
-                                title: items => `Thức dậy ${sleepDateLabelDM(d.series[items[0].dataIndex].date)}`,
+                                title: items => `Woke up ${sleepDateLabelDM(d.series[items[0].dataIndex].date)}`,
                                 label: item => {
                                     const p = d.series[item.dataIndex];
                                     if (!p || !p.logged) return '';
                                     const change = p.debtAfter - p.debtBefore;
                                     const lines = [
-                                        `Ngủ thực ${p.hours.toFixed(1)}h (${minus(p.gap)}h so với mục tiêu)`,
-                                        Math.abs(change) < 0.005 ? 'Nợ không đổi' : change > 0 ? `Nợ tăng ${change.toFixed(1)}h` : `Trả được ${Math.abs(change).toFixed(1)}h nợ`,
-                                        `Nợ sau đêm này: ${p.debtAfter.toFixed(1)}h`
+                                        `Actual sleep ${p.hours.toFixed(1)}h (${minus(p.gap)}h vs goal)`,
+                                        Math.abs(change) < 0.005 ? 'Debt unchanged' : change > 0 ? `Debt up ${change.toFixed(1)}h` : `Repaid ${Math.abs(change).toFixed(1)}h of debt`,
+                                        `Debt after this night: ${p.debtAfter.toFixed(1)}h`
                                     ];
-                                    p.naps.forEach(nap => lines.push(`Nap ${Math.round(nap.minutes)}p lúc ${fmtVNTimeHM(nap.start)}: trả ${nap.creditMin.toFixed(0)}p nợ (hệ số giờ nap ×${nap.beta.toFixed(2)})`));
-                                    if (p.napDiscardedMin > 0.5) lines.push(`Chạm trần nap ${SLEEP_NAP_CFG.dailyCapMin}p/ngày, bỏ ${Math.round(p.napDiscardedMin)}p`);
-                                    if (p.awakeMin > 0) lines.push(`Đã trừ ${Math.round(p.awakeMin)} phút thức giữa đêm`);
-                                    if (p.sessions > 1) lines.push(`Gộp ${p.sessions} lần ngủ`);
-                                    if (p.long) lines.push(`Dài hơn ${SLEEP_DEBT_CFG.longNightHours}h — kiểm tra lại log`);
+                                    p.naps.forEach(nap => lines.push(`Nap ${Math.round(nap.minutes)}m at ${fmtVNTimeHM(nap.start)}: repaid ${nap.creditMin.toFixed(0)}m of debt (time-of-day factor ×${nap.beta.toFixed(2)})`));
+                                    if (p.napDiscardedMin > 0.5) lines.push(`Hit nap cap of ${SLEEP_NAP_CFG.dailyCapMin}m/day, discarded ${Math.round(p.napDiscardedMin)}m`);
+                                    if (p.awakeMin > 0) lines.push(`Subtracted ${Math.round(p.awakeMin)} min awake during the night`);
+                                    if (p.sessions > 1) lines.push(`Combined ${p.sessions} sleep sessions`);
+                                    if (p.long) lines.push(`Longer than ${SLEEP_DEBT_CFG.longNightHours}h — check the log`);
                                     return lines;
                                 }
                             }
@@ -69612,7 +69612,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: (context) => `${context.parsed.y} phút để vào giấc`
+                                label: (context) => `${context.parsed.y} min to fall asleep`
                             }
                         }
                     },
@@ -69786,7 +69786,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                             <div style="font-size:0.66rem; color:var(--text-muted);">${worse ? '+' : ''}${Math.round(diffPct)}% SOL</div>
                         </div>
-                        ${g.removable ? `<button onclick="removeCustomSolKeyword('${g.id}')" title="Xoá" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.9rem;padding:0 2px;">✕</button>` : ''}
+                        ${g.removable ? `<button onclick="removeCustomSolKeyword('${g.id}')" title="Delete" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.9rem;padding:0 2px;">✕</button>` : ''}
                     </div>`;
             });
 
@@ -71269,7 +71269,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${night.naps.map(nap => `
                         <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem; color:var(--text-dark); padding:2px 0;">
                             <span>${fmtVNTimeHM(nap.start)} · ${formatNapDuration(Math.round(nap.minutes))}</span>
-                            <span style="font-size:0.72rem; color:var(--text-muted);" title="Phần nợ ngủ được bù nhờ nap này">repays ${nap.creditMin.toFixed(0)}m of sleep debt</span>
+                            <span style="font-size:0.72rem; color:var(--text-muted);" title="Sleep debt repaid by this nap">repays ${nap.creditMin.toFixed(0)}m of sleep debt</span>
                         </div>
                     `).join('')}
                     ${night.napDiscardedMin > 0.5 ? `<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">Daily sleep-debt payback cap reached — ${Math.round(night.napDiscardedMin)}m of nap not counted.</div>` : ''}
@@ -71324,7 +71324,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div style="flex:1; min-width:0;">
                             <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                                 ${(() => { const p = sleepPeriodIcon(session.start); return `<svg class="icon-svg" aria-hidden="true" role="img"><title>${p.label}</title><use href="#${p.icon}"></use></svg>`; })()} ${session.duration}h
-                                ${typeof session.timeInBed === 'number' ? `<span style="font-size:0.72rem;color:var(--text-muted);font-weight:400;" title="Nằm giường ${session.timeInBed}h, trừ ${session.sol}p trằn trọc">(${session.timeInBed}h in bed)</span>` : ''}
+                                ${typeof session.timeInBed === 'number' ? `<span style="font-size:0.72rem;color:var(--text-muted);font-weight:400;" title="In bed ${session.timeInBed}h, minus ${session.sol}m tossing and turning">(${session.timeInBed}h in bed)</span>` : ''}
                                 <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">· ${relativeDay(session.start)}</span>
                                 ${session.manual ? '<span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">(Manual)</span>' : ''}
                                 ${q > 0 ? `<span style="font-size:0.85rem;color:${qualityColors[q]};" title="${qualityLabels[q]}">${qualityEmojis[q]}</span>` : ''}
@@ -72192,7 +72192,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <span style="display:inline-flex; align-items:center; gap:6px; font-size:0.75rem; font-weight:600; color:var(--primary); background:rgba(var(--primary-rgb),0.1); border:1px solid rgba(var(--primary-rgb),0.3); border-radius:999px; padding:4px 10px;">
                     <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-calendar"></use></svg>
                     Filtering: ${d}/${m}/${y}
-                    <button type="button" onclick="clearSleepHistoryDateFilter()" aria-label="Bỏ lọc theo ngày" style="background:none; border:none; padding:0; margin:0 0 0 2px; cursor:pointer; color:var(--primary); display:flex; align-items:center;">
+                    <button type="button" onclick="clearSleepHistoryDateFilter()" aria-label="Clear date filter" style="background:none; border:none; padding:0; margin:0 0 0 2px; cursor:pointer; color:var(--primary); display:flex; align-items:center;">
                         <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-x"></use></svg>
                     </button>
                 </span>`;
@@ -72419,13 +72419,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const avgSE = seValues.length ? seValues.reduce((a, b) => a + b, 0) / seValues.length : null;
             const seBox = avgSE !== null
                 ? sleepTile('zap', seColor(avgSE), `${avgSE.toFixed(0)}%`, `SE (${seValues.length}d)`)
-                : sleepTile('zap', MUTED, '—', 'SE (not enough data)', 'Cần nhập SOL khi thêm/sửa session');
+                : sleepTile('zap', MUTED, '—', 'SE (not enough data)', 'SOL must be entered when adding/editing a session');
 
             // Regularity Index: max(SD giờ lên giường, SD giờ dậy) trong 7 đêm gần nhất
             const reg = computeSleepRegularity(7);
             const regBox = reg
                 ? sleepTile('activity', regularityColor(reg.score), `±${Math.round(reg.score)}m`, `Regularity (${reg.nights}d)`,
-                    `Giờ ngủ ±${Math.round(reg.sdBed)}p · Giờ dậy ±${Math.round(reg.sdWake)}p`)
+                    `Bedtime ±${Math.round(reg.sdBed)}m · Wake time ±${Math.round(reg.sdWake)}m`)
                 : sleepTile('activity', MUTED, '—', 'Regularity (needs ≥3d)');
 
             // Wake Anchor Streak (#5) — badge riêng, thưởng đều đặn chứ không thưởng thời lượng
@@ -72444,14 +72444,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const durScoreZone = avgDurScore !== null ? durScores[durScores.length - 1].zone : null;
             const durScoreBox = avgDurScore !== null
                 ? sleepTile('target', sleepDurationScoreColor(avgDurScore), `${avgDurScore}`, `Duration score (${last7.length}d)`,
-                    `Đường cong phi tuyến, không tuyến tính — đêm gần nhất: ${SLEEP_DURATION_ZONE_LABEL[durScoreZone] || ''}`)
+                    `Non-linear curve, not a straight line — last night: ${SLEEP_DURATION_ZONE_LABEL[durScoreZone] || ''}`)
                 : sleepTile('target', MUTED, '—', 'Duration score');
 
             row.innerHTML = [
                 sleepTile('moon', avgColor, `${avg7.toFixed(1)}h`, `${last7.length}-night avg`),
                 sleepTile('flame', streakColor === 'var(--primary)' ? '#ec4899' : streakColor, streak, 'Goal streak'),
                 debtInfo.ok
-                    ? sleepTile('hourglass', debtInfo.level.color, `${debtInfo.debt.toFixed(1)}h`, `Sleep debt (${debtInfo.windowNights}d)`, 'Sổ nợ 14 đêm gần nhất: thiếu thì cộng, ngủ dư thì trả dần')
+                    ? sleepTile('hourglass', debtInfo.level.color, `${debtInfo.debt.toFixed(1)}h`, `Sleep debt (${debtInfo.windowNights}d)`, 'Debt ledger for the last 14 nights: shortfalls add up, extra sleep pays it down')
                     : sleepTile('hourglass', MUTED, '—', 'Sleep debt (needs ≥3d)'),
                 seBox,
                 regBox,
@@ -72616,7 +72616,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return `
                     <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:5px 8px; background:var(--bg-white); border-radius:6px; border:1px solid var(--border-color);">
                         <span style="color:var(--text-dark);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sun"></use></svg> ${startFmt}–${endFmt} <b>(${formatNapDuration(n.durationMin)})</b>${n.note ? ` · <span style="color:var(--text-muted);">${n.note}</span>` : ''}</span>
-                        <button onclick="deleteNap(${n.id})" title="Xoá" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.9rem; line-height:1; padding:2px 4px;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-trash-2"></use></svg></button>
+                        <button onclick="deleteNap(${n.id})" title="Delete" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.9rem; line-height:1; padding:2px 4px;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-trash-2"></use></svg></button>
                     </div>
                 `;
             }).join('');
@@ -85682,6 +85682,120 @@ window.fcRenderTagChips = fcRenderTagChips;
                 if(icon) icon.textContent = _sleepOpen ? '▲' : '▼';
             };
         })();
+
+// ===== SLEEP QUICK-JUMP CHIP =====
+// On open, a small floating chip (live clock) appears at the bottom of the screen.
+// Tap it -> expands Sleep Tracker if collapsed and smooth-scrolls straight to it.
+// It disappears once tapped, closed, or once the card has been on screen.
+(function(){
+  const CARD_ID = 'sleepTrackerCard';
+  let chip = null, timer = null, io = null, done = false;
+  const pad = n => String(n).padStart(2, '0');
+
+  function injectStyle(){
+    if (document.getElementById('sleepJumpStyle')) return;
+    const st = document.createElement('style');
+    st.id = 'sleepJumpStyle';
+    st.textContent = `
+      #sleepTrackerCard { scroll-margin-top: 64px; }
+      #sleepTrackerCard.sleep-jump-flash { animation: sleepJumpFlash 1.6s ease-out 1; }
+      @keyframes sleepJumpFlash {
+        0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 55%, transparent); }
+        70%  { box-shadow: 0 0 0 14px color-mix(in srgb, var(--primary) 0%, transparent); }
+        100% { box-shadow: 0 0 0 0 transparent; }
+      }
+      #sleepJumpChip { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+        transform: translate(-50%, 24px); opacity: 0; pointer-events: none; z-index: 9000;
+        display: flex; align-items: stretch; max-width: calc(100% - 28px);
+        background: var(--bg-white, #fff); color: var(--text-dark, #222);
+        border: 1px solid var(--border-color, rgba(0,0,0,.12)); border-radius: 999px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.18); transition: opacity .3s ease, transform .3s ease; }
+      #sleepJumpChip.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+      #sleepJumpChip button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+      #sleepJumpGo { display: flex; align-items: center; gap: 10px; padding: 10px 6px 10px 16px; }
+      #sleepJumpGo .sj-clock { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
+      #sleepJumpGo .sj-sub { font-size: .8rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+      #sleepJumpX { padding: 0 14px 0 8px; font-size: .95rem; color: var(--text-muted); }
+      @media (prefers-reduced-motion: reduce) {
+        #sleepJumpChip { transition: none; }
+        #sleepTrackerCard.sleep-jump-flash { animation: none; }
+      }`;
+    document.head.appendChild(st);
+  }
+
+  function render(){
+    if (!chip) return;
+    const now = new Date();
+    const clock = chip.querySelector('.sj-clock');
+    const sub = chip.querySelector('.sj-sub-text');
+    let sleeping = false;
+    try { sleeping = (typeof isSleeping !== 'undefined') && isSleeping && sleepStartTime; } catch (e) {}
+    if (sleeping) {
+      const sec = Math.max(0, Math.floor((Date.now() - sleepStartTime) / 1000));
+      clock.textContent = pad(Math.floor(sec / 3600)) + ':' + pad(Math.floor(sec % 3600 / 60)) + ':' + pad(sec % 60);
+      sub.textContent = 'Sleeping · Sleep Tracker';
+    } else {
+      clock.textContent = pad(now.getHours()) + ':' + pad(now.getMinutes());
+      sub.textContent = 'Sleep Tracker';
+    }
+  }
+
+  function dismiss(){
+    done = true;
+    if (timer) { clearInterval(timer); timer = null; }
+    if (io) { io.disconnect(); io = null; }
+    if (chip) {
+      chip.classList.remove('show');
+      const c = chip; chip = null;
+      setTimeout(() => c.remove(), 350);
+    }
+  }
+
+  function jump(){
+    const card = document.getElementById(CARD_ID);
+    if (!card) return dismiss();
+    const body = document.getElementById('sleepTrackerBody');
+    if (body && body.style.display === 'none' && typeof window.toggleSleepTracker === 'function') window.toggleSleepTracker();
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    card.classList.remove('sleep-jump-flash'); void card.offsetWidth; card.classList.add('sleep-jump-flash');
+    setTimeout(() => card.classList.remove('sleep-jump-flash'), 1800);
+    dismiss();
+  }
+
+  function build(){
+    const card = document.getElementById(CARD_ID);
+    if (done || chip || !card || !card.offsetParent) return;
+    injectStyle();
+    chip = document.createElement('div');
+    chip.id = 'sleepJumpChip';
+    chip.setAttribute('role', 'group');
+    chip.innerHTML =
+      '<button type="button" id="sleepJumpGo" aria-label="Jump to Sleep Tracker">' +
+        '<span class="sj-clock">--:--</span>' +
+        '<span class="sj-sub"><i class="fa-solid fa-bed" aria-hidden="true"></i><span class="sj-sub-text">Sleep Tracker</span>' +
+        '<i class="fa-solid fa-arrow-down" aria-hidden="true"></i></span>' +
+      '</button>' +
+      '<button type="button" id="sleepJumpX" aria-label="Dismiss">✕</button>';
+    chip.querySelector('#sleepJumpGo').addEventListener('click', jump);
+    chip.querySelector('#sleepJumpX').addEventListener('click', dismiss);
+    document.body.appendChild(chip);
+    render();
+    timer = setInterval(render, 1000);
+    requestAnimationFrame(() => requestAnimationFrame(() => chip && chip.classList.add('show')));
+    if ('IntersectionObserver' in window) {
+      io = new IntersectionObserver(entries => {
+        if (entries.some(e => e.isIntersecting)) dismiss();
+      }, { threshold: 0.15 });
+      io.observe(card);
+    }
+  }
+
+  function start(){ setTimeout(build, 800); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
 
         // ===== COLLAPSE / EXPAND — ADD YOUR OWN QUOTE =====
         (function(){
