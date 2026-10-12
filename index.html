@@ -41963,7 +41963,7 @@ kbd {
         tagsAll: false,
         outline: [],
         fmap: new Map(), tmap: new Map(),
-        focus: false, fs: 1, wd: 1,
+        focus: false, fs: 5, wd: 1,
         trash: [],                     // notes in Trash (S.notes only ever holds live notes)
         fileLinks: new Map(),          // noteId → { handle, name, linkedAt } — see "File links" below
         pendingRelinks: new Map(),     // noteId → { name, linkedAt } — a link restored from backup with no usable handle
@@ -49281,7 +49281,8 @@ kbd {
     /* ═════════════ Focus reading mode ═════════════
        Hides sidebar, inspector and status bar so the note fills the screen.
        Text size and line width are remembered on this device. */
-    const FS_STEPS = [0.95, 1.0625, 1.1875, 1.3125, 1.4375];
+    const FS_OLD_STEPS = [0.95, 1.0625, 1.1875, 1.3125, 1.4375];   // pre-v2 saved indexes refer to this list
+    const FS_STEPS = [0.65, 0.72, 0.8, 0.88, 0.95, 1.0625, 1.1875, 1.3125, 1.4375, 1.6, 1.8, 2.05, 2.3, 2.6];
     const WD_STEPS = [
         { n: 'Narrow', w: '38rem', we: '56rem' },
         { n: 'Medium', w: '46rem', we: '74rem' },
@@ -49289,7 +49290,8 @@ kbd {
     ];
     try {
         const r = JSON.parse(localStorage.getItem('nvReading') || 'null');
-        if (r && r.fs >= 0 && r.fs < FS_STEPS.length) S.fs = r.fs | 0;
+        if (r && r.v === 2 && r.fs >= 0 && r.fs < FS_STEPS.length) S.fs = r.fs | 0;
+        else if (r && r.fs >= 0 && r.fs < FS_OLD_STEPS.length) S.fs = FS_STEPS.indexOf(FS_OLD_STEPS[r.fs | 0]);   // migrate old saved size
         if (r && r.wd >= 0 && r.wd < WD_STEPS.length) S.wd = r.wd | 0;
     } catch (e) { /* ignore */ }
     try {
@@ -49347,7 +49349,7 @@ kbd {
         fitTitle();
         updateProgress();
     }
-    function saveReading() { try { localStorage.setItem('nvReading', JSON.stringify({ fs: S.fs, wd: S.wd })); } catch (e) { /* ignore */ } }
+    function saveReading() { try { localStorage.setItem('nvReading', JSON.stringify({ fs: S.fs, wd: S.wd, v: 2 })); } catch (e) { /* ignore */ } }
     function toggleFocus(force) {
         if (!S.note) return;
         S.focus = force === undefined ? !S.focus : !!force;
