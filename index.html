@@ -49498,6 +49498,321 @@ kbd {
         });
         return true;
     }
+    /* ── Paste formatted text (Word / Google Docs / web pages / ChatGPT / Claude …) → Markdown ──
+       Reads text/html from the clipboard and rebuilds the formatting as Markdown: bold, italic,
+       strikethrough, headings, bullet / numbered / task lists (nested too), links, images, quotes,
+       code, tables and KaTeX / Wikipedia math (→ \( … \) and $$ … $$ for MathJax).
+       Left alone (pastes natively): plain text, a lone URL, anything copied from a code editor
+       (a single <pre>, VS Code) and anything pasted inside a ``` block.
+       Ctrl/Cmd+Shift+V = paste as plain text. ── */
+    function htmlToMarkdown(html) {
+        if (!html || html.length > 3000000) return null;
+        const frag = html.match(/<!--StartFragment-->([\s\S]*?)<!--EndFragment-->/i);
+        if (frag) html = frag[1];
+        let doc;
+        try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return null; }
+        const body = doc.body;
+        if (!body) return null;
+        body.querySelectorAll('script,style,meta,link,title,noscript,template,button,svg,canvas,iframe,video,audio,select,textarea,.sr-only,.visually-hidden,[hidden]').forEach((n) => n.remove());
+        const kids0 = Array.from(body.children);
+        if (kids0.length === 1 && kids0[0].tagName === 'PRE') return null;   // a code snippet: paste it as it is
+
+        const BLOCK_TAGS = /^(P|DIV|H[1-6]|UL|OL|LI|BLOCKQUOTE|PRE|TABLE|HR|SECTION|ARTICLE|HEADER|FOOTER|ASIDE|NAV|MAIN|FIGURE|FIGCAPTION|DETAILS|SUMMARY|DL|DT|DD|ADDRESS|FORM|FIELDSET|CENTER|THEAD|TBODY|TFOOT|TR|TD|TH|CAPTION)$/;
+        const BLOCK_SEL = 'p,div,h1,h2,h3,h4,h5,h6,ul,ol,li,blockquote,pre,table,hr,section,article,header,footer,aside,nav,main,figure,figcaption,details,summary,dl,dt,dd,address,form,fieldset,center';
+        const LISTLINE = /^\s*(?:[-*+]|\d+[.)])\s/;
+        const st = (n) => (n && n.style) || {};
+        const hidden = (n) => st(n).display === 'none';
+        const hasBlockDesc = (n) => !!n.querySelector(BLOCK_SEL);
+
+        /* ── what formatting an element carries (tag OR inline style — Google Docs / Word use styles) ── */
+        const isBoldEl = (n) => {
+            const w = String(st(n).fontWeight || '').toLowerCase();
+            if (w) return w === 'bold' || w === 'bolder' || (/^\d+$/.test(w) && +w >= 600);
+            return n.tagName === 'STRONG' || n.tagName === 'B';
+        };
+        const isItalicEl = (n) => {
+            const f = String(st(n).fontStyle || '').toLowerCase();
+            if (f) return f === 'italic' || f === 'oblique';
+            return /^(EM|I|CITE|DFN)$/.test(n.tagName);
+        };
+        const isStrikeEl = (n) => /^(DEL|S|STRIKE)$/.test(n.tagName) || /line-through/.test(String(st(n).textDecoration || '') + ' ' + String(st(n).textDecorationLine || ''));
+        const isMonoEl = (n) => /(consolas|courier|menlo|monaco|monospace|lucida console|source code pro|fira code|jetbrains mono|sf mono|cascadia)/i.test(String(st(n).fontFamily || ''));
+
+        /* ── math: KaTeX / MathML annotation / Wikipedia ── */
+        const cleanTex = (t) => String(t || '').replace(/^\{\\displaystyle\s*/, '').replace(/\}\s*$/, '').replace(/\s+/g, ' ').trim();
+        const texOf = (n) => {
+            const a = n.querySelector('annotation[encoding="application/x-tex"]');
+            if (a) return cleanTex(a.textContent);
+            const im = n.querySelector('img.mwe-math-fallback-image-inline,img.mwe-math-fallback-image-display');
+            return im ? cleanTex(im.getAttribute('alt')) : '';
+        };
+        const mathOf = (n) => {
+            const c = n.classList;
+            if (!c) return null;
+            if (c.contains('katex-display')) return { tex: texOf(n), display: true, text: n.textContent };
+            if (c.contains('katex')) return { tex: texOf(n), display: false, text: n.textContent };
+            if (c.contains('mwe-math-element')) return { tex: texOf(n), display: !!n.querySelector('.mwe-math-fallback-image-display,.mwe-math-mathml-display'), text: '' };
+            if (n.tagName === 'MATH') return { tex: texOf(n), display: n.getAttribute('display') === 'block', text: n.textContent };
+            return null;
+        };
+
+        /* ── small text helpers ── */
+        const alnum = /[\p{L}\p{N}]/u;
+        const esc = (s) => s.replace(/[\u00a0\u2007\u202f]/g, ' ').replace(/\s+/g, ' ')
+            .replace(/\*/g, (m, o, str) => (o > 0 && o < str.length - 1 && str[o - 1] === ' ' && str[o + 1] === ' ') ? m : '\\*')
+            .replace(/_/g, (m, o, str) => (o > 0 && o < str.length - 1 && alnum.test(str[o - 1]) && alnum.test(str[o + 1])) ? m : '\\_')
+            .replace(/`/g, '\\`')
+            .replace(/~~/g, '\\~\\~')
+            .replace(/<(?=[A-Za-z\/!?])/g, '\\<');
+        const encUrl = (u) => u.replace(/\s/g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
+        const wrap = (s, m) => {
+            if (!s.trim()) return s;
+            const lead = s.match(/^\s*/)[0], trail = s.match(/\s*$/)[0];
+            return lead + m + s.slice(lead.length, s.length - trail.length) + m + trail;
+        };
+        const codeSpan = (t) => {
+            t = String(t).replace(/\s+/g, ' ').trim();
+            if (!t) return '';
+            const runs = t.match(/`+/g) || [];
+            let n = 1;
+            while (runs.some((r) => r.length === n)) n++;
+            const f = '`'.repeat(n);
+            return f + (t[0] === '`' || t[t.length - 1] === '`' ? ' ' + t + ' ' : t) + f;
+        };
+        const tidy = (s) => {
+            const t = s.split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '');
+            return t;
+        };
+        const joinBlocks = (arr) => arr.reduce((acc, b, i) => {
+            if (!i) return b;
+            const prev = arr[i - 1];                                         // consecutive list pieces of one nested list (Google Docs) stay tight
+            const tight = LISTLINE.test(prev) && LISTLINE.test(b) && (/^\s/.test(b) || /(^|\n)\s+\S[^\n]*$/.test(prev));
+            return acc + (tight ? '\n' : '\n\n') + b;
+        }, '');
+        const joinLi = (arr) => arr.reduce((acc, b, i) => (!i ? b : acc + (LISTLINE.test(b) ? '\n' : '\n\n') + b), '');
+        const imgOk = (n) => {
+            const src = (n.getAttribute('src') || '').trim();
+            if (!/^https?:\/\//i.test(src)) return false;
+            const w = parseInt(n.getAttribute('width'), 10), h = parseInt(n.getAttribute('height'), 10);
+            return !((w && w <= 2) || (h && h <= 2));
+        };
+
+        /* ── inline content ── */
+        function inlineKids(n, ctx) { return Array.from(n.childNodes).map((k) => inline(k, ctx)).join(''); }
+        function linkMd(n, inner) {
+            const raw = (n.getAttribute('href') || '').trim();
+            if (!/^(https?:\/\/|mailto:|tel:)/i.test(raw) || !inner.trim()) return inner;
+            if (n.textContent.trim() === raw) return raw;                      // the URL as its own label → bare URL
+            const lead = inner.match(/^\s*/)[0], trail = inner.match(/\s*$/)[0];
+            let core = inner.slice(lead.length, inner.length - trail.length);
+            if (core.indexOf('![') === -1) core = core.replace(/([\[\]])/g, '\\$1');
+            return lead + '[' + core + '](' + encUrl(raw) + ')' + trail;
+        }
+        function imageMd(n) {
+            if (!imgOk(n)) return '';
+            const alt = (n.getAttribute('alt') || '').replace(/\s+/g, ' ').trim();
+            if (/\bemoji\b/i.test(n.getAttribute('class') || '') && alt) return alt;
+            return '![' + alt.replace(/[\[\]]/g, '\\$&') + '](' + encUrl(n.getAttribute('src').trim()) + ')';
+        }
+        function inline(n, ctx) {
+            if (n.nodeType === 3) return esc(n.nodeValue);
+            if (n.nodeType !== 1 || hidden(n)) return '';
+            const tag = n.tagName;
+            const mth = mathOf(n);
+            if (mth) return mth.tex ? '\\(' + mth.tex + '\\)' : esc(mth.text || '');
+            if (tag === 'BR') return '\n';
+            if (tag === 'WBR' || tag === 'INPUT') return '';
+            if (tag === 'IMG') return imageMd(n);
+            if (tag === 'CODE' || tag === 'KBD' || tag === 'SAMP' || tag === 'TT') return codeSpan(n.textContent);
+            if ((tag === 'SPAN' || tag === 'FONT') && isMonoEl(n) && n.textContent.trim() && !n.querySelector('img,a')) return codeSpan(n.textContent);
+            if (BLOCK_TAGS.test(tag)) return ' ' + inlineKids(n, ctx) + ' ';
+            const bold = !ctx.bold && isBoldEl(n), ital = !ctx.ital && isItalicEl(n), strike = !ctx.strike && isStrikeEl(n);
+            const c = (bold || ital || strike) ? Object.assign({}, ctx, { bold: ctx.bold || bold, ital: ctx.ital || ital, strike: ctx.strike || strike }) : ctx;
+            let out = inlineKids(n, c);
+            if (tag === 'A') out = linkMd(n, out);
+            const va = String(st(n).verticalAlign || '').toLowerCase();
+            if (out.trim() && (tag === 'SUP' || va === 'super')) out = '<sup>' + out.trim() + '</sup>';
+            else if (out.trim() && (tag === 'SUB' || va === 'sub')) out = '<sub>' + out.trim() + '</sub>';
+            if (ital) out = wrap(out, '*');
+            if (bold) out = wrap(out, '**');
+            if (strike) out = wrap(out, '~~');
+            return out;
+        }
+
+        /* ── block content ── */
+        function wordItem(p, ctx) {
+            const m = (p.getAttribute('style') || '').match(/mso-list:[^;]*?level(\d+)/i);
+            const level = m ? +m[1] : 1;
+            const clone = p.cloneNode(true);
+            let marker = '';
+            clone.querySelectorAll('span').forEach((s) => {
+                if (/mso-list:\s*Ignore/i.test(s.getAttribute('style') || '')) { marker += s.textContent; s.remove(); }
+            });
+            marker = marker.replace(/[\s\u00a0]+/g, '');
+            const text = tidy(inlineKids(clone, ctx)).replace(/\n+/g, ' ');
+            if (!text) return null;
+            const id = (p.getAttribute('style') || '').match(/mso-list:\s*(l\d+)/i);
+            return { level, id: id ? id[1] : '', ordered: /^(?:\d+|[a-z]|[ivxlcdm]+)[.)]$/i.test(marker), text };
+        }
+        function wordListMd(items) {
+            let cnt = {};                                                    // counters per "list id : level"
+            return items.map((it) => {
+                Object.keys(cnt).forEach((k) => { const [i, l] = k.split(':'); if (i === it.id && +l > it.level) delete cnt[k]; });   // a shallower item restarts the deeper levels
+                const key = it.id + ':' + it.level;
+                cnt[key] = (cnt[key] || 0) + 1;
+                return '    '.repeat(it.level - 1) + (it.ordered ? cnt[key] + '. ' : '- ') + it.text;
+            }).join('\n');
+        }
+        function codeBlock(pre) {
+            const code = pre.querySelector('code');
+            const src = (code || pre).cloneNode(true);
+            src.querySelectorAll('br').forEach((b) => b.replaceWith('\n'));
+            const lang = ((code && code.getAttribute('class')) || pre.getAttribute('class') || '').match(/(?:language|lang)-([\w#+-]+)/i);
+            const t = src.textContent.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').replace(/^\n+/, '').replace(/\s+$/, '');
+            if (!t.trim()) return '';
+            let fence = '```';
+            while (t.indexOf(fence) !== -1) fence += '`';
+            return fence + (lang ? lang[1] : '') + '\n' + t + '\n' + fence;
+        }
+        function listMd(list, ctx) {
+            const ordered = list.tagName === 'OL';
+            let idx = parseInt(list.getAttribute('start'), 10);
+            if (isNaN(idx)) idx = 1;
+            const lctx = Object.assign({}, ctx, { depth: (ctx.depth || 0) + 1 });
+            const lines = [];
+            Array.from(list.children).forEach((li) => {
+                if (li.tagName === 'UL' || li.tagName === 'OL') {                      // list nested straight inside a list
+                    const sub = listMd(li, lctx);
+                    if (sub) lines.push(sub.split('\n').map((l) => l ? '    ' + l : l).join('\n'));
+                    return;
+                }
+                if (li.tagName !== 'LI' || hidden(li)) return;
+                const cb = li.querySelector('input[type="checkbox"]');
+                const own = cb && cb.closest('li') === li ? cb : null;
+                const task = own ? ((own.checked || own.hasAttribute('checked')) ? '[x] ' : '[ ] ') : '';
+                const parts = blocks(li, lctx).filter(Boolean);
+                if (!parts.length && !task) return;
+                const marker = ordered ? (idx++) + '. ' : '- ';
+                const pad = ' '.repeat(marker.length);
+                const body = joinLi(parts).split('\n').map((l, i) => i === 0 ? l : (l ? pad + l : l)).join('\n');
+                let item = marker + task + body;
+                const lvl = parseInt(li.getAttribute('aria-level'), 10);             // Google Docs flattens nesting into aria-level
+                if (!ctx.depth && lvl > 1) item = item.split('\n').map((l) => l ? '    '.repeat(lvl - 1) + l : l).join('\n');
+                lines.push(item);
+            });
+            return lines.join('\n');
+        }
+        function tableMd(tbl, ctx) {
+            const rows = [];
+            tbl.querySelectorAll('tr').forEach((tr) => {
+                if (tr.closest('table') !== tbl) return;
+                const cells = [];
+                Array.from(tr.children).forEach((c) => {
+                    if (!/^(TD|TH)$/.test(c.tagName)) return;
+                    cells.push(joinBlocks(blocks(c, ctx)).replace(/\n+/g, '\u0001'));
+                    for (let k = 1; k < (parseInt(c.getAttribute('colspan'), 10) || 1); k++) cells.push('');
+                });
+                rows.push(cells);
+            });
+            return rowsToMarkdownTable(rows)
+                || rows.map((r) => r.map((c) => c.replace(/\u0001/g, ' ')).filter(Boolean).join(' — ')).filter(Boolean).join('\n\n');
+        }
+        function block(n, ctx, out) {
+            const tag = n.tagName;
+            if (/^H[1-6]$/.test(tag)) {
+                const t = tidy(inlineKids(n, Object.assign({}, ctx, { bold: true }))).replace(/\n+/g, ' ');
+                if (t) out.push('#'.repeat(+tag[1]) + ' ' + t);
+            } else if (tag === 'HR') out.push('---');
+            else if (tag === 'PRE') { const c = codeBlock(n); if (c) out.push(c); }
+            else if (tag === 'UL' || tag === 'OL') { const l = listMd(n, ctx); if (l) out.push(l); }
+            else if (tag === 'BLOCKQUOTE') {
+                const inner = joinBlocks(blocks(n, ctx));
+                if (inner) out.push(inner.split('\n').map((l) => l ? '> ' + l : '>').join('\n'));
+            } else if (tag === 'TABLE') { const t = tableMd(n, ctx); if (t) out.push(t); }
+            else blocks(n, ctx).forEach((b) => out.push(b));
+        }
+        function blocks(parent, ctx) {
+            const out = [];
+            let run = '', wl = [];
+            const flushRun = () => { const t = tidy(run); run = ''; if (t) out.push(t); };
+            const flushWl = () => { if (wl.length) { out.push(wordListMd(wl)); wl = []; } };
+            Array.from(parent.childNodes).forEach((n) => {
+                if (n.nodeType === 3) {
+                    if (!/\S/.test(n.nodeValue)) { run += ' '; return; }
+                    flushWl(); run += esc(n.nodeValue); return;
+                }
+                if (n.nodeType !== 1 || hidden(n)) return;
+                const tag = n.tagName;
+                const mth = mathOf(n);
+                if (mth && mth.display && mth.tex) { flushRun(); flushWl(); out.push('$$\n' + mth.tex + '\n$$'); return; }
+                if (tag === 'P' && /mso-list/i.test(n.getAttribute('style') || '') && !/mso-list:\s*none/i.test(n.getAttribute('style') || '')) {
+                    flushRun();
+                    const it = wordItem(n, ctx);
+                    if (it) { wl.push(it); return; }
+                }
+                flushWl();
+                if (!BLOCK_TAGS.test(tag) && !hasBlockDesc(n)) { run += inline(n, ctx); return; }
+                flushRun();
+                block(n, ctx, out);
+            });
+            flushRun(); flushWl();
+            return out;
+        }
+
+        /* ── is there anything worth converting? (otherwise let the browser paste natively) ── */
+        const total = body.textContent.replace(/\s+/g, '').length;
+        if (!total) return null;                                             // only images: the image-attachment path handles those
+        const rich = () => {
+            for (const e of Array.from(body.querySelectorAll('*'))) {
+                const tag = e.tagName;
+                if (/^(H[1-6]|UL|OL|BLOCKQUOTE|TABLE|HR)$/.test(tag) || mathOf(e)) return true;
+                if (tag === 'P' && /mso-list/i.test(e.getAttribute('style') || '') && !/mso-list:\s*none/i.test(e.getAttribute('style') || '')) return true;   // Word list paragraph
+                if (tag === 'IMG') { if (imgOk(e)) return true; continue; }
+                const txt = e.textContent.trim();
+                if (!txt || BLOCK_TAGS.test(tag)) continue;
+                if (tag === 'A' && /^(https?:|mailto:)/i.test(e.getAttribute('href') || '')) return true;
+                if (isBoldEl(e) || isItalicEl(e) || isStrikeEl(e)) return true;
+                if ((tag === 'CODE' || tag === 'KBD') && !e.closest('pre') && txt.replace(/\s+/g, '').length < total) return true;
+            }
+            const pre = body.querySelector('pre');
+            return !!(pre && pre.textContent.replace(/\s+/g, '').length < total);
+        };
+        if (!rich()) return null;
+
+        let md = joinBlocks(blocks(body, {})).replace(/\n{3,}/g, '\n\n').trim();
+        md = md.replace(/(\S)\*\*\*\*(?=\S)/g, '$1').replace(/(\S)\*\* \*\*(?=\S)/g, '$1 ')
+            .replace(/(\S)~~~~(?=\S)/g, '$1').replace(/(\S)~~ ~~(?=\S)/g, '$1 ');   // adjacent runs with the same format → one run
+        return md || null;
+    }
+    function richPasteMarkdown(cd, value, pos) {
+        if (!cd) return null;
+        if (Array.from(cd.types || []).indexOf('vscode-editor-data') !== -1) return null;   // copied from VS Code: keep as plain code text
+        const html = cd.getData('text/html') || '';
+        if (!html || !/<[a-z][\s\S]*>/i.test(html)) return null;
+        const plain = (cd.getData('text/plain') || '').trim();
+        if (/^https?:\/\/\S+$/.test(plain)) return null;                                    // lone URL: the link / Source Capture logic below handles it
+        if (FRONTMATTER_RE.test(plain)) return null;                                        // an Obsidian note with frontmatter: keep verbatim
+        if (inFence(value, pos)) return null;                                               // inside a ``` block: paste as-is
+        try { return htmlToMarkdown(html); }
+        catch (err) { console.warn('Notes Vault: rich paste conversion failed — pasting as plain text', err); return null; }
+    }
+    function insertPastedRich(md, plain) {
+        const ta = el.src, v = ta.value, s = ta.selectionStart, en = ta.selectionEnd;
+        const before = v.slice(0, s), after = v.slice(en);
+        let text = md;
+        if (/\n/.test(md) || /^(#{1,6} |> |[-*+] |\d+\. |\||```|\$\$|---$)/.test(md)) {      // block-level result: keep it on its own lines
+            const pre = before === '' || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+            const suf = after === '' ? '' : after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+            text = pre + md + suf;
+        }
+        replaceRange(s, en, text, s + text.length);
+        markDirty();
+        toast('Pasted with formatting', 'Paste as text', () => {
+            ta.focus();
+            try { document.execCommand('undo'); } catch (err) { /* fall through */ }
+            if (ta.value === v) { replaceRange(s, en, plain, s + plain.length); markDirty(); }
+        });
+    }
     async function onEditorPaste(e) {
         const ta = el.src, s = ta.selectionStart, en = ta.selectionEnd;
         const forcePlain = plainPasteOnce; plainPasteOnce = false;
@@ -49509,6 +49824,9 @@ kbd {
                 const p = ta.selectionStart; replaceRange(p, ta.selectionEnd, e.clipboardData.getData('text/plain'), p + e.clipboardData.getData('text/plain').length); markDirty();
                 return;
             }
+            // Formatted text (bold / italic / headings / lists / links / quotes / code / math…) → Markdown
+            const richMd = richPasteMarkdown(e.clipboardData, ta.value, s);
+            if (richMd) { e.preventDefault(); insertPastedRich(richMd, e.clipboardData.getData('text/plain')); return; }
         }
         const imgFiles = getImageFilesFromClipboard(e.clipboardData);
         if (imgFiles.length) { e.preventDefault(); insertAttachments(imgFiles); return; }
