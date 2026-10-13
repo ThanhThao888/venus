@@ -43623,6 +43623,7 @@ kbd {
     }
     // Save now, and keep a version of what was just written (used when leaving a note).
     async function settle() {
+        flushReadPos();   // save the reading position before the note changes or the page goes away
         await flushSave();
         const n = S.note;
         if (n && S.persisted && S.edited && !S.dirty) await snapshot(n, {});
@@ -45988,7 +45989,10 @@ kbd {
         el.chars.textContent = md.length.toLocaleString();
         const readMin = words ? Math.max(1, Math.round(words / 220)) : 0;
         el.readTime.textContent = words ? '~' + readMin + ' min' : '—';
-        el.statRight.textContent = words.toLocaleString() + ' words · ' + md.length.toLocaleString() + ' characters' + (words ? ' · ~' + readMin + ' min read' : '');
+        rpWords = words;
+        rpStatBase = words.toLocaleString() + ' words · ' + md.length.toLocaleString() + ' characters' + (words ? ' · ~' + readMin + ' min read' : '');
+        el.statRight.textContent = rpStatBase;
+        if (S.mode === 'read') rpShowStatus(rpCurrentPct());   // keep the "% read" part in sync after an edit/rename
     }
 
     /* Reading progress bar — only meaningful in Read mode, and only when the note
@@ -45998,17 +46002,90 @@ kbd {
        scrolling doesn't spam layout work. */
     function updateProgress() {
         if (!el.progress) return;
-        if (!S.note || S.mode !== 'read') { el.progress.classList.remove('nv-progress-on'); return; }
+        if (!S.note || S.mode !== 'read') { el.progress.classList.remove('nv-progress-on'); rpShowStatus(null); return; }
         const sc = el.docScroll;
         const max = sc.scrollHeight - sc.clientHeight;
         if (max <= 24) {                       // note fits on screen — nothing to track
             el.progress.classList.remove('nv-progress-on');
             el.progressFill.style.width = '0%';
+            rpShowStatus(null);
             return;
         }
         el.progress.classList.add('nv-progress-on');
         const pct = Math.min(100, Math.max(0, (sc.scrollTop / max) * 100));
         el.progressFill.style.width = pct.toFixed(1) + '%';
+        rpShowStatus(pct);
+        if (!rpGuard && !S.viewRev) rpQueue(S.note.id, pct / 100);
+    }
+
+    /* Reading position memory — remembers how far down each note you read (as a fraction of
+       its scrollable height) so reopening a long note in Read mode drops you back where you
+       stopped. Stored in localStorage as { noteId: [fraction, timestamp] }, newest 400 kept.
+       `var` (not let) so settle()/refreshStats() can safely touch these at any point. */
+    var RP_KEY = 'nvReadPos';
+    var rpGuard = false;      // true while a note is being opened/restored, so the reset-to-top doesn't overwrite the saved spot
+    var rpTimer = null, rpLive = null;
+    var rpStatBase = '', rpWords = 0;
+    function rpLoad() {
+        try { const o = JSON.parse(localStorage.getItem(RP_KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; }
+        catch (e) { return {}; }
+    }
+    function rpWrite(map) {
+        try {
+            const ids = Object.keys(map);
+            if (ids.length > 400) ids.sort((a, b) => (map[a][1] || 0) - (map[b][1] || 0)).slice(0, ids.length - 400).forEach((k) => { delete map[k]; });
+            localStorage.setItem(RP_KEY, JSON.stringify(map));
+        } catch (e) { /* private mode or quota — position memory is a nice-to-have */ }
+    }
+    function rpGet(id) {
+        const r = rpLoad()[id];
+        return (Array.isArray(r) && typeof r[0] === 'number') ? { p: r[0], t: r[1] || 0 } : null;
+    }
+    function rpSet(id, p) {
+        const map = rpLoad();
+        if (p < 0.03) delete map[id];                       // basically at the top: nothing worth remembering
+        else map[id] = [Math.min(1, +p.toFixed(4)), Date.now()];
+        rpWrite(map);
+    }
+    function rpQueue(id, p) {                               // debounced: scrolling fires this constantly
+        rpLive = { id: id, p: p };
+        clearTimeout(rpTimer);
+        rpTimer = setTimeout(flushReadPos, 600);
+    }
+    function flushReadPos() {
+        clearTimeout(rpTimer); rpTimer = null;
+        if (!rpLive) return;
+        const live = rpLive; rpLive = null;
+        rpSet(live.id, live.p);
+    }
+    function rpCurrentPct() {
+        if (!S.note || S.mode !== 'read') return null;
+        const sc = el.docScroll, max = sc.scrollHeight - sc.clientHeight;
+        return max > 24 ? Math.min(100, Math.max(0, (sc.scrollTop / max) * 100)) : null;
+    }
+    // Appends "· 42% read · ~3 min left" to the status bar (Read mode, scrollable notes only).
+    function rpShowStatus(pct) {
+        if (!el.statRight || !S.note || !rpStatBase) return;
+        if (pct === null || pct === undefined) { el.statRight.textContent = rpStatBase; return; }
+        const left = Math.ceil(rpWords * (1 - pct / 100) / 220);
+        el.statRight.textContent = rpStatBase + ' · ' + Math.round(pct) + '% read'
+            + (pct >= 99 ? ' · finished' : (left > 0 ? ' · ~' + left + ' min left' : ''));
+    }
+    // Called right after a note is opened. Jumps back to the saved spot unless the note was
+    // basically unread (<3%) or already finished (>97%) — those just start from the top.
+    function restoreReadPos(n) {
+        const release = () => setTimeout(() => { rpGuard = false; }, 250);
+        const rec = (S.mode === 'read') ? rpGet(n.id) : null;
+        if (!rec || rec.p < 0.03 || rec.p > 0.97) { release(); return; }
+        requestAnimationFrame(() => {
+            const sc = el.docScroll, max = sc.scrollHeight - sc.clientHeight;
+            if (S.note && S.note.id === n.id && S.mode === 'read' && max > 24) {
+                sc.scrollTop = Math.round(rec.p * max);
+                updateProgress();
+                toast('Resumed where you left off (' + Math.round(rec.p * 100) + '%).', 'Start over', () => { sc.scrollTop = 0; });
+            }
+            release();
+        });
     }
     let S_progressRAF = null;
     function scheduleProgress() {
@@ -46091,6 +46168,35 @@ kbd {
         if (!n || S.persisted || n.title.trim() || n.markdown.trim() || (n.tags && n.tags.length)) return;
         S.tabs = S.tabs.filter((x) => x !== n.id);
     }
+    // A saved note that has been emptied out (title, text and tags all gone — e.g. someone typed,
+    // then cleared it, or an import left it behind) is just clutter once you move away from it.
+    // Called when leaving a note. Truly empty with no history → deleted. Empty but with saved
+    // versions (the old text lives in History) → moved to Trash quietly so nothing is lost.
+    // Pinned or linked notes are never touched.
+    async function discardCurrentIfBlank() {
+        const n = S.note;
+        if (!n || !S.persisted) return false;
+        if (String(n.title || '').trim() || String(n.markdown || '').trim()) return false;
+        if ((n.tags && n.tags.length) || (n.links && n.links.length) || n.pinned) return false;
+        try {
+            const hasHistory = (await revList(n.id, 1)).length > 0;
+            if (hasHistory) {
+                n.deletedAt = Date.now();
+                await dbPut(n);
+                nvSyncPlannerDeadline(n);
+                S.notes = S.notes.filter((x) => x.id !== n.id);
+                S.trash.push(n);
+            } else {
+                await dbDelete(n.id);
+                try { await revDeleteForNote(n.id); } catch (e) { /* history is best-effort */ }
+                S.notes = S.notes.filter((x) => x.id !== n.id);
+                foldCache.delete(n.id);
+            }
+        } catch (e) { console.warn('Notes Vault: could not discard empty note', e); return false; }
+        S.tabs = S.tabs.filter((x) => x !== n.id);
+        try { renderSide(); renderLibrary(); } catch (e) { /* counts refresh on next render */ }
+        return true;
+    }
     function renderTabStrip() {
         if (!el.tabStrip) return;
         S.tabs = S.tabs.filter((id) => (S.note && S.note.id === id) || S.notes.some((x) => x.id === id));
@@ -46111,7 +46217,7 @@ kbd {
     // recently — same "closed tab → nearest sibling" feel as a browser.
     async function closeTab(id) {
         const wasActive = !!(S.note && S.note.id === id);
-        if (wasActive) await settle();
+        if (wasActive) { await settle(); await discardCurrentIfBlank(); }
         S.tabs = S.tabs.filter((x) => x !== id);
         renderTabStrip();
         if (!wasActive) return;
@@ -46126,10 +46232,12 @@ kbd {
         if (S.note && S.note.id === id) { addTab(id); showDoc(); closeDrawers(); return; }  // already the active tab
         await settle();
         pruneCurrentTabIfBlank();
+        if (await discardCurrentIfBlank()) { S.note = null; S.dirty = false; }
         const n = S.notes.find((x) => x.id === id);
         if (!n) { renderTabStrip(); return; }
         S.note = n; S.persisted = true; S.dirty = false;
         S.edited = false; S.editStart = 0;
+        rpGuard = true;   // setMode() scrolls to the top; don't let that overwrite the saved reading spot
         S.base = { id: n.id, title: n.title, markdown: n.markdown, updatedAt: n.updatedAt };
         addTab(id);
         fillDoc();
@@ -46137,12 +46245,14 @@ kbd {
         S.savedAt = n.updatedAt;
         setSave('saved');
         setMode(n.markdown.trim() ? 'read' : 'edit', false);
+        restoreReadPos(n);
         closeDrawers();
     }
 
     async function newNote(folderName) {
         await settle();
         pruneCurrentTabIfBlank();
+        if (await discardCurrentIfBlank()) { S.note = null; S.dirty = false; }
         const now = Date.now();
         const sc = S.scope;
         const note = {
@@ -46293,6 +46403,7 @@ kbd {
         closeWlPopup();
         await settle();
         pruneCurrentTabIfBlank();
+        await discardCurrentIfBlank();
         exitRevView();
         S.note = null; S.dirty = false; S.activeTab = null;
         showLibrary();
@@ -48404,7 +48515,10 @@ kbd {
     async function importMarkdownFiles(fileList, fromFolder) {
         const files = Array.from(fileList || []).filter((f) => /\.(md|markdown|mdown|txt)$/i.test(f.name) && !/(^|\/)\./.test(f.webkitRelativePath || ''));
         if (!files.length) { alert('No Markdown files (.md, .markdown, .txt) found.'); return; }
-        const seen = new Set(S.notes.concat(S.trash).map(sigOf));
+        // Only live notes count as duplicates — a copy sitting in Trash shouldn't block re-importing.
+        const seen = new Set(S.notes.map(sigOf));
+        const liveBySig = new Map(S.notes.map((n) => [sigOf(n), n]));   // so a skipped file can point at the note it matched
+        const dupHits = [];
         const list = []; let dup = 0, failed = 0;
         const now = Date.now();
         for (const f of files) {
@@ -48429,7 +48543,7 @@ kbd {
                 }
                 const hit = data && data.skill ? findSkillMatch(data.skill, data.career) : null;
                 const sig = sigOf({ title, markdown: body });
-                if (seen.has(sig)) { dup++; continue; }
+                if (seen.has(sig)) { dup++; const hitNote = liveBySig.get(sig); if (hitNote) dupHits.push(hitNote); continue; }
                 seen.add(sig);
                 const t0 = f.lastModified || now;
                 list.push({
@@ -48441,11 +48555,45 @@ kbd {
                 });
             } catch (e) { console.warn('Notes Vault: could not read', f.name, e); failed++; }
         }
+        // If the note on screen is an empty one (e.g. a fresh "Untitled note") and exactly one file
+        // is being imported, fill that note instead of leaving an empty tab behind. Reusing its id
+        // makes restoreNotesList overwrite it; updatedAt is bumped so the "never overwrite a newer
+        // note" guard doesn't skip it when the file's own modified date is older.
+        let reusedBlank = false;
+        if (list.length === 1 && !fromFolder && el.docView && !el.docView.hidden) {
+            const b = S.note;
+            if (b && !String(b.title || '').trim() && !String(b.markdown || '').trim() && !(b.tags && b.tags.length)) {
+                list[0].id = b.id;
+                list[0].createdAt = b.createdAt || list[0].createdAt;
+                list[0].updatedAt = Date.now();
+                reusedBlank = true;
+            }
+        }
         if (list.length) await restoreNotesList(list);
+        // openNote() returns early when the target is already the active note, so drop the
+        // in-memory copy first to force it to reload the freshly imported text.
+        if (reusedBlank) { S.note = null; S.persisted = false; S.dirty = false; }
         const msg = 'Imported ' + list.length + ' note' + (list.length === 1 ? '' : 's')
             + (dup ? ' — ' + dup + ' skipped (already in the vault)' : '')
             + (failed ? ' — ' + failed + ' couldn\u2019t be read' : '') + '.';
-        if (list.length || dup || failed) toast(msg);
+        if (list.length === 1 && !fromFolder) {
+            // One file imported: open it right away (same as PDF import) so it's never "lost".
+            const newId = list[0].id;
+            toast(msg, 'Open', () => openNote(newId));   // safety net if auto-open is ever interrupted
+            try { await openNote(newId); }
+            catch (e) { console.warn('Notes Vault: could not auto-open imported note', e); }
+        } else if (list.length) {
+            // Several files: show the first one's button so it's one click away.
+            toast(msg, 'Open first', () => openNote(list[0].id));
+        } else if (dup || failed) {
+            // Nothing new was imported. Say *which* note the file matched and offer to open it.
+            const first = dupHits[0];
+            const shortT = (n) => { const t = String(n.title || '').trim() || 'Untitled note'; return t.length > 50 ? t.slice(0, 47) + '\u2026' : t; };
+            let m2 = msg;
+            if (dup === 1 && first && !failed) m2 = '\u201C' + shortT(first) + '\u201D is already in the vault (same title and text) \u2014 skipped.';
+            else if (first) m2 = msg + ' First match: \u201C' + shortT(first) + '\u201D.';
+            if (first) toast(m2, 'Open', () => openNote(first.id)); else toast(m2);
+        }
     }
 
     function importJson(file) {
