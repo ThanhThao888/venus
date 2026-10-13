@@ -41585,7 +41585,7 @@ kbd {
                 <button class="nv-btn nv-btn-ghost" id="nvGraphBtn" type="button" title="Graph view — see how your notes are linked" aria-haspopup="dialog" aria-expanded="false">
                     <i class="fa-solid fa-circle-nodes"></i> <span class="nv-btn-label">Graph</span>
                 </button>
-                <button class="nv-btn nv-btn-ghost" id="nvMapBtn" type="button" title="Outline map — notes numbered like 1.1, 1.1.1 (chapters, sections, lectures) as an ordered diagram" aria-haspopup="dialog" aria-expanded="false">
+                <button class="nv-btn nv-btn-ghost" id="nvMapBtn" type="button" title="Map — numbered notes (1.1, 1.1.1) or an index note's [[links]] as an ordered diagram" aria-haspopup="dialog" aria-expanded="false">
                     <i class="fa-solid fa-diagram-project"></i> <span class="nv-btn-label">Map</span>
                 </button>
                 <span class="nv-grow"></span>
@@ -41906,23 +41906,44 @@ kbd {
     <div class="nvg-scrim" id="nvMapScrim" hidden></div>
     <div class="nvg" id="nvMap" role="dialog" aria-modal="true" aria-label="Outline map" hidden>
         <header class="nvg-top">
-            <div class="nvg-title"><i class="fa-solid fa-diagram-project"></i><div><h2>Outline Map</h2><p>Notes numbered like 1.1, 1.1.1 drawn in order — click a box to open that note</p></div></div>
+            <div class="nvg-title"><i class="fa-solid fa-diagram-project"></i><div><h2>Outline Map</h2><p>Numbered notes (1.1, 1.1.1) or an index note's [[links]] drawn in order — click a box to open that note</p></div></div>
             <span class="nv-grow" style="flex:1"></span>
             <button class="nv-ib" id="nvMapClose" type="button" title="Close map (Esc)" aria-label="Close outline map"><i class="fa-solid fa-xmark"></i></button>
         </header>
         <div class="nvm-body">
             <aside class="nvm-side">
                 <div class="nvm-field">
+                    <label for="nvmMode">Map type</label>
+                    <select id="nvmMode">
+                        <option value="outline">Outline — from note numbers (1.1, 1.1.1)</option>
+                        <option value="link">Link map — from [[wikilinks]] in an index note</option>
+                    </select>
+                </div>
+                <div class="nvm-field" data-nvm="link">
+                    <label for="nvmIndex">Index note</label>
+                    <select id="nvmIndex"></select>
+                    <p class="nvm-hint">Write the order yourself in this note: headings and nested bullets become the tree, and the order of <code>[[links]]</code> is the order drawn. <code>[[A]] -&gt; [[B]] -&gt; [[C]]</code> on one line draws a thick sequence arrow.</p>
+                </div>
+                <div class="nvm-field" data-nvm="link">
+                    <label for="nvmHops">Also follow links inside those notes</label>
+                    <select id="nvmHops">
+                        <option value="0">No — only what the index note lists</option>
+                        <option value="1">1 step further</option>
+                        <option value="2">2 steps further</option>
+                    </select>
+                </div>
+                <label class="nvm-check" data-nvm="link"><input type="checkbox" id="nvmChain"> Several links on one line are a sequence (A → B → C)</label>
+                <div class="nvm-field" data-nvm="outline">
                     <label for="nvmFolder">Folder</label>
                     <select id="nvmFolder"><option value="">All folders</option></select>
                     <p class="nvm-hint">Numbering restarts in each course, book or lecture series, so pick the folder to map.</p>
                 </div>
-                <div class="nvm-field">
+                <div class="nvm-field" data-nvm="outline">
                     <label for="nvmRoot">Show</label>
                     <select id="nvmRoot"><option value="">All numbered notes</option></select>
                     <p class="nvm-hint">Pick a chapter or section to map only that branch.</p>
                 </div>
-                <div class="nvm-field">
+                <div class="nvm-field" data-nvm="outline">
                     <label for="nvmDepth">Depth</label>
                     <select id="nvmDepth">
                         <option value="0">All levels</option>
@@ -41939,8 +41960,8 @@ kbd {
                         <option value="LR">Left → right</option>
                     </select>
                 </div>
-                <label class="nvm-check"><input type="checkbox" id="nvmOrder"> Dotted arrows show reading order between siblings</label>
-                <div class="nvm-field">
+                <label class="nvm-check"><input type="checkbox" id="nvmOrder"> <span>Dotted arrows show reading order between siblings</span></label>
+                <div class="nvm-field" data-nvm="outline">
                     <label for="nvmExtra">Extra links (your own connections)</label>
                     <textarea id="nvmExtra" spellcheck="false" placeholder="1.2.1 -> 2.1.3 : builds on&#10;3.1 -> 1.1.2"></textarea>
                     <p class="nvm-hint">One per line: <code>from -&gt; to : label</code> using note numbers. Drawn as thick arrows.</p>
@@ -52919,11 +52940,178 @@ kbd {
         return { code: lines.join('\n'), stats: { nodes: real.length, placeholders: placeholders.size, extra, skipped } };
     }
 
+
+    // ── Link map: an index note's [[wikilinks]] → ordered Mermaid diagram ──
+    // The order comes from the index note itself: headings and nested bullets form the tree, links
+    // are drawn in the order they are written, and "[[A]] -> [[B]]" on one line is a sequence.
+    function lkLabel(text, cap) {
+        let t = String(text).replace(/\s+/g, ' ').trim();
+        if (t.length > cap) t = t.slice(0, cap - 1) + '…';
+        return t.replace(/#/g, '#35;').replace(/"/g, '#quot;').replace(/</g, '#lt;').replace(/>/g, '#gt;');
+    }
+    function lkIndexCandidates() {
+        const out = [];
+        S.notes.forEach((n) => {
+            if (n.deletedAt) return;
+            const c = extractWikilinks(n.markdown || '').length;
+            if (c) out.push({ note: n, count: c });
+        });
+        return out.sort((a, b) => String(a.note.title || '').localeCompare(String(b.note.title || '')));
+    }
+    function lkBuild(opts) {
+        const idx = S.notes.find((n) => n.id === opts.index);
+        if (!idx) return null;
+        const NODE_CAP = 250;
+        const nodes = new Map(), edges = [], seen = new Set();
+        let seq = 0, grp = 0, missing = 0;
+        const mk = (key, label, cls, note) => {
+            if (!nodes.has(key)) nodes.set(key, { id: 'k' + (seq++), label, cls, note, key });
+            return nodes.get(key);
+        };
+        const noteNode = (title) => {
+            const n = findNoteByTitle(title);
+            if (n) return mk('n:' + n.id, String(n.title || '').trim() || 'Untitled note', 'note', n);
+            const k = 'm:' + fold(title);
+            if (!nodes.has(k)) missing++;
+            return mk(k, title.trim() + ' (no note yet)', 'ph', null);
+        };
+        const edge = (a, b, kind) => {
+            const k = a.id + kind + b.id;
+            if (a === b || seen.has(k)) return;
+            seen.add(k); edges.push({ a, b, kind });
+        };
+        const root = mk('n:' + idx.id, String(idx.title || '').trim() || 'Untitled note', 'root', idx);
+
+        // 1) read the index note into items
+        const items = [];
+        let headDepth = 0, seenH1 = false;
+        stripFences(idx.markdown || '').split('\n').forEach((line) => {
+            let m = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line), depth, text, head = false;
+            if (m) {
+                depth = m[1].length; text = m[2]; head = true; headDepth = depth;
+                if (depth === 1 && !seenH1) { seenH1 = true; if (!/\[\[/.test(text)) return; }   // first "# Title" is the index note itself
+            } else {
+                m = /^(\s*)(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$/.exec(line);
+                if (!m) return;
+                depth = headDepth + 1 + Math.floor(m[1].replace(/\t/g, '    ').length / 2); text = m[2];
+            }
+            const links = extractWikilinks(text).map((l) => l.title);
+            const plain = text.replace(WIKILINK_RE, (mm, t, a) => (a || t)).replace(/[*_`~]/g, '').trim();
+            items.push({ depth, head, links, plain });
+        });
+
+        // 2) tree: nearest shallower item is the parent
+        const stack = [{ depth: 0, node: root }];
+        const kids = new Map(), tail = new Map();
+        const addKid = (p, c) => {
+            if (!kids.has(p.id)) kids.set(p.id, []);
+            const a = kids.get(p.id);
+            if (a.indexOf(c) < 0) a.push(c);
+            edge(p, c, '-->');
+        };
+        items.forEach((it, i) => {
+            if (nodes.size >= NODE_CAP) return;
+            let first, parentKids;
+            if (!it.links.length) {
+                if (!it.plain) return;
+                const deeper = items[i + 1] && items[i + 1].depth > it.depth;
+                if (!it.head && !deeper) return;   // a plain bullet with nothing under it is just a note-to-self
+                first = mk('g:' + (grp++), it.plain, 'grp', null);
+            } else {
+                first = noteNode(it.links[0]);
+            }
+            while (stack.length > 1 && stack[stack.length - 1].depth >= it.depth) stack.pop();
+            const parent = stack[stack.length - 1].node;
+            addKid(parent, first);
+            if (!tail.has(first)) tail.set(first, first);
+            let last = first;
+            for (let k = 1; k < it.links.length; k++) {
+                const nx = noteNode(it.links[k]);
+                if (opts.chain) { edge(last, nx, '==>'); last = nx; }
+                else addKid(parent, nx);
+            }
+            if (opts.chain && last !== first && tail.get(first) === first) tail.set(first, last);
+            stack.push({ depth: it.depth, node: first });
+        });
+        if (opts.order) kids.forEach((list) => {
+            for (let i = 1; i < list.length; i++) edge(tail.get(list[i - 1]) || list[i - 1], list[i], '-.->');
+        });
+
+        // 3) optionally follow the links inside the listed notes
+        const hops = +opts.hops || 0;
+        let frontier = Array.from(nodes.values()).filter((n) => n.note && n !== root);
+        for (let h = 0; h < hops && frontier.length; h++) {
+            const next = [];
+            frontier.forEach((n) => {
+                extractWikilinks(n.note.markdown || '').forEach((l) => {
+                    const t = findNoteByTitle(l.title);
+                    if (!t || nodes.size >= NODE_CAP && !nodes.has('n:' + t.id)) return;
+                    const had = nodes.has('n:' + t.id);
+                    const tn = mk('n:' + t.id, String(t.title || '').trim() || 'Untitled note', 'ref', t);
+                    edge(n, tn, '-->');
+                    if (!had) next.push(tn);
+                });
+            });
+            frontier = next;
+        }
+
+        const lines = ['flowchart ' + (opts.dir === 'LR' ? 'LR' : 'TD')];
+        nodes.forEach((n) => lines.push('    ' + n.id + '["' + lkLabel(n.label, n.cls === 'grp' ? 80 : 140) + '"]:::' + n.cls));
+        edges.forEach((e) => lines.push('    ' + e.a.id + ' ' + e.kind + ' ' + e.b.id));
+        const dark = mmIsDark();
+        const pal = dark
+            ? { root: 'fill:#c97d96,stroke:#e3a5ba,color:#fff,font-weight:bold', grp: 'fill:#5a3b4b,stroke:#c97d96,color:#f6e9ef,font-weight:bold', note: 'fill:#3b2833,stroke:#8d6577,color:#f6e9ef', ref: 'fill:#2a1c24,stroke:#6d4c5c,color:#e9d6df', ph: 'fill:none,stroke:#8d6577,color:#b99aa8,stroke-dasharray:4 3' }
+            : { root: 'fill:#c97d96,stroke:#a85f7b,color:#fff,font-weight:bold', grp: 'fill:#f3dbe4,stroke:#c97d96,color:#4a3240,font-weight:bold', note: 'fill:#ffffff,stroke:#d9b8c6,color:#4a3240', ref: 'fill:#fbf4f7,stroke:#e6ccd7,color:#4a3240', ph: 'fill:none,stroke:#b99aa8,color:#8d6577,stroke-dasharray:4 3' };
+        Object.keys(pal).forEach((k) => lines.push('    classDef ' + k + ' ' + pal[k]));
+        const real = Array.from(nodes.values()).filter((n) => n.note).length;
+        return { code: lines.join('\n'), stats: { nodes: real, missing, capped: nodes.size >= NODE_CAP, groups: Array.from(nodes.values()).filter((n) => n.cls === 'grp').length } };
+    }
+    function lkFillIndex() {
+        const sel = tmUI.el.index, cands = lkIndexCandidates();
+        sel.textContent = '';
+        cands.forEach((c) => {
+            const o = document.createElement('option');
+            o.value = c.note.id;
+            o.textContent = (String(c.note.title || '').trim() || 'Untitled note') + ' (' + c.count + ' link' + (c.count === 1 ? '' : 's') + ')';
+            sel.appendChild(o);
+        });
+        const ids = new Set(cands.map((c) => c.note.id));
+        if (!ids.has(tmUI.opts.index)) tmUI.opts.index = (S.note && ids.has(S.note.id)) ? S.note.id : (cands[0] ? cands[0].note.id : '');
+        sel.value = tmUI.opts.index;
+        return cands.length;
+    }
+    function lkRegenerate() {
+        const e = tmUI.el;
+        const n = lkFillIndex();
+        if (!n) {
+            e.src.value = '';
+            e.canvas.textContent = 'No notes with [[links]] yet. Write an index note such as “- [[Lesson 1]] -> [[Lesson 2]]” and it will appear here.';
+            e.stat.textContent = '';
+            tmUI.token++;
+            return;
+        }
+        const out = lkBuild(tmUI.opts);
+        if (!out) { e.src.value = ''; e.canvas.textContent = 'Pick an index note.'; tmUI.token++; return; }
+        e.src.value = out.code;
+        const bits = [out.stats.nodes + ' note' + (out.stats.nodes === 1 ? '' : 's') + ' shown'];
+        if (out.stats.groups) bits.push(out.stats.groups + ' heading' + (out.stats.groups === 1 ? '' : 's'));
+        if (out.stats.missing) bits.push(out.stats.missing + ' link' + (out.stats.missing === 1 ? '' : 's') + ' to notes that don’t exist yet (dashed)');
+        if (out.stats.capped) bits.push('stopped at 250 boxes');
+        e.stat.textContent = bits.join(' · ') + '.';
+        tmDraw(true);
+    }
+    function tmApplyMode() {
+        const link = tmUI.opts.mode === 'link';
+        tmUI.el.panel.querySelectorAll('[data-nvm]').forEach((x) => { x.style.display = (x.getAttribute('data-nvm') === 'link') === link ? '' : 'none'; });
+        const t = tmUI.el.order.parentElement.querySelector('span');
+        if (t) t.textContent = link ? 'Dotted arrows show the order of items under the same heading' : 'Dotted arrows show reading order between siblings';
+    }
+
     // ── Outline map panel ──
     function tmLoadOpts() {
         let o = {};
         try { o = JSON.parse(localStorage.getItem(TM_KEY) || '{}') || {}; } catch (e) { o = {}; }
-        return { folder: String(o.folder || ''), root: String(o.root || ''), dir: o.dir === 'LR' ? 'LR' : 'TD', depth: String(o.depth || '0'), order: o.order !== false, extra: String(o.extra || '') };
+        return { mode: o.mode === 'link' ? 'link' : 'outline', index: String(o.index || ''), hops: String(o.hops || '0'), chain: o.chain !== false, folder: String(o.folder || ''), root: String(o.root || ''), dir: o.dir === 'LR' ? 'LR' : 'TD', depth: String(o.depth || '0'), order: o.order !== false, extra: String(o.extra || '') };
     }
     function tmSaveOpts() { try { localStorage.setItem(TM_KEY, JSON.stringify(tmUI.opts)); } catch (e) { /* optional */ } }
     // Folders that contain at least one numbered note, with how many.
@@ -52956,10 +53144,11 @@ kbd {
     }
     function tmReadControls() {
         const e = tmUI.el;
-        tmUI.opts = { folder: e.folder.value, root: e.root.value, dir: e.dir.value, depth: e.depth.value, order: e.order.checked, extra: e.extra.value };
+        tmUI.opts = { mode: e.mode.value, index: e.index.value || tmUI.opts.index || '', hops: e.hops.value, chain: e.chain.checked, folder: e.folder.value, root: e.root.value, dir: e.dir.value, depth: e.depth.value, order: e.order.checked, extra: e.extra.value };
         tmSaveOpts();
     }
     function tmRegenerate() {
+        if (tmUI.opts.mode === 'link') { lkRegenerate(); return; }
         const data = tmCollect(tmUI.opts.folder);
         const e = tmUI.el;
         if (!data.byNum.size) {
@@ -53024,7 +53213,9 @@ kbd {
         tmUI.open = true;
         tmUI.opts = tmLoadOpts();
         const e = tmUI.el;
+        e.mode.value = tmUI.opts.mode; e.hops.value = tmUI.opts.hops; e.chain.checked = tmUI.opts.chain;
         e.dir.value = tmUI.opts.dir; e.depth.value = tmUI.opts.depth; e.order.checked = tmUI.opts.order; e.extra.value = tmUI.opts.extra;
+        tmApplyMode();
         tmFillFolders();
         tmFillRoots(tmCollect(tmUI.opts.folder));
         e.scrim.hidden = false; e.panel.hidden = false;
@@ -53040,12 +53231,13 @@ kbd {
     async function tmSaveAsNote() {
         const code = tmUI.el.src.value.trim();
         if (!code) return;
-        let title = 'Outline map' + (tmUI.opts.folder ? ' \u2014 ' + tmUI.opts.folder : '') + (tmUI.opts.root ? ' \u2014 ' + tmUI.opts.root : '');
+        const lkIdx = tmUI.opts.mode === 'link' ? S.notes.find((n) => n.id === tmUI.opts.index) : null;
+        let title = lkIdx ? 'Link map \u2014 ' + (String(lkIdx.title || '').trim() || 'Untitled note') : 'Outline map' + (tmUI.opts.folder ? ' \u2014 ' + tmUI.opts.folder : '') + (tmUI.opts.root ? ' \u2014 ' + tmUI.opts.root : '');
         if (S.notes.some((n) => fold(String(n.title || '').trim()) === fold(title))) title += ' (' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ')';
-        const md = '# ' + title + '\n\n> Generated from note numbering. In Read mode, click a box to open that note. Edit the diagram below to reorder boxes or add your own links.\n\n```mermaid\n' + code + '\n```\n';
+        const md = '# ' + title + '\n\n> Generated from ' + (lkIdx ? 'the links in \u201C' + String(lkIdx.title || '').trim() + '\u201D' : 'note numbering') + '. In Read mode, click a box to open that note. Edit the diagram below to reorder boxes or add your own links.\n\n```mermaid\n' + code + '\n```\n';
         const id = uid(), now = Date.now();
         try {
-            await restoreNotesList([{ id, title, markdown: md, type: tmUI.opts.folder || 'General', tags: ['map'], pinned: false, createdAt: now, updatedAt: now }]);
+            await restoreNotesList([{ id, title, markdown: md, type: (lkIdx ? lkIdx.type : tmUI.opts.folder) || 'General', tags: ['map'], pinned: false, createdAt: now, updatedAt: now }]);
             tmClose();
             await openNote(id);
             toast('Saved \u201C' + title + '\u201D.');
@@ -53060,7 +53252,7 @@ kbd {
         if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
         const blob = new Blob([clone.outerHTML], { type: 'image/svg+xml' });
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'outline-map.svg';
+        a.href = URL.createObjectURL(blob); a.download = tmUI.opts.mode === 'link' ? 'link-map.svg' : 'outline-map.svg';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }
@@ -53069,6 +53261,7 @@ kbd {
         if (!panel || !$('nvMapBtn')) return;
         tmUI.el = {
             panel, scrim: $('nvMapScrim'), folder: $('nvmFolder'), root: $('nvmRoot'), dir: $('nvmDir'), depth: $('nvmDepth'), order: $('nvmOrder'),
+            mode: $('nvmMode'), index: $('nvmIndex'), hops: $('nvmHops'), chain: $('nvmChain'),
             extra: $('nvmExtra'), src: $('nvmSrc'), stat: $('nvmStat'), canvas: $('nvmCanvas'), stage: $('nvmStage'), zoomPct: $('nvmZoomPct')
         };
         const e = tmUI.el;
@@ -53076,7 +53269,8 @@ kbd {
         $('nvMapClose').addEventListener('click', tmClose);
         e.scrim.addEventListener('click', tmClose);
         e.folder.addEventListener('change', () => { tmUI.opts.folder = e.folder.value; tmUI.opts.root = ''; tmFillRoots(tmCollect(tmUI.opts.folder)); tmReadControls(); tmRegenerate(); });
-        [e.root, e.dir, e.depth, e.order].forEach((c) => c.addEventListener('change', () => { tmReadControls(); tmRegenerate(); }));
+        [e.root, e.dir, e.depth, e.order, e.index, e.hops, e.chain].forEach((c) => c.addEventListener('change', () => { tmReadControls(); tmRegenerate(); }));
+        e.mode.addEventListener('change', () => { tmReadControls(); tmApplyMode(); tmRegenerate(); });
         let tExtra = null, tSrc = null;
         e.extra.addEventListener('input', () => { clearTimeout(tExtra); tExtra = setTimeout(() => { tmReadControls(); tmRegenerate(); }, 450); });
         e.src.addEventListener('input', () => { clearTimeout(tSrc); tSrc = setTimeout(() => tmDraw(false), 450); });
