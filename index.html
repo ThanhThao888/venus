@@ -40481,6 +40481,126 @@ const EnglishDaily = (function () {
 .nv-stor-notelink.nv-static:hover { background: var(--bg-white); border-color: var(--border-color); }
 .nv-stor-filerow { align-items: flex-start; }
 .nv-stor-filerow .nv-stor-badge-unused { align-self: center; }
+/* ═════════════ Storage panel — redesign ═════════════
+   Overview: one number, one composition bar, then maintenance actions. Images / Files: sticky toolbar,
+   calmer cards, one note chip per item instead of a stack. Colours come from the theme variables;
+   the five category hues below are fixed so "Files" is the same colour in every theme. */
+.nv-stor {
+    --sc-files: #7d6bb3; --sc-images: #d9788f; --sc-history: #d29a55; --sc-notes: #58a07f; --sc-other: #8f979e;
+    border-radius: 18px;
+}
+.dark-mode .nv-stor { --sc-files: #a79ad8; --sc-images: #e592a6; --sc-history: #dfb06e; --sc-notes: #7cc3a1; --sc-other: #a4acb3; }
+.nv-stor .nv-stor-bar { gap: 14px; padding: 12px 12px 12px 20px; }
+.nv-stor .nv-stor-bartitle { font-size: 1.08rem; gap: 10px; }
+.nv-stor .nv-stor-bartitle i { color: var(--primary); font-size: 0.95rem; }
+.nv-stor .nv-stor-tabs { margin-left: 6px; padding: 3px; gap: 2px; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 11px; }
+.nv-stor .nv-stor-tab { padding: 6px 15px; border-radius: 8px; }
+.nv-stor .nv-stor-tab.nv-cur { background: var(--bg-white); color: var(--text-dark); box-shadow: 0 0 0 1px var(--border-color), 0 1px 3px rgba(40, 20, 32, 0.08); }
+.nv-stor .nv-stor-body { padding: 20px 24px 28px; }
+
+/* Overview */
+.nv-stor[data-tab="overview"] .nv-stor-body > * { max-width: 720px; }
+.nv-stor-ov { display: flex; flex-direction: column; gap: 30px; }
+.nv-stor-hero { display: flex; flex-direction: column; gap: 10px; }
+.nv-stor-hero-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.nv-stor-hero-num { font-family: var(--nv-display); font-weight: 700; font-size: 2.3rem; line-height: 1; letter-spacing: -0.01em; color: var(--text-dark); font-variant-numeric: tabular-nums; }
+.nv-stor-hero-of { font-size: 0.95rem; color: var(--text-muted); }
+.nv-stor-quota { height: 6px; border-radius: 999px; background: var(--bg-light); box-shadow: inset 0 0 0 1px var(--border-color); overflow: hidden; }
+.nv-stor-quota > i { display: block; height: 100%; min-width: 6px; border-radius: inherit; background: var(--nv-ok); transition: width 0.3s ease; }
+.nv-stor-quota[data-level="warning"] > i { background: var(--nv-warn); }
+.nv-stor-quota[data-level="critical"] > i, .nv-stor-quota[data-level="near-full"] > i { background: var(--nv-danger); }
+.nv-stor-quota-cap { display: flex; justify-content: space-between; gap: 12px; font-size: 0.8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-alert { margin: 4px 0 0; padding: 10px 14px; border-radius: 10px; border-left: 3px solid var(--nv-warn); background: var(--bg-light); color: var(--text-dark); font-size: 0.85rem; line-height: 1.5; }
+.nv-stor-alert[data-level="critical"], .nv-stor-alert[data-level="near-full"] { border-left-color: var(--nv-danger); }
+.nv-stor-h { margin: 0 0 10px; font-size: 0.95rem; font-weight: 650; color: var(--text-dark); }
+.nv-stor-card { border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-white); }
+.nv-stor-comp { padding: 18px 20px 4px; }
+.nv-stor-compbar { display: flex; gap: 2px; height: 12px; border-radius: 7px; overflow: hidden; background: var(--bg-light); margin-bottom: 8px; }
+.nv-stor-compbar > span { flex: var(--b) 1 0; min-width: 4px; background: var(--c); }
+.nv-stor-leg { list-style: none; margin: 0; padding: 0; }
+.nv-stor-legrow {
+    display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 46px 14px; align-items: center; gap: 12px;
+    width: 100%; padding: 12px 0; margin: 0; border: 0; border-top: 1px solid var(--border-color); background: none;
+    color: inherit; font: inherit; text-align: left;
+}
+.nv-stor-leg li:first-child .nv-stor-legrow { border-top: 0; }
+button.nv-stor-legrow { cursor: pointer; border-radius: 0; }
+button.nv-stor-legrow:hover .nv-stor-legname { text-decoration: underline; text-underline-offset: 3px; }
+.nv-stor-dot { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+.nv-stor-legname { display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-dark); }
+.nv-stor-leghint { display: block; font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
+.nv-stor-legsize { font-size: 0.9rem; font-weight: 600; color: var(--text-dark); font-variant-numeric: tabular-nums; text-align: right; }
+.nv-stor-legpct { font-size: 0.8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.nv-stor-go { font-size: 0.7rem; color: var(--text-muted); text-align: right; }
+.nv-stor-acts { padding: 0 20px; }
+.nv-stor-act { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 15px 0; border-top: 1px solid var(--border-color); }
+.nv-stor-act:first-child { border-top: 0; }
+.nv-stor-acticon { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; background: rgba(var(--primary-rgb), 0.1); color: var(--primary-dark); font-size: 0.95rem; }
+.nv-stor-acttitle { display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-dark); }
+.nv-stor-actdesc { display: block; margin-top: 1px; font-size: 0.8rem; line-height: 1.45; color: var(--text-muted); }
+.nv-stor-ov .nv-stor-note { margin: -14px 2px 0; }
+
+/* Images + Files: toolbar stays visible while the list scrolls */
+.nv-stor .nv-stor-toolbar { position: sticky; top: -20px; z-index: 3; margin: -20px -24px 0; padding: 14px 24px 12px; gap: 10px; background: var(--bg-white); border-bottom: 1px solid var(--border-color); }
+.nv-stor .nv-stor-select select { padding: 6px 10px; border-radius: 8px; font-size: 0.84rem; }
+.nv-stor .nv-stor-check { padding: 6px 13px 6px 10px; border: 1px solid var(--border-color); border-radius: 999px; font-size: 0.84rem; cursor: pointer; user-select: none; }
+.nv-stor .nv-stor-check input { accent-color: var(--primary); margin: 0; }
+.nv-stor .nv-stor-check:has(input:checked) { background: var(--nv-active); border-color: var(--primary); color: var(--primary-dark); }
+.nv-stor-summary { display: flex; flex-wrap: wrap; gap: 2px 16px; margin: 14px 2px 0; font-size: 0.85rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nv-stor-summary b { font-weight: 650; color: var(--text-dark); }
+.nv-stor-summary-warn { color: var(--nv-warn); font-weight: 600; }
+
+/* Image cards */
+.nv-stor .nv-stor-imggrid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-top: 14px; }
+.nv-stor .nv-stor-imgcard { border-radius: 12px; background: var(--bg-white); }
+.nv-stor .nv-stor-imgthumb-wrap { position: relative; aspect-ratio: 16 / 10; background: var(--bg-light); border-bottom: 1px solid var(--border-color); }
+.nv-stor .nv-stor-imgthumb-wrap { overflow: hidden; min-height: 0; }
+.nv-stor .nv-stor-imgthumb { position: absolute; inset: 0; object-position: top center; }
+.nv-stor-size { position: absolute; left: 8px; bottom: 8px; padding: 2px 9px; border-radius: 999px; background: rgba(24, 18, 26, 0.74); color: #fff; font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.nv-stor .nv-stor-imgthumb-wrap .nv-stor-badge-unused { top: 8px; left: 8px; }
+.nv-stor .nv-stor-imgcard .nv-stor-notes.nv-compact { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 6px; margin: 0; padding: 10px 10px 11px; }
+.nv-stor .nv-stor-imgcard .nv-stor-notelink { max-width: none; min-width: 0; flex: 0 1 auto; }
+.nv-stor .nv-stor-imgcard .nv-stor-notelink > span { max-width: none; }
+.nv-stor .nv-stor-imgcard .nv-stor-notelink.nv-stor-more { flex: 0 0 auto; }
+
+/* File rows */
+.nv-stor .nv-stor-filelist { gap: 8px; margin-top: 14px; }
+.nv-stor .nv-stor-filerow { align-items: center; gap: 14px; padding: 12px 16px; border-radius: 12px; background: var(--bg-white); }
+.nv-stor .nv-stor-fileicon { width: 40px; height: 40px; border-radius: 10px; font-size: 1.05rem; }
+.nv-stor .nv-stor-fileicon[data-kind="pdf"] { background: rgba(210, 88, 79, 0.12); color: #c4473f; }
+.nv-stor .nv-stor-fileicon[data-kind="xls"] { background: rgba(62, 154, 98, 0.13); color: #2f8654; }
+.dark-mode .nv-stor .nv-stor-fileicon[data-kind="pdf"] { color: #ee8f87; }
+.dark-mode .nv-stor .nv-stor-fileicon[data-kind="xls"] { color: #7cc79b; }
+.nv-stor .nv-stor-filebody { gap: 3px; }
+.nv-stor .nv-stor-filename { font-size: 0.92rem; }
+.nv-stor .nv-stor-filemeta { display: flex; flex-wrap: wrap; gap: 0 14px; font-size: 0.78rem; }
+.nv-stor .nv-stor-filebody .nv-stor-notes { margin-top: 4px; }
+.nv-stor-filesize { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; min-width: 88px; flex-shrink: 0; }
+.nv-stor-filesize b { font-size: 0.92rem; font-weight: 650; color: var(--text-dark); font-variant-numeric: tabular-nums; }
+.nv-stor-sizebar { display: block; width: 88px; height: 4px; border-radius: 999px; background: var(--bg-light); box-shadow: inset 0 0 0 1px var(--border-color); overflow: hidden; }
+.nv-stor-sizebar > i { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+
+@media (max-width: 620px) {
+    .nv-stor .nv-stor-bar { gap: 8px; padding: 10px 8px 10px 14px; padding-top: calc(10px + env(safe-area-inset-top)); }
+    .nv-stor .nv-stor-titletxt, .nv-stor .nv-stor-bar .nv-grow { display: none; }
+    .nv-stor .nv-stor-tabs { margin-left: 0; flex: 1; min-width: 0; }
+    .nv-stor .nv-stor-tab { flex: 1; padding: 7px 8px; }
+    .nv-stor .nv-stor-body { padding: 16px 16px 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+    .nv-stor .nv-stor-toolbar { top: -16px; margin: -16px -16px 0; padding: 12px 16px 10px; }
+    .nv-stor-hero-num { font-size: 2rem; }
+    .nv-stor-comp { padding: 16px 16px 2px; }
+    .nv-stor-legrow { grid-template-columns: 10px minmax(0, 1fr) auto 14px; gap: 10px; }
+    .nv-stor-legpct { display: none; }
+    .nv-stor-acts { padding: 0 16px; }
+    .nv-stor-act { grid-template-columns: 38px minmax(0, 1fr); }
+    .nv-stor-act .nv-btn { grid-column: 2; justify-self: start; }
+    .nv-stor .nv-stor-imggrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .nv-stor .nv-stor-filerow { padding: 10px 12px; gap: 10px; }
+    .nv-stor-filesize { min-width: 0; }
+    .nv-stor-sizebar { width: 56px; }
+    #nvStorRefresh .nv-btn-label { display: none; }
+}
+
 .nv-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 0.77rem; color: var(--text-muted); white-space: nowrap; }
 .nv-row-acts { position: relative; z-index: 2; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
 .nv-row:hover .nv-row-acts, .nv-row:focus-within .nv-row-acts { opacity: 1; }
@@ -42076,14 +42196,14 @@ kbd {
     <div class="nv-stor-scrim" id="nvStorScrim" hidden></div>
     <div class="nv-stor" id="nvStor" role="dialog" aria-modal="true" aria-label="Storage" hidden>
         <div class="nv-stor-bar">
-            <span class="nv-stor-bartitle"><i class="fa-solid fa-database" aria-hidden="true"></i> Storage</span>
+            <span class="nv-stor-bartitle"><i class="fa-solid fa-database" aria-hidden="true"></i> <span class="nv-stor-titletxt">Storage</span></span>
             <div class="nv-stor-tabs" role="tablist">
                 <button class="nv-stor-tab" data-stor-tab="overview" type="button" role="tab">Overview</button>
                 <button class="nv-stor-tab" data-stor-tab="images" type="button" role="tab">Images</button>
                 <button class="nv-stor-tab" data-stor-tab="files" type="button" role="tab">Files</button>
             </div>
             <span class="nv-grow"></span>
-            <button class="nv-btn nv-btn-ghost" id="nvStorRefresh" type="button"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+            <button class="nv-btn nv-btn-ghost" id="nvStorRefresh" type="button" title="Refresh"><i class="fa-solid fa-arrows-rotate"></i> <span class="nv-btn-label">Refresh</span></button>
             <button class="nv-ib" id="nvStorClose" type="button" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="nv-stor-body" id="nvStorBody"></div>
@@ -51490,24 +51610,61 @@ kbd {
         }
         const pct = stats.totals.percent;
         const health = getStorageHealth(pct);
-        const msg = storageHealthMessage(pct, health);
-        const msgClass = health.level === 'warning' ? ' nv-stor-msg-warn' : (health.level === 'critical' || health.level === 'near-full') ? ' nv-stor-msg-danger' : '';
+        const warn = health.level === 'warning' || health.level === 'critical' || health.level === 'near-full';
+        // Split attachments into images vs files so the bar shows what is really using the space.
+        let imgBytes = 0, fileBytes = 0;
+        try {
+            (await dbGetAllAttachments()).forEach((r) => {
+                const sz = r.size || (r.blob && r.blob.size) || 0;
+                if (/^image\//.test(r.mime || '')) imgBytes += sz; else fileBytes += sz;
+            });
+        } catch (e) { imgBytes = stats.vault.attachmentsBytes; fileBytes = 0; }
+        const cats = [
+            { k: 'files', label: 'Files', hint: 'PDFs and spreadsheets', bytes: fileBytes, est: false, go: 'files' },
+            { k: 'images', label: 'Images', hint: 'Screenshots and pictures', bytes: imgBytes, est: false, go: 'images' },
+            { k: 'history', label: 'Version history', hint: 'Earlier versions of your notes', bytes: stats.vault.revisionsBytes, est: true },
+            { k: 'notes', label: 'Notes', hint: 'The text you wrote', bytes: stats.vault.notesBytes, est: true },
+            { k: 'other', label: 'Other app data', hint: 'Settings and everything else in this app', bytes: stats.localStorage.bytes, est: true }
+        ].filter((c) => c.bytes > 0).sort((a, b) => b.bytes - a.bytes);
+        const total = cats.reduce((n, c) => n + c.bytes, 0) || 1;
+        const pctOf = (b) => { const v = b / total * 100; return v < 1 ? '<1%' : Math.round(v) + '%'; };
+        const free = Math.max(0, stats.browser.quota - stats.browser.usage);
+        const actRow = (id, icon, title, desc, btn) =>
+            '<div class="nv-stor-act"><span class="nv-stor-acticon"><i class="fa-solid ' + icon + '" aria-hidden="true"></i></span>'
+            + '<span><span class="nv-stor-acttitle">' + title + '</span><span class="nv-stor-actdesc">' + desc + '</span></span>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="' + id + '">' + btn + '</button></div>';
         el.storBody.innerHTML =
-            '<div class="nv-stor-meter" data-level="' + esc(health.level) + '"><div class="nv-stor-meter-fill" style="width:' + Math.max(2, pct) + '%"></div></div>'
-            + '<div class="nv-stor-headline">' + pct + '% used — ' + esc(fmtBytes(stats.browser.usage)) + ' of ' + esc(fmtBytes(stats.browser.quota)) + '</div>'
-            + '<p class="nv-stor-msg' + msgClass + '">' + esc(msg) + '</p>'
-            + '<div class="nv-stor-section"><div class="nv-stor-section-title">Vault</div>'
-            + storRowHtml('Notes', stats.vault.notesBytes, true)
-            + storRowHtml('Version history', stats.vault.revisionsBytes, true)
-            + storRowHtml('Attachments', stats.vault.attachmentsBytes, false)
-            + '</div>'
-            + '<div class="nv-stor-section"><div class="nv-stor-section-title">Everything else in this app</div>'
-            + storRowHtml('Other app data', stats.localStorage.bytes, true)
-            + '</div>'
-            + '<p class="nv-stor-note">Notes and version history are estimated from record size — browsers don\'t expose an exact per-store figure. Attachments are exact, since every stored image carries a real byte size.</p>'
-            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorPrune"><i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments</button>'
-            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorOptimize" style="margin-top:8px;"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimize images</button>'
-            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvStorRebuild" style="margin-top:8px;"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Rebuild index</button>';
+            '<div class="nv-stor-ov">'
+            + '<section class="nv-stor-hero" aria-label="Storage used">'
+            +   '<div class="nv-stor-hero-top"><span class="nv-stor-hero-num">' + esc(fmtBytes(stats.browser.usage)) + '</span><span class="nv-stor-hero-of">used of ' + esc(fmtBytes(stats.browser.quota)) + '</span></div>'
+            +   '<div class="nv-stor-quota" data-level="' + esc(health.level) + '" role="img" aria-label="' + pct + '% of storage used"><i style="width:' + Math.max(1, pct) + '%"></i></div>'
+            +   '<div class="nv-stor-quota-cap"><span>' + pct + '% used</span><span>' + esc(fmtBytes(free)) + ' free</span></div>'
+            +   (warn ? '<p class="nv-stor-alert" data-level="' + esc(health.level) + '">' + esc(storageHealthMessage(pct, health)) + '</p>' : '')
+            + '</section>'
+            + '<section><h3 class="nv-stor-h">What is using the space</h3><div class="nv-stor-card nv-stor-comp">'
+            +   '<div class="nv-stor-compbar" role="img" aria-label="Storage by type">'
+            +     cats.map((c) => '<span style="--b:' + c.bytes + ';--c:var(--sc-' + c.k + ')" title="' + esc(c.label) + '"></span>').join('')
+            +   '</div>'
+            +   '<ul class="nv-stor-leg">'
+            +     cats.map((c) => {
+                      const inner = '<span class="nv-stor-dot" style="--c:var(--sc-' + c.k + ')"></span>'
+                          + '<span><span class="nv-stor-legname">' + esc(c.label) + '</span><span class="nv-stor-leghint">' + esc(c.hint) + '</span></span>'
+                          + '<span class="nv-stor-legsize">' + (c.est ? '~' : '') + esc(fmtBytes(c.bytes)) + '</span>'
+                          + '<span class="nv-stor-legpct">' + pctOf(c.bytes) + '</span>'
+                          + (c.go ? '<i class="fa-solid fa-chevron-right nv-stor-go" aria-hidden="true"></i>' : '<span class="nv-stor-go"></span>');
+                      return '<li>' + (c.go ? '<button type="button" class="nv-stor-legrow" data-stor-goto="' + c.go + '" title="Browse ' + esc(c.label.toLowerCase()) + '">' + inner + '</button>'
+                                            : '<div class="nv-stor-legrow">' + inner + '</div>') + '</li>';
+                  }).join('')
+            +   '</ul>'
+            + '</div></section>'
+            + '<section><h3 class="nv-stor-h">Free up space</h3><div class="nv-stor-card nv-stor-acts">'
+            +   actRow('nvStorPrune', 'fa-broom', 'Remove unused attachments', 'Delete images and files that no note or version uses.', 'Clean up')
+            +   actRow('nvStorOptimize', 'fa-wand-magic-sparkles', 'Re-compress older images', 'Shrink images saved with older settings. Sharp screenshots are kept as they are.', 'Optimize')
+            +   actRow('nvStorRebuild', 'fa-arrows-rotate', 'Repair attachment links', 'Re-scan every note if an image or file shows the wrong “used in” list.', 'Rebuild')
+            + '</div></section>'
+            + '<p class="nv-stor-note">Notes, history and other app data are estimates from record size. Images and files are exact.</p>'
+            + '</div>';
+        el.storBody.querySelectorAll('[data-stor-goto]').forEach((b) => { b.onclick = () => switchStorTab(b.dataset.storGoto); });
         const pruneBtn = $('nvStorPrune');
         if (pruneBtn) pruneBtn.onclick = onPruneAttachmentsClick;
         const optBtn = $('nvStorOptimize');
@@ -51525,7 +51682,7 @@ kbd {
         } catch (e) {
             console.warn('Notes Vault: prune attachments failed', e);
             flash('Couldn’t clean up attachments');
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-broom" aria-hidden="true"></i> Clean up unused attachments'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Clean up'; }
         }
     }
     async function onOptimizeAttachmentsClick() {
@@ -51538,7 +51695,7 @@ kbd {
         } catch (e) {
             console.warn('Notes Vault: optimize attachments failed', e);
             flash('Couldn’t optimize images');
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimize images'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Optimize'; }
         }
     }
     // Re-scans every note + revision and rewrites attachmentRefs to match reality. A repair
@@ -51553,7 +51710,7 @@ kbd {
         } catch (e) {
             console.warn('Notes Vault: rebuild attachment refs failed', e);
             flash('Couldn’t rebuild the attachment index');
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Rebuild index'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Rebuild'; }
         }
     }
 
@@ -51572,9 +51729,10 @@ kbd {
         const unused = !it.noteIds.length && !it.revIds.length;
         return '<button type="button" class="nv-stor-imgcard' + (unused ? '' : ' nv-locked') + '">'
             + '<span class="nv-stor-tick"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
-            + '<span class="nv-stor-imgthumb-wrap"><img class="nv-stor-imgthumb" alt="" loading="lazy"></span>'
+            + '<span class="nv-stor-imgthumb-wrap"><img class="nv-stor-imgthumb" alt="" loading="lazy">'
+            + '<span class="nv-stor-size">' + esc(fmtBytes(it.rec.size)) + '</span>'
             + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
-            + '<span class="nv-stor-imgmeta">' + esc(fmtBytes(it.rec.size)) + '</span>'
+            + '</span>'
             + storNoteChipsHtml(it, true)
             + '</button>';
     }
@@ -51697,7 +51855,7 @@ kbd {
         const totalBytes = items.reduce((s, it) => s + (it.rec.size || 0), 0);
         const unusedCount = items.filter((it) => !it.noteIds.length && !it.revIds.length).length;
         const filtered = S.stor.imgFilter === 'unused' ? items.filter((it) => !it.noteIds.length && !it.revIds.length) : items;
-        const summary = '<p class="nv-stor-note" style="margin-top:0;">' + items.length + (items.length === 1 ? ' image' : ' images') + ' \u00b7 ' + fmtBytes(totalBytes) + ' total' + (unusedCount ? ' \u00b7 ' + unusedCount + ' unused' : '') + '</p>';
+        const summary = '<p class="nv-stor-summary"><b>' + items.length + (items.length === 1 ? ' image' : ' images') + '</b><span>' + fmtBytes(totalBytes) + ' total</span>' + (unusedCount ? '<span class="nv-stor-summary-warn">' + unusedCount + ' unused</span>' : '') + '</p>';
         const cards = filtered.length ? filtered.map(storImgCardHtml).join('') : '';
         el.storBody.innerHTML = storImagesToolbarHtml() + summary
             + (filtered.length ? '<div class="nv-stor-imggrid' + (S.stor.selMode ? ' nv-selmode' : '') + '" id="nvStorImgGrid">' + cards + '</div>' : '<div class="nv-stor-unsupported">No unused images — nice and tidy.</div>');
@@ -51713,40 +51871,53 @@ kbd {
         else items.sort((a, b) => b.rec.size - a.rec.size);   // 'size' — largest first, the default
         return items;
     }
-    // One chip per note that holds this attachment. Live notes are clickable (jump to the note);
-    // notes in Trash or already gone are shown greyed-out so the file's owner is never a mystery.
+    // Where is this attachment used? Open-able notes come first and are clickable (jump to the note), then notes
+    // in Trash. Version-history-only hits are folded into a "+N" count instead of one chip each.
     function storNoteChipsHtml(it, compact) {
-        const chip = (id, history) => {
+        const ids = Array.from(new Set(it.noteIds));
+        const histOnly = Array.from(new Set(it.revIds)).filter((id) => !ids.includes(id));
+        const info = ids.map((id) => {
             const live = S.notes.find((n) => n.id === id);
             const trashed = !live && (S.trash || []).find((n) => n.id === id);
-            const title = (live || trashed || {}).title || (live || trashed ? 'Untitled note' : 'Deleted note');
-            const label = (history ? 'History: ' : '') + title + (trashed ? ' (in Trash)' : '');
-            const icon = history ? 'fa-clock-rotate-left' : 'fa-note-sticky';
-            if (live) return '<span class="nv-stor-notelink" ' + (compact ? '' : 'role="link" tabindex="0" ') + 'data-open-note="' + esc(id) + '" title="Open this note"><i class="fa-regular ' + icon + '" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
-            return '<span class="nv-stor-notelink nv-static" title="This note can’t be opened from here"><i class="fa-regular ' + icon + '" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
-        };
-        const ids = Array.from(new Set(it.noteIds));
-        const hist = Array.from(new Set(it.revIds)).filter((id) => !ids.includes(id));
-        if (!ids.length && !hist.length) return '';
-        const all = ids.map((id) => chip(id, false)).concat(hist.map((id) => chip(id, true)));
-        if (compact && all.length > 2) {         // image cards are narrow: show two, summarise the rest
-            const rest = all.length - 2;
-            return '<span class="nv-stor-notes nv-compact">' + all.slice(0, 2).join('') + '<span class="nv-stor-notelink nv-static" title="' + rest + ' more"><span>+' + rest + ' more</span></span></span>';
+            const rec = live || trashed;
+            return { id, live: !!live, named: !!rec, title: rec ? (rec.title || 'Untitled note') : '' , trashed: !!trashed };
+        });
+        const named = info.filter((n) => n.named).sort((a, b) => (b.live ? 1 : 0) - (a.live ? 1 : 0));
+        const unknown = info.length - named.length;
+        const cls = compact ? 'nv-stor-notes nv-compact' : 'nv-stor-notes';
+        if (!info.length && !histOnly.length) {
+            return compact ? '<span class="' + cls + '"><span class="nv-stor-notelink nv-static"><span>Not used in any note</span></span></span>' : '';
         }
-        return '<span class="' + (compact ? 'nv-stor-notes nv-compact' : 'nv-stor-notes') + '">' + all.join('') + '</span>';
+        const limit = compact ? 1 : 2;
+        const shown = named.slice(0, limit);
+        const hidden = (named.length - shown.length) + unknown + histOnly.length;
+        const chip = (n) => {
+            const label = n.title + (n.trashed ? ' (in Trash)' : '');
+            return n.live
+                ? '<span class="nv-stor-notelink" ' + (compact ? '' : 'role="link" tabindex="0" ') + 'data-open-note="' + esc(n.id) + '" title="Open this note"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i><span>' + esc(label) + '</span></span>'
+                : '<span class="nv-stor-notelink nv-static" title="This note can’t be opened from here"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i><span>' + esc(label) + '</span></span>';
+        };
+        let html = shown.map(chip).join('');
+        if (!shown.length) html = '<span class="nv-stor-notelink nv-static" title="Only older versions of a note contain this"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Version history only</span></span>';
+        else if (hidden > 0) html += '<span class="nv-stor-notelink nv-static nv-stor-more" title="' + hidden + ' more: other notes or version history"><span>+' + hidden + '</span></span>';
+        return '<span class="' + cls + '">' + html + '</span>';
     }
-    function storFileRowHtml(it) {
+    function storFileRowHtml(it, maxSize) {
         const unused = !it.noteIds.length && !it.revIds.length;
         const name = it.rec.filename || (it.rec.id + '.' + extFromMime(it.rec.mime));
-        const usage = unused ? '' : (' \u00b7 ' + (it.noteIds.length ? 'Used in ' + it.noteIds.length + (it.noteIds.length === 1 ? ' note' : ' notes') : 'In version history only'));
+        const sheet = isSheetMime(it.rec.mime);
+        let added = '';
+        try { if (it.rec.createdAt) added = new Date(it.rec.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { /* ignore */ }
+        const w = maxSize ? Math.max(3, Math.round((it.rec.size || 0) / maxSize * 100)) : 0;
         return '<div class="nv-stor-filerow' + (unused ? '' : ' nv-locked') + '" role="button" tabindex="0">'
             + '<span class="nv-stor-rowtick"><i class="fa-solid fa-check" aria-hidden="true"></i></span>'
-            + '<span class="nv-stor-fileicon"><i class="fa-solid ' + (isSheetMime(it.rec.mime) ? 'fa-file-excel' : 'fa-file-pdf') + '" aria-hidden="true"></i></span>'
+            + '<span class="nv-stor-fileicon" data-kind="' + (sheet ? 'xls' : 'pdf') + '"><i class="fa-solid ' + (sheet ? 'fa-file-excel' : 'fa-file-pdf') + '" aria-hidden="true"></i></span>'
             + '<span class="nv-stor-filebody">'
             + '<span class="nv-stor-filename" title="' + esc(name) + '">' + esc(name) + '</span>'
-            + '<span class="nv-stor-filemeta">' + esc(fmtBytes(it.rec.size)) + usage + '</span>'
+            + '<span class="nv-stor-filemeta"><span>' + (sheet ? 'Spreadsheet' : 'PDF') + '</span>' + (added ? '<span>Added ' + esc(added) + '</span>' : '') + '</span>'
             + storNoteChipsHtml(it)
             + '</span>'
+            + '<span class="nv-stor-filesize"><b>' + esc(fmtBytes(it.rec.size)) + '</b><span class="nv-stor-sizebar"><i style="width:' + w + '%"></i></span></span>'
             + (unused ? '<span class="nv-stor-badge-unused">Unused</span>' : '')
             + '</div>';
     }
@@ -51871,8 +52042,9 @@ kbd {
         const totalBytes = items.reduce((s, it) => s + (it.rec.size || 0), 0);
         const unusedCount = items.filter((it) => !it.noteIds.length && !it.revIds.length).length;
         const filtered = S.stor.fileFilter === 'unused' ? items.filter((it) => !it.noteIds.length && !it.revIds.length) : items;
-        const summary = '<p class="nv-stor-note" style="margin-top:0;">' + items.length + (items.length === 1 ? ' file' : ' files') + ' \u00b7 ' + fmtBytes(totalBytes) + ' total' + (unusedCount ? ' \u00b7 ' + unusedCount + ' unused' : '') + '</p>';
-        const rows = filtered.length ? filtered.map(storFileRowHtml).join('') : '';
+        const summary = '<p class="nv-stor-summary"><b>' + items.length + (items.length === 1 ? ' file' : ' files') + '</b><span>' + fmtBytes(totalBytes) + ' total</span>' + (unusedCount ? '<span class="nv-stor-summary-warn">' + unusedCount + ' unused</span>' : '') + '</p>';
+        const maxSize = items.reduce((m, it) => Math.max(m, it.rec.size || 0), 0);
+        const rows = filtered.length ? filtered.map((it) => storFileRowHtml(it, maxSize)).join('') : '';
         el.storBody.innerHTML = storFilesToolbarHtml() + summary
             + (filtered.length ? '<div class="nv-stor-filelist' + (S.stor.fSelMode ? ' nv-selmode' : '') + '" id="nvStorFileList">' + rows + '</div>' : '<div class="nv-stor-unsupported">No unused files — nice and tidy.</div>');
         wireStorFilesToolbar();
