@@ -94567,4 +94567,295 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 #tonightPlanCard .tp-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { #tonightPlanCard .tp-chev { transition: none; } }
 </style>
+<script id="nvCopyRichJS">
+/* ===== Notes Vault: one-tap "Copy whole note" (keeps bold, italics, tables, lists…) =====
+   Adds a copy icon to the note's top bar (next to the "…" menu). One tap copies the whole note
+   as rich text (text/html) + the Markdown source as the plain-text fallback, so:
+     · paste into Word / Google Docs / Notion / Gmail / Apple Notes → formatting is kept
+     · paste into a plain-text app (WhatsApp, Telegram, ChatGPT…)  → you get the Markdown
+   Works on phones: no text selection needed. */
+(function () {
+    'use strict';
+    if (window.__nvCopyRichInit) return;
+    window.__nvCopyRichInit = true;
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    /* ── tiny toast (own element, so it always sits above the full-screen Notes Vault) ── */
+    function toast(msg, bad) {
+        let t = $('nvCopyRichToast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'nvCopyRichToast';
+            t.setAttribute('role', 'status');
+            t.style.cssText = 'position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);' +
+                'z-index:2147483000;max-width:calc(100% - 32px);padding:10px 16px;border-radius:12px;color:#fff;' +
+                'font:600 0.85rem/1.3 system-ui,-apple-system,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.3);' +
+                'opacity:0;pointer-events:none;transition:opacity .2s;text-align:center;';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.background = bad ? '#b3261e' : '#222';
+        t.style.opacity = '1';
+        clearTimeout(t._h);
+        t._h = setTimeout(() => { t.style.opacity = '0'; }, 2200);
+    }
+
+    /* ── where does the content come from? ── */
+    function currentMarkdown() {
+        const s = $('nvSrc');
+        return s ? (s.value || '') : '';
+    }
+
+    // Read mode (or split view): clone the rendered note. Edit / live / source mode hides the
+    // rendered pane, so fall back to rendering the Markdown source ourselves.
+    function sourceFragment() {
+        const read = $('nvRead');
+        if (read && !read.hidden && read.offsetParent !== null && read.textContent.trim()) {
+            return { clone: read.cloneNode(true), orig: read };
+        }
+        const md = currentMarkdown();
+        if (!md.trim()) return null;
+        const box = document.createElement('div');
+        let html;
+        try { html = window.marked ? (window.marked.parse ? window.marked.parse(md, { gfm: true }) : window.marked(md)) : esc(md).replace(/\n/g, '<br>'); }
+        catch (e) { html = esc(md).replace(/\n/g, '<br>'); }
+        if (window.DOMPurify) html = window.DOMPurify.sanitize(html, { FORBID_TAGS: ['style'] });
+        box.innerHTML = html;
+        return { clone: box, orig: null };
+    }
+
+    /* ── MathJax: turn rendered formulas back into their TeX text ── */
+    function mathMap() {
+        const m = new Map();
+        try {
+            const list = window.MathJax && MathJax.startup && MathJax.startup.document && MathJax.startup.document.math;
+            if (list && list.toArray) list.toArray().forEach((it) => { if (it.typesetRoot) m.set(it.typesetRoot, it); });
+        } catch (e) { /* ignore */ }
+        return m;
+    }
+
+    function blobToDataURL(blob) {
+        return new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = () => rej(r.error);
+            r.readAsDataURL(blob);
+        });
+    }
+
+    /* Inline styles: clipboard HTML does not carry the page's CSS, so tables etc. need their own.
+       No text colours on purpose — pasted text should take the destination's colour (dark-mode safe). */
+    const MONO = "font-family:Consolas,Menlo,'Courier New',monospace;";
+    const ST = {
+        TABLE: 'border-collapse:collapse;margin:8px 0;',
+        TH: 'border:1px solid #999;padding:6px 10px;background:#f0f0f0;font-weight:bold;text-align:left;vertical-align:top;',
+        TD: 'border:1px solid #999;padding:6px 10px;vertical-align:top;',
+        PRE: 'background:#f4f4f4;border:1px solid #ddd;padding:8px 10px;margin:8px 0;white-space:pre-wrap;font-size:0.9em;' + MONO,
+        BLOCKQUOTE: 'border-left:4px solid #bbb;margin:8px 0;padding:2px 12px;',
+        MARK: 'background:#fff176;',
+        HR: 'border:0;border-top:1px solid #bbb;margin:12px 0;',
+        IMG: 'max-width:100%;height:auto;'
+    };
+    const KEEP = { A: ['href'], IMG: ['src', 'alt', 'width'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'], OL: ['start'] };
+
+    /* Cleans the clone in place. Returns promises for async work (images). */
+    function prepare(clone, orig) {
+        // 1) formulas → TeX text
+        const mm = orig ? mathMap() : new Map();
+        const origMj = orig ? Array.from(orig.querySelectorAll('mjx-container')) : [];
+        clone.querySelectorAll('mjx-container').forEach((c, i) => {
+            const it = mm.get(origMj[i]);
+            let tex = '';
+            if (it && it.math) tex = it.display ? '$$' + it.math + '$$' : '$' + it.math + '$';
+            else {
+                const a = c.querySelector('mjx-assistive-mml');
+                tex = (a && a.textContent.trim()) || c.getAttribute('aria-label') || '';
+            }
+            c.replaceWith(document.createTextNode(tex));
+        });
+
+        // 2) task-list checkboxes → ☑ / ☐
+        const origCb = orig ? Array.from(orig.querySelectorAll('input[type="checkbox"]')) : [];
+        clone.querySelectorAll('input[type="checkbox"]').forEach((cb, i) => {
+            const on = origCb[i] ? origCb[i].checked : cb.hasAttribute('checked');
+            cb.replaceWith(document.createTextNode(on ? '\u2611 ' : '\u2610 '));
+        });
+
+        // 3) remove app UI that is not part of the note
+        clone.querySelectorAll(
+            'button, script, style, svg, canvas, iframe, audio, video, ' +
+            '.nv-code-copy, .nv-code-lang, .nv-code-toggle, .nv-img-handle, .nv-sheet-bar, .nv-tbl-pencil, ' +
+            '.nv-pdf-embed-frame, .nv-pdf-embed-more, .nv-fn-back, i[class*="fa-"]'
+        ).forEach((n) => n.remove());
+
+        // 4) code blocks: drop highlight.js spans, keep plain code text
+        clone.querySelectorAll('pre').forEach((pre) => {
+            const code = pre.querySelector('code');
+            const text = (code || pre).textContent;
+            pre.textContent = '';
+            const c = document.createElement('code');
+            c.textContent = text;
+            pre.appendChild(c);
+        });
+
+        // 5) images: blob: URLs only exist inside this page → embed them as data: URLs
+        const tasks = [];
+        clone.querySelectorAll('img').forEach((img) => {
+            const src = img.getAttribute('src') || '';
+            const rawW = img.getAttribute('width') || (img.style && img.style.width) || '';
+            const w = /^\d+(px)?$/.test(rawW) ? rawW.replace('px', '') : '';
+            if (w) img.setAttribute('width', w); else img.removeAttribute('width');
+            if (/^blob:/i.test(src)) {
+                tasks.push((async () => {
+                    try {
+                        const r = await fetch(src);
+                        img.setAttribute('src', await blobToDataURL(await r.blob()));
+                    } catch (e) {
+                        img.replaceWith(document.createTextNode(img.alt ? '[' + img.alt + ']' : ''));
+                    }
+                })());
+            } else if (src && !/^data:/i.test(src)) {
+                try { img.setAttribute('src', new URL(src, document.baseURI).href); } catch (e) { /* ignore */ }
+            }
+        });
+
+        // 6) strip attributes, add inline styles
+        clone.querySelectorAll('*').forEach((el) => {
+            const tag = el.tagName;
+            const isCallout = el.classList.contains('nv-callout');
+            const isCalloutTitle = el.classList.contains('nv-callout-title');
+            const align = (tag === 'TD' || tag === 'TH') ? (el.style.textAlign || el.getAttribute('align') || '') : '';
+            const keep = KEEP[tag] || [];
+            Array.from(el.attributes).forEach((a) => { if (keep.indexOf(a.name) === -1) el.removeAttribute(a.name); });
+
+            let css = ST[tag] || '';
+            if (tag === 'CODE' && !(el.parentElement && el.parentElement.tagName === 'PRE')) css = MONO + 'background:#f1f1f1;padding:1px 4px;';
+            if (tag === 'CODE' && el.parentElement && el.parentElement.tagName === 'PRE') css = MONO;
+            if (align && /^(left|center|right)$/.test(align)) css += 'text-align:' + align + ';';
+            if (isCallout) css = 'border-left:4px solid #6b7280;background:#f5f5f5;padding:8px 12px;margin:8px 0;';
+            if (isCalloutTitle) css = 'font-weight:bold;';
+            if (css) el.setAttribute('style', css);
+        });
+
+        return tasks;
+    }
+
+    /* Build {html, text} for the clipboard */
+    async function build(src) {
+        const tasks = prepare(src.clone, src.orig);
+        await Promise.all(tasks);
+
+        const titleEl = $('nvTitle');
+        const title = ((titleEl && titleEl.value) || '').trim();
+        const firstH1 = src.clone.querySelector('h1');
+        const titleInBody = !!(firstH1 && firstH1.textContent.trim().toLowerCase() === title.toLowerCase());
+
+        const html = '<meta charset="utf-8"><div style="font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.5;">' +
+            (title && !titleInBody ? '<h1>' + esc(title) + '</h1>' : '') +
+            src.clone.innerHTML + '</div>';
+
+        let text = currentMarkdown().replace(/\s+$/, '');
+        if (!text) text = (src.clone.textContent || '').trim();
+        else if (title && !/^\s*#\s/.test(text)) text = '# ' + title + '\n\n' + text;
+
+        return { html, text };
+    }
+
+    /* Fallback for browsers without ClipboardItem (older Firefox/WebView, non-HTTPS pages) */
+    function legacyCopy(html, text) {
+        const box = document.createElement('div');
+        box.setAttribute('aria-hidden', 'true');
+        box.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;' +
+            '-webkit-user-select:text;user-select:text;white-space:normal;';
+        box.innerHTML = html;
+        document.body.appendChild(box);
+        const sel = window.getSelection();
+        const saved = [];
+        for (let i = 0; i < sel.rangeCount; i++) saved.push(sel.getRangeAt(i));
+        const range = document.createRange();
+        range.selectNodeContents(box);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const onCopy = (e) => {
+            try {
+                e.clipboardData.setData('text/html', html);
+                e.clipboardData.setData('text/plain', text);
+                e.preventDefault();
+            } catch (_) { /* ignore */ }
+        };
+        document.addEventListener('copy', onCopy, true);
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+        document.removeEventListener('copy', onCopy, true);
+        sel.removeAllRanges();
+        saved.forEach((r) => sel.addRange(r));
+        box.remove();
+        return ok;
+    }
+
+    async function copyWholeNote(btn) {
+        const src = sourceFragment();
+        if (!src) { toast('This note is empty', true); return; }
+
+        // Start building right away (inside the tap) and hand the *promises* to the clipboard:
+        // this keeps iOS Safari / Chrome happy even if images take a moment to embed.
+        const dataP = build(src);
+        dataP.catch(() => { /* handled below */ });
+
+        let ok = false;
+        if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+            try {
+                await navigator.clipboard.write([new ClipboardItem({
+                    'text/html': dataP.then((d) => new Blob([d.html], { type: 'text/html' })),
+                    'text/plain': dataP.then((d) => new Blob([d.text], { type: 'text/plain' }))
+                })]);
+                ok = true;
+            } catch (e) { ok = false; }
+        }
+        if (!ok) {
+            try { const d = await dataP; ok = legacyCopy(d.html, d.text); } catch (e) { ok = false; }
+        }
+
+        toast(ok ? 'Note copied \u2014 formatting kept' : 'Couldn\u2019t copy. Try the \u2026 menu \u2192 Copy Markdown', !ok);
+        if (ok && btn) {
+            const ic = btn.querySelector('i');
+            if (ic) {
+                ic.className = 'fa-solid fa-check';
+                btn.style.color = 'var(--primary, #16a34a)';
+                setTimeout(() => { ic.className = 'fa-regular fa-copy'; btn.style.color = ''; }, 1500);
+            }
+        }
+    }
+
+    /* ── mount the button in the note's top bar ── */
+    function mount() {
+        if ($('nvCopyRich')) return true;
+        const more = $('nvMoreBtn');
+        const anchor = more && (more.closest('.nv-menuwrap') || more);
+        if (!anchor || !anchor.parentNode) return false;
+        const b = document.createElement('button');
+        b.id = 'nvCopyRich';
+        b.type = 'button';
+        b.className = 'nv-ib';
+        b.title = 'Copy whole note (keeps bold, italics, tables)';
+        b.setAttribute('aria-label', 'Copy whole note with formatting');
+        b.innerHTML = '<i class="fa-regular fa-copy" aria-hidden="true"></i>';
+        b.addEventListener('mousedown', (e) => e.preventDefault());   // don't steal focus/selection from the note
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); copyWholeNote(b); });
+        anchor.parentNode.insertBefore(b, anchor);
+        return true;
+    }
+
+    if (!mount()) {
+        document.addEventListener('DOMContentLoaded', mount);
+        setTimeout(mount, 1500);
+        setTimeout(mount, 4000);
+    }
+
+    window.__nvCopyRich = { build, sourceFragment, copyWholeNote };   // handy for debugging
+})();
+
+</script>
 </body>
