@@ -41115,6 +41115,28 @@ body.nv-pdf-resizing { user-select: none !important; cursor: col-resize !importa
     .nv-row::after { left: 10px; right: 10px; }
     .nv-bar { padding: 8px 10px; }
 }
+/* -- Phone fixes: keep the Close (X) on-screen, tuck view options into a "..." menu, respect notch / home bar -- */
+.nv-only-xs { display: none; }
+@media (max-width: 520px) {
+    .nv-only-xs { display: block; }
+    #nvDensityBtn, #nvGraphBtn, #nvMapBtn { display: none; }   /* now inside the "..." menu (#nvLibMoreMenu) */
+    .nv-bar { gap: 4px; padding: 6px 6px; }
+    .nv-bar .nv-btn { padding: 8px 10px; }
+    #nvModeSplit, #nvModeSource, .nv-fsctl { display: none !important; }
+    .nv-bar [data-close] { margin-left: auto; }
+}
+@media (max-width: 340px) {
+    .nv-lib .nv-bar [data-new] { display: none !important; }   /* still available in the menu */
+}
+@media (max-width: 900px) {
+    .nv-lib > .nv-bar, .nv-docview > .nv-bar {
+        padding-top: calc(6px + env(safe-area-inset-top));
+        padding-left: calc(8px + env(safe-area-inset-left));
+        padding-right: calc(8px + env(safe-area-inset-right));
+    }
+    .nv-side { padding-top: calc(18px + env(safe-area-inset-top)); padding-left: calc(12px + env(safe-area-inset-left)); }
+    .nv-status { padding-bottom: calc(7px + env(safe-area-inset-bottom)); }
+}
 @media (prefers-reduced-motion: reduce) {
     #nvOverlay.nv-on .nv-app { animation: none; }
     .nv-side { transition: none; }
@@ -41702,6 +41724,43 @@ kbd {
                 <button class="nv-btn nv-btn-ghost" id="nvMapBtn" type="button" title="Map — numbered notes (1.1, 1.1.1) or an index note's [[links]] as an ordered diagram" aria-haspopup="dialog" aria-expanded="false">
                     <i class="fa-solid fa-diagram-project"></i> <span class="nv-btn-label">Map</span>
                 </button>
+                <div class="nv-menuwrap nv-only-xs" id="nvLibMoreWrap">
+                    <button class="nv-ib" id="nvLibMoreBtn" type="button" title="View options" aria-label="View options" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>
+                    <div class="nv-menu" id="nvLibMoreMenu" role="menu" aria-label="View options">
+                        <button class="nv-act" role="menuitem" type="button" data-proxy="nvDensityBtn"><i class="fa-solid fa-list"></i> <span>Density: Comfortable</span></button>
+                        <button class="nv-act" role="menuitem" type="button" data-proxy="nvGraphBtn"><i class="fa-solid fa-circle-nodes"></i> <span>Graph view</span></button>
+                        <button class="nv-act" role="menuitem" type="button" data-proxy="nvMapBtn"><i class="fa-solid fa-diagram-project"></i> <span>Map</span></button>
+                    </div>
+                    <script>
+                    (function () {
+                        var wrap = document.getElementById('nvLibMoreWrap'), btn = document.getElementById('nvLibMoreBtn'), menu = document.getElementById('nvLibMoreMenu');
+                        if (!wrap || !btn || !menu) return;
+                        function setOpen(o) { menu.classList.toggle('nv-open', o); btn.setAttribute('aria-expanded', o ? 'true' : 'false'); }
+                        function sync() {
+                            var d = document.getElementById('nvDensityBtn'), compact = !!d && d.getAttribute('aria-pressed') === 'true';
+                            var it = menu.querySelector('[data-proxy="nvDensityBtn"]');
+                            it.querySelector('span').textContent = compact ? 'Density: Compact (tap for Comfortable)' : 'Density: Comfortable (tap for Compact)';
+                            it.querySelector('i').className = 'fa-solid fa-' + (compact ? 'table-list' : 'list');
+                        }
+                        btn.addEventListener('click', function () {
+                            var open = !menu.classList.contains('nv-open');
+                            if (open) { document.body.click(); sync(); }   /* lets the app close its own open menus first */
+                            setOpen(open);
+                        });
+                        menu.addEventListener('click', function (e) {
+                            var it = e.target.closest('[data-proxy]');
+                            if (!it) return;
+                            setOpen(false);
+                            var t = document.getElementById(it.getAttribute('data-proxy'));
+                            if (t) t.click();
+                        });
+                        document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) setOpen(false); }, true);
+                        document.addEventListener('keydown', function (e) {
+                            if (e.key === 'Escape' && menu.classList.contains('nv-open')) { setOpen(false); e.stopPropagation(); e.preventDefault(); }
+                        }, true);
+                    })();
+                    </script>
+                </div>
                 <span class="nv-grow"></span>
                 <button class="nv-btn nv-btn-primary nv-only-narrow" type="button" data-new><i class="fa-solid fa-plus"></i> New note</button>
                 <button class="nv-ib" type="button" data-close title="Close (Esc)" aria-label="Close Notes Vault"><i class="fa-solid fa-xmark"></i></button>
@@ -42842,9 +42901,10 @@ kbd {
        an `attachment://<id>` markdown reference. Keeping the record itself tiny (no note ids,
        no extra metadata) means the dedupe key and the stored bytes are the same object — a
        second paste of an already-seen image is a single indexed lookup, not a new row. */
-    const ATTACH_MAX_DIM = 1600;                      // px, longest side — plenty for reading on any screen
+    const ATTACH_MAX_DIM = 4096;                      // px, longest side — keeps full-resolution screenshots (iPhone ~2532px, Retina Mac ~2880px) sharp
     const ATTACH_MAX_SOURCE_BYTES = 25 * 1024 * 1024; // reject absurdly large pastes before even decoding them
-    const ATTACH_WEBP_QUALITY = 0.82;
+    const ATTACH_WEBP_QUALITY = 0.92;                 // lossy fallback, only used when it is clearly smaller than lossless
+    const ATTACH_LOSSY_PICK_RATIO = 0.4;              // use lossy only if it is < 40% of the lossless size (photos/gradients); screenshots/text stay pixel-exact
 
     function attachError(message) { const e = new Error(message); e.__attach = true; return e; }
 
@@ -42861,13 +42921,19 @@ kbd {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(bitmap, 0, 0, outW, outH);
         if (bitmap.close) bitmap.close();
-        let blob = await new Promise((res) => canvas.toBlob(res, 'image/webp', ATTACH_WEBP_QUALITY));
-        let mime = 'image/webp';
-        if (!blob) {   // WebP encoding unsupported (rare) — fall back to whatever the canvas can produce
+        // Encode lossless first (pixel-exact: sharp text in screenshots). If the browser really produced WebP,
+        // also try lossy and keep it only when it is much smaller (photos, gradients) — never blur a screenshot.
+        const encodeWebp = (q) => new Promise((res) => canvas.toBlob(res, 'image/webp', q));
+        let blob = await encodeWebp(1);
+        if (blob && blob.type === 'image/webp') {
+            const lossy = await encodeWebp(ATTACH_WEBP_QUALITY);
+            if (lossy && lossy.type === 'image/webp' && lossy.size < blob.size * ATTACH_LOSSY_PICK_RATIO) blob = lossy;
+        }
+        if (!blob) {   // encoding failed outright — fall back to whatever the canvas can produce
             blob = await new Promise((res) => canvas.toBlob(res));
-            mime = blob ? blob.type : 'image/png';
         }
         if (!blob) return null;
+        const mime = blob.type || 'image/png';   // Safari can't encode WebP and silently returns PNG: label it truthfully
         return { blob, mime, width: outW, height: outH };
     }
     async function hashBlob(blob) {
