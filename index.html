@@ -41743,6 +41743,7 @@ kbd {
                     <button class="nv-act" role="menuitem" data-gear="importmd"><i class="fa-solid fa-file-import"></i> Import .md files…</button>
                     <button class="nv-act" role="menuitem" data-gear="importmddir"><i class="fa-solid fa-folder-open"></i> Import .md folder…</button>
                     <button class="nv-act" role="menuitem" data-gear="importpdf"><i class="fa-solid fa-file-pdf"></i> Import PDF as note (text / OCR)…</button>
+                    <button class="nv-act" role="menuitem" data-gear="importdocx"><i class="fa-solid fa-file-word"></i> Import Word (.docx) as note…</button>
                     <button class="nv-act" role="menuitem" data-gear="export"><i class="fa-solid fa-download"></i> Export backup (JSON)</button>
                     <button class="nv-act" role="menuitem" data-gear="import"><i class="fa-solid fa-upload"></i> Import backup…</button>
                     <button class="nv-act" role="menuitem" data-gear="persist"><i class="fa-solid fa-shield-halved"></i> Protect from browser cleanup</button>
@@ -41756,6 +41757,7 @@ kbd {
         <input type="file" id="nvImportMdFile" accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain" multiple hidden>
         <input type="file" id="nvImportMdDir" webkitdirectory multiple hidden>
         <input type="file" id="nvImportPdfNote" accept=".pdf,application/pdf" multiple hidden>
+        <input type="file" id="nvImportDocx" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden>
         <input type="file" id="nvAttachInput" accept="image/*" multiple hidden>
         <input type="file" id="nvPdfInput" accept="application/pdf" multiple hidden>
         <input type="file" id="nvFileInput" accept=".xlsx,.xlsm,.xlsb,.xls,.csv,.ods,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" multiple hidden>
@@ -43055,6 +43057,19 @@ kbd {
         if (!blob) return null;
         const mime = blob.type || 'image/png';   // Safari can't encode WebP and silently returns PNG: label it truthfully
         return { blob, mime, width: outW, height: outH };
+    }
+    // Stored image (usually WebP) → lossless PNG at its full stored size. The system clipboard only takes PNG for images,
+    // so "Copy" needs this; PNG is lossless, so pasting into Word / chat apps loses nothing.
+    async function attachmentBlobToPng(blob) {
+        const bmp = await createImageBitmap(blob);
+        const c = document.createElement('canvas');
+        c.width = bmp.width; c.height = bmp.height;
+        c.getContext('2d').drawImage(bmp, 0, 0);
+        if (bmp.close) bmp.close();
+        const out = await new Promise((res) => c.toBlob(res, 'image/png'));
+        c.width = c.height = 0;
+        if (!out) throw new Error('PNG encode failed');
+        return out;
     }
     async function hashBlob(blob) {
         const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
@@ -45579,10 +45594,20 @@ kbd {
                 window.open(url, '_blank', 'noopener');
                 setTimeout(() => URL.revokeObjectURL(url), 60000);
             } else if (act === 'copy') {
+                // Puts the image on the clipboard twice: a lossless PNG (for other apps) and the note reference
+                // `![](attachment://id)` as text. Pasting into another note here uses the reference — the very same stored
+                // image: no re-encode, no quality loss, no duplicate in storage (see onEditorPaste).
                 try {
                     if (navigator.clipboard && window.ClipboardItem) {
-                        await navigator.clipboard.write([new ClipboardItem({ [rec.mime]: rec.blob })]);
-                        flash('Image copied');
+                        const refBlob = new Blob(['![](attachment://' + rec.id + ')'], { type: 'text/plain' });
+                        const pngP = rec.mime === 'image/png' ? Promise.resolve(rec.blob) : attachmentBlobToPng(rec.blob);
+                        try {
+                            await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngP, 'text/plain': refBlob })]);
+                            flash('Image copied — paste it into any note (original quality)');
+                        } catch (e1) {
+                            await navigator.clipboard.write([new ClipboardItem({ 'text/plain': refBlob })]);
+                            flash('Image link copied — paste it into another note');
+                        }
                     } else { flash('Copy isn’t supported in this browser'); }
                 } catch (err) { flash('Couldn’t copy that image'); }
             } else if (act === 'zoom') {
@@ -47384,6 +47409,10 @@ kbd {
             if (S.note === n) setSave('error');
         }
     }
+    // Autosave is debounced (SAVE_DELAY). Without this, closing the tab / shutting down within that window left the last edit
+    // — e.g. a screenshot pasted just before closing — unsaved. Hiding or leaving the page now saves immediately.
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave().catch(() => {}); });
+    window.addEventListener('pagehide', () => { flushSave().catch(() => {}); });
 
     /* ═════════════ Actions ═════════════ */
     function download(content, filename, mime) {
@@ -48535,6 +48564,83 @@ kbd {
         const s = String(t || '').replace(/\s/g, '');
         if (s.length < 25) return true;
         return ((s.match(/[\uFFFD\uE000-\uF8FF\u0000-\u0008]/g) || []).length / s.length) > 0.08;
+    }
+
+    /* ── Import Word (.docx) as a note ──────────────────────────────────────────────────────────────
+       mammoth.js reads the .docx → clean HTML (headings, bold/italic, lists, tables, links, images);
+       Turndown (+ GFM tables) turns that HTML into Markdown. Embedded pictures are stored as note
+       attachments (![](attachment://id)); the original .docx is attached too, as a safety net for
+       anything Markdown can't hold (equations, text boxes, tracked-change history). ───────────── */
+    const MAMMOTH_VER = '1.11.0', TURNDOWN_VER = '7.2.0', TDGFM_VER = '1.0.2';
+    let docxLibPromise = null;
+    function loadDocxLibs() {
+        if (!docxLibPromise) docxLibPromise = (async () => {
+            const cdn = 'https://cdn.jsdelivr.net/npm/';
+            if (!window.mammoth) await loadScriptOnce(cdn + 'mammoth@' + MAMMOTH_VER + '/mammoth.browser.min.js');
+            if (!window.TurndownService) await loadScriptOnce(cdn + 'turndown@' + TURNDOWN_VER + '/dist/turndown.js');
+            if (!window.turndownPluginGfm) await loadScriptOnce(cdn + 'turndown-plugin-gfm@' + TDGFM_VER + '/dist/turndown-plugin-gfm.js');
+            return { mammoth: window.mammoth, Turndown: window.TurndownService, gfm: window.turndownPluginGfm };
+        })().catch((e) => { docxLibPromise = null; throw e; });
+        return docxLibPromise;
+    }
+    // Word tables rarely mark a header row, but Markdown tables need one: promote the first row.
+    // Multi-paragraph cells are flattened to one line (a Markdown cell can't hold a line break).
+    function docxPrepareHtml(html) {
+        const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
+        doc.querySelectorAll('table').forEach((t) => {
+            const rows = t.querySelectorAll('tr'); if (!rows.length) return;
+            t.querySelectorAll('td, th').forEach((c) => {
+                c.querySelectorAll('p').forEach((p, i, all) => { if (i < all.length - 1) p.insertAdjacentHTML('afterend', ' <br> '); p.replaceWith(...p.childNodes); });
+                c.querySelectorAll('ul, ol').forEach((l) => { l.replaceWith(doc.createTextNode(Array.from(l.children).map((li) => '\u2022 ' + li.textContent.trim()).join('; '))); });
+            });
+            Array.from(rows[0].children).forEach((c) => { if (c.nodeName === 'TD') { const th = doc.createElement('th'); th.innerHTML = c.innerHTML; c.replaceWith(th); } });
+            let thead = t.querySelector('thead');
+            if (!thead) { thead = doc.createElement('thead'); t.insertBefore(thead, t.firstChild); }
+            if (rows[0].parentNode !== thead) thead.appendChild(rows[0]);
+        });
+        return doc.body.innerHTML;
+    }
+    async function importDocxAsNotes(fileList) {
+        const all = Array.from(fileList || []);
+        const files = all.filter((f) => /\.docx$/i.test(f.name));
+        if (all.some((f) => /\.doc$/i.test(f.name))) alert('Old Word files (.doc) can\u2019t be read. Open them in Word and use Save As \u2192 .docx, then import again.');
+        if (!files.length) return;
+        let libs;
+        try { toast('Loading Word reader\u2026'); libs = await loadDocxLibs(); }
+        catch (e) { alert('Could not load the Word reader: ' + (e.message || e)); return; }
+        const td = new libs.Turndown({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced', emDelimiter: '*', hr: '---' });
+        td.use(libs.gfm.gfm);
+        let made = 0, failed = 0, warns = 0, skippedImgs = 0, lastId = null;
+        for (const f of files) {
+            try {
+                toast(f.name + ' \u2014 converting\u2026');
+                let imgN = 0;
+                const res = await libs.mammoth.convertToHtml({ arrayBuffer: await f.arrayBuffer() }, {
+                    styleMap: ["p[style-name='Title'] => h1:fresh", "p[style-name='Subtitle'] => h2:fresh", "u => u"],
+                    convertImage: libs.mammoth.images.imgElement(async (image) => {
+                        try {
+                            const b64 = await image.read('base64'), bin = atob(b64), bytes = new Uint8Array(bin.length);
+                            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                            const ext = (image.contentType || 'image/png').split('/')[1].replace(/[^a-z0-9]/gi, '') || 'png';
+                            const rec = await ingestAttachment(new File([bytes], 'word-image-' + (++imgN) + '.' + ext, { type: image.contentType || 'image/png' }));
+                            return { src: 'attachment://' + rec.id, alt: image.altText || '' };
+                        } catch (err) { skippedImgs++; return { src: '', alt: '[image could not be imported]' }; }
+                    })
+                });
+                warns += (res.messages || []).filter((m) => m.type === 'warning').length;
+                let md = td.turndown(docxPrepareHtml(res.value)).trim();
+                let head = '';
+                try { const rec = await ingestAttachment(f); head = '[\uD83D\uDCC4 ' + f.name + '](attachment://' + rec.id + ')\n\n'; } catch (e) { /* attach is a bonus */ }
+                const id = uid();
+                await restoreNotesList([{ id, title: f.name.replace(/\.docx$/i, ''), markdown: head + (md || '*No text could be extracted from this Word file.*'), type: 'General',
+                    tags: ['word'], pinned: false, createdAt: Date.now(), updatedAt: Date.now() }]);
+                made++; lastId = id;
+            } catch (e) { console.warn('Notes Vault: Word import failed', f.name, e); failed++; }
+        }
+        toast('Imported ' + made + ' Word note' + (made === 1 ? '' : 's') + (failed ? ' \u2014 ' + failed + ' couldn\u2019t be read (damaged or password-protected?)' : '')
+            + (warns ? ' \u2014 ' + warns + ' element' + (warns === 1 ? '' : 's') + ' (equations / text boxes?) were skipped: compare with the attached original' : '')
+            + (skippedImgs ? ' \u2014 ' + skippedImgs + ' image' + (skippedImgs === 1 ? '' : 's') + ' couldn\u2019t be imported' : ''));
+        if (made === 1 && lastId) openNote(lastId);
     }
 
     async function importPdfAsNotes(fileList) {
@@ -49743,12 +49849,29 @@ kbd {
     // pasting several images in a row — or while a previous one is still encoding — can never
     // have its indexOf() match land on the wrong placeholder.
     let attachJobSeq = 0;
+    let attachInFlight = 0;   // images still being processed — closing the tab now would lose them
+    window.addEventListener('beforeunload', (ev) => { if (attachInFlight > 0) { ev.preventDefault(); ev.returnValue = ''; } });
+    // The person switched to another note while an image was still processing: put the finished image into the note it was
+    // pasted into (the shared editor now shows a different note, so it can't be patched through the editor).
+    async function patchPendingAttachment(noteId, placeholder, md) {
+        try {
+            const n = S.notes.find((x) => x.id === noteId);
+            if (!n || typeof n.markdown !== 'string' || n.markdown.indexOf(placeholder) === -1) return false;
+            n.markdown = n.markdown.replace(placeholder, () => md);
+            n.updatedAt = Date.now();
+            await dbPut(n);
+            syncAttachmentRefs(n.id, n.markdown).catch(() => {});
+            return true;
+        } catch (e) { return false; }
+    }
     async function insertAttachments(files) {
         const ta = el.src;
         for (const file of files) {
             const isPdf = file.type === 'application/pdf';
             const isSheet = !isPdf && !!sheetMimeOf(file);
             const jobId = 'j' + (++attachJobSeq) + Date.now().toString(36);
+            const noteId = S.note ? S.note.id : null;
+            attachInFlight++;
             // A PDF is inserted as a plain markdown link (not `![]()`) — a browser can't decode a
             // PDF blob as an <img>, so it gets its own inline viewer at render time instead (see
             // resolveAttachments/renderPdfEmbed) rather than pretending to be a picture.
@@ -49772,10 +49895,17 @@ kbd {
             } catch (e) {
                 err = e; md = '';
             }
-            const idx = ta.value.indexOf(placeholder);
+            // `ta` is shared by every note: only touch it while the note the image was pasted into is still the open one.
+            const sameNote = !noteId || (S.note && S.note.id === noteId);
+            const idx = sameNote ? ta.value.indexOf(placeholder) : -1;
             if (idx !== -1) replaceRange(idx, idx + placeholder.length, md, idx + md.length);
+            else if (!sameNote) {
+                const ok = await patchPendingAttachment(noteId, placeholder, md);
+                if (!ok && md) toast('The image was stored, but the note you pasted it into could not be updated.');
+            }
             else if (md) { const p = ta.selectionStart; replaceRange(p, p, md, p + md.length); }
-            markDirty();
+            attachInFlight--;
+            if (sameNote) { markDirty(); flushSave().catch(() => {}); }   // save now — don't leave a window where closing loses the image
             if (err) toast(err.message || 'Could not attach that file.');
         }
     }
@@ -50214,6 +50344,18 @@ kbd {
             if (richMd) { e.preventDefault(); insertPastedRich(richMd, e.clipboardData.getData('text/plain')); return; }
         }
         const imgFiles = getImageFilesFromClipboard(e.clipboardData);
+        // An image copied from a note here carries its `![](attachment://id)` reference next to the PNG. Paste the reference when
+        // that image exists in this vault: same stored bytes, so no re-encode / no blur / no duplicate. Otherwise fall back to the PNG.
+        const refTxt = ((e.clipboardData && e.clipboardData.getData('text/plain')) || '').trim();
+        const refM = /^!\[[^\]]*\]\(attachment:\/\/(att_[A-Za-z0-9_-]+)\)$/.exec(refTxt);
+        if (refM) {
+            e.preventDefault();   // before the first await, so the editor knows the paste is handled
+            const hit = await dbGetAttachment(refM[1]).catch(() => null);
+            if (hit && hit.blob) { replaceRange(s, en, refTxt, s + refTxt.length); markDirty(); }
+            else if (imgFiles.length) insertAttachments(imgFiles);
+            else toast('That image isn’t in this vault, so only its link could be pasted.');
+            return;
+        }
         if (imgFiles.length) { e.preventDefault(); insertAttachments(imgFiles); return; }
         const t = ((e.clipboardData && e.clipboardData.getData('text/plain')) || '').trim();
         // Nothing usable in the DataTransfer synchronously, but it's flagged as carrying a
@@ -50853,6 +50995,7 @@ kbd {
         add(V, 'impmd', 'file-import', 'Import .md files…', () => el.mdFile.click(), { kw: 'import markdown obsidian open upload txt' });
         add(V, 'impmddir', 'folder-open', 'Import .md folder…', () => el.mdDir.click(), { kw: 'import markdown obsidian vault folder bulk' });
         add(V, 'imppdf', 'file-pdf', 'Import PDF as note (text / OCR)…', () => el.pdfNote.click(), { kw: 'import pdf extract text ocr scan convert' });
+        add(V, 'impdocx', 'file-word', 'Import Word (.docx) as note…', () => el.docxNote.click(), { kw: 'import word docx doc microsoft office convert markdown' });
         add(V, 'pdfcrop', 'crop', 'Extract region from PDF (crop → text / OCR)…', () => openPdfCrop(), { kw: 'crop region snip select pdf ocr table chart paragraph extract' });
         add(V, 'persist', 'shield-alt', 'Protect from browser cleanup', requestPersist, { kw: 'storage persistent', more: true });
         if (S.trash.length) add(V, 'empty', 'trash', 'Empty Trash', emptyTrash, { kw: 'delete forever purge', danger: true });
@@ -52205,7 +52348,7 @@ kbd {
         el = {
             fab: $('nvFab'), overlay: $('nvOverlay'), app: $('nvApp'), scrim: $('nvScrim'),
             side: $('nvSide'), sideScroll: $('nvSideScroll'), search: $('nvSearch'), clear: $('nvClear'),
-            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), mdFile: $('nvImportMdFile'), mdDir: $('nvImportMdDir'), pdfNote: $('nvImportPdfNote'), attachInput: $('nvAttachInput'), pdfInput: $('nvPdfInput'), fileInput: $('nvFileInput'),
+            storage: $('nvStorage'), gear: $('nvGear'), gearMenu: $('nvGearMenu'), importFile: $('nvImportFile'), mdFile: $('nvImportMdFile'), mdDir: $('nvImportMdDir'), pdfNote: $('nvImportPdfNote'), docxNote: $('nvImportDocx'), attachInput: $('nvAttachInput'), pdfInput: $('nvPdfInput'), fileInput: $('nvFileInput'),
             themeBtn: $('nvThemeBtn'), themeMenu: $('nvThemeMenu'),
             lib: $('nvLib'), libScroll: $('nvLibScroll'), libTitle: $('nvLibTitle'), libSub: $('nvLibSub'), list: $('nvList'),
             docView: $('nvDocView'), docScroll: $('nvDocScroll'), title: $('nvTitle'), docMeta: $('nvDocMeta'),
@@ -52692,6 +52835,7 @@ kbd {
             else if (b.dataset.gear === 'importmd') el.mdFile.click();
             else if (b.dataset.gear === 'importmddir') el.mdDir.click();
             else if (b.dataset.gear === 'importpdf') el.pdfNote.click();
+            else if (b.dataset.gear === 'importdocx') el.docxNote.click();
             else if (b.dataset.gear === 'persist') requestPersist();
             else if (b.dataset.gear === 'dupes') openDupModal();
             else if (b.dataset.gear === 'findreplace') openFrModal();
@@ -52701,6 +52845,7 @@ kbd {
         el.mdFile.addEventListener('change', async () => { const fl = Array.from(el.mdFile.files || []); el.mdFile.value = ''; await importMarkdownFiles(fl, false); });
         el.mdDir.addEventListener('change', async () => { const fl = Array.from(el.mdDir.files || []); el.mdDir.value = ''; await importMarkdownFiles(fl, true); });
         el.pdfNote.addEventListener('change', async () => { const fl = Array.from(el.pdfNote.files || []); el.pdfNote.value = ''; await importPdfAsNotes(fl); });
+        el.docxNote.addEventListener('change', async () => { const fl = Array.from(el.docxNote.files || []); el.docxNote.value = ''; await importDocxAsNotes(fl); });
 
         /* Drag & drop files anywhere in the vault: .pdf → note (text / OCR), .md/.txt → note.
            Dropping straight onto the editor in Edit mode keeps its old behaviour (a PDF is
@@ -52712,10 +52857,11 @@ kbd {
             const hasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
             const isPdfF = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
             const isMdF = (f) => /\.(md|markdown|mdown|txt)$/i.test(f.name);
+            const isDocxF = (f) => /\.docx$/i.test(f.name);
             const showHint = () => {
                 if (hint) return;
                 hint = document.createElement('div');
-                hint.textContent = 'Drop .pdf or .md files to import them as notes';
+                hint.textContent = 'Drop .pdf, .docx or .md files to import them as notes';
                 hint.style.cssText = 'position:fixed;inset:12px;z-index:99999;pointer-events:none;display:flex;align-items:center;justify-content:center;'
                     + 'border:3px dashed var(--primary,#db2777);border-radius:18px;background:rgba(219,39,119,.10);color:var(--primary,#db2777);'
                     + 'font:600 1.1rem system-ui,sans-serif;text-align:center;padding:20px;backdrop-filter:blur(2px);';
@@ -52730,11 +52876,12 @@ kbd {
                 if (e.defaultPrevented || !hasFiles(e)) return;
                 e.preventDefault();
                 const fl = Array.from(e.dataTransfer.files);
-                const pdfs = fl.filter(isPdfF), mds = fl.filter((f) => !isPdfF(f) && isMdF(f));
-                if (!pdfs.length && !mds.length) { toast('Drop .pdf, .md or .txt files to import them as notes.'); return; }
+                const pdfs = fl.filter(isPdfF), docxs = fl.filter(isDocxF), mds = fl.filter((f) => !isPdfF(f) && isMdF(f));
+                if (!pdfs.length && !mds.length && !docxs.length) { toast('Drop .pdf, .docx, .md or .txt files to import them as notes.'); return; }
                 (async () => {
                     if (mds.length) await importMarkdownFiles(mds, false);
                     if (pdfs.length) await importPdfAsNotes(pdfs);
+                    if (docxs.length) await importDocxAsNotes(docxs);
                 })();
             });
             window.addEventListener('dragend', hideHint);
