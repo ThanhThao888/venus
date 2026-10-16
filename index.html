@@ -41008,20 +41008,56 @@ body.nv-pdf-resizing { user-select: none !important; cursor: col-resize !importa
 }
 .nv-app.nv-insp-on .nv-insp { display: flex; }
 .nv-tabs {
-    display: flex; gap: 4px; padding: 10px 14px 0; border-bottom: 1px solid var(--border-color);
-    overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+    display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch;
 }
-.nv-tabs::-webkit-scrollbar { height: 4px; }
-.nv-tabs::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
-.nv-tabs::-webkit-scrollbar-track { background: transparent; }
+.nv-tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .nv-tab {
-    padding: 8px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none;
-    color: var(--text-muted); font-size: 0.84rem; font-weight: 600; cursor: pointer;
-    flex: 0 0 auto; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0; padding: 8px 6px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none;
+    color: var(--text-muted); font-size: 0.82rem; font-weight: 600; cursor: pointer; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .nv-tab:hover { color: var(--text-dark); }
+.nv-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: 6px; }
 .nv-tab[aria-selected="true"] { color: var(--primary-dark); border-bottom-color: var(--primary); }
-.nv-insp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 16px 24px; }
+.nv-insp-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 18px 16px 24px; }
+/* Slim 6px scrollbar for the inspector (Chrome/Safari/Edge draw their own; Firefox falls back to "thin") */
+.nv-insp-body::-webkit-scrollbar { width: 6px; height: 0; }
+.nv-insp-body::-webkit-scrollbar-track { background: transparent; }
+.nv-insp-body::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.22); border-radius: 3px; }
+.nv-insp-body::-webkit-scrollbar-thumb:hover { background: rgba(var(--primary-rgb), 0.42); }
+@supports not selector(::-webkit-scrollbar) {
+    .nv-insp-body { scrollbar-width: thin; scrollbar-color: rgba(var(--primary-rgb), 0.3) transparent; }
+}
+
+/* ── Inspector → Info tab: grouped sections ── */
+.nv-insp .nv-sec { margin: 0; padding: 14px 0 2px; border-top: 1px solid var(--border-color); }
+.nv-insp .nv-sec:first-child { padding-top: 0; border-top: 0; }
+.nv-insp .nv-sec-h {
+    display: flex; align-items: center; gap: 8px; margin: 0 0 11px; padding: 0;
+    font-size: 0.86rem; font-weight: 700; color: var(--text-dark);
+}
+.nv-insp .nv-side-h.nv-sec-h { padding: 14px 0 0; margin: 6px 0 8px; border-top: 1px solid var(--border-color); }
+.nv-insp .nv-sec > .nv-sec-h { padding: 0; margin: 0 0 11px; }
+.nv-insp details.nv-sec > summary.nv-sec-h {
+    margin: 0 0 11px; cursor: pointer; list-style: none; user-select: none; border-radius: 6px;
+}
+.nv-insp details.nv-sec:not([open]) > summary.nv-sec-h { margin-bottom: 12px; }
+.nv-insp details.nv-sec > summary::-webkit-details-marker { display: none; }
+.nv-insp details.nv-sec > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.nv-sec-count {
+    margin-left: auto; padding: 1px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 600;
+    color: var(--text-muted); background: transparent;
+}
+.nv-sec-count.nv-has { color: var(--primary-dark); background: var(--primary-light); }
+.nv-sec-chev { font-size: 0.68rem; color: var(--text-muted); transition: transform 0.18s ease; }
+details.nv-sec[open] > summary .nv-sec-chev { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .nv-sec-chev { transition: none; } }
+.nv-insp #nvDeadline { width: 100%; }
+
+/* Status bar: right side stays on one line and trims instead of overflowing; wraps on small screens */
+#nvStatRight { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+@media (max-width: 600px) { #nvStatRight { white-space: normal; line-height: 1.35; } }
 .nv-field { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 8px; align-items: start; margin-bottom: 13px; font-size: 0.83rem; }
 .nv-field.nv-stack { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .nv-field.nv-stack .nv-lbl { padding-top: 0; }
@@ -42131,7 +42167,9 @@ kbd {
             <button class="nv-tab" role="tab" id="nvTabHistory" data-tab="history" aria-selected="false" type="button">History</button>
         </div>
         <div class="nv-insp-body" id="nvPaneInfo" role="tabpanel" aria-labelledby="nvTabInfo">
-            <div class="nv-field">
+            <section class="nv-sec" aria-label="Organize">
+            <h3 class="nv-sec-h">Organize</h3>
+            <div class="nv-field nv-stack">
                 <label class="nv-lbl" for="nvFolderIn">Folder</label>
                 <div class="nv-combo">
                     <input type="text" id="nvFolderIn" autocomplete="off" placeholder="General">
@@ -42145,6 +42183,9 @@ kbd {
                     <ul class="nv-combo-pop" id="nvTagPop" role="listbox" aria-label="Tag suggestions" hidden></ul>
                 </div>
             </div>
+            </section>
+            <details class="nv-sec" id="nvTrackerFold">
+            <summary class="nv-sec-h"><span>Tracker links</span><span class="nv-sec-count" id="nvTrackerCount">None</span><i class="fa-solid fa-chevron-down nv-sec-chev" aria-hidden="true"></i></summary>
             <div class="nv-field nv-stack">
                 <label class="nv-lbl" for="nvLinkedCareer">Linked skill</label>
                 <div class="nv-linkskill">
@@ -42152,12 +42193,16 @@ kbd {
                     <select id="nvLinkedSkill" aria-label="Skill" disabled><option value="">No skill selected</option></select>
                 </div>
             </div>
-            <div class="nv-field"><label class="nv-lbl" for="nvCourse">Course</label><div class="nv-combo"><input type="text" id="nvCourse" autocomplete="off" placeholder="e.g. Udemy — Python for Finance"><ul class="nv-combo-pop" id="nvCoursePop" role="listbox" aria-label="Course suggestions" hidden></ul></div></div>
-            <div class="nv-field"><label class="nv-lbl" for="nvResource">Resource</label><div class="nv-combo"><input type="text" id="nvResource" autocomplete="off" placeholder="e.g. CFA Institute — FSA"><ul class="nv-combo-pop" id="nvResourcePop" role="listbox" aria-label="Resource suggestions" hidden></ul></div></div>
-            <div class="nv-field"><label class="nv-lbl" for="nvAnalysis">Analysis</label><div class="nv-combo"><input type="text" id="nvAnalysis" autocomplete="off" placeholder="e.g. VCB DCF Thesis"><ul class="nv-combo-pop" id="nvAnalysisPop" role="listbox" aria-label="Analysis suggestions" hidden></ul></div></div>
-            <div class="nv-field"><label class="nv-lbl" for="nvDeal">Deal</label><div class="nv-combo"><input type="text" id="nvDeal" autocomplete="off" placeholder="e.g. VCB/FPT Merger"><ul class="nv-combo-pop" id="nvDealPop" role="listbox" aria-label="Deal suggestions" hidden></ul></div></div>
-            <div class="nv-field"><label class="nv-lbl" for="nvDeadline">Deadline</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div></div>
-            <div class="nv-side-h">Map relations</div>
+            <div class="nv-field nv-stack"><label class="nv-lbl" for="nvCourse">Course</label><div class="nv-combo"><input type="text" id="nvCourse" autocomplete="off" placeholder="e.g. Udemy — Python for Finance"><ul class="nv-combo-pop" id="nvCoursePop" role="listbox" aria-label="Course suggestions" hidden></ul></div></div>
+            <div class="nv-field nv-stack"><label class="nv-lbl" for="nvResource">Resource</label><div class="nv-combo"><input type="text" id="nvResource" autocomplete="off" placeholder="e.g. CFA Institute — FSA"><ul class="nv-combo-pop" id="nvResourcePop" role="listbox" aria-label="Resource suggestions" hidden></ul></div></div>
+            <div class="nv-field nv-stack"><label class="nv-lbl" for="nvAnalysis">Analysis</label><div class="nv-combo"><input type="text" id="nvAnalysis" autocomplete="off" placeholder="e.g. VCB DCF Thesis"><ul class="nv-combo-pop" id="nvAnalysisPop" role="listbox" aria-label="Analysis suggestions" hidden></ul></div></div>
+            <div class="nv-field nv-stack"><label class="nv-lbl" for="nvDeal">Deal</label><div class="nv-combo"><input type="text" id="nvDeal" autocomplete="off" placeholder="e.g. VCB/FPT Merger"><ul class="nv-combo-pop" id="nvDealPop" role="listbox" aria-label="Deal suggestions" hidden></ul></div></div>
+            </details>
+            <section class="nv-sec" aria-label="Deadline">
+            <h3 class="nv-sec-h">Deadline</h3>
+            <div class="nv-field nv-stack"><label class="nv-lbl" for="nvDeadline">Due date</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div></div>
+            </section>
+            <div class="nv-side-h nv-sec-h">Map relations</div>
             <p class="nv-lk-hint">You decide how notes relate — the Map draws exactly this. Nothing is guessed from titles or numbers.</p>
             <div class="nv-field nv-stack">
                 <label class="nv-lbl" for="nvRelParent">Parent note</label>
@@ -42194,7 +42239,7 @@ kbd {
             <div class="nv-field"><span class="nv-lbl">Words</span><div class="nv-val" id="nvWords">0</div></div>
             <div class="nv-field"><span class="nv-lbl">Characters</span><div class="nv-val" id="nvChars">0</div></div>
             <div class="nv-field"><span class="nv-lbl">Reading</span><div class="nv-val" id="nvReadTime">—</div></div>
-            <div class="nv-side-h">Actions</div>
+            <div class="nv-side-h nv-sec-h">Actions</div>
             <div id="nvActions"></div>
         </div>
         <div class="nv-insp-body" id="nvPaneOutline" role="tabpanel" aria-labelledby="nvTabOutline" hidden>
@@ -45021,7 +45066,7 @@ kbd {
                 if (window.nvRefreshSkillBadges) window.nvRefreshSkillBadges();
             }
         }
-        if (changed) { renderTagChips(); renderDocMeta(); markDirty(); toast('Filled in note details from the pasted frontmatter.'); }
+        if (changed) { renderTagChips(); renderDocMeta(); nvUpdateLinkCount(); markDirty(); toast('Filled in note details from the pasted frontmatter.'); }
     }
 
     /* ═════════════ Footnotes: "[^1]" refs + "[^1]: text" definitions ═════════════
@@ -46610,6 +46655,16 @@ kbd {
         el.linkedSkill.innerHTML = html;
     }
 
+    // "Tracker links" group is collapsed by default — its header shows how many of the links are filled in.
+    function nvUpdateLinkCount() {
+        const out = document.getElementById('nvTrackerCount');
+        if (!out) return;
+        let n = 0;
+        [el.linkedSkill, el.course, el.resource, el.analysis, el.deal].forEach((f) => { if (f && String(f.value || '').trim()) n++; });
+        out.textContent = n ? n + ' linked' : 'None';
+        out.classList.toggle('nv-has', n > 0);
+    }
+
     function fillDoc() {
         const n = S.note;
         S.viewRev = null; el.revBar.hidden = true; el.title.readOnly = false;   // never carry a version preview over to another note
@@ -46638,8 +46693,13 @@ kbd {
         renderMentions();
         renderContextPane();
         renderMapRel();
+        nvUpdateLinkCount();
     }
 
+    // 12345 → "12.3k" (keeps the status bar short; exact counts stay in the Info tab)
+    function nvShortCount(n) {
+        return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+    }
     function refreshStats() {
         const n = S.note;
         if (!n) return;
@@ -46650,7 +46710,7 @@ kbd {
         const readMin = words ? Math.max(1, Math.round(words / 220)) : 0;
         el.readTime.textContent = words ? '~' + readMin + ' min' : '—';
         rpWords = words;
-        rpStatBase = words.toLocaleString() + ' words · ' + md.length.toLocaleString() + ' characters' + (words ? ' · ~' + readMin + ' min read' : '');
+        rpStatBase = nvShortCount(words) + ' words' + (words ? ' · ~' + readMin + ' min read' : '');
         el.statRight.textContent = rpStatBase;
         if (S.mode === 'read') rpShowStatus(rpCurrentPct());   // keep the "% read" part in sync after an edit/rename
     }
@@ -46728,8 +46788,8 @@ kbd {
         if (!el.statRight || !S.note || !rpStatBase) return;
         if (pct === null || pct === undefined) { el.statRight.textContent = rpStatBase; return; }
         const left = Math.ceil(rpWords * (1 - pct / 100) / 220);
-        el.statRight.textContent = rpStatBase + ' · ' + Math.round(pct) + '% read'
-            + (pct >= 99 ? ' · finished' : (left > 0 ? ' · ~' + left + ' min left' : ''));
+        el.statRight.textContent = rpStatBase + ' · ' + Math.round(pct) + '%'
+            + (pct >= 99 ? ' · finished' : (pct >= 1 && left > 0 ? ' · ~' + left + ' min left' : ''));
     }
     // Called right after a note is opened. Jumps back to the saved spot unless the note was
     // basically unread (<3%) or already finished (>97%) — those just start from the top.
@@ -53266,6 +53326,8 @@ kbd {
             renderDocMeta();
             markDirty();
         });
+        { const fold = document.getElementById('nvTrackerFold');
+          if (fold) ['input', 'change', 'focusout', 'click'].forEach((ev) => fold.addEventListener(ev, () => requestAnimationFrame(nvUpdateLinkCount))); }
         // ── Map relations (Info tab): parent / sub-notes / connections ──
         if (el.relParent && el.relKidIn && el.relLinkIn) {
             const pickParent = async (title) => {
