@@ -41544,34 +41544,157 @@ kbd {
 .nv-ren-acts .nv-ren-cancel { margin-top: 4px; }
 
 /* ═════════════ Note map (parents / sub-notes / connections → Mermaid) + in-note Mermaid diagrams ═════════════ */
-.nvm-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 330px minmax(0, 1fr); }
-.nvm-side { overflow-y: auto; padding: 16px 16px 20px; border-right: 1px solid var(--border-color); background: var(--bg-white); display: flex; flex-direction: column; gap: 14px; }
-.nvm-field > label, .nvm-field > .nvm-lab { display: block; margin-bottom: 5px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
-.nvm-field select, .nvm-field textarea {
-    width: 100%; padding: 8px 10px; border-radius: 10px; font: inherit; font-size: 0.84rem;
+/* ═════════════ Note map — panel, canvas, states ═════════════
+   Classes are nmp-* on purpose: the old nvm-* names collide with the "merge notes" dialog,
+   which injects its own .nvm-body / .nvm-foot rules. All element IDs are unchanged. */
+#nvMap { --nmp-edge: color-mix(in srgb, var(--primary) 62%, var(--bg-light)); --nmp-ease: cubic-bezier(.3, .7, .2, 1); outline: none; }
+#nvMap [hidden] { display: none !important; }
+#nvMap :where(button, summary, [role="radio"]):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+#nvMap .nvg-title { min-width: 0; }
+#nvMap .nvg-title > div { min-width: 0; }
+#nvMap .nvg-title p { max-width: 62ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nmp-toggle { color: var(--text-dark); }
+
+/* layout: options panel + stage */
+.nmp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 344px minmax(0, 1fr); transition: grid-template-columns .24s var(--nmp-ease); }
+.nmp-body.nmp-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+.nmp-side { min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-white); border-right: 1px solid var(--border-color); }
+.nmp-collapsed .nmp-side { visibility: hidden; border-right-color: transparent; transition: visibility 0s .24s; }
+.nmp-sidebody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 16px 16px 6px; display: flex; flex-direction: column; gap: 14px; }
+
+/* collapsible sections — hairline separated, not boxed */
+.nmp-sec { border-top: 1px solid var(--border-color); }
+.nmp-sec > summary { list-style: none; display: flex; align-items: center; gap: 9px; padding: 11px 2px; border-radius: 8px; cursor: pointer; user-select: none; font-size: .86rem; font-weight: 700; color: var(--text-dark); }
+.nmp-sec > summary::-webkit-details-marker { display: none; }
+.nmp-sec > summary > i:first-child { width: 16px; text-align: center; font-size: .82rem; color: var(--primary); }
+.nmp-sec > summary::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); transform: rotate(-45deg); transition: transform .2s var(--nmp-ease); }
+.nmp-sec[open] > summary::after { transform: rotate(45deg); }
+.nmp-sec > summary:hover { color: var(--primary-dark); }
+.nmp-sec-body { display: flex; flex-direction: column; gap: 13px; padding: 2px 2px 16px; }
+
+/* fields */
+.nmp-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.nmp-field > label, .nmp-lab { font-size: .8rem; font-weight: 600; color: var(--text-dark); }
+.nmp-field select, .nmp-field textarea, .nmp-rel select, .nmp-rel input[type="text"] {
+    width: 100%; padding: 9px 11px; border-radius: 10px; font: inherit; font-size: .85rem; line-height: 1.35;
     border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); outline: none;
+    transition: border-color .15s, box-shadow .15s, background-color .15s;
 }
-.nvm-field select:focus, .nvm-field textarea:focus { border-color: var(--primary); background: var(--bg-white); }
-.nvm-field textarea { resize: vertical; min-height: 70px; line-height: 1.45; }
-.nvm-field textarea.nvm-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.76rem; min-height: 170px; white-space: pre; }
-.nvm-check { display: flex; align-items: center; gap: 8px; font-size: 0.84rem; color: var(--text-dark); cursor: pointer; }
-.nvm-hint { margin: 5px 0 0; font-size: 0.74rem; line-height: 1.45; color: var(--text-muted); }
-.nvm-acts { display: flex; flex-wrap: wrap; gap: 8px; }
-.nvm-acts .nv-btn { padding: 7px 12px; }
-.nvm-stat { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
-.nvm-stage { position: relative; min-width: 0; min-height: 0; background: var(--bg-light); overflow: hidden; }
-.nvm-scroll { position: absolute; inset: 0; overflow: auto; padding: 18px 18px 70px; }
-.nvm-canvas { min-height: 100%; display: flex; align-items: flex-start; justify-content: center; color: var(--text-muted); font-size: 0.9rem; }
-.nvm-canvas svg { max-width: none; height: auto; flex: none; }
-.nvm-canvas .node { cursor: default; }
-.nvm-err { max-width: 560px; margin: 30px auto; padding: 14px 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-white); text-align: left; }
-.nvm-err pre { margin: 8px 0 0; white-space: pre-wrap; font-size: 0.78rem; color: var(--text-muted); }
-.nvm-zoom { position: absolute; right: 14px; bottom: 14px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 12px; background: var(--bg-white); border: 1px solid var(--border-color); box-shadow: 0 6px 20px -8px rgba(74, 50, 64, 0.35); z-index: 2; }
-.nvm-zoom span { min-width: 44px; text-align: center; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
+.nmp-field select, .nmp-rel select {
+    -webkit-appearance: none; appearance: none; padding-right: 34px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23a98494'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; background-size: 15px;
+}
+.nmp-field select:hover:not(:disabled), .nmp-field textarea:hover, .nmp-rel select:hover, .nmp-rel input[type="text"]:hover { border-color: color-mix(in srgb, var(--primary) 50%, var(--border-color)); }
+.nmp-field select:focus, .nmp-field textarea:focus, .nmp-rel select:focus, .nmp-rel input[type="text"]:focus { border-color: var(--primary); background-color: var(--bg-white); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .16); }
+.nmp-field select:disabled { opacity: .5; cursor: not-allowed; }
+.nmp-field select option { color: var(--text-dark); background: var(--bg-white); }
+.nmp-rel input::placeholder { color: var(--text-muted); opacity: .8; }
+.nmp-field textarea.nmp-mono { min-height: 190px; resize: vertical; font-family: var(--nv-mono); font-size: .76rem; line-height: 1.55; white-space: pre; overflow: auto; tab-size: 4; }
+.nmp-hint { margin: 0; font-size: .76rem; line-height: 1.5; color: var(--text-muted); }
+.nmp-hint code { font-family: var(--nv-mono); font-size: .92em; padding: 0 5px; border-radius: 5px; background: rgba(var(--primary-rgb), .12); }
+
+/* segmented control (drives the hidden <select> next to it) */
+.nmp-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; border-radius: 12px; background: var(--bg-light); border: 1px solid var(--border-color); }
+.nmp-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 10px; border: 0; border-radius: 9px; background: none; font: inherit; font-size: .82rem; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: background-color .15s, color .15s, box-shadow .15s; }
+.nmp-seg button:hover { color: var(--text-dark); }
+.nmp-seg button[aria-checked="true"] { background: var(--bg-white); color: var(--primary-dark); box-shadow: var(--shadow-md), 0 0 0 1px rgba(var(--primary-rgb), .3); }
+.nmp-seg button i { font-size: .8rem; }
+
+/* "Set a relation" — the one tinted object in the panel */
+.nmp-rel { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; border: 1px solid rgba(var(--primary-rgb), .32); background: rgba(var(--primary-rgb), .07); }
+.nmp-rel-h { display: flex; align-items: center; gap: 8px; font-size: .86rem; font-weight: 700; color: var(--text-dark); }
+.nmp-rel-h i { color: var(--primary); font-size: .82rem; }
+.nmp-rel select, .nmp-rel input[type="text"] { background-color: var(--bg-white); }
+.nmp-rel .nv-btn { width: 100%; margin-top: 2px; padding: 9px 14px; }
+
+/* switch rows */
+.nmp-sw { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 6px 2px; border-radius: 8px; cursor: pointer; font-size: .84rem; color: var(--text-dark); }
+.nmp-sw > input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.nmp-sw-text { flex: 1; min-width: 0; line-height: 1.35; }
+.nmp-sw-text small { display: block; margin-top: 2px; font-size: .74rem; line-height: 1.4; color: var(--text-muted); }
+.nmp-sw-track { flex: none; position: relative; width: 36px; height: 20px; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 38%, var(--bg-light)); transition: background-color .18s; }
+.nmp-sw-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .28); transition: transform .18s var(--nmp-ease); }
+.nmp-sw > input:checked ~ .nmp-sw-track { background: var(--primary); }
+.nmp-sw > input:checked ~ .nmp-sw-track::after { transform: translateX(16px); }
+.nmp-sw > input:focus-visible ~ .nmp-sw-track { outline: 2px solid var(--primary); outline-offset: 2px; }
+.nmp-sw > input:disabled ~ * { opacity: .45; }
+.nmp-sw:has(> input:disabled) { cursor: not-allowed; }
+
+/* sticky footer: actions + status */
+.nmp-foot { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; border-top: 1px solid var(--border-color); background: var(--bg-white); box-shadow: 0 -12px 16px -14px rgba(var(--primary-rgb), .5); }
+.nmp-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.nmp-acts .nv-btn { padding: 9px 12px; }
+.nmp-acts .nv-btn-primary { grid-column: 1 / -1; }
+.nmp-stat { display: flex; align-items: flex-start; gap: 8px; font-size: .76rem; line-height: 1.5; color: var(--text-muted); }
+.nmp-stat:empty { display: none; }
+.nmp-stat:not(:empty)::before { content: ""; flex: none; width: 7px; height: 7px; margin-top: .5em; border-radius: 50%; background: var(--theme-accent-2); }
+
+/* stage: dotted board, drag to pan */
+.nmp-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background-color: var(--bg-light); background-image: radial-gradient(circle, rgba(var(--primary-rgb), .22) 1px, transparent 1.4px); background-size: 22px 22px; }
+.nmp-pan { position: absolute; inset: 0; overflow: auto; padding: 24px 24px 84px; cursor: grab; scrollbar-width: thin; }
+.nmp-pan.nmp-panning { cursor: grabbing; user-select: none; }
+.nmp-canvas { min-height: 100%; display: flex; align-items: flex-start; justify-content: center; color: var(--text-muted); font-size: .9rem; }
+.nmp-canvas svg { max-width: none; height: auto; flex: none; }
+
+/* diagram skin (mermaid's own CSS is id-scoped, so edge rules need !important) */
+.nmp-canvas svg .node rect { rx: 10px; ry: 10px; }
+.nmp-canvas svg .node { filter: drop-shadow(0 2px 3px rgba(var(--primary-rgb), .22)); transition: filter .15s; }
+.nmp-canvas svg .flowchart-link { stroke: var(--nmp-edge) !important; }
+.nmp-canvas svg .flowchart-link.edge-thickness-thick { stroke: var(--primary) !important; }
+.nmp-canvas svg marker path, .nmp-canvas svg .arrowheadPath { fill: var(--nmp-edge) !important; stroke: var(--nmp-edge) !important; }
+.nmp-canvas svg .edgeLabel, .nmp-canvas svg .edgeLabel p, .nmp-canvas svg .edgeLabel span, .nmp-canvas svg .labelBkg { background-color: var(--bg-light) !important; color: var(--text-muted) !important; }
+.nmp-canvas svg .edgeLabel rect { fill: var(--bg-light) !important; opacity: 1 !important; }
+.nmp-canvas svg .edgeLabel { font-style: italic; }
+.nv-mm-click { cursor: pointer; }
+.nv-mm-click:hover, .nv-mm-click:focus-visible { filter: drop-shadow(0 5px 9px rgba(var(--primary-rgb), .5)) !important; }
+.nv-mm-click:hover rect, .nv-mm-click:focus-visible rect { stroke-width: 2.5px !important; }
+.nv-mm-click:focus { outline: none; }
+.nv-mm-click:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+
+/* empty / loading / error */
+.nmp-empty { margin: auto; max-width: 370px; padding: 32px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; color: var(--text-muted); }
+.nmp-empty-ic { width: 52px; height: 52px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; color: var(--primary-dark); background: var(--primary-light); }
+.nmp-empty h3 { margin: 6px 0 0; font-family: var(--nv-display); font-size: 1.12rem; font-weight: 700; color: var(--text-dark); }
+.nmp-empty p { margin: 0; font-size: .86rem; line-height: 1.55; }
+.nmp-empty .nv-btn { margin-top: 8px; }
+.nmp-empty-err .nmp-empty-ic { color: var(--nv-danger); background: color-mix(in srgb, var(--nv-danger) 14%, var(--bg-white)); }
+.nmp-empty-code { max-width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-white); font-family: var(--nv-mono); font-size: .76rem; line-height: 1.45; text-align: left; overflow-wrap: anywhere; }
+.nmp-loading { margin: auto; display: flex; align-items: center; gap: 12px; padding: 11px 18px; border-radius: 999px; background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-sm); font-size: .85rem; color: var(--text-muted); }
+.nmp-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(var(--primary-rgb), .25); border-top-color: var(--primary); animation: nmp-spin .8s linear infinite; }
+@keyframes nmp-spin { to { transform: rotate(360deg); } }
+
+/* legend + zoom bar */
+.nmp-legend { position: absolute; left: 16px; bottom: 16px; z-index: 2; max-width: calc(100% - 230px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 14px; border-radius: 12px; background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-sm); backdrop-filter: blur(6px); font-size: .74rem; color: var(--text-muted); }
+.nmp-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.nmp-key { flex: none; width: 14px; height: 10px; border-radius: 3px; border: 1.5px solid; }
+.nmp-key-l1 { background: var(--primary); border-color: var(--primary-dark); }
+.nmp-key-l2 { background: var(--primary-light); border-color: var(--primary); }
+.nmp-key-l3 { background: var(--bg-white); border-color: color-mix(in srgb, var(--primary) 40%, var(--border-color)); }
+.nmp-key-ext { background: transparent; border: 1.5px dashed var(--text-muted); }
+.nmp-key-conn { width: 18px; height: 0; border: 0; border-top: 3px solid var(--primary); border-radius: 2px; }
+.nmp-zoom { position: absolute; right: 16px; bottom: 16px; z-index: 2; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-md); backdrop-filter: blur(6px); }
+.nmp-zoom .nv-ib { width: 32px; height: 32px; }
+.nmp-zoom-pct { min-width: 52px; height: 32px; padding: 0 6px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: .78rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-dark); cursor: pointer; }
+.nmp-zoom-pct:hover { background: var(--nv-hover); }
+.nmp-zoom-sep { width: 1px; height: 18px; margin: 0 3px; background: var(--border-color); }
+
+@media (min-width: 801px) { .nmp-side > * { min-width: 343px; } }
 @media (max-width: 800px) {
-    .nvm-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 46%) minmax(0, 1fr); }
-    .nvm-side { border-right: 0; border-bottom: 1px solid var(--border-color); }
+    .nmp-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; transition: none; }
+    .nmp-body.nmp-collapsed { grid-template-columns: minmax(0, 1fr); }
+    .nmp-collapsed .nmp-side { display: none; }
+    .nmp-stage { order: 1; }
+    .nmp-side { order: 2; border-right: 0; border-top: 1px solid var(--border-color); max-height: 46vh; max-height: 46dvh; }
+    .nmp-pan { padding: 16px 12px 76px; }
+    .nmp-seg button { padding: 10px; }
 }
+@media (max-width: 700px) { .nmp-legend { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+    .nmp-spin { animation-duration: 2.4s; }
+    .nmp-body, .nmp-sec > summary::after, .nmp-sw-track, .nmp-sw-track::after, .nmp-collapsed .nmp-side { transition: none; }
+}
+
 .nv-mermaid { margin: 1.1em 0; padding: 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-light); overflow-x: auto; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
 .nv-mermaid svg { max-width: 100%; height: auto; }
 .nv-mermaid-err { text-align: left; color: var(--text-muted); }
@@ -41592,16 +41715,6 @@ kbd {
 .nv-rel-in:empty { display: none; }
 .nv-rel-in .nv-rel-open { display: inline; flex: none; padding: 0; color: var(--primary-dark); white-space: normal; }
 .nv-rel-hint { margin: 2px 0 0; font-size: 0.74rem; line-height: 1.45; color: var(--text-muted); }
-.nvm-field input[type="text"] {
-    width: 100%; padding: 8px 10px; border-radius: 10px; font: inherit; font-size: 0.84rem;
-    border: 1px solid var(--border-color); background: var(--bg-light); color: var(--text-dark); outline: none;
-}
-.nvm-field input[type="text"]:focus { border-color: var(--primary); background: var(--bg-white); }
-.nvm-rel { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-light); }
-.nvm-rel input[type="text"], .nvm-rel select { background: var(--bg-white); }
-.nvm-rel > label, .nvm-rel > .nvm-lab { margin-bottom: 0; }
-.nvm-rel .nv-btn { align-self: flex-start; padding: 7px 14px; }
-.nvm-rel [hidden] { display: none; }
 .nv-seqkids { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .nv-seqkids-k { flex-basis: 100%; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .nv-seqkid { max-width: 100%; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark); font: inherit; font-size: 0.84rem; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -42401,103 +42514,155 @@ kbd {
 
     <!-- ── Note map: the parent / sub-note / connection relations you set on each note, drawn as a Mermaid diagram ── -->
     <div class="nvg-scrim" id="nvMapScrim" hidden></div>
-    <div class="nvg" id="nvMap" role="dialog" aria-modal="true" aria-label="Note map" hidden>
+    <div class="nvg nmp" id="nvMap" role="dialog" aria-modal="true" aria-label="Note map" hidden>
         <header class="nvg-top">
             <div class="nvg-title"><i class="fa-solid fa-diagram-project"></i><div><h2>Note Map</h2><p>Parents, sub-notes and connections you set on each note (or an index note's [[links]]) — click a box to open that note</p></div></div>
             <span class="nv-grow" style="flex:1"></span>
+            <button class="nv-btn nv-btn-ghost nmp-toggle" id="nvmSideToggle" type="button" aria-expanded="true" aria-controls="nvmSide" title="Show or hide the options panel"><i class="fa-solid fa-sliders"></i><span>Options</span></button>
             <button class="nv-ib" id="nvMapClose" type="button" title="Close map (Esc)" aria-label="Close note map"><i class="fa-solid fa-xmark"></i></button>
         </header>
-        <div class="nvm-body">
-            <aside class="nvm-side">
-                <div class="nvm-field">
-                    <label for="nvmMode">Map type</label>
-                    <select id="nvmMode">
-                        <option value="structure">Structure — parents, sub-notes and connections I set</option>
-                        <option value="link">Link map — from [[wikilinks]] in an index note</option>
-                    </select>
-                </div>
-                <div class="nvm-field nvm-rel" data-nvm="structure">
-                    <span class="nvm-lab">Set a relation</span>
-                    <div class="nv-combo">
-                        <input type="text" id="nvmRelA" autocomplete="off" placeholder="Note…" aria-label="First note">
-                        <ul class="nv-combo-pop" id="nvmRelAPop" role="listbox" aria-label="Note suggestions" hidden></ul>
+        <div class="nmp-body" id="nvmBody">
+            <aside class="nmp-side" id="nvmSide" aria-label="Map options">
+                <div class="nmp-sidebody">
+                    <div class="nmp-field">
+                        <div class="nmp-seg" role="radiogroup" aria-label="Map type" data-for="nvmMode">
+                            <button type="button" role="radio" aria-checked="true" data-val="structure"><i class="fa-solid fa-sitemap"></i> Structure</button>
+                            <button type="button" role="radio" aria-checked="false" data-val="link"><i class="fa-solid fa-link"></i> Link map</button>
+                        </div>
+                        <select id="nvmMode" hidden aria-label="Map type">
+                            <option value="structure">Structure — parents, sub-notes and connections I set</option>
+                            <option value="link">Link map — from [[wikilinks]] in an index note</option>
+                        </select>
+                        <p class="nmp-hint" data-nvm="structure">Parents, sub-notes and connections you set on each note.</p>
+                        <p class="nmp-hint" data-nvm="link">Drawn from the <code>[[wikilinks]]</code> written in an index note.</p>
                     </div>
-                    <select id="nvmRelKind" aria-label="Relation">
-                        <option value="child">is a sub-note of</option>
-                        <option value="link">connects to →</option>
-                    </select>
-                    <div class="nv-combo">
-                        <input type="text" id="nvmRelB" autocomplete="off" placeholder="Other note…" aria-label="Second note">
-                        <ul class="nv-combo-pop" id="nvmRelBPop" role="listbox" aria-label="Note suggestions" hidden></ul>
+
+                    <section class="nmp-rel" data-nvm="structure" aria-label="Set a relation">
+                        <div class="nmp-rel-h"><i class="fa-solid fa-link"></i> Set a relation</div>
+                        <div class="nv-combo">
+                            <input type="text" id="nvmRelA" autocomplete="off" placeholder="Note…" aria-label="First note">
+                            <ul class="nv-combo-pop" id="nvmRelAPop" role="listbox" aria-label="Note suggestions" hidden></ul>
+                        </div>
+                        <select id="nvmRelKind" aria-label="Relation">
+                            <option value="child">is a sub-note of</option>
+                            <option value="link">connects to →</option>
+                        </select>
+                        <div class="nv-combo">
+                            <input type="text" id="nvmRelB" autocomplete="off" placeholder="Other note…" aria-label="Second note">
+                            <ul class="nv-combo-pop" id="nvmRelBPop" role="listbox" aria-label="Note suggestions" hidden></ul>
+                        </div>
+                        <input type="text" id="nvmRelLabel" autocomplete="off" maxlength="40" placeholder="Label on the arrow (optional)" aria-label="Arrow label" hidden>
+                        <button class="nv-btn nv-btn-primary" id="nvmRelAdd" type="button"><i class="fa-solid fa-plus"></i> Add relation</button>
+                        <p class="nmp-hint">Same as Info tab → Map relations on each note. “Is a sub-note of” puts the first note under the second; “connects to” draws a thick arrow between any two notes.</p>
+                    </section>
+
+                    <details class="nmp-sec" data-nvm="structure" open>
+                        <summary><i class="fa-solid fa-filter"></i> What to show</summary>
+                        <div class="nmp-sec-body">
+                            <div class="nmp-field">
+                                <label for="nvmRoot">Start from</label>
+                                <select id="nvmRoot"><option value="">Everything</option></select>
+                                <p class="nmp-hint">Pick a note to map only that note and everything inside it.</p>
+                            </div>
+                            <div class="nmp-field">
+                                <label for="nvmFolder">Folder</label>
+                                <select id="nvmFolder"><option value="">All folders</option></select>
+                                <p class="nmp-hint">Limit the map to one folder. Ignored when a start note is picked.</p>
+                            </div>
+                            <div class="nmp-field">
+                                <label for="nvmDepth">Depth</label>
+                                <select id="nvmDepth">
+                                    <option value="0">All levels</option>
+                                    <option value="1">Top level only</option>
+                                    <option value="2">2 levels</option>
+                                    <option value="3">3 levels</option>
+                                    <option value="4">4 levels</option>
+                                </select>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="nmp-sec" data-nvm="link" open>
+                        <summary><i class="fa-solid fa-list-ul"></i> Index note</summary>
+                        <div class="nmp-sec-body">
+                            <div class="nmp-field">
+                                <label for="nvmIndex">Index note</label>
+                                <select id="nvmIndex"></select>
+                                <p class="nmp-hint">Write the order yourself in this note: headings and nested bullets become the tree, and the order of <code>[[links]]</code> is the order drawn. <code>[[A]] -&gt; [[B]] -&gt; [[C]]</code> on one line draws a thick sequence arrow.</p>
+                            </div>
+                            <div class="nmp-field">
+                                <label for="nvmHops">Also follow links inside those notes</label>
+                                <select id="nvmHops">
+                                    <option value="0">No — only what the index note lists</option>
+                                    <option value="1">1 step further</option>
+                                    <option value="2">2 steps further</option>
+                                </select>
+                            </div>
+                            <label class="nmp-sw"><input type="checkbox" id="nvmChain"><span class="nmp-sw-text">Several links on one line are a sequence (A → B → C)</span><i class="nmp-sw-track" aria-hidden="true"></i></label>
+                        </div>
+                    </details>
+
+                    <details class="nmp-sec" open>
+                        <summary><i class="fa-solid fa-eye"></i> Display</summary>
+                        <div class="nmp-sec-body">
+                            <div class="nmp-field">
+                                <span class="nmp-lab" id="nvmDirLab">Direction</span>
+                                <div class="nmp-seg" role="radiogroup" aria-labelledby="nvmDirLab" data-for="nvmDir">
+                                    <button type="button" role="radio" aria-checked="true" data-val="TD"><i class="fa-solid fa-arrow-down"></i> Top → down</button>
+                                    <button type="button" role="radio" aria-checked="false" data-val="LR"><i class="fa-solid fa-arrow-right"></i> Left → right</button>
+                                </div>
+                                <select id="nvmDir" hidden aria-labelledby="nvmDirLab">
+                                    <option value="TD">Top → down</option>
+                                    <option value="LR">Left → right</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="nmp-sw" data-nvm="structure"><input type="checkbox" id="nvmConns"><span class="nmp-sw-text">Show connections<small>Thick arrows between related notes</small></span><i class="nmp-sw-track" aria-hidden="true"></i></label>
+                                <label class="nmp-sw" data-nvm="structure"><input type="checkbox" id="nvmLoose"><span class="nmp-sw-text">Include notes with no relations<small>Off while a start note is picked</small></span><i class="nmp-sw-track" aria-hidden="true"></i></label>
+                                <label class="nmp-sw" data-nvm="structure"><input type="checkbox" id="nvmExt"><span class="nmp-sw-text">Show outside notes connected to this branch<small>Needs a start note · drawn dashed</small></span><i class="nmp-sw-track" aria-hidden="true"></i></label>
+                                <label class="nmp-sw"><input type="checkbox" id="nvmOrder"><span class="nmp-sw-text">Dotted arrows show the order of sub-notes</span><i class="nmp-sw-track" aria-hidden="true"></i></label>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="nmp-sec" id="nvmAdv">
+                        <summary><i class="fa-solid fa-code"></i> Mermaid source</summary>
+                        <div class="nmp-sec-body">
+                            <div class="nmp-field">
+                                <textarea id="nvmSrc" class="nmp-mono" spellcheck="false" aria-label="Mermaid source"></textarea>
+                                <p class="nmp-hint">Editable — the diagram updates as you type. Changing the options above rebuilds this source. The <code>%% nv</code> lines at the end tell the map which note each box opens.</p>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+                <div class="nmp-foot">
+                    <div class="nmp-acts">
+                        <button class="nv-btn nv-btn-primary" id="nvmSave" type="button"><i class="fa-solid fa-file-circle-plus"></i> Save as note</button>
+                        <button class="nv-btn" id="nvmCopy" type="button"><i class="fa-solid fa-copy"></i> Copy source</button>
+                        <button class="nv-btn" id="nvmSvg" type="button"><i class="fa-solid fa-download"></i> SVG</button>
                     </div>
-                    <input type="text" id="nvmRelLabel" autocomplete="off" maxlength="40" placeholder="Label on the arrow (optional)" aria-label="Arrow label" hidden>
-                    <button class="nv-btn nv-btn-primary" id="nvmRelAdd" type="button"><i class="fa-solid fa-plus"></i> Add</button>
-                    <p class="nvm-hint">Same as Info tab → Map relations on each note. “Is a sub-note of” puts the first note under the second; “connects to” draws a thick arrow between any two notes.</p>
+                    <div class="nmp-stat" id="nvmStat" role="status" aria-live="polite"></div>
                 </div>
-                <div class="nvm-field" data-nvm="link">
-                    <label for="nvmIndex">Index note</label>
-                    <select id="nvmIndex"></select>
-                    <p class="nvm-hint">Write the order yourself in this note: headings and nested bullets become the tree, and the order of <code>[[links]]</code> is the order drawn. <code>[[A]] -&gt; [[B]] -&gt; [[C]]</code> on one line draws a thick sequence arrow.</p>
-                </div>
-                <div class="nvm-field" data-nvm="link">
-                    <label for="nvmHops">Also follow links inside those notes</label>
-                    <select id="nvmHops">
-                        <option value="0">No — only what the index note lists</option>
-                        <option value="1">1 step further</option>
-                        <option value="2">2 steps further</option>
-                    </select>
-                </div>
-                <label class="nvm-check" data-nvm="link"><input type="checkbox" id="nvmChain"> Several links on one line are a sequence (A → B → C)</label>
-                <div class="nvm-field" data-nvm="structure">
-                    <label for="nvmRoot">Start from</label>
-                    <select id="nvmRoot"><option value="">Everything</option></select>
-                    <p class="nvm-hint">Pick a note to map only that note and everything inside it.</p>
-                </div>
-                <div class="nvm-field" data-nvm="structure">
-                    <label for="nvmFolder">Folder</label>
-                    <select id="nvmFolder"><option value="">All folders</option></select>
-                    <p class="nvm-hint">Limit the map to one folder. Ignored when a start note is picked.</p>
-                </div>
-                <div class="nvm-field" data-nvm="structure">
-                    <label for="nvmDepth">Depth</label>
-                    <select id="nvmDepth">
-                        <option value="0">All levels</option>
-                        <option value="1">Top level only</option>
-                        <option value="2">2 levels</option>
-                        <option value="3">3 levels</option>
-                        <option value="4">4 levels</option>
-                    </select>
-                </div>
-                <label class="nvm-check" data-nvm="structure"><input type="checkbox" id="nvmConns"> <span>Show connections (thick arrows)</span></label>
-                <label class="nvm-check" data-nvm="structure"><input type="checkbox" id="nvmLoose"> <span>Include notes that have no relations</span></label>
-                <label class="nvm-check" data-nvm="structure"><input type="checkbox" id="nvmExt"> <span>Also show outside notes connected to this branch</span></label>
-                <div class="nvm-field">
-                    <label for="nvmDir">Direction</label>
-                    <select id="nvmDir">
-                        <option value="TD">Top → down</option>
-                        <option value="LR">Left → right</option>
-                    </select>
-                </div>
-                <label class="nvm-check"><input type="checkbox" id="nvmOrder"> <span>Dotted arrows show the order of sub-notes</span></label>
-                <div class="nvm-field">
-                    <label for="nvmSrc">Mermaid source</label>
-                    <textarea id="nvmSrc" class="nvm-mono" spellcheck="false"></textarea>
-                    <p class="nvm-hint">Editable — the diagram updates as you type. Changing the options above rebuilds this source. The <code>%% nv</code> lines at the end tell the map which note each box opens.</p>
-                </div>
-                <div class="nvm-acts">
-                    <button class="nv-btn nv-btn-primary" id="nvmSave" type="button"><i class="fa-solid fa-file-circle-plus"></i> Save as note</button>
-                    <button class="nv-btn" id="nvmCopy" type="button"><i class="fa-solid fa-copy"></i> Copy source</button>
-                    <button class="nv-btn" id="nvmSvg" type="button"><i class="fa-solid fa-download"></i> SVG</button>
-                </div>
-                <div class="nvm-stat" id="nvmStat"></div>
             </aside>
-            <div class="nvm-stage" id="nvmStage">
-                <div class="nvm-scroll"><div class="nvm-canvas" id="nvmCanvas"></div></div>
-                <div class="nvm-zoom">
-                    <button class="nv-ib" id="nvmZoomOut" type="button" title="Zoom out" aria-label="Zoom out"><i class="fa-solid fa-minus"></i></button>
-                    <span id="nvmZoomPct">100%</span>
-                    <button class="nv-ib" id="nvmZoomIn" type="button" title="Zoom in" aria-label="Zoom in"><i class="fa-solid fa-plus"></i></button>
-                    <button class="nv-ib" id="nvmFit" type="button" title="Fit to width" aria-label="Fit to width"><i class="fa-solid fa-expand"></i></button>
+            <div class="nmp-stage" id="nvmStage">
+                <div class="nmp-pan" id="nvmPan"><div class="nmp-canvas" id="nvmCanvas"></div></div>
+                <div class="nmp-legend" aria-hidden="true">
+                    <span data-nvm="structure"><i class="nmp-key nmp-key-l1"></i>Top level</span>
+                    <span data-nvm="structure"><i class="nmp-key nmp-key-l2"></i>Sub-note</span>
+                    <span data-nvm="structure"><i class="nmp-key nmp-key-conn"></i>Connection</span>
+                    <span data-nvm="structure"><i class="nmp-key nmp-key-ext"></i>Outside note</span>
+                    <span data-nvm="link"><i class="nmp-key nmp-key-l1"></i>Index note</span>
+                    <span data-nvm="link"><i class="nmp-key nmp-key-l2"></i>Heading</span>
+                    <span data-nvm="link"><i class="nmp-key nmp-key-l3"></i>Note</span>
+                    <span data-nvm="link"><i class="nmp-key nmp-key-ext"></i>Missing note</span>
+                    <span><i class="fa-regular fa-hand-pointer"></i>Click a box to open it. Drag to pan, Ctrl+scroll to zoom.</span>
+                </div>
+                <div class="nmp-zoom" role="group" aria-label="Zoom">
+                    <button class="nv-ib" id="nvmZoomOut" type="button" title="Zoom out (−)" aria-label="Zoom out"><i class="fa-solid fa-minus"></i></button>
+                    <button class="nmp-zoom-pct" id="nvmZoomPct" type="button" title="Reset to 100%" aria-label="Reset zoom to 100%">100%</button>
+                    <button class="nv-ib" id="nvmZoomIn" type="button" title="Zoom in (+)" aria-label="Zoom in"><i class="fa-solid fa-plus"></i></button>
+                    <span class="nmp-zoom-sep" aria-hidden="true"></span>
+                    <button class="nv-ib" id="nvmFit" type="button" title="Fit to width (0)" aria-label="Fit to width"><i class="fa-solid fa-expand"></i></button>
                 </div>
             </div>
         </div>
@@ -54223,11 +54388,17 @@ kbd {
             const hit = byId || tmNoteForLabel(label);
             if (!hit) return;
             node.style.cursor = 'pointer';
-            node.addEventListener('click', (e) => {
+            node.classList.add('nv-mm-click');
+            node.setAttribute('tabindex', '0');
+            node.setAttribute('role', 'link');
+            node.setAttribute('aria-label', 'Open note: ' + label);
+            const go = (e) => {
                 e.stopPropagation();
                 if (closeMapFirst) tmClose();
                 openNote(hit.id);
-            });
+            };
+            node.addEventListener('click', go);
+            node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(e); } });
         });
     }
     function tmNoteForLabel(label) {
@@ -54629,13 +54800,13 @@ kbd {
         const n = lkFillIndex();
         if (!n) {
             e.src.value = '';
-            e.canvas.textContent = 'No notes with [[links]] yet. Write an index note such as “- [[Lesson 1]] -> [[Lesson 2]]” and it will appear here.';
+            tmEmpty('link', 'No index notes yet', 'Write an index note such as \u201C- [[Lesson 1]] -> [[Lesson 2]]\u201D and it will show up here.');
             e.stat.textContent = '';
             tmUI.token++;
             return;
         }
         const out = lkBuild(tmUI.opts);
-        if (!out) { e.src.value = ''; e.canvas.textContent = 'Pick an index note.'; tmUI.token++; return; }
+        if (!out) { e.src.value = ''; tmEmpty('pick', 'Pick an index note', 'Choose the note whose [[links]] should be drawn.'); tmUI.token++; return; }
         e.src.value = out.code;
         const bits = [out.stats.nodes + ' note' + (out.stats.nodes === 1 ? '' : 's') + ' shown'];
         if (out.stats.groups) bits.push(out.stats.groups + ' heading' + (out.stats.groups === 1 ? '' : 's'));
@@ -54644,9 +54815,55 @@ kbd {
         e.stat.textContent = bits.join(' · ') + '.';
         tmDraw(true);
     }
+    // ── Map panel: empty / loading / error states, segmented controls ──
+    function tmShowSide() {
+        const b = $('nvmBody');
+        if (b && b.classList.contains('nmp-collapsed')) $('nvmSideToggle').click();
+    }
+    function tmEmpty(kind, title, text, actionLabel, onAction) {
+        const e = tmUI.el, box = document.createElement('div');
+        box.className = 'nmp-empty' + (kind === 'error' ? ' nmp-empty-err' : '');
+        const ic = document.createElement('div'); ic.className = 'nmp-empty-ic';
+        const i = document.createElement('i');
+        i.className = 'fa-solid ' + ({ none: 'fa-diagram-project', filter: 'fa-filter', link: 'fa-link', pick: 'fa-list-ul', error: 'fa-triangle-exclamation' }[kind] || 'fa-diagram-project');
+        ic.appendChild(i);
+        const h = document.createElement('h3'); h.textContent = title;
+        box.append(ic, h);
+        if (text) { const p = document.createElement('p'); p.textContent = text; box.appendChild(p); }
+        if (kind === 'error' && arguments[5]) { const c = document.createElement('div'); c.className = 'nmp-empty-code'; c.textContent = arguments[5]; box.appendChild(c); }
+        if (actionLabel && onAction) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'nv-btn nv-btn-primary'; b.textContent = actionLabel;
+            b.addEventListener('click', onAction);
+            box.appendChild(b);
+        }
+        e.canvas.textContent = '';
+        e.canvas.appendChild(box);
+    }
+    function tmLoading() {
+        const box = document.createElement('div');
+        box.className = 'nmp-loading'; box.setAttribute('role', 'status');
+        const sp = document.createElement('span'); sp.className = 'nmp-spin'; sp.setAttribute('aria-hidden', 'true');
+        const t = document.createElement('span'); t.textContent = 'Drawing map\u2026';
+        box.append(sp, t);
+        tmUI.el.canvas.textContent = '';
+        tmUI.el.canvas.appendChild(box);
+    }
+    function tmSyncSeg() {   // keep the segmented buttons in step with the (hidden) selects they drive
+        if (!tmUI.el) return;
+        tmUI.el.panel.querySelectorAll('.nmp-seg').forEach((seg) => {
+            const sel = $(seg.getAttribute('data-for'));
+            seg.querySelectorAll('button[data-val]').forEach((b) => {
+                const on = !!sel && sel.value === b.getAttribute('data-val');
+                b.setAttribute('aria-checked', on ? 'true' : 'false');
+                b.tabIndex = on ? 0 : -1;
+            });
+        });
+    }
     function tmApplyMode() {
         const link = tmUI.opts.mode === 'link';
         tmUI.el.panel.querySelectorAll('[data-nvm]').forEach((x) => { x.style.display = (x.getAttribute('data-nvm') === 'link') === link ? '' : 'none'; });
+        tmSyncSeg();
         const t = tmUI.el.order.parentElement.querySelector('span');
         if (t) t.textContent = link ? 'Dotted arrows show the order of items under the same heading' : 'Dotted arrows show the order of sub-notes';
     }
@@ -54705,9 +54922,14 @@ kbd {
         const e = tmUI.el, out = tmBuild(tmUI.opts);
         if (!out.stats.nodes) {
             e.src.value = '';
-            e.canvas.textContent = out.stats.any
-                ? 'Nothing to show with these options.'
-                : 'No relations yet. Open a note \u2192 Info tab \u2192 Map relations, or use \u201CSet a relation\u201D on the left, and the map appears here.';
+            if (out.stats.any) {
+                tmEmpty('filter', 'Nothing to show with these options', 'Try a wider scope: Everything, All folders and All levels.', 'Reset options', () => {
+                    e.root.value = ''; e.folder.value = ''; e.depth.value = '0'; e.loose.checked = true;
+                    tmReadControls(); tmRegenerate();
+                });
+            } else {
+                tmEmpty('none', 'No relations yet', 'Open a note \u2192 Info tab \u2192 Map relations, or use \u201CSet a relation\u201D here. Your map appears as soon as one exists.', 'Set a relation', () => { tmShowSide(); e.relA.focus(); });
+            }
             e.stat.textContent = out.stats.hiddenLoose ? out.stats.hiddenLoose + ' note' + (out.stats.hiddenLoose === 1 ? ' has' : 's have') + ' no relations yet.' : '';
             tmUI.token++;
             return;
@@ -54724,7 +54946,7 @@ kbd {
     async function tmDraw(fit) {
         const e = tmUI.el, code = e.src.value.trim(), token = ++tmUI.token;
         if (!code) { e.canvas.textContent = ''; return; }
-        e.canvas.textContent = 'Drawing\u2026';
+        if (fit || !e.canvas.querySelector('svg')) tmLoading();   // typing in the source keeps the old drawing until the new one is ready
         const id = 'nvmm' + (++mmCounter);
         try {
             const mm = await loadMermaid();
@@ -54743,13 +54965,9 @@ kbd {
         } catch (err) {
             mmCleanup(id);
             if (token !== tmUI.token) return;
-            e.canvas.textContent = '';
-            const box = document.createElement('div');
-            box.className = 'nvm-err';
-            const t = document.createElement('div');
-            t.textContent = 'Couldn\u2019t draw the diagram: ' + String((err && err.message) || err).split('\n')[0];
-            box.appendChild(t);
-            e.canvas.appendChild(box);
+            tmEmpty('error', 'Couldn\u2019t draw the diagram', 'Check the Mermaid source \u2014 a small typo is the usual cause.', 'Open the source', () => {
+                tmShowSide(); $('nvmAdv').open = true; e.src.focus();
+            }, String((err && err.message) || err).split('\n')[0]);
         }
     }
     function tmApplyZoom() {
@@ -54776,6 +54994,7 @@ kbd {
         e.relLabel.hidden = e.relKind.value !== 'link';
         if (!e.relA.value && S.note && S.persisted && String(S.note.title || '').trim()) e.relA.value = String(S.note.title).trim();   // "Set a relation" starts from the note you're in
         e.scrim.hidden = false; e.panel.hidden = false;
+        e.panel.tabIndex = -1; try { e.panel.focus({ preventScroll: true }); } catch (err) { /* optional */ }
         $('nvMapBtn').setAttribute('aria-expanded', 'true');
         requestAnimationFrame(tmRegenerate);
     }
@@ -54824,7 +55043,7 @@ kbd {
             conns: $('nvmConns'), loose: $('nvmLoose'), ext: $('nvmExt'),
             mode: $('nvmMode'), index: $('nvmIndex'), hops: $('nvmHops'), chain: $('nvmChain'),
             relA: $('nvmRelA'), relAPop: $('nvmRelAPop'), relKind: $('nvmRelKind'), relB: $('nvmRelB'), relBPop: $('nvmRelBPop'), relLabel: $('nvmRelLabel'), relAdd: $('nvmRelAdd'),
-            src: $('nvmSrc'), stat: $('nvmStat'), canvas: $('nvmCanvas'), stage: $('nvmStage'), zoomPct: $('nvmZoomPct')
+            src: $('nvmSrc'), stat: $('nvmStat'), canvas: $('nvmCanvas'), stage: $('nvmStage'), zoomPct: $('nvmZoomPct'), pan: $('nvmPan')
         };
         const e = tmUI.el;
         $('nvMapBtn').addEventListener('click', tmOpen);
@@ -54870,6 +55089,57 @@ kbd {
             if (!tmUI.baseW) return;
             tmUI.zoom = Math.max(0.2, Math.min(3, (e.stage.clientWidth - 40) / tmUI.baseW));
             tmApplyZoom();
+        });
+        // ── polish: segmented controls, collapsible options, drag-to-pan, wheel zoom, keyboard ──
+        [e.mode, e.dir].forEach((c) => c.addEventListener('change', tmSyncSeg));
+        panel.querySelectorAll('.nmp-seg').forEach((seg) => {
+            const sel = $(seg.getAttribute('data-for'));
+            const pick = (b) => { if (!b || sel.value === b.getAttribute('data-val')) return; sel.value = b.getAttribute('data-val'); sel.dispatchEvent(new Event('change', { bubbles: true })); };
+            seg.addEventListener('click', (ev) => pick(ev.target.closest('button[data-val]')));
+            seg.addEventListener('keydown', (ev) => {
+                const keys = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
+                if (!keys[ev.key]) return;
+                const bs = Array.from(seg.querySelectorAll('button[data-val]')), i = bs.findIndex((b) => b.getAttribute('aria-checked') === 'true');
+                const nb = bs[(Math.max(i, 0) + keys[ev.key] + bs.length) % bs.length];
+                ev.preventDefault(); pick(nb); nb.focus();
+            });
+        });
+        const body = $('nvmBody'), tgl = $('nvmSideToggle');
+        tgl.addEventListener('click', () => {
+            const collapse = !body.classList.contains('nmp-collapsed');
+            body.classList.toggle('nmp-collapsed', collapse);
+            tgl.setAttribute('aria-expanded', String(!collapse));
+        });
+        $('nvmZoomPct').addEventListener('click', () => { tmUI.zoom = 1; tmApplyZoom(); });
+        const pan = e.pan;
+        let drag = null;
+        pan.addEventListener('pointerdown', (ev) => {
+            if (ev.button !== 0 || ev.pointerType === 'touch' || ev.target.closest('.node, a, button, input, textarea, select')) return;
+            drag = { x: ev.clientX, y: ev.clientY, l: pan.scrollLeft, t: pan.scrollTop, id: ev.pointerId, on: false };
+        });
+        pan.addEventListener('pointermove', (ev) => {
+            if (!drag || ev.pointerId !== drag.id) return;
+            const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+            if (!drag.on) {
+                if (Math.abs(dx) + Math.abs(dy) < 4) return;
+                drag.on = true; pan.classList.add('nmp-panning');
+                try { pan.setPointerCapture(ev.pointerId); } catch (err) { /* optional */ }
+            }
+            pan.scrollLeft = drag.l - dx; pan.scrollTop = drag.t - dy;
+        });
+        const endDrag = () => { drag = null; pan.classList.remove('nmp-panning'); };
+        ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((t) => pan.addEventListener(t, endDrag));
+        pan.addEventListener('wheel', (ev) => {
+            if (!(ev.ctrlKey || ev.metaKey)) return;
+            ev.preventDefault();
+            tmZoomBy(ev.deltaY < 0 ? 1.1 : 1 / 1.1);
+        }, { passive: false });
+        panel.addEventListener('keydown', (ev) => {
+            if (ev.ctrlKey || ev.metaKey || ev.altKey || !tmUI.open) return;
+            if (ev.target.closest && ev.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (ev.key === '+' || ev.key === '=') { ev.preventDefault(); tmZoomBy(1.2); }
+            else if (ev.key === '-' || ev.key === '_') { ev.preventDefault(); tmZoomBy(1 / 1.2); }
+            else if (ev.key === '0') { ev.preventDefault(); $('nvmFit').click(); }
         });
         // Esc closes just the map, not the whole vault behind it.
         document.addEventListener('keydown', (ev) => {
