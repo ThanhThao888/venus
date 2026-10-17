@@ -43498,12 +43498,110 @@ kbd {
     }
     function isSheetMime(mime) { return Object.values(SHEET_EXT).indexOf(mime) !== -1; }
 
+    /* ── Attachment text index ──
+       The words inside an attached spreadsheet / PDF are extracted once (SheetJS / pdf.js, both loaded
+       lazily and cached) and stored on the attachment record as `text` (+ `textV`). They are kept in
+       memory in S.attText (id → { raw, fold }) and searched together with the note that embeds the
+       file. Files attached before this existed are indexed quietly in the background. ── */
+    S.attText = new Map(); S.attVer = 0;
+    const ATT_TEXT_MAX = 400000, ATT_PDF_PAGES = 150;
+    const attIsIndexable = (mime) => mime === 'application/pdf' || isSheetMime(mime);
+    const attIdsOf = (n) => { const ids = []; String(n.markdown || '').replace(/attachment:\/\/(att_[a-f0-9]+)/g, (m, id) => { if (ids.indexOf(id) < 0) ids.push(id); return m; }); return ids; };
+    async function attExtractText(rec) {
+        let out = '';
+        if (rec.mime === 'application/pdf') {
+            const pdfjs = await loadPdfJs();
+            const doc = await pdfjs.getDocument({ data: new Uint8Array(await rec.blob.arrayBuffer()) }).promise;
+            try {
+                const pages = Math.min(doc.numPages, ATT_PDF_PAGES);
+                for (let i = 1; i <= pages && out.length < ATT_TEXT_MAX; i++) {
+                    const tc = await (await doc.getPage(i)).getTextContent();
+                    out += tc.items.map((it) => it.str || '').join(' ') + '\n';
+                }
+            } finally { try { doc.destroy(); } catch (e) { /* ignore */ } }
+        } else {
+            const X = await loadSheetJs();
+            const wb = rec.mime === 'text/csv'
+                ? X.read(await rec.blob.text(), { type: 'string' })
+                : X.read(await rec.blob.arrayBuffer(), { type: 'array', cellDates: true });
+            for (const name of (wb.SheetNames || [])) {
+                if (out.length >= ATT_TEXT_MAX) break;
+                out += name + '\n' + X.utils.sheet_to_csv(wb.Sheets[name], { FS: ' ', blankrows: false }) + '\n';
+            }
+        }
+        return out.replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').slice(0, ATT_TEXT_MAX);
+    }
+    function attRemember(id, text) {
+        const raw = String(text || '').normalize('NFC');
+        if (raw) S.attText.set(id, { raw, fold: fold(raw) }); else S.attText.delete(id);
+        S.attVer++;
+    }
+    // Index one attachment record. A library-load failure (offline) propagates so callers can stop;
+    // a file that simply can't be read is marked done (textV -1) so it isn't retried forever.
+    async function attIndexRecord(rec) {
+        if (!rec || rec.textV || !attIsIndexable(rec.mime) || !(rec.blob instanceof Blob)) return false;
+        let text = '', textV = 1;
+        try { text = await attExtractText(rec); }
+        catch (e) {
+            if (/couldn.t load|reader unavailable|Failed to fetch|import|NetworkError|dynamically imported/i.test(String(e && e.message || e))) throw e;
+            textV = -1;
+        }
+        const fresh = (await dbGetAttachment(rec.id)) || rec;
+        fresh.text = text; fresh.textV = textV;
+        await dbPutAttachment(fresh);
+        rec.text = text; rec.textV = textV;
+        attRemember(rec.id, text);
+        return !!text;
+    }
+    const attPending = new Set();
+    function attIndexSoon(rec) {   // fire-and-forget right after an attach
+        if (!rec || rec.textV || attPending.has(rec.id) || !attIsIndexable(rec.mime)) return;
+        attPending.add(rec.id);
+        attIndexRecord(rec).catch((e) => console.warn('Notes Vault: could not index attachment text', e)).finally(() => attPending.delete(rec.id));
+    }
+    let attBackfillStarted = false;
+    async function attLoadIndex() {
+        const recs = await dbGetAllAttachments();
+        const todo = [];
+        for (const r of recs) {
+            if (r.text) attRemember(r.id, r.text);
+            else if (!r.textV && attIsIndexable(r.mime)) todo.push(r);
+        }
+        if (attBackfillStarted || !todo.length) return;
+        attBackfillStarted = true;
+        setTimeout(async () => {
+            let done = 0;
+            for (const r of todo) {
+                if (attPending.has(r.id)) continue;
+                try { if (await attIndexRecord(r)) done++; }
+                catch (e) { console.warn('Notes Vault: attachment indexing paused (offline?)', e); break; }
+                await new Promise((res) => setTimeout(res, 800));   // keep the UI responsive
+            }
+            if (done) toast('Indexed ' + done + ' attached file' + (done === 1 ? '' : 's') + ' \u2014 their contents are now searchable.');
+        }, 6000);
+    }
+    // A short excerpt from inside an attached file, for a search hit that exists only there.
+    function attSnippet(n, tokens) {
+        for (const id of attIdsOf(n)) {
+            const a = S.attText.get(id);
+            if (!a) continue;
+            for (const t of tokens) {
+                const i = findAt(a.fold, t, 0);
+                if (i < 0) continue;
+                const from = Math.max(0, i - 40), to = Math.min(a.raw.length, i + t.length + 80);
+                return (from ? '\u2026' : '') + a.raw.slice(from, to).replace(/\s+/g, ' ') + (to < a.raw.length ? '\u2026' : '');
+            }
+        }
+        return '';
+    }
+
     async function ingestPdfAttachment(file, mimeOverride, defaultName) {
         const hash = await hashBlob(file);
         const existing = await dbFindAttachmentByHash(hash);
         if (existing) {
             if (existing.blob instanceof Blob && existing.blob.size > 0) {
                 S.attachmentCache.set(existing.id, existing);
+                attIndexSoon(existing);
                 return existing;
             }
             await dbDeleteAttachment(existing.id).catch(() => {});
@@ -43521,6 +43619,7 @@ kbd {
             throw attachError('The file could not be read back from browser storage. If this app is opened as a local file (file://), open it from a local web server instead.');
         }
         S.attachmentCache.set(rec.id, verified);
+        attIndexSoon(verified);
         return verified;
     }
 
@@ -43846,11 +43945,12 @@ kbd {
     const foldCache = new Map();
     function getFold(n) {
         let e = foldCache.get(n.id);
-        if (!e || e.u !== n.updatedAt || e.l !== n.markdown.length || e.t !== n.title) {
+        if (!e || e.u !== n.updatedAt || e.l !== n.markdown.length || e.t !== n.title || e.av !== S.attVer) {
             const body = n.markdown.normalize('NFC');
             const title = n.title.normalize('NFC');
             e = {
-                u: n.updatedAt, l: n.markdown.length, t: n.title,
+                u: n.updatedAt, l: n.markdown.length, t: n.title, av: S.attVer,
+                fa: attIdsOf(n).map((id) => (S.attText.get(id) || {}).fold || '').join('\n'),
                 body, title,
                 fb: fold(body), ft: fold(title),
                 fg: fold(n.tags.join(' ').normalize('NFC')),
@@ -44834,7 +44934,7 @@ kbd {
                 const f = getFold(n);
                 let score = 0, ok = true;
                 for (const t of tokens) {
-                    const inT = findAt(f.ft, t, 0) >= 0, inG = findAt(f.fg, t, 0) >= 0 || findAt(f.fy, t, 0) >= 0 || findAt(f.fc, t, 0) >= 0, inB = findAt(f.fb, t, 0) >= 0;
+                    const inT = findAt(f.ft, t, 0) >= 0, inG = findAt(f.fg, t, 0) >= 0 || findAt(f.fy, t, 0) >= 0 || findAt(f.fc, t, 0) >= 0, inB = findAt(f.fb, t, 0) >= 0 || (!!f.fa && findAt(f.fa, t, 0) >= 0);
                     if (!inT && !inG && !inB) { ok = false; break; }
                     score += inT ? 2 : (inG ? 1 : 0);
                 }
@@ -44983,7 +45083,11 @@ kbd {
         const f = searching ? getFold(n) : null;
         const hasTitle = !!n.title.trim();
         const titleHtml = (searching && hasTitle) ? highlight(f.title, f.ft, tokens) : esc(hasTitle ? n.title : 'Untitled note');
-        const snip = searching ? searchSnippet(n, tokens) : esc(plainSnippet(n.markdown));
+        let snip = searching ? searchSnippet(n, tokens) : esc(plainSnippet(n.markdown));
+        if (searching && f.fa && tokens.some((t) => findAt(f.fa, t, 0) >= 0 && findAt(f.fb, t, 0) < 0 && findAt(f.ft, t, 0) < 0)) {
+            const ex = attSnippet(n, tokens);   // the words are only inside an attached file — say so
+            if (ex) snip += (snip ? '<br>' : '') + '<i class="fa-solid fa-paperclip" aria-hidden="true"></i> ' + esc(ex);
+        }
         const tagsHtml = n.tags.slice(0, 4).map((t) => `<span>#${esc(t)}</span>`).join('');
         const scoped = LINKABLE_SCOPES.has(S.scope.kind);
         const entityRowAction = scoped ? `<button type="button" class="nv-btn nv-btn-ghost nv-row-unlink" data-act="unlinkEntity" title="Remove this ${esc(S.scope.kind)} link"><i class="fa-solid fa-link-slash"></i> Unlink</button>` : '';
@@ -45633,19 +45737,45 @@ kbd {
        cell contents can never inject markup. Read-only — the stored file is never modified. ── */
     const SHEETJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
     const SHEET_PREVIEW_ROWS = 200, SHEET_PREVIEW_COLS = 40;
+    setTimeout(() => { if (navigator.onLine !== false && window.caches) sheetJsFromCache().catch(() => {}); }, 15000);
     let sheetJsPromise = null;
+    // Offline-first: after one successful download the reader is kept in the browser's Cache Storage
+    // and loaded from there next time (no network). Where Cache Storage doesn't exist (file://) or
+    // nothing is cached yet and we're offline, this rejects and the plain CDN <script> below runs.
+    async function sheetJsFromCache() {
+        if (!window.caches) throw new Error('no Cache Storage');
+        const c = await caches.open('nv-libs-v1');
+        let r = await c.match(SHEETJS_URL);
+        if (!r) {
+            r = await fetch(SHEETJS_URL, { mode: 'cors' });
+            if (!r.ok) throw new Error('http ' + r.status);
+            await c.put(SHEETJS_URL, r.clone());
+        }
+        const url = URL.createObjectURL(new Blob([await r.text()], { type: 'text/javascript' }));
+        try {
+            await new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = url;
+                s.onload = res;
+                s.onerror = () => { s.remove(); rej(new Error('cached copy unusable')); };
+                document.head.appendChild(s);
+            });
+        } finally { URL.revokeObjectURL(url); }
+        if (!window.XLSX) { try { await c.delete(SHEETJS_URL); } catch (e) { /* ignore */ } throw new Error('cached copy unusable'); }
+        return window.XLSX;
+    }
     function loadSheetJs() {
         if (window.XLSX) return Promise.resolve(window.XLSX);
-        if (!sheetJsPromise) sheetJsPromise = new Promise((resolve, reject) => {
+        if (!sheetJsPromise) sheetJsPromise = sheetJsFromCache().catch(() => new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.src = SHEETJS_URL; s.async = true;
             s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('reader unavailable'));
             s.onerror = () => { sheetJsPromise = null; s.remove(); reject(new Error('couldn\u2019t load the spreadsheet reader (offline?)')); };
             document.head.appendChild(s);
-        });
+        }));
         return sheetJsPromise;
     }
-    function sheetToTable(X, ws, onSel) {
+    function sheetToTable(X, ws, onSel, rowCap, onMore) {
         const scroll = document.createElement('div');
         scroll.className = 'nv-sheet-scroll';
         const holder = document.createElement('div');
@@ -45653,7 +45783,7 @@ kbd {
         const rng = X.utils.decode_range(ws['!ref']);
         const full = ws['!fullref'] ? X.utils.decode_range(ws['!fullref']) : rng;
         const lastC = Math.min(rng.e.c, rng.s.c + SHEET_PREVIEW_COLS - 1);
-        const lastR = Math.min(rng.e.r, rng.s.r + SHEET_PREVIEW_ROWS - 1);
+        const lastR = Math.min(rng.e.r, rng.s.r + (rowCap || SHEET_PREVIEW_ROWS) - 1);
         const rows = X.utils.sheet_to_json(ws, {
             header: 1, raw: false, defval: '', blankrows: false,
             range: X.utils.encode_range({ s: rng.s, e: { r: lastR, c: lastC } })
@@ -45733,16 +45863,23 @@ kbd {
         if (rows.length < totR || width < totC) {
             const note = document.createElement('div');
             note.className = 'nv-sheet-note';
-            note.textContent = 'Showing the first ' + rows.length + ' rows \u00d7 ' + width + ' columns of ' + totR + ' \u00d7 ' + totC + '. Download the file to see everything.';
+            note.textContent = 'Showing the first ' + rows.length + ' rows \u00d7 ' + width + ' columns of ' + totR + ' \u00d7 ' + totC + '.' + (width < totC ? ' Download the file to see every column.' : '');
+            if (onMore && full.e.r > lastR) {
+                const more = document.createElement('button');
+                more.type = 'button'; more.className = 'nv-sheet-copy'; more.style.marginLeft = '8px';
+                more.textContent = 'Show 500 more rows';
+                more.addEventListener('click', () => { more.disabled = true; more.textContent = 'Loading\u2026'; onMore(); });
+                note.appendChild(more);
+            }
             holder.appendChild(note);
         }
         return holder;
     }
-    function sheetRowsOf(X, ws) {   // same window the preview shows, as plain string rows
+    function sheetRowsOf(X, ws, rowCap) {   // same window the preview shows, as plain string rows
         if (!ws || !ws['!ref']) return [];
         const rng = X.utils.decode_range(ws['!ref']);
         const lastC = Math.min(rng.e.c, rng.s.c + SHEET_PREVIEW_COLS - 1);
-        const lastR = Math.min(rng.e.r, rng.s.r + SHEET_PREVIEW_ROWS - 1);
+        const lastR = Math.min(rng.e.r, rng.s.r + (rowCap || SHEET_PREVIEW_ROWS) - 1);
         return X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: false,
             range: X.utils.encode_range({ s: rng.s, e: { r: lastR, c: lastC } }) });
     }
@@ -45750,7 +45887,7 @@ kbd {
     // below the line holding this file's card (the card only exists in Read mode, where there is
     // no visible caret). Same path as ticking a task box: edit S.note.markdown, sync the
     // textarea, mark dirty, re-render. One-step Undo from the toast.
-    function insertSheetTableIntoNote(card, md, truncated) {
+    function insertSheetTableIntoNote(card, md, truncated, rowCap) {
         const n = S.note;
         if (!n || S.viewRev || !el.read.contains(card)) { toast('Open the note in Read mode (not a version preview) to insert a table.'); return; }
         const before = n.markdown, marker = 'attachment://' + card.dataset.att;
@@ -45771,7 +45908,7 @@ kbd {
         markDirty();
         renderInto(el.read, newMd);
         el.docScroll.scrollTop = sc;
-        toast(truncated ? 'Table inserted below the file (first 200 rows \u00d7 40 columns).' : 'Table inserted below the file.', 'Undo', () => {
+        toast(truncated ? 'Table inserted below the file (first ' + (rowCap || SHEET_PREVIEW_ROWS) + ' rows \u00d7 40 columns).' : 'Table inserted below the file.', 'Undo', () => {
             if (S.note !== n || n.markdown !== newMd) { toast('The note changed since — use version history to go back.'); return; }
             n.markdown = before; el.src.value = before;
             markDirty();
@@ -45782,10 +45919,14 @@ kbd {
         panel.textContent = 'Loading preview\u2026';
         try {
             const X = await loadSheetJs();
-            const opts = { sheetRows: SHEET_PREVIEW_ROWS + 1, cellDates: true };
-            const wb = rec.mime === 'text/csv'
-                ? X.read(await rec.blob.text(), Object.assign({ type: 'string' }, opts))     // text() keeps UTF-8 intact
-                : X.read(await rec.blob.arrayBuffer(), Object.assign({ type: 'array' }, opts));
+            let rowCap = SHEET_PREVIEW_ROWS;
+            const readWb = async () => {
+                const opts = { sheetRows: rowCap + 1, cellDates: true };
+                return rec.mime === 'text/csv'
+                    ? X.read(await rec.blob.text(), Object.assign({ type: 'string' }, opts))     // text() keeps UTF-8 intact
+                    : X.read(await rec.blob.arrayBuffer(), Object.assign({ type: 'array' }, opts));
+            };
+            let wb = await readWb();
             const names = wb.SheetNames || [];
             if (!names.length) throw new Error('no sheets found');
             panel.textContent = '';
@@ -45806,7 +45947,7 @@ kbd {
                 catch (err) { toast('Couldn\u2019t access the clipboard.'); }
             });
             // A selected range wins; the sheet's header row is added when the range starts below it.
-            const currentRows = () => (tbl && tbl.selectedRows && tbl.selectedRows(true)) || sheetRowsOf(X, wb.Sheets[names[cur]]);
+            const currentRows = () => (tbl && tbl.selectedRows && tbl.selectedRows(true)) || sheetRowsOf(X, wb.Sheets[names[cur]], rowCap);
             const info = document.createElement('span');
             info.className = 'nv-sheet-info';
             const ins = document.createElement('button');
@@ -45816,7 +45957,7 @@ kbd {
                 const ws = wb.Sheets[names[cur]];
                 const md = rowsToMarkdownTable(currentRows());
                 if (!md) { toast(tbl && tbl.sel ? 'Select at least 2 columns to insert as a table.' : 'This sheet has no table to insert (needs 2+ rows and 2+ columns).'); return; }
-                insertSheetTableIntoNote(panel.closest('.nv-file-card'), md, !(tbl && tbl.sel) && !!(ws && ws['!fullref']) || (ws && ws['!ref'] && X.utils.decode_range(ws['!ref']).e.c >= SHEET_PREVIEW_COLS));
+                insertSheetTableIntoNote(panel.closest('.nv-file-card'), md, !(tbl && tbl.sel) && !!(ws && ws['!fullref']) || (ws && ws['!ref'] && X.utils.decode_range(ws['!ref']).e.c >= SHEET_PREVIEW_COLS), rowCap);
             });
             const btns = names.map((n, i) => {
                 const b = document.createElement('button');
@@ -45830,7 +45971,10 @@ kbd {
                 cur = i;
                 btns.forEach((b, j) => b.setAttribute('aria-selected', j === i ? 'true' : 'false'));
                 body.textContent = '';
-                tbl = sheetToTable(X, wb.Sheets[names[i]], updateBar);
+                tbl = sheetToTable(X, wb.Sheets[names[i]], updateBar, rowCap, async () => {
+                    try { rowCap += 500; wb = await readWb(); show(cur); }
+                    catch (err) { rowCap -= 500; toast('Couldn\u2019t load more rows.'); show(cur); }
+                });
                 body.appendChild(tbl);
                 updateBar(null);
             };
@@ -47264,10 +47408,12 @@ kbd {
         const groups = folderDupGroups();
         if (!groups.length) { toast('No duplicate folders found.'); return; }
         const lines = groups.map((a) => '• ' + a.map((f) => f.label + ' (' + f.count + ')').join(' + ') + '  →  “' + a[0].label + '”').join('\n');
-        const ok = await skConfirm('Notes move into the folder with the most notes in each group; the others disappear.\n\n' + lines,
+        const ok = await skConfirm('Notes move into the folder with the most notes in each group; the others disappear. A backup file downloads first.\n\n' + lines,
             { title: 'Merge ' + groups.length + ' duplicate folder' + (groups.length === 1 ? '' : 's') + '?', okText: 'Merge' });
         if (!ok) return;
         await settle();   // flush the open note first so its latest edits aren't lost
+        try { await exportAllJson(); toast('Backup downloaded \u2014 merging folders\u2026'); }
+        catch (e) { console.error('Notes Vault: pre-merge backup failed', e); toast('Couldn\u2019t create the backup, so nothing was merged.'); return; }
         let moved = 0; const now = Date.now();
         for (const a of groups) {
             const keep = a[0];
@@ -48533,7 +48679,24 @@ kbd {
                 });
             } catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
         }
+        try { localStorage.setItem('nvLastBackup', String(Date.now())); } catch (e) { /* ignore */ }
         return { schema: BACKUP_SCHEMA, notes, revisions, fileLinks, attachments };
+    }
+    // Weekly nudge: the vault lives only in this browser, so clearing site data would wipe it.
+    // Asks at most once a day, only once there are notes, and not on the very first visit.
+    function backupNagSoon() {
+        try {
+            const now = Date.now(), DAY = 864e5, WEEK = 7 * DAY;
+            const last = +localStorage.getItem('nvLastBackup') || 0;
+            let base = last || +localStorage.getItem('nvBackupBase') || 0;
+            if (!base) { localStorage.setItem('nvBackupBase', String(now)); return; }   // start counting from now
+            const nagAt = +localStorage.getItem('nvBackupNagAt') || 0;
+            if (!S.notes.length || now - base < WEEK || now - nagAt < DAY) return;
+            localStorage.setItem('nvBackupNagAt', String(now));
+            const days = Math.floor((now - base) / DAY);
+            setTimeout(() => toast((last ? 'Last backup was ' + days + ' days ago' : 'No backup yet (' + days + ' days of notes)') + ' \u2014 export one now?',
+                'Export backup', () => { exportAllJson().catch(() => toast('Backup failed \u2014 try Export backup (JSON) from the menu.')); }), 1500);
+        } catch (e) { /* storage blocked: skip the reminder */ }
     }
     // Same merge rule either way: a note already here newer than the one in the backup wins,
     // so importing an old file can never clobber more recent edits.
@@ -51541,6 +51704,7 @@ kbd {
         try {
             await loadAll(); await purgeExpired(); await loadAllLinks(); loadPendingRelinks();
             S.loadError = false;
+            attLoadIndex().catch((e) => console.warn('Notes Vault: attachment index not loaded', e));
         } catch (e) {
             console.error('Notes Vault could not open its database:', e);
             S.notes = []; S.trash = []; S.loadError = true;
@@ -51574,6 +51738,7 @@ kbd {
         await loadVaultData();
         renderAll();
         updateStorage();
+        backupNagSoon();   // after the notes are loaded, so it knows whether there is anything to protect
         el.app.focus();
     }
     async function close() {
