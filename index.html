@@ -49033,6 +49033,28 @@ kbd {
         if (made === 1 && lastId) openNote(lastId);
     }
 
+    /* Spreadsheets dropped anywhere in the vault: each file becomes a new note holding the
+       original (stored byte-for-byte as an attachment card → "Preview" in Read mode). */
+    async function importSheetsAsNotes(fileList) {
+        const files = Array.from(fileList || []).filter((f) => !!sheetMimeOf(f));
+        if (!files.length) return;
+        let made = 0, failed = 0, lastId = null;
+        for (const f of files) {
+            try {
+                toast(f.name + ' — attaching…');
+                const rec = await ingestAttachment(f);
+                const label = (f.name || rec.filename || 'spreadsheet').replace(/[\[\]]/g, '').trim() || 'spreadsheet';
+                const id = uid();
+                await restoreNotesList([{ id, title: label.replace(/\.[a-z0-9]+$/i, ''),
+                    markdown: '[📊 ' + label + '](attachment://' + rec.id + ')\n',
+                    type: 'General', tags: ['excel'], pinned: false, createdAt: Date.now(), updatedAt: Date.now() }]);
+                made++; lastId = id;
+            } catch (e) { console.warn('Notes Vault: spreadsheet import failed', f.name, e); failed++; toast(e && e.message ? e.message : 'Could not attach that spreadsheet.'); }
+        }
+        if (made) toast('Imported ' + made + ' spreadsheet note' + (made === 1 ? '' : 's') + (failed ? ' — ' + failed + ' failed' : '') + '. Open it in Read mode and press Preview.');
+        if (made === 1 && lastId) openNote(lastId);
+    }
+
     async function importPdfAsNotes(fileList) {
         const files = Array.from(fileList || []).filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
         if (!files.length) return;
@@ -53637,7 +53659,7 @@ kbd {
             const showHint = () => {
                 if (hint) return;
                 hint = document.createElement('div');
-                hint.textContent = 'Drop .pdf, .docx or .md files to import them as notes';
+                hint.textContent = 'Drop .pdf, .docx, .md, .txt or Excel (.xlsx, .xls, .csv) files to import them as notes';
                 hint.style.cssText = 'position:fixed;inset:12px;z-index:99999;pointer-events:none;display:flex;align-items:center;justify-content:center;'
                     + 'border:3px dashed var(--primary,#db2777);border-radius:18px;background:rgba(219,39,119,.10);color:var(--primary,#db2777);'
                     + 'font:600 1.1rem system-ui,sans-serif;text-align:center;padding:20px;backdrop-filter:blur(2px);';
@@ -53652,12 +53674,13 @@ kbd {
                 if (e.defaultPrevented || !hasFiles(e)) return;
                 e.preventDefault();
                 const fl = Array.from(e.dataTransfer.files);
-                const pdfs = fl.filter(isPdfF), docxs = fl.filter(isDocxF), mds = fl.filter((f) => !isPdfF(f) && isMdF(f));
-                if (!pdfs.length && !mds.length && !docxs.length) { toast('Drop .pdf, .docx, .md or .txt files to import them as notes.'); return; }
+                const pdfs = fl.filter(isPdfF), docxs = fl.filter(isDocxF), mds = fl.filter((f) => !isPdfF(f) && isMdF(f)), sheets = fl.filter((f) => !isPdfF(f) && !isDocxF(f) && !isMdF(f) && !!sheetMimeOf(f));
+                if (!pdfs.length && !mds.length && !docxs.length && !sheets.length) { toast('Drop .pdf, .docx, .md, .txt or Excel (.xlsx, .xls, .csv) files to import them as notes.'); return; }
                 (async () => {
                     if (mds.length) await importMarkdownFiles(mds, false);
                     if (pdfs.length) await importPdfAsNotes(pdfs);
                     if (docxs.length) await importDocxAsNotes(docxs);
+                    if (sheets.length) await importSheetsAsNotes(sheets);
                 })();
             });
             window.addEventListener('dragend', hideHint);
