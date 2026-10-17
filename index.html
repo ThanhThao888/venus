@@ -43084,6 +43084,18 @@ kbd {
 
     const normType = (t) => ((t || '').trim() || 'General');
     const typeKey = (t) => normType(t).toLowerCase();
+    // Looser "same folder?" test used only when a folder name is being CHOSEN (new folder, move,
+    // folder box): ignores case, accents (Tài chính = Tai chinh), repeated spaces and - _ separators.
+    // Existing notes/folder styles keep their exact typeKey, so nothing already saved is regrouped.
+    const looseFolderKey = (t) => normType(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\u0111/gi, 'd')
+        .replace(/[\s_\-\u2013\u2014]+/g, ' ').trim().toLowerCase();
+    // The established folder (most notes) that a typed name would duplicate, or null.
+    function findExistingFolder(name) {
+        const k = looseFolderKey(name);
+        let best = null;
+        for (const f of S.fmap.values()) if (looseFolderKey(f.label) === k && (!best || f.count > best.count)) best = f;
+        return best ? best.label : null;
+    }
     const normTag = (t) => String(t || '').trim().replace(/^#+/, '').trim();
 
     function normalizeNote(n) {
@@ -44903,7 +44915,9 @@ kbd {
             + item('trash', '', 'trash', 'Trash', S.trash.length);
 
         const fl = [...folders.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
-        html += '<div class="nv-side-h nv-side-h-row"><span>Folders</span><button type="button" class="nv-side-h-add" data-new-folder title="New folder" aria-label="New folder"><i class="fa-solid fa-plus" aria-hidden="true"></i>New</button></div>';
+        html += '<div class="nv-side-h nv-side-h-row"><span>Folders</span><button type="button" class="nv-side-h-add" data-new-folder title="New folder" aria-label="New folder"><i class="fa-solid fa-plus" aria-hidden="true"></i>New</button>'
+            + (folderDupGroups().length ? '<button type="button" class="nv-side-h-add" data-merge-folders title="Some folders are duplicates — merge them" aria-label="Merge duplicate folders"><i class="fa-solid fa-code-merge" aria-hidden="true"></i>Merge</button>' : '')
+            + '</div>';
         if (fl.length) html += fl.map(([k, f]) => '<div class="nv-fitem">'
             + item('folder', k, iconFor(f.label), f.label, f.count, colorFor(f.label))
             + '<button type="button" class="nv-fitem-edit" data-edit-folder="' + esc(k) + '" title="Customize folder" aria-label="Customize ' + esc(f.label) + ' folder"><i class="fa-solid fa-palette" aria-hidden="true"></i></button>'
@@ -47172,7 +47186,7 @@ kbd {
         const sc = S.scope;
         const note = {
             id: uid(), title: '', markdown: '',
-            type: folderName ? normType(folderName) : ((sc.kind === 'folder' && S.fmap.get(sc.value)) ? S.fmap.get(sc.value).label : 'General'),
+            type: folderName ? normType(findExistingFolder(folderName) || folderName) : ((sc.kind === 'folder' && S.fmap.get(sc.value)) ? S.fmap.get(sc.value).label : 'General'),
             tags: (sc.kind === 'tag' && S.tmap.get(sc.value)) ? [S.tmap.get(sc.value).label] : [],
             pinned: false, createdAt: now, updatedAt: now
         };
@@ -47227,8 +47241,50 @@ kbd {
     async function promptNewFolder() {
         const name = (await skPrompt('Name this folder', ''))?.trim();
         if (!name) return;
+        const existing = findExistingFolder(name);
         await newNote(name);
-        toast('New note started in “' + normType(name) + '” — give it a title to keep it.');
+        toast(existing
+            ? 'Folder “' + existing + '” already exists — using it instead of creating a duplicate. Give the note a title to keep it.'
+            : 'New note started in “' + normType(name) + '” — give it a title to keep it.');
+    }
+
+    // Groups of folders that are really the same one written differently (Tài chính / Tai chinh,
+    // AI Finance / AI-Finance). Biggest folder first — that one is kept.
+    function folderDupGroups() {
+        const g = new Map();
+        for (const [k, f] of S.fmap) {
+            const lk = looseFolderKey(f.label);
+            if (!g.has(lk)) g.set(lk, []);
+            g.get(lk).push({ key: k, label: f.label, count: f.count, latest: f.latest });
+        }
+        return [...g.values()].filter((a) => a.length > 1).map((a) => a.sort((x, y) => (y.count - x.count) || (y.latest - x.latest)));
+    }
+    async function mergeDuplicateFolders() {
+        const groups = folderDupGroups();
+        if (!groups.length) { toast('No duplicate folders found.'); return; }
+        const lines = groups.map((a) => '• ' + a.map((f) => f.label + ' (' + f.count + ')').join(' + ') + '  →  “' + a[0].label + '”').join('\n');
+        const ok = await skConfirm('Notes move into the folder with the most notes in each group; the others disappear.\n\n' + lines,
+            { title: 'Merge ' + groups.length + ' duplicate folder' + (groups.length === 1 ? '' : 's') + '?', okText: 'Merge' });
+        if (!ok) return;
+        await settle();   // flush the open note first so its latest edits aren't lost
+        let moved = 0; const now = Date.now();
+        for (const a of groups) {
+            const keep = a[0];
+            for (const f of a.slice(1)) {
+                for (const n of S.notes) {
+                    if (typeKey(n.type) !== f.key) continue;
+                    n.type = keep.label; n.updatedAt = now;
+                    await dbPut(n); moved++;
+                }
+                // carry the icon/colour over if the kept folder has none of its own
+                if (S.folderStyles[f.key] && !S.folderStyles[keep.key]) S.folderStyles[keep.key] = S.folderStyles[f.key];
+                delete S.folderStyles[f.key];
+            }
+        }
+        saveFolderStyles();
+        if (S.note && el.folderIn) el.folderIn.value = normType(S.note.type);
+        renderAll();
+        toast('Merged ' + groups.length + ' folder group' + (groups.length === 1 ? '' : 's') + ' — ' + moved + ' note' + (moved === 1 ? '' : 's') + ' moved.');
     }
 
     // "Customize folder": pick an icon + color for one folder, saved in S.folderStyles.
@@ -51629,6 +51685,8 @@ kbd {
     // once, while P.targetId is still valid, and closes over that reference instead.
     function applyMoveToFolder(n, label) {
         if (!n) return;
+        const dupOf = findExistingFolder(label);
+        if (dupOf && dupOf !== label) { flash('Using existing folder \u201c' + dupOf + '\u201d'); label = dupOf; }
         if (label === normType(n.type)) { flash('Already in “' + label + '”'); return; }
         n.type = label;
         if (S.note === n) {
@@ -53189,6 +53247,7 @@ kbd {
 
         // sidebar navigation
         el.sideScroll.addEventListener('click', (e) => {
+            if (e.target.closest('[data-merge-folders]')) { mergeDuplicateFolders(); return; }
             if (e.target.closest('[data-new-folder]')) { promptNewFolder(); return; }
             const editBtn = e.target.closest('[data-edit-folder]');
             if (editBtn) {
@@ -53448,7 +53507,16 @@ kbd {
             renderDocMeta();
             markDirty();
         });
-        el.folderIn.addEventListener('blur', () => { if (S.note) el.folderIn.value = normType(S.note.type); });
+        el.folderIn.addEventListener('blur', () => {
+            if (!S.note) return;
+            // Typed a near-duplicate of a folder you already have? Snap to the existing one.
+            const dupOf = findExistingFolder(S.note.type);
+            if (dupOf && dupOf !== normType(S.note.type)) {
+                S.note.type = dupOf; renderDocMeta(); markDirty();
+                toast('Folder \u201c' + dupOf + '\u201d already exists \u2014 using it.');
+            }
+            el.folderIn.value = normType(S.note.type);
+        });
         attachCombo(el.folderIn, el.folderPop, { getOptions: () => S.folderOpts || [] });
 
         if (el.linkedCareer) el.linkedCareer.addEventListener('change', () => {
