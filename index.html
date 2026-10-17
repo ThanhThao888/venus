@@ -42330,6 +42330,7 @@ kbd {
                     <input type="text" id="nvRelParent" autocomplete="off" placeholder="This note belongs under…">
                     <ul class="nv-combo-pop" id="nvRelParentPop" role="listbox" aria-label="Note suggestions" hidden></ul>
                 </div>
+                <p class="nv-rel-hint" id="nvRelParentHint">A note has only one parent. For any other relation use “Connected to” below.</p>
             </div>
             <div class="nv-field nv-stack">
                 <label class="nv-lbl" for="nvRelKidIn">Sub-notes</label>
@@ -53596,7 +53597,14 @@ kbd {
                 if (!n) return;
                 if (!p) { toast('No note with that title.'); return; }
                 el.relParent.value = '';
-                if (await mapSetParent(n, p)) mapChanged();
+                const old = mapParentOf(n, mapById());
+                if (await mapSetParent(n, p)) {
+                    mapChanged();
+                    if (old && old !== p) toast('Parent changed: “' + mapTitle(old) + '” → “' + mapTitle(p) + '”. A note has only one parent.', 'Undo', async () => {
+                        if (S.note !== n) return;
+                        if (await mapSetParent(n, old)) mapChanged();
+                    });
+                }
             };
             attachCombo(el.relParent, el.relParentPop, {
                 getOptions: () => { const n = S.note; if (!n) return []; const by = mapById(); return mapTitles((x) => !mapInside(n, x, by)); },
@@ -54657,6 +54665,7 @@ kbd {
         const open = (x) => '<button type="button" class="nv-rel-open" data-open="' + esc(x.id) + '" title="' + esc(mapTitle(x)) + '">' + esc(mapTitle(x)) + '</button>';
         const btn = (attr, icon, title, off) => '<button type="button" class="nv-rel-btn" ' + attr + ' title="' + title + '" aria-label="' + title + '"' + (off ? ' disabled' : '') + '><i class="fa-solid fa-' + icon + '"></i></button>';
         const par = mapParentOf(n, byId);
+        el.relParent.placeholder = par ? 'Change parent (replaces the current one)…' : 'This note belongs under…';
         el.relParentCur.innerHTML = par ? '<li class="nv-rel-item">' + open(par) + btn('data-rm-parent="1"', 'xmark', 'Remove parent') + '</li>' : '';
         const kids = mapKids(n, live);
         el.relKids.innerHTML = kids.map((k, i) => '<li class="nv-rel-item">' + open(k)
