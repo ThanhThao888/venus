@@ -21613,6 +21613,23 @@ document.addEventListener('DOMContentLoaded', () => REMINDER.init());
 .dlt-group-header.g-later   { color: #059669; }
 .dlt-group-header.g-done    { color: #059669; opacity: .65; }
 .dlt-group-cards { display: flex; flex-wrap: wrap; gap: 11px; }
+/* ── Collapsible groups + Upcoming time window ── */
+.dlt-gh-toggle { cursor: pointer; user-select: none; border-radius: 8px; }
+.dlt-gh-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.dlt-gh-chev { transition: transform .18s ease; flex-shrink: 0; opacity: .8; }
+.dlt-gh-toggle.is-collapsed .dlt-gh-chev { transform: rotate(-90deg); }
+.dlt-gh-toggle.is-collapsed { padding-bottom: 4px; }
+.dlt-group-hidden { font-size: 0.68rem; font-weight: 700; text-transform: none; letter-spacing: 0; opacity: .75; }
+.dlt-horizon-wrap { margin-left: auto; }
+.dlt-horizon-sel {
+  font-size: .72rem; font-weight: 700; text-transform: none; letter-spacing: 0;
+  padding: 4px 8px; border-radius: 14px; border: 1.5px solid #059669; color: #059669;
+  background: transparent; cursor: pointer; font-family: inherit;
+}
+.dlt-horizon-sel option { color: #1f2937; background: #fff; }
+body.dark-mode .dlt-horizon-sel option { color: #e5e7eb; background: #1f2937; }
+.dlt-hidden-note { margin-top: 8px; font-size: .74rem; color: var(--text-muted); }
+.dlt-hidden-note button { background: none; border: none; padding: 0; font: inherit; font-weight: 700; color: var(--primary); cursor: pointer; text-decoration: underline; }
 
 /* Bulk actions: select toggle, floating action bar, per-card checkbox */
 .dlt-select-toggle-btn { background: rgba(99,102,241,.1) !important; color: #6366f1 !important; box-shadow: none !important; }
@@ -22940,6 +22957,9 @@ body.dark-mode .dlt-fg textarea {
   let curFilter  = 'all';
   let curSearch  = '';
   let curSort    = localStorage.getItem('dltSort') || 'date'; // 'date' | 'name' | 'priority'
+  let collapsedGroups = JSON.parse(localStorage.getItem('dltCollapsed') || '{}'); // { overdue:true, later:true, ... }
+  let upcomingHorizon = localStorage.getItem('dltHorizon') || 'all';              // 'all' or max days ahead shown in Upcoming
+  const HORIZON_OPTS = [['all','All time'],['30','Next 1 month'],['90','Next 3 months'],['180','Next 6 months'],['365','Next 1 year'],['730','Next 2 years']];
   let noteModalId = null; // id của deadline đang mở trong popup ghi chú
   let editingId  = null; // id of the manual deadline currently being edited, or null when adding new
   let cmChart    = null; // Chart.js instance for the completed-analytics modal
@@ -23728,9 +23748,32 @@ body.dark-mode .dlt-fg textarea {
       }
     }
 
-    let html = pinnedHtml + groups.filter(g => g.items.length).map(g => `
+    // Searching always shows everything, so a hidden/collapsed item can still be found
+    const searching = !!curSearch.trim();
+    const hz = (upcomingHorizon === 'all') ? Infinity : Number(upcomingHorizon);
+    groups.forEach(g => { g.hidden = 0; });
+    if (!searching && isFinite(hz)) {
+      const later = groups[3];
+      const keep = later.items.filter(d => daysLeft(d.date) <= hz);
+      later.hidden = later.items.length - keep.length;
+      later.items = keep;
+    }
+    const hzLabel = (HORIZON_OPTS.find(o => o[0] === String(upcomingHorizon)) || HORIZON_OPTS[0])[1];
+
+    let html = pinnedHtml + groups.filter(g => g.items.length || g.hidden).map(g => {
+      const collapsed = !searching && !!collapsedGroups[g.key];
+      return `
       <div class="dlt-group">
-        <div class="dlt-group-header ${g.cls}">${g.label} <span class="dlt-group-count">${g.items.length}</span>${g.key === 'overdue' ? `
+        <div class="dlt-group-header dlt-gh-toggle ${g.cls}${collapsed ? ' is-collapsed' : ''}" role="button" tabindex="0" aria-expanded="${!collapsed}"
+             title="${collapsed ? 'Click to expand' : 'Click to collapse'}"
+             onclick="DLT.toggleGroup('${g.key}')"
+             onkeydown="if(event.target===this && (event.key==='Enter'||event.key===' ')){event.preventDefault(); DLT.toggleGroup('${g.key}');}">
+          <svg class="dlt-icon dlt-icon-sm dlt-gh-chev" aria-hidden="true"><use href="#icon-chevron-down"/></svg>${g.label} <span class="dlt-group-count">${g.items.length}</span>${g.hidden ? `<span class="dlt-group-hidden">+${g.hidden} hidden</span>` : ''}${g.key === 'later' ? `
+          <div class="dlt-horizon-wrap" onclick="event.stopPropagation()">
+            <select class="dlt-horizon-sel" onchange="DLT.setHorizon(this.value)" aria-label="Upcoming time window" title="Only show upcoming deadlines within this window">
+              ${HORIZON_OPTS.map(o => `<option value="${o[0]}"${o[0] === String(upcomingHorizon) ? ' selected' : ''}>${o[1]}</option>`).join('')}
+            </select>
+          </div>` : ''}${g.key === 'overdue' ? `
           <div class="dlt-snoozeall-wrap">
             <button class="dlt-snoozeall-btn" onclick="event.stopPropagation(); DLT.toggleSnoozeAllMenu()" title="Snooze every overdue item at once"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-bell"/></svg> <span>Snooze All</span></button>
             <div class="dlt-snoozeall-menu" id="snoozeAllMenu">
@@ -23751,9 +23794,10 @@ body.dark-mode .dlt-fg textarea {
               <button onclick="event.stopPropagation(); DLT.pushAllOverdue(30)"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-fast-forward"/></svg> To 1 month from now</button>
             </div>
           </div>` : ''}</div>
-        <div class="dlt-group-cards">${g.items.map(cardHTML).join('')}</div>
+        ${collapsed ? '' : `<div class="dlt-group-cards">${g.items.map(cardHTML).join('')}</div>`}
+        ${(!collapsed && g.hidden) ? `<div class="dlt-hidden-note">${g.hidden} later deadline${g.hidden === 1 ? '' : 's'} hidden (beyond ${hzLabel.toLowerCase()}) · <button onclick="DLT.setHorizon('all')">Show all</button></div>` : ''}
       </div>
-    `).join('');
+    `; }).join('');
 
     if (doneShown.length) {
       // Late count among the currently-visible completed items, for a quick at-a-glance hint
@@ -25112,6 +25156,17 @@ body.dark-mode .dlt-fg textarea {
     },
 
     /* ─── Bulk Snooze (Overdue group header) ─── */
+    toggleGroup(key) {
+      collapsedGroups[key] = !collapsedGroups[key];
+      if (!collapsedGroups[key]) delete collapsedGroups[key];
+      try { localStorage.setItem('dltCollapsed', JSON.stringify(collapsedGroups)); } catch (e) {}
+      render();
+    },
+    setHorizon(val) {
+      upcomingHorizon = String(val);
+      try { localStorage.setItem('dltHorizon', upcomingHorizon); } catch (e) {}
+      render();
+    },
     toggleSnoozeAllMenu() {
       const menu = document.getElementById('snoozeAllMenu');
       if (!menu) return;
