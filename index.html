@@ -56734,6 +56734,40 @@ kbd {
     var lv = null, lvMirror = false;
     var TA_PROTO = HTMLTextAreaElement.prototype;
     var TA_VALUE = Object.getOwnPropertyDescriptor(TA_PROTO, 'value');
+    /* Typeset formulas inside Live-preview table cells.
+       Safety rules (so typing in a cell can never be disturbed):
+         - only cells that are NOT the focused element are touched;
+         - a cell's source lives in data-raw, and focusing a cell resets it to that raw text,
+           so rendered SVG never ends up in the saved note;
+         - if the user focuses a cell while MathJax is still working, only stray rendered math is removed
+           from it; text they typed is never overwritten. */
+    var lvMathTimer = 0, lvMathTries = 0;
+    function liveMathSoon() {
+        clearTimeout(lvMathTimer);
+        lvMathTimer = setTimeout(liveTypesetCells, 60);
+    }
+    function liveTypesetCells() {
+        if (!el || !el.live) return;
+        var cells = Array.prototype.filter.call(el.live.querySelectorAll('.cm-lv-table th, .cm-lv-table td'), function (c) {
+            return c !== document.activeElement && !c.querySelector('mjx-container') && c.textContent.indexOf('\\(') !== -1;
+        });
+        if (!cells.length) { lvMathTries = 0; return; }
+        var mjx = window.MathJax;
+        if (!mjx || !mjx.typesetPromise) {            // MathJax loads async; try again shortly
+            if (lvMathTries++ < 15) lvMathTimer = setTimeout(liveTypesetCells, 400);
+            return;
+        }
+        lvMathTries = 0;
+        mjx.typesetPromise(cells).catch(function () {}).then(function () {
+            var a = document.activeElement;
+            // The user focused a cell while MathJax was working on it. Never rewrite the cell's text
+            // (they may already have typed into it): just drop any rendered math that slipped in.
+            if (a && a.closest && a.closest('.cm-lv-table') && a.querySelector && a.querySelector('mjx-container')) {
+                a.querySelectorAll('mjx-container, mjx-assistive-mml').forEach(function (n) { n.remove(); });
+                if (!(a.textContent || '').trim() && a.dataset.raw) a.textContent = a.dataset.raw;   // only if it ended up empty
+            }
+        });
+    }
     function liveHooks() {
         return {
             renderBlock: async (box, md, inline) => {
@@ -56745,11 +56779,19 @@ kbd {
             },
             inlineHtml: (raw) => {
                 try {
-                    const html = window.marked && window.marked.parseInline ? window.marked.parseInline(raw, { gfm: true, breaks: false }) : esc(raw);
+                    // Same math protection as the reading view: park "$x$", "\(x\)" and "$$x$$" behind
+                    // placeholders so marked can't eat the backslashes, then put the TeX back as text.
+                    // The table widget calls this for every cell that is not being edited; the cell's
+                    // real source stays in its data-raw attribute, so nothing here touches saved text.
+                    const hasMd = !!(window.marked && window.marked.parseInline);
+                    const mj = hasMd ? mjxPrepare(String(raw)) : null;
+                    let html = hasMd ? mj.restore(window.marked.parseInline(mj.text, { gfm: true, breaks: false })) : esc(raw);
                     const tpl = document.createElement('template');
                     tpl.innerHTML = window.DOMPurify ? DOMPurify.sanitize(html) : esc(raw);
                     linkifyWikilinks(tpl.content);
-                    return tpl.innerHTML;
+                    const out = tpl.innerHTML;
+                    if (out.indexOf('\\(') !== -1) liveMathSoon();
+                    return out;
                 } catch (e) { return esc(raw); }
             },
             wikiExists: (t) => !!findNoteByTitle(t),
