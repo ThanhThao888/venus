@@ -17104,6 +17104,338 @@
         }
 
         /* ═══════════════════════════════════════════════════════════
+           YOUR PROGRESS — v3 calm & clear overrides
+           Goals: fewer always-on animations (ADHD-friendly), higher
+           contrast, bigger small-text, clearer hierarchy, keyboard +
+           screen-reader support. Placed after v2 so it wins the cascade.
+           ═══════════════════════════════════════════════════════════ */
+
+        /* Visually hidden, still read by screen readers */
+        .yprog-sr {
+            position: absolute !important;
+            width: 1px; height: 1px;
+            margin: -1px; padding: 0;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        /* ── 1. Stop the perpetual motion. Keep one-shot entrances only. ── */
+        #yourProgressCard {
+            animation: yprogCardIn 0.4s cubic-bezier(.2,.8,.2,1) both !important;
+            box-shadow: 0 4px 18px rgba(219, 39, 119, 0.10), var(--shadow-md);
+        }
+        #yourProgressCard::after { content: none !important; animation: none !important; }
+        #yourProgressCard .gamification-stats::after { content: none !important; animation: none !important; }
+        #yourProgressCard .level-icon::before,
+        #yourProgressCard .points-icon::before,
+        #yourProgressCard .streak-icon::before { animation: none !important; }
+        #yourProgressCard .streak-icon { animation: none !important; }
+        #yourProgressCard .streak-container:hover .streak-icon { animation: yprogFlicker 1.2s ease-in-out 1; }
+        #yourProgressCard .xp-bar-fill { animation: none !important; }
+        #yourProgressCard .xp-bar-fill::before { content: none !important; animation: none !important; }
+        #yourProgressCard .meme-caption {
+            animation: none !important;
+            background: none !important;
+            -webkit-text-fill-color: currentColor !important;
+            color: #9d2867;
+            box-shadow: none !important;
+        }
+        body.dark-mode #yourProgressCard .meme-caption { color: #f5c2dd; }
+
+        /* Hover shouldn't make a data card jump around under the cursor. */
+        #yourProgressCard:hover,
+        #yourProgressCard .chart-container:hover,
+        #yourProgressCard .level-container:hover,
+        #yourProgressCard .points-container:hover,
+        #yourProgressCard .streak-container:hover,
+        #yourProgressCard .meme-widget:hover .meme-image-container {
+            transform: none !important;
+        }
+        #yourProgressCard .level-container:hover .level-icon,
+        #yourProgressCard .points-container:hover .points-icon,
+        #yourProgressCard .streak-container:hover .streak-icon { transform: none; }
+
+        /* ── 2. Hierarchy: the one number that matters is solid, big and readable ── */
+        #yourProgressCard .yprog-hours-value,
+        body.dark-mode #yourProgressCard .yprog-hours-value {
+            background: none !important;
+            animation: none !important;
+            -webkit-text-fill-color: currentColor !important;
+            color: #9d2867;
+            font-size: 2rem;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.15;
+        }
+        body.dark-mode #yourProgressCard .yprog-hours-value { color: #f9d0e6; }
+
+        /* ── 3. Contrast + minimum text size (>= 11–12px) ── */
+        #yourProgressCard .yprog-hours-caption,
+        #yourProgressCard .yprog-hours-label,
+        #yourProgressCard .xp-bar-label,
+        #yourProgressCard .streak-best {
+            color: rgba(85, 38, 90, 0.8);
+            font-size: 0.74rem;
+        }
+        body.dark-mode #yourProgressCard .yprog-hours-caption,
+        body.dark-mode #yourProgressCard .yprog-hours-label,
+        body.dark-mode #yourProgressCard .xp-bar-label,
+        body.dark-mode #yourProgressCard .streak-best { color: rgba(247, 227, 240, 0.82); }
+        #yourProgressCard .yprog-stat-label { font-size: 0.74rem; }
+        #yourProgressCard .yprog-stat-caption { font-size: 0.72rem; }
+        #yourProgressCard .skills-stats-list-title { font-size: 0.76rem; }
+        #yourProgressCard .skills-stats-row { font-size: 0.86rem; }
+        #yourProgressCard .skills-stats-pct { font-size: 0.78rem; width: 38px; }
+        #yourProgressCard .yprog-hours-num { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+        #yourProgressCard .skills-stats-bar-track { height: 8px; }
+        #yourProgressCard .skills-stats-empty { font-size: 0.84rem; }
+        #yourProgressCard .skills-stats-list { max-height: 300px; }
+
+        /* Section labels give the long card a scannable structure */
+        #yourProgressCard .yprog-section-label {
+            margin: 18px 2px 2px;
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9d2867;
+        }
+        body.dark-mode #yourProgressCard .yprog-section-label { color: #f5c2dd; }
+
+        /* ── 4. Streak nudge ── */
+        #yourProgressCard .streak-hint {
+            grid-column: 1 / -1;
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.35;
+            color: #92400e;
+            background: rgba(251, 191, 36, 0.18);
+            border: 1px solid rgba(217, 119, 6, 0.3);
+            border-radius: 10px;
+            padding: 6px 10px;
+        }
+        body.dark-mode #yourProgressCard .streak-hint {
+            color: #fde68a;
+            background: rgba(251, 191, 36, 0.12);
+            border-color: rgba(251, 191, 36, 0.3);
+        }
+        #yourProgressCard .streak-hint[hidden] { display: none; }
+
+        /* ── 5. Level-up: the one moment that earns an animation (plays once) ── */
+        @keyframes yprogLevelPop {
+            0%   { transform: scale(1); box-shadow: inset 0 0 0 1px rgba(219,113,175,0.15), 0 0 0 0 rgba(219,39,119,0.45); }
+            35%  { transform: scale(1.1); box-shadow: inset 0 0 0 1px rgba(219,113,175,0.4), 0 0 0 10px rgba(219,39,119,0); }
+            100% { transform: scale(1); box-shadow: inset 0 0 0 1px rgba(219,113,175,0.15), 0 0 0 0 rgba(219,39,119,0); }
+        }
+        #yourProgressCard .level-container.yprog-levelup { animation: yprogLevelPop 0.9s ease-out 1; }
+
+        /* ── 6. Weekly goal ── */
+        #yourProgressCard .yprog-goal {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed rgba(219, 113, 175, 0.28);
+            text-align: left;
+        }
+        body.dark-mode #yourProgressCard .yprog-goal { border-top-color: rgba(236, 72, 153, 0.25); }
+        #yourProgressCard .yprog-goal-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        #yourProgressCard .yprog-goal-label {
+            flex: 1;
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: rgba(85, 38, 90, 0.8);
+        }
+        body.dark-mode #yourProgressCard .yprog-goal-label { color: rgba(247, 227, 240, 0.82); }
+        #yourProgressCard .yprog-goal-val {
+            font-size: 0.95rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            color: #55265a;
+        }
+        body.dark-mode #yourProgressCard .yprog-goal-val { color: #f7e3f0; }
+        #yourProgressCard .yprog-goal-edit {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px; min-height: 32px;
+            border: 1px solid rgba(219, 113, 175, 0.35);
+            border-radius: 8px;
+            background: transparent;
+            color: #9d2867;
+            cursor: pointer;
+            font-size: 0.78rem;
+        }
+        #yourProgressCard .yprog-goal-edit:hover { background: rgba(219, 39, 119, 0.08); }
+        body.dark-mode #yourProgressCard .yprog-goal-edit { color: #f5c2dd; border-color: rgba(236,72,153,0.4); }
+        #yourProgressCard .yprog-goal-input {
+            width: 72px;
+            min-height: 32px;
+            padding: 2px 8px;
+            border: 1.5px solid #db2777;
+            border-radius: 8px;
+            background: #fff;
+            color: #55265a;
+            font: inherit;
+            font-weight: 700;
+        }
+        body.dark-mode #yourProgressCard .yprog-goal-input { background: #2a1a33; color: #f7e3f0; }
+        #yourProgressCard .yprog-goal-track {
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(120, 40, 90, 0.12);
+            overflow: hidden;
+        }
+        body.dark-mode #yourProgressCard .yprog-goal-track { background: rgba(0,0,0,0.35); }
+        #yourProgressCard .yprog-goal-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #ec4899, #db2777);
+            transition: width 0.6s cubic-bezier(.22,.9,.28,1);
+        }
+        #yourProgressCard .yprog-goal-fill.is-done { background: linear-gradient(90deg, #22c55e, #16a34a); }
+        #yourProgressCard .yprog-goal-hint {
+            margin-top: 6px;
+            font-size: 0.76rem;
+            color: rgba(85, 38, 90, 0.8);
+        }
+        body.dark-mode #yourProgressCard .yprog-goal-hint { color: rgba(247, 227, 240, 0.82); }
+
+        /* ── 7. Empty-state call to action ── */
+        #yourProgressCard .yprog-empty-cta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px 12px;
+            margin: 0 0 12px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(219, 39, 119, 0.07);
+            border: 1px dashed rgba(219, 39, 119, 0.4);
+            font-size: 0.84rem;
+            color: #55265a;
+        }
+        body.dark-mode #yourProgressCard .yprog-empty-cta { color: #f7e3f0; background: rgba(244,114,182,0.08); }
+        #yourProgressCard .yprog-empty-cta[hidden] { display: none; }
+        #yourProgressCard .yprog-empty-cta button {
+            min-height: 40px;
+            padding: 6px 14px;
+            border: none;
+            border-radius: 999px;
+            background: #db2777;
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.84rem;
+            cursor: pointer;
+        }
+        #yourProgressCard .yprog-empty-cta button:hover { background: #be185d; }
+
+        /* ── 8. Skills list: sort button, "not started" group ── */
+        #yourProgressCard .skills-stats-list-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        #yourProgressCard .yprog-sort-btn {
+            min-height: 28px;
+            padding: 2px 10px;
+            border: 1px solid var(--theme-border-strong, rgba(219,113,175,0.35));
+            border-radius: 999px;
+            background: transparent;
+            color: var(--theme-text-muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        #yourProgressCard .yprog-sort-btn:hover { color: #db2777; border-color: #db2777; }
+        #yourProgressCard .skills-stats-more {
+            border-top: 1px dashed var(--theme-border-strong, rgba(219,113,175,0.3));
+            padding-top: 8px;
+            font-size: 0.8rem;
+        }
+        #yourProgressCard .skills-stats-more > summary {
+            cursor: pointer;
+            min-height: 28px;
+            display: flex;
+            align-items: center;
+            font-weight: 700;
+            color: var(--theme-text-muted);
+        }
+        #yourProgressCard .skills-stats-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }
+        #yourProgressCard .skills-stats-chip {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--theme-border, rgba(219,113,175,0.25));
+            color: var(--theme-text);
+            font-size: 0.76rem;
+        }
+
+        /* ── 9. Mood break (meme) — collapsed by default so it never interrupts the data ── */
+        #yourProgressCard .yprog-fun {
+            margin-top: 14px;
+            border-top: 1px dashed rgba(219, 113, 175, 0.3);
+            padding-top: 10px;
+        }
+        #yourProgressCard .yprog-fun > summary {
+            cursor: pointer;
+            min-height: 36px;
+            display: flex;
+            align-items: center;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9d2867;
+        }
+        body.dark-mode #yourProgressCard .yprog-fun > summary { color: #f5c2dd; }
+        #yourProgressCard .yprog-fun[open] > summary { margin-bottom: 8px; }
+
+        /* ── 10. Keyboard focus + touch targets ── */
+        #yourProgressCard button:focus-visible,
+        #yourProgressCard summary:focus-visible,
+        #yourProgressCard input:focus-visible,
+        #yourProgressCard [onclick]:focus-visible {
+            outline: 3px solid #7c3aed;
+            outline-offset: 2px;
+            border-radius: 8px;
+        }
+        body.dark-mode #yourProgressCard button:focus-visible,
+        body.dark-mode #yourProgressCard summary:focus-visible,
+        body.dark-mode #yourProgressCard input:focus-visible { outline-color: #c4b5fd; }
+        #yourProgressCard .badges-title { min-height: 40px; }
+
+        /* ── 11. Respect "reduce motion" for everything in the card ── */
+        @media (prefers-reduced-motion: reduce) {
+            #yourProgressCard,
+            #yourProgressCard *,
+            #yourProgressCard *::before,
+            #yourProgressCard *::after {
+                animation: none !important;
+                transition: none !important;
+                scroll-behavior: auto !important;
+            }
+        }
+
+        /* ── 12. Small screens ── */
+        @media (max-width: 480px) {
+            #yourProgressCard .yprog-hours-value { font-size: 1.75rem; }
+            #yourProgressCard .skills-chart-container { min-width: 0; height: 300px; }
+            #yourProgressCard .skills-stats-panel { min-width: 0; }
+            #yourProgressCard .yprog-hours-grid { gap: 2px; }
+            #yourProgressCard .yprog-hours-num { font-size: 1rem; }
+        }
+
+        /* ═══════════════════════════════════════════════════════════
            "GOALS" CARD 
            ═══════════════════════════════════════════════════════════ */
 
@@ -23362,7 +23694,7 @@ body.dark-mode .dlt-fg textarea {
     try {
       let g = JSON.parse(localStorage.getItem('gamification') || '{"points":0,"level":1}');
       g.points = (g.points || 0) + pts;
-      g.level  = Math.floor(g.points / 100) + 1;
+      g.level  = levelFromPoints(g.points);
       localStorage.setItem('gamification', JSON.stringify(g));
       if (typeof updateGamificationStats === 'function') updateGamificationStats();
       const el = document.createElement('div');
@@ -23531,7 +23863,7 @@ body.dark-mode .dlt-fg textarea {
       const snoozed = !done && isSnoozed(d.id);
       const cls  = cardCls(days, done, snoozed);
       const dNum = done ? `<svg class="dlt-icon" aria-hidden="true"><use href="#icon-check"/></svg>` : (days < 0 ? Math.abs(days) : days);
-      const dUnit = done ? '' : (days === 0 ? 'today' : Math.abs(days)===1 ? 'day' : 'days');
+      const dUnit = done ? '' : (days === 0 ? 'today' : days < 0 ? 'late' : Math.abs(days)===1 ? 'day' : 'days');
       const cdHtml = (!done && !snoozed && days >= 0 && days <= 3)
         ? `<div class="dlt-countdown" data-date="${d.date}"></div>` : '';
       const srcBadge = d.source
@@ -29519,7 +29851,7 @@ window.DBP={
                             </div>
 
                             <!-- XP progress bar to next level -->
-                            <div class="xp-bar-track" role="progressbar" aria-label="XP progress to next level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                            <div class="xp-bar-track" role="progressbar" aria-label="XP progress to next level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 of 100 XP to Level 2">
                                 <div class="xp-bar-fill" id="xpBarFill" style="width:0%;"></div>
                             </div>
                             <div class="xp-bar-label" id="xpBarLabel">0/100 XP to Level 2</div>
@@ -29529,6 +29861,7 @@ window.DBP={
                                 <span class="streak-text" id="streakDisplay">0 day streak</span>
                             </div>
                             <div class="streak-best" id="streakBestDisplay">Best: 0 days</div>
+                            <div class="streak-hint" id="yprogStreakHint" hidden></div>
                         </div>
                         <div class="yprog-hours-panel">
                             <div class="yprog-hours-hero">
@@ -29545,35 +29878,43 @@ window.DBP={
                                     <span class="yprog-hours-num weekly-trend-summary" id="weeklyTrendSummary">0.0h</span>
                                 </div>
                                 <div class="yprog-hours-item">
-                                    <span class="yprog-hours-label">All time</span>
+                                    <span class="yprog-hours-label">7-day avg</span>
                                     <span class="yprog-hours-num" id="totalStudyInfo">0.0h</span>
                                 </div>
                             </div>
+                            <div class="yprog-goal" id="yprogWeeklyGoal">
+                                <div class="yprog-goal-head" id="yprogGoalHead">
+                                    <span class="yprog-goal-label">Weekly goal</span>
+                                    <span class="yprog-goal-val" id="yprogGoalVal">0.0 / 10h</span>
+                                    <button type="button" class="yprog-goal-edit" onclick="yprogEditWeeklyGoal()" aria-label="Edit weekly goal" title="Edit weekly goal"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+                                </div>
+                                <div class="yprog-goal-track" id="yprogGoalTrack" role="progressbar" aria-label="Weekly study goal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                    <div class="yprog-goal-fill" id="yprogGoalFill" style="width:0%;"></div>
+                                </div>
+                                <div class="yprog-goal-hint" id="yprogGoalHint"></div>
+                            </div>
                         </div>
 
-                        <div class="chart-container" style="height: 150px; margin: 12px 0;">
-                            <canvas id="dailyStudyChart"></canvas>
+                        <div class="yprog-empty-cta" id="yprogEmptyCta" hidden>
+                            <span>Nothing logged yet. Start with just one short session.</span>
+                            <button type="button" onclick="yprogGoToCourses()">Log my first 25 minutes</button>
+                        </div>
+
+                        <div class="chart-container yprog-daily-chart" style="height: 180px; margin: 12px 0;">
+                            <canvas id="dailyStudyChart" role="img" aria-label="Study hours, last 7 days"></canvas>
                         </div>
                     
-                        <div class="meme-widget" onclick="getRandomMeme()">
-                            <div class="meme-image-container">
-                                <img id="memeImage" src="" alt="Random Meme" style="width: 100%; height: auto; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); cursor: pointer;" />
-                            </div>
-                            <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px;">
-                                <div class="meme-caption" id="memeCaption" style="margin-top: 0;"></div>
-                                <button id="editCurrentMemeBtn" onclick="event.stopPropagation(); editCurrentMemeCaption();" title="Edit caption" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; transition: all 0.2s ease; flex-shrink: 0; display: none;"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg></button>
-                            </div>
-                        </div>                        
+                        <div class="yprog-section-label">Skills</div>
                         <div class="skills-chart-row">
                             <div class="chart-container skills-chart-container">
-                                <canvas id="progressChart"></canvas>
+                                <canvas id="progressChart" role="img" aria-label="Skills radar chart"></canvas>
                             </div>
                             <div class="skills-stats-panel">
                                 <div class="yprog-stat-cards">
                                     <div class="yprog-stat-card">
-                                        <div class="yprog-stat-icon yprog-stat-icon--hours"><i class="fa-solid fa-stopwatch"></i></div>
+                                        <div class="yprog-stat-icon yprog-stat-icon--hours"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></div>
                                         <div class="yprog-stat-body">
-                                            <span class="yprog-stat-label">Total Hours</span>
+                                            <span class="yprog-stat-label">Active tracks</span>
                                             <div class="yprog-stat-value-row">
                                                 <span class="yprog-stat-value" id="skillsStatsTotal">0.0h</span>
                                                 <span class="yprog-stat-trend" id="skillsStatsTrend"></span>
@@ -29588,7 +29929,7 @@ window.DBP={
                                         </div>
                                     </div>
                                 </div>
-                                <div class="skills-stats-list-title">Time by subject</div>
+                                <div class="skills-stats-list-head"><div class="skills-stats-list-title">Time by subject</div><button type="button" id="yprogSortBtn" class="yprog-sort-btn" onclick="yprogToggleSkillSort()">Sort: Hours</button></div>
                                 <div class="skills-stats-list" id="skillsStatsList">
                                     <div class="skills-stats-empty">Log study hours to see your breakdown here.</div>
                                 </div>
@@ -29608,6 +29949,19 @@ window.DBP={
                             </div>
                             <button type="button" id="badgesShowMoreBtn" class="badges-show-more" onclick="toggleBadgesShowAll()" style="display:none;"></button>
                         </div>
+
+                        <details class="yprog-fun" id="yprogFun">
+                            <summary>Mood break</summary>
+                        <div class="meme-widget" onclick="getRandomMeme()">
+                            <div class="meme-image-container">
+                                <img id="memeImage" src="" alt="Random Meme" style="width: 100%; height: auto; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); cursor: pointer;" />
+                            </div>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px;">
+                                <div class="meme-caption" id="memeCaption" style="margin-top: 0;"></div>
+                                <button id="editCurrentMemeBtn" onclick="event.stopPropagation(); editCurrentMemeCaption();" title="Edit caption" style="background: none; border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; transition: all 0.2s ease; flex-shrink: 0; display: none;"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.85em;height:0.85em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg></button>
+                            </div>
+                        </div>                        
+                        </details>
                     </div>
 
  
@@ -35109,7 +35463,7 @@ const EnglishDaily = (function () {
         studyHours[CAREER][skillName] = cur + add;
         const xp = Math.floor(add * 10);
         gamification.points += xp;
-        gamification.level = Math.floor(gamification.points / 100) + 1;
+        gamification.level = levelFromPoints(gamification.points);
         persistApp();
         try { if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours) StrategicRoadmap.recordExternalHours(CAREER, add); } catch (e) {}
         try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(add); } catch (e) {}
@@ -35126,7 +35480,7 @@ const EnglishDaily = (function () {
         const left = Math.round((cur - sub) * 10000) / 10000;
         if (left <= 0) delete studyHours[CAREER][skillName]; else studyHours[CAREER][skillName] = left;
         gamification.points = Math.max(0, gamification.points - (xp || 0));
-        gamification.level = Math.floor(gamification.points / 100) + 1;
+        gamification.level = levelFromPoints(gamification.points);
         persistApp();
         try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(-sub); } catch (e) {}
         refreshApp(false);
@@ -59851,6 +60205,40 @@ kbd {
         if (gamification.longestStreak == null) gamification.longestStreak = gamification.streak || 0;
         if (!Array.isArray(gamification.badges)) gamification.badges = [];
 
+        // ── Gamification helpers (single source of truth) ──
+        // 100 XP = 1 level. Every place that awards XP should go through
+        // levelFromPoints() / awardXP() so the level can never drift.
+        function levelFromPoints(p) { return Math.floor(Math.max(0, p || 0) / 100) + 1; }
+        function awardXP(pts) {
+            gamification.points = (gamification.points || 0) + pts;
+            gamification.level = levelFromPoints(gamification.points);
+            try { localStorage.setItem('gamification', JSON.stringify(gamification)); } catch (e) {}
+            updateGamificationStats();
+        }
+        function yprogReducedMotion() {
+            try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+        }
+        // Streak freeze: one missed day per rolling 7 days doesn't break the streak.
+        function isStreakFreezeAvailable() {
+            const last = gamification.lastFreezeUsed;
+            if (!last) return true;
+            const t = new Date(last);
+            if (isNaN(t.getTime())) return true;
+            return (Date.now() - t.getTime()) >= 7 * 86400000;
+        }
+        function getEffectiveStreakState() {
+            const streak = gamification.streak || 0;
+            const last = gamification.lastStreakDate;
+            if (!streak || !last) return { streak: 0, atRisk: false, freeze: false };
+            const today = new Date().toDateString();
+            const y1 = new Date(); y1.setDate(y1.getDate() - 1);
+            const y2 = new Date(); y2.setDate(y2.getDate() - 2);
+            if (last === today) return { streak, atRisk: false, freeze: false };
+            if (last === y1.toDateString()) return { streak, atRisk: true, freeze: false };
+            if (last === y2.toDateString() && isStreakFreezeAvailable()) return { streak, atRisk: true, freeze: true };
+            return { streak: 0, atRisk: false, freeze: false };
+        }
+
         let progressChart = null;
 
         // ===== DEFAULT MEMES =====
@@ -60945,7 +61333,7 @@ kbd {
             const add = Math.min(hours, targetH - cur);
             studyHours[MASTERY_CAREER_KEY][skillName] = cur + add;
             gamification.points += Math.floor(add * 10);
-            gamification.level = Math.floor(gamification.points / 100) + 1;
+            gamification.level = levelFromPoints(gamification.points);
             localStorage.setItem('studyHours', JSON.stringify(studyHours));
             localStorage.setItem('gamification', JSON.stringify(gamification));
             if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours)
@@ -61404,7 +61792,7 @@ kbd {
                     StrategicRoadmap.recordExternalHours(career, hours);
             }
             
-            gamification.level = Math.floor(gamification.points / 100) + 1;
+            gamification.level = levelFromPoints(gamification.points);
             localStorage.setItem('studyHours', JSON.stringify(studyHours));
             localStorage.setItem('gamification', JSON.stringify(gamification));
             input.value = '';
@@ -61450,7 +61838,7 @@ kbd {
 
             const pointsLost = Math.floor(hours * 10);
             gamification.points = Math.max(0, gamification.points - pointsLost);
-            gamification.level = Math.floor(gamification.points / 100) + 1;
+            gamification.level = levelFromPoints(gamification.points);
             
             localStorage.setItem('studyHours', JSON.stringify(studyHours));
             localStorage.setItem('gamification', JSON.stringify(gamification));
@@ -61526,7 +61914,7 @@ kbd {
             Object.keys(studyHours).forEach(career => {
                 overallTotalHours += Object.values(studyHours[career]).reduce((sum, h) => sum + h, 0);
             });
-            document.getElementById('totalHours').textContent = `${overallTotalHours.toFixed(1)} hours`;
+            const _thEl = document.getElementById('totalHours'); if (_thEl) _thEl.textContent = `${overallTotalHours.toFixed(1)} hours`;
         }
 
 
@@ -61953,8 +62341,17 @@ kbd {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
             if (gamification.lastStreakDate !== today) {
+                const dayBefore = new Date();
+                dayBefore.setDate(dayBefore.getDate() - 2);
                 if (gamification.lastStreakDate === yesterday.toDateString()) {
                     gamification.streak += 1;
+                } else if (gamification.streak > 0 && gamification.lastStreakDate === dayBefore.toDateString() && isStreakFreezeAvailable()) {
+                    // Missed exactly one day — spend the weekly freeze instead of resetting.
+                    gamification.streak += 1;
+                    gamification.lastFreezeUsed = today;
+                    if (typeof showNotification === 'function') {
+                        showNotification('🧊 Streak freeze used — your streak is safe. One freeze per 7 days.', 'info');
+                    }
                 } else {
                     gamification.streak = 1;
                 }
@@ -61977,6 +62374,23 @@ kbd {
             checkGlobalAchievements();
         }
 
+        let _yprogLastLevel = null;
+
+        function yprogCelebrateLevelUp(lvl) {
+            try {
+                if (typeof showNotification === 'function') {
+                    showNotification(`🎉 Level up! You reached Level ${lvl}.`, 'achievement');
+                }
+                const box = document.querySelector('#yourProgressCard .level-container');
+                if (box) {
+                    box.classList.remove('yprog-levelup');
+                    void box.offsetWidth; // restart the one-shot animation
+                    box.classList.add('yprog-levelup');
+                    setTimeout(() => box.classList.remove('yprog-levelup'), 1400);
+                }
+            } catch (e) {}
+        }
+
         function updateGamificationStats() {
             // Re-sync from localStorage first — some flows (e.g. deadline XP
             // rewards) write straight to localStorage without touching this
@@ -61986,21 +62400,54 @@ kbd {
                 if (stored) gamification = Object.assign({}, gamification, stored);
             } catch (e) {}
 
-            document.getElementById('levelBadge').textContent = `Level ${gamification.level}`;
-            document.getElementById('pointsDisplay').textContent = `${gamification.points} XP`;
-            document.getElementById('streakDisplay').textContent = `${gamification.streak} day streak`;
+            // Level is always derived from points, never trusted from storage.
+            const lvl = levelFromPoints(gamification.points);
+            gamification.level = lvl;
+            const leveledUp = _yprogLastLevel !== null && lvl > _yprogLastLevel;
+            _yprogLastLevel = lvl;
+
+            const levelEl = document.getElementById('levelBadge');
+            if (levelEl) levelEl.textContent = `Level ${lvl}`;
+            const ptsEl = document.getElementById('pointsDisplay');
+            if (ptsEl) ptsEl.textContent = `${gamification.points} XP`;
+
+            // Streak: show what's actually alive, and nudge instead of punishing.
+            const st = getEffectiveStreakState();
+            const streakEl = document.getElementById('streakDisplay');
+            if (streakEl) streakEl.textContent = `${st.streak} day streak`;
+            const hintEl = document.getElementById('yprogStreakHint');
+            if (hintEl) {
+                if (st.atRisk && st.freeze) {
+                    hintEl.textContent = 'You missed a day — log today and your weekly freeze keeps the streak.';
+                    hintEl.hidden = false;
+                } else if (st.atRisk) {
+                    hintEl.textContent = 'Log any study today to keep your streak.';
+                    hintEl.hidden = false;
+                } else {
+                    hintEl.hidden = true;
+                }
+            }
 
             // XP progress bar to next level (100 XP per level).
             const xpIntoLevel = ((gamification.points % 100) + 100) % 100;
             const xpBarFill = document.getElementById('xpBarFill');
             const xpBarLabel = document.getElementById('xpBarLabel');
             if (xpBarFill) {
-                xpBarFill.style.width = `${xpIntoLevel}%`;
-                xpBarFill.parentElement?.setAttribute('aria-valuenow', String(xpIntoLevel));
+                const track = xpBarFill.parentElement;
+                track?.setAttribute('aria-valuenow', String(xpIntoLevel));
+                track?.setAttribute('aria-valuetext', `${xpIntoLevel} of 100 XP to Level ${lvl + 1}`);
+                if (leveledUp && !yprogReducedMotion()) {
+                    // Fill to 100%, then roll over to the new level's progress.
+                    xpBarFill.style.width = '100%';
+                    setTimeout(() => { xpBarFill.style.width = `${xpIntoLevel}%`; }, 650);
+                } else {
+                    xpBarFill.style.width = `${xpIntoLevel}%`;
+                }
             }
             if (xpBarLabel) {
-                xpBarLabel.textContent = `${xpIntoLevel}/100 XP to Level ${(gamification.level || 1) + 1}`;
+                xpBarLabel.textContent = `${xpIntoLevel}/100 XP to Level ${lvl + 1}`;
             }
+            if (leveledUp) yprogCelebrateLevelUp(lvl);
 
             // Best streak.
             const streakBestEl = document.getElementById('streakBestDisplay');
@@ -62066,12 +62513,12 @@ kbd {
                             },
                             pointLabels: {
                                 color: labelColor,
-                                font: { size: 10, weight: '600' }
+                                font: { size: 11, weight: '600' }
                             },
                             ticks: {
                                 color: labelColor,
                                 backdropColor: 'transparent',
-                                font: { size: 9 }
+                                font: { size: 10 }
                             }
                         }
                     },
@@ -62094,7 +62541,7 @@ kbd {
                             padding: 8
                         }
                     },
-                    animation: {
+                    animation: yprogReducedMotion() ? false : {
                         duration: 800,
                         easing: 'easeOutQuart'
                     }
@@ -62123,6 +62570,39 @@ kbd {
             { label: 'Analyst', color: '#7048e8' }
         ];
 
+        // Radar with 14 spokes is unreadable when most are 0h: plot only the tracks
+        // you've started (falls back to all 14 until at least 3 are active so a
+        // real polygon shape can form).
+        function yprogApplyRadarData(hours) {
+            if (!progressChart) return;
+            let idx = hours.map((_, i) => i).filter(i => (hours[i] || 0) > 0);
+            if (idx.length < 3) idx = hours.map((_, i) => i);
+            const ds = progressChart.data.datasets[0];
+            progressChart.data.labels = idx.map(i => SKILLS_RADAR_META[i].label);
+            ds.data = idx.map(i => hours[i] || 0);
+            ds.pointBackgroundColor = idx.map(i => SKILLS_RADAR_META[i].color);
+            progressChart.update();
+            const cv = document.getElementById('progressChart');
+            if (cv) {
+                const parts = hours.map((h, i) => ({ l: SKILLS_RADAR_META[i].label, h: h || 0 }))
+                    .filter(x => x.h > 0).sort((a, b) => b.h - a.h).slice(0, 6)
+                    .map(x => `${x.l} ${x.h.toFixed(1)}h`);
+                cv.setAttribute('role', 'img');
+                cv.setAttribute('aria-label', parts.length
+                    ? `Skills radar chart. Top tracks: ${parts.join(', ')}.`
+                    : 'Skills radar chart. No study hours logged yet.');
+            }
+        }
+
+        let _yprogNotStartedOpen = false;
+        function yprogSkillSortMode() {
+            try { return localStorage.getItem('yprogSkillSort') === 'default' ? 'default' : 'hours'; } catch (e) { return 'hours'; }
+        }
+        function yprogToggleSkillSort() {
+            try { localStorage.setItem('yprogSkillSort', yprogSkillSortMode() === 'hours' ? 'default' : 'hours'); } catch (e) {}
+            if (typeof updateChart === 'function') updateChart();
+        }
+
         function updateSkillsStatsPanel(hours) {
             const totalEl = document.getElementById('skillsStatsTotal');
             const topEl = document.getElementById('skillsStatsTop');
@@ -62131,31 +62611,18 @@ kbd {
             if (!totalEl || !topEl || !listEl) return;
 
             const total = hours.reduce((sum, h) => sum + (h || 0), 0);
-            totalEl.textContent = `${total.toFixed(1)}h`;
+            const active = hours.filter(h => (h || 0) > 0).length;
 
-            // Total Hours trend badge — reuses the same "this week vs last
-            // week" comparison already powering weeklyTrendSummary, so both
-            // numbers in the sidebar agree with each other.
-            if (trendEl) {
-                if (typeof getWeeklyComparison === 'function') {
-                    const { thisWeek, lastWeek } = getWeeklyComparison();
-                    if (lastWeek <= 0) {
-                        trendEl.innerHTML = thisWeek > 0
-                            ? `<span class="trend-up" title="First week logged">🌱 new</span>`
-                            : '';
-                        trendEl.className = 'yprog-stat-trend';
-                    } else {
-                        const pct = ((thisWeek - lastWeek) / lastWeek) * 100;
-                        let arrow = '→', cls = 'trend-flat';
-                        if (pct > 0.5) { arrow = '↑'; cls = 'trend-up'; }
-                        else if (pct < -0.5) { arrow = '↓'; cls = 'trend-down'; }
-                        trendEl.className = `yprog-stat-trend ${cls}`;
-                        trendEl.innerHTML = `${arrow} ${Math.abs(pct).toFixed(0)}%`;
-                        trendEl.title = `${Math.abs(pct).toFixed(0)}% vs last week`;
-                    }
-                } else {
-                    trendEl.innerHTML = '';
-                }
+            // This card used to repeat "Total Hours" (already shown above) with its own
+            // trend arrow. It now answers a different question: how broad is my practice?
+            totalEl.textContent = `${active} / ${SKILLS_RADAR_META.length}`;
+            if (trendEl) { trendEl.textContent = ''; trendEl.className = 'yprog-stat-trend'; trendEl.removeAttribute('title'); }
+
+            const sortBtn = document.getElementById('yprogSortBtn');
+            const mode = yprogSkillSortMode();
+            if (sortBtn) {
+                sortBtn.textContent = mode === 'hours' ? 'Sort: Hours' : 'Sort: Default';
+                sortBtn.setAttribute('aria-label', `Sorting by ${mode === 'hours' ? 'most hours' : 'default order'}. Click to change.`);
             }
 
             if (total <= 0) {
@@ -62164,13 +62631,16 @@ kbd {
                 return;
             }
 
-            const rows = SKILLS_RADAR_META.map((m, i) => ({ label: m.label, color: m.color, hours: hours[i] || 0 }))
-                .sort((a, b) => b.hours - a.hours);
+            const rows = SKILLS_RADAR_META.map((m, i) => ({ idx: i, label: m.label, color: m.color, hours: hours[i] || 0 }));
+            const best = rows.slice().sort((a, b) => b.hours - a.hours || a.idx - b.idx)[0];
+            topEl.textContent = `${best.label} · ${best.hours.toFixed(1)}h`;
 
-            topEl.textContent = `${rows[0].label} · ${rows[0].hours.toFixed(1)}h`;
+            const started = rows.filter(r => r.hours > 0);
+            const notStarted = rows.filter(r => r.hours <= 0);
+            if (mode === 'hours') started.sort((a, b) => b.hours - a.hours || a.idx - b.idx);
 
-            listEl.innerHTML = rows.map(r => {
-                const pct = total > 0 ? (r.hours / total) * 100 : 0;
+            let html = started.map(r => {
+                const pct = (r.hours / total) * 100;
                 return `
                 <div class="skills-stats-row">
                     <div class="skills-stats-row-top">
@@ -62179,14 +62649,24 @@ kbd {
                         <span class="skills-stats-hours">${r.hours.toFixed(1)}h</span>
                     </div>
                     <div class="skills-stats-row-bottom">
-                        <div class="skills-stats-bar-track">
+                        <div class="skills-stats-bar-track" role="presentation">
                             <div class="skills-stats-bar-fill" style="width:${pct.toFixed(1)}%; background:${r.color};"></div>
                         </div>
                         <span class="skills-stats-pct">${pct.toFixed(0)}%</span>
                     </div>
-                </div>
-            `;
+                </div>`;
             }).join('');
+
+            if (notStarted.length) {
+                html += `
+                <details class="skills-stats-more" ${_yprogNotStartedOpen ? 'open' : ''} ontoggle="_yprogNotStartedOpen = this.open">
+                    <summary>Not started (${notStarted.length})</summary>
+                    <div class="skills-stats-chips">
+                        ${notStarted.map(r => `<span class="skills-stats-chip"><span class="skills-stats-dot" style="background:${r.color};"></span>${r.label}</span>`).join('')}
+                    </div>
+                </details>`;
+            }
+            listEl.innerHTML = html;
         }
 
         function updateChart() {
@@ -62207,8 +62687,7 @@ kbd {
                 calculateTotalHours('quant'),
                 calculateTotalHours('analyst')
             ];
-            progressChart.data.datasets[0].data = hours;
-            progressChart.update();
+            yprogApplyRadarData(hours);
             updateSkillsStatsPanel(hours);
         }       
 
@@ -63277,7 +63756,7 @@ kbd {
                         // Check if completed
                         if (goal.currentProgress >= goal.target) {
                             gamification.points += 50;
-                            gamification.level = Math.floor(gamification.points / 100) + 1;
+                            gamification.level = levelFromPoints(gamification.points);
                             localStorage.setItem('gamification', JSON.stringify(gamification));
                             updateGamificationStats();
                             showNotification(`🎉 Goal "${goal.title}" completed! Earned 50 XP!`, 'achievement');
@@ -63513,7 +63992,7 @@ kbd {
 
                 const xpReward = 25;
                 gamification.points += xpReward;
-                gamification.level = Math.floor(gamification.points / 100) + 1;
+                gamification.level = levelFromPoints(gamification.points);
                 localStorage.setItem('gamification', JSON.stringify(gamification));
                 updateGamificationStats();
 
@@ -67223,88 +67702,216 @@ kbd {
 
             if (lastWeek === 0) {
                 el.innerHTML = thisWeek > 0
-                    ? `${thisWeek.toFixed(1)}h <span class="trend-up" title="First week logged">🌱</span>`
+                    ? `${thisWeek.toFixed(1)}h <span class="trend-up" title="First week logged"><span aria-hidden="true">🌱</span><span class="yprog-sr"> first week logged</span></span>`
                     : `0.0h`;
                 return;
             }
 
             const pct = ((thisWeek - lastWeek) / lastWeek) * 100;
-            let arrow = '→', cls = 'trend-flat';
-            if (pct > 0.5) { arrow = '▲'; cls = 'trend-up'; }
-            else if (pct < -0.5) { arrow = '▼'; cls = 'trend-down'; }
+            let arrow = '→', cls = 'trend-flat', word = 'about the same as';
+            if (pct > 0.5) { arrow = '▲'; cls = 'trend-up'; word = `up ${Math.abs(pct).toFixed(0)}% from`; }
+            else if (pct < -0.5) { arrow = '▼'; cls = 'trend-down'; word = `down ${Math.abs(pct).toFixed(0)}% from`; }
 
+            // Arrow + % in one place (the old "Total Hours" card used to show a second,
+            // differently-styled copy of this). Screen readers get a full sentence.
             el.innerHTML = `${thisWeek.toFixed(1)}h ` +
-                `<span class="${cls}" title="${Math.abs(pct).toFixed(0)}% vs last week">${arrow}</span>`;
+                `<span class="${cls}" title="${Math.abs(pct).toFixed(0)}% vs last week">` +
+                `<span aria-hidden="true">${arrow} ${Math.abs(pct) >= 0.5 ? Math.abs(pct).toFixed(0) + '%' : ''}</span>` +
+                `<span class="yprog-sr"> ${word} last week</span></span>`;
+        }
+
+        // ── Weekly goal (rolling 7 days, same window as the trend) ──
+        function getWeeklyGoalHours() {
+            try {
+                const v = parseFloat(localStorage.getItem('yprogWeeklyGoal'));
+                if (v >= 1 && v <= 100) return v;
+            } catch (e) {}
+            return 10;
+        }
+
+        function updateWeeklyGoalUI() {
+            const fill = document.getElementById('yprogGoalFill');
+            if (!fill) return;
+            const { thisWeek } = getWeeklyComparison();
+            const goal = getWeeklyGoalHours();
+            const pct = Math.min(100, (thisWeek / goal) * 100);
+            fill.style.width = `${pct}%`;
+            fill.classList.toggle('is-done', thisWeek >= goal);
+            const track = document.getElementById('yprogGoalTrack');
+            if (track) {
+                track.setAttribute('aria-valuenow', String(Math.round(pct)));
+                track.setAttribute('aria-valuetext', `${thisWeek.toFixed(1)} of ${goal} hours this week`);
+            }
+            const val = document.getElementById('yprogGoalVal');
+            if (val) val.textContent = `${thisWeek.toFixed(1)} / ${goal}h`;
+            const hint = document.getElementById('yprogGoalHint');
+            if (hint) {
+                hint.textContent = thisWeek >= goal
+                    ? 'Goal reached — anything extra is a bonus.'
+                    : `${(goal - thisWeek).toFixed(1)}h to go over the last-7-days window.`;
+            }
+        }
+
+        function yprogEditWeeklyGoal() {
+            const head = document.getElementById('yprogGoalHead');
+            const val = document.getElementById('yprogGoalVal');
+            if (!head || !val || head.querySelector('input')) return;
+            const inp = document.createElement('input');
+            inp.type = 'number'; inp.min = '1'; inp.max = '100'; inp.step = '0.5';
+            inp.value = String(getWeeklyGoalHours());
+            inp.className = 'yprog-goal-input';
+            inp.setAttribute('aria-label', 'Weekly goal in hours');
+            val.style.display = 'none';
+            val.after(inp);
+            inp.focus(); inp.select();
+            let finished = false;
+            const done = (save) => {
+                if (finished) return;
+                finished = true;
+                if (save) {
+                    const v = parseFloat(inp.value);
+                    if (v >= 1 && v <= 100) { try { localStorage.setItem('yprogWeeklyGoal', String(v)); } catch (e) {} }
+                }
+                inp.remove();
+                val.style.display = '';
+                updateDailyStudyDisplay();
+            };
+            inp.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); done(true); }
+                else if (e.key === 'Escape') { e.preventDefault(); done(false); }
+            });
+            inp.addEventListener('blur', () => done(true));
+        }
+
+        function yprogGoToCourses() {
+            const el = document.querySelector('.skills-section') || document.getElementById('skillsContainer');
+            if (el) el.scrollIntoView({ behavior: yprogReducedMotion() ? 'auto' : 'smooth', block: 'start' });
         }
 
         // Hàm lấy dữ liệu 7 ngày gần nhất
         function getWeeklyStudyData() {
             const weeklyData = [];
             const labels = [];
-            
+            const shortLabels = [];
+
             // Lấy 7 ngày gần nhất (bao gồm hôm nay)
             for (let i = 6; i >= 0; i--) {
                 const date = new Date();
                 date.setDate(date.getDate() - i);
                 const dateString = date.toDateString();
-                
+
                 // Nếu có dữ liệu cho ngày này, dùng nó, nếu không thì 0
                 const hours = dailyStudyData[dateString] || 0;
                 weeklyData.push(hours);
-                
-                // Định dạng nhãn ngày (VD: Mon 10/1)
+
                 const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
                 const monthDay = date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
                 labels.push(`${dayName} ${monthDay}`);
+                shortLabels.push(i === 0 ? 'Today' : dayName);
             }
-            
-            return { labels, data: weeklyData };
+
+            return { labels, data: weeklyData, shortLabels };
         }
 
         // Hàm cập nhật giao diện (Text + Chart)
         function updateDailyStudyDisplay() {
-            // Cập nhật text
             const today = new Date().toDateString();
             const todayHours = (dailyStudyData[today] || 0).toFixed(1);
-            document.getElementById('dailyStudyInfo').textContent = `${todayHours}h`;
-            
-            // Cập nhật tổng (đã có sẵn từ updateStats(), nhưng ta sẽ cập nhật lại để đảm bảo đồng bộ)
+            const todayEl = document.getElementById('dailyStudyInfo');
+            if (todayEl) todayEl.textContent = `${todayHours}h`;
+
+            // Tổng giờ (mọi career, kể cả Mastery) — chỉ dùng để quyết định empty-state
             let overallTotalHours = 0;
             Object.keys(studyHours).forEach(career => {
                 overallTotalHours += Object.values(studyHours[career]).reduce((sum, hours) => sum + hours, 0);
             });
-            document.getElementById('totalStudyInfo').textContent = `${overallTotalHours.toFixed(1)}h`;
 
-            // Cập nhật xu hướng tuần này vs tuần trước
+            // "All time" used to repeat the hero total directly above it. It's now the
+            // 7-day average, which is the number that actually helps pacing.
+            const { thisWeek } = getWeeklyComparison();
+            const avgEl = document.getElementById('totalStudyInfo');
+            if (avgEl) avgEl.textContent = `${(thisWeek / 7).toFixed(1)}h`;
+
+            const cta = document.getElementById('yprogEmptyCta');
+            if (cta) cta.hidden = overallTotalHours > 0;
+
             updateWeeklyTrendSummary();
-            
-            // Vẽ hoặc cập nhật biểu đồ
+            updateWeeklyGoalUI();
             renderDailyStudyChart();
         }
 
-        // Hàm vẽ biểu đồ cột 7 ngày
-        function renderDailyStudyChart() {
-            const ctx = document.getElementById('dailyStudyChart').getContext('2d');
-            const { labels, data } = getWeeklyStudyData();
-            if (dailyStudyChart) {
-                dailyStudyChart.destroy();
-                dailyStudyChart = null;
+        // Plugin: dashed daily-goal line (weekly goal / 7) across the 7-day chart.
+        const yprogGoalLinePlugin = {
+            id: 'yprogGoalLine',
+            afterDatasetsDraw(chart) {
+                const g = chart.$yprogGoal;
+                const y = chart.scales && chart.scales.y;
+                if (!(g > 0) || !y) return;
+                const px = y.getPixelForValue(g);
+                const area = chart.chartArea;
+                if (px < area.top || px > area.bottom) return;
+                const dark = document.body.classList.contains('dark-mode');
+                const col = dark ? '#c4b5fd' : '#7c3aed';
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.setLineDash([5, 4]);
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = col;
+                ctx.beginPath();
+                ctx.moveTo(area.left, px);
+                ctx.lineTo(area.right, px);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = col;
+                ctx.font = '600 10px sans-serif';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText(`goal ${g.toFixed(1)}h/day`, area.right, px - 3);
+                ctx.restore();
             }
-            
-            dailyStudyChart = new Chart(ctx, {
+        };
+
+        // Hàm vẽ biểu đồ cột 7 ngày — tạo một lần rồi update tại chỗ (không destroy/recreate)
+        function renderDailyStudyChart() {
+            const canvas = document.getElementById('dailyStudyChart');
+            if (!canvas) return;
+            const { labels, data, shortLabels } = getWeeklyStudyData();
+            const dailyGoal = getWeeklyGoalHours() / 7;
+            const dark = document.body.classList.contains('dark-mode');
+            const max = Math.max(...data);
+            // Only highlight a "best day" when there actually is one (all-zero week = no highlight).
+            const colors = data.map(v => (v > 0 && v === max) ? '#db2777' : '#f9a8d4');
+            const yMax = Math.max(1, Math.ceil(Math.max(max, dailyGoal)));
+            const tick = dark ? '#e6a8c9' : '#b1568a';
+
+            canvas.setAttribute('role', 'img');
+            canvas.setAttribute('aria-label',
+                'Study hours, last 7 days: ' + labels.map((l, i) => `${l} ${data[i].toFixed(1)}h`).join(', ') +
+                `. Daily goal ${dailyGoal.toFixed(1)}h.`);
+
+            if (dailyStudyChart) {
+                dailyStudyChart.data.labels = shortLabels;
+                dailyStudyChart.data.datasets[0].data = data;
+                dailyStudyChart.data.datasets[0].backgroundColor = colors;
+                dailyStudyChart.$yprogGoal = dailyGoal;
+                dailyStudyChart.$yprogFull = labels;
+                dailyStudyChart.options.scales.y.suggestedMax = yMax;
+                dailyStudyChart.options.scales.y.ticks.color = tick;
+                dailyStudyChart.options.scales.x.ticks.color = tick;
+                dailyStudyChart.options.scales.y.grid.color = dark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+                dailyStudyChart.options.plugins.title.color = dark ? '#f5c2dd' : '#9d2867';
+                dailyStudyChart.update();
+                return;
+            }
+
+            dailyStudyChart = new Chart(canvas.getContext('2d'), {
                 type: 'bar',
                 data: {
-                    labels: labels,
+                    labels: shortLabels,
                     datasets: [{
                         label: 'Hours Studied',
                         data: data,
-                        backgroundColor: function(context) {
-                            const value = context.raw;
-                            if (value === Math.max(...data)) {
-                                return '#db2777'; // deep rose for the highest day
-                            }
-                            return '#f9a8d4'; // soft blush for the rest
-                        },
+                        backgroundColor: colors,
                         borderColor: 'transparent',
                         borderWidth: 0,
                         borderRadius: 6,
@@ -67313,59 +67920,51 @@ kbd {
                         categoryPercentage: 0.75
                     }]
                 },
+                plugins: [yprogGoalLinePlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: {
-                            display: false
-                        },
+                        legend: { display: false },
                         tooltip: {
                             callbacks: {
+                                title: function(items) {
+                                    const c = items[0] && items[0].chart;
+                                    return (c && c.$yprogFull && c.$yprogFull[items[0].dataIndex]) || '';
+                                },
                                 label: function(context) {
-                                    return `${context.parsed.y} hours`;
+                                    return `${context.parsed.y.toFixed(1)} hours`;
                                 }
                             }
                         },
                         title: {
                             display: true,
                             text: 'Last 7 Days',
-                            font: {
-                                size: 14,
-                                weight: 'bold'
-                            },
-                            color: document.body.classList.contains('dark-mode') ? '#f5c2dd' : '#9d2867',
+                            font: { size: 14, weight: 'bold' },
+                            color: dark ? '#f5c2dd' : '#9d2867',
                             padding: 8
                         }
                     },
                     scales: {
                         y: {
                             beginAtZero: true,
-                            ticks: {
-                                color: document.body.classList.contains('dark-mode') ? '#e6a8c9' : '#b1568a',
-                                stepSize: 1
-                            },
-                            grid: {
-                                color: document.body.classList.contains('dark-mode') ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)'
-                            }
+                            suggestedMax: yMax,
+                            ticks: { color: tick, stepSize: 1, font: { size: 11 } },
+                            grid: { color: dark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)' }
                         },
                         x: {
-                            ticks: {
-                                color: document.body.classList.contains('dark-mode') ? '#e6a8c9' : '#b1568a',
-                                maxRotation: 45,
-                                minRotation: 45
-                            },
-                            grid: {
-                                display: false
-                            }
+                            ticks: { color: tick, maxRotation: 0, minRotation: 0, font: { size: 11 } },
+                            grid: { display: false }
                         }
                     },
-                    animation: {
+                    animation: yprogReducedMotion() ? false : {
                         duration: 800,
                         easing: 'easeOutQuart'
                     }
                 }
             });
+            dailyStudyChart.$yprogGoal = dailyGoal;
+            dailyStudyChart.$yprogFull = labels;
         }
 
 
@@ -68155,7 +68754,7 @@ kbd {
 
                 const pointsEarned = Math.floor(hours * 10);
                 gamification.points += pointsEarned;
-                gamification.level = Math.floor(gamification.points / 100) + 1;
+                gamification.level = levelFromPoints(gamification.points);
                 localStorage.setItem('gamification', JSON.stringify(gamification));
                 updateGamificationStats();
                 updateStats();
@@ -68613,7 +69212,7 @@ kbd {
                         // Check if completed
                         if (goal.currentProgress >= goal.target) {
                             gamification.points += 50;
-                            gamification.level = Math.floor(gamification.points / 100) + 1;
+                            gamification.level = levelFromPoints(gamification.points);
                             localStorage.setItem('gamification', JSON.stringify(gamification));
                             updateGamificationStats();
                             showNotification(`🎉 Goal "${goal.title}" completed! Earned 50 XP!`, 'achievement');
@@ -68787,7 +69386,7 @@ kbd {
                 goal.manuallyUpdated = true;
                 const pointsEarned = Math.floor(hours * 10);
                 gamification.points += pointsEarned;
-                gamification.level = Math.floor(gamification.points / 100) + 1;
+                gamification.level = levelFromPoints(gamification.points);
                 saveGoals();
                 updateGamificationStats();
                 renderGoals();
@@ -71741,7 +72340,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         showNotification('Goal progress updated manually!', 'success');
                         if (goal.currentProgress >= goal.target && getGoalStatus(goal) !== 'completed') {
                             gamification.points += 50;
-                            gamification.level = Math.floor(gamification.points / 100) + 1;
+                            gamification.level = levelFromPoints(gamification.points);
                             localStorage.setItem('gamification', JSON.stringify(gamification));
                             updateGamificationStats();
                             showNotification(`🎉 Goal completed! Earned 50 XP!`, 'achievement');
@@ -97301,6 +97900,57 @@ body.dark-mode #dsTip { background: #f3e8ef; color: #2a1d27; }
 .skills-section .category-header { padding: 10px 14px; }
 .skills-section .category-title { font-size: 1.02rem; line-height: 1.3; }
 .skills-section .toggle-icon { flex: none; }
+
+/* =====================================================================
+   Deadlines review pass
+   ===================================================================== */
+/* Digest: the box has its own gradient, so the sticky day titles (solid fill) showed as white bars.
+   Give the box one solid surface so titles blend in while still covering rows as they scroll. */
+#dltDigestModal .dlt-dg-box { background: var(--dg-bg) !important; background-image: none !important; }
+#dltDigestModal .dlt-dg-overdue .dlt-dg-day-title { background: transparent; }
+
+/* Overdue cards: keep the muted style but stay readable (was .78 opacity) */
+#dlTracker .dlt-card.c-overdue { opacity: .94; }
+
+/* New Deadline form: pair short fields so the form is about 40% shorter */
+#dltModal .dlt-modal-box { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; align-content: start; }
+#dltModal .dlt-modal-box > * { grid-column: 1 / -1; }
+#dltModal .dlt-modal-box > .dlt-fg:has(#dltDate),
+#dltModal .dlt-modal-box > .dlt-fg:has(#dltTime),
+#dltModal .dlt-modal-box > .dlt-fg:has(#dltCat),
+#dltModal .dlt-modal-box > .dlt-fg:has(#dltPriority) { grid-column: auto; min-width: 0; }
+#dltModal .dlt-modal-box > .dlt-fg:has(#dltTime) label span { display: none; }   /* long hint hidden; field is optional anyway */
+#dltModal .dlt-modal-box > .dlt-fg:has(#dltTime) label::after { content: ' (optional)'; font-weight: 400; font-size: .78rem; color: var(--text-muted); }
+@media (max-width: 480px) {
+  #dltModal .dlt-modal-box { grid-template-columns: 1fr; }
+  #dltModal .dlt-modal-box > .dlt-fg:has(#dltDate),
+  #dltModal .dlt-modal-box > .dlt-fg:has(#dltTime),
+  #dltModal .dlt-modal-box > .dlt-fg:has(#dltCat),
+  #dltModal .dlt-modal-box > .dlt-fg:has(#dltPriority) { grid-column: 1 / -1; }
+}
+
+/* Phones: give titles the width — actions drop to a row under the card content */
+@media (max-width: 560px) {
+  #dlTracker .dlt-card { flex-wrap: wrap; }
+  #dlTracker .dlt-card .dlt-card-btns {
+    order: 3; flex: 1 0 100%; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding-top: 8px;
+    border-top: 1px solid var(--border-color); margin-top: 2px;
+  }
+  #dlTracker .dlt-card .dlt-card-btns > * { width: 100%; height: 32px; }
+  #dlTracker .dlt-card .dlt-card-btns button,
+  #dlTracker .dlt-card .dlt-card-btns .dlt-gcal-btn,
+  #dlTracker .dlt-card .dlt-card-btns .dlt-snooze-wrap > button,
+  #dlTracker .dlt-card .dlt-card-btns .dlt-push-wrap > button,
+  #dlTracker .dlt-card .dlt-card-btns .dlt-tag-wrap > button { width: 100%; height: 32px; }
+  #dlTracker .dlt-card .dlt-card-btns .dlt-done-btn { grid-column: 1 / -1; height: 34px; }
+  #dlTracker .dlt-tl-col { min-width: 24px; }
+  #dlTracker .dlt-gh-toggle ~ * button, #dlTracker [onclick*="toggleSnoozeAllMenu"], #dlTracker [onclick*="togglePushAllMenu"] { white-space: nowrap; }
+}
+
+#dltModal .dlt-fg input[type="date"], #dltModal .dlt-fg input[type="time"] { height: 40px; box-sizing: border-box; }
+@media (max-width: 560px) {
+  #dlTracker .dlt-group-header { flex-wrap: wrap; row-gap: 6px; }
+}
 
 /* DS-V2:END */
 </style>
