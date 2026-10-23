@@ -1978,7 +1978,6 @@
             padding: 20px;
             margin-bottom: 16px;
             box-shadow: var(--shadow-sm);
-            border-left: 4px solid transparent;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
@@ -1986,6 +1985,7 @@
             display: flex;
             align-items: flex-start;
             gap: 16px;
+            animation: courseCardIn 0.35s cubic-bezier(0.34, 1.36, 0.64, 1) both;
         }
 
         /* Big colored icon block anchoring the left edge of each course card.
@@ -2803,9 +2803,6 @@
         }
         .course-item[data-priority="Low"] {
             border-left: 4px solid #c9a3ae;
-        }
-        .course-item {
-            animation: courseCardIn 0.35s cubic-bezier(0.34, 1.36, 0.64, 1) both;
         }
         @keyframes courseCardIn {
             from { opacity: 0; transform: translateY(8px); }
@@ -18747,25 +18744,20 @@
             --cs-accent-rgb: 219, 39, 119;
             --cs-accent-solid: #db2777;
             --cs-accent-deep: #9d2867;
+            background: linear-gradient(135deg, #fdf5f9 0%, #fdf1f7 55%, rgba(var(--cs-accent-rgb), 0.05) 100%);
+            border: 1px solid rgba(var(--cs-accent-rgb), 0.18);
         }
         body.dark-mode #course-section {
             --cs-accent-rgb: 244, 114, 182;
             --cs-accent-solid: #f9a8d4;
             --cs-accent-deep: #f472b6;
+            background: linear-gradient(135deg, #241823 0%, #2d1c2b 60%, #221722 100%);
+            border-color: rgba(var(--cs-accent-rgb), 0.16);
         }
 
-
-        #course-section {
-            background: linear-gradient(135deg, #fdf5f9 0%, #fdf1f7 55%, rgba(var(--cs-accent-rgb), 0.05) 100%);
-            border: 1px solid rgba(var(--cs-accent-rgb), 0.18);
-        }
         #course-section:hover {
             border-color: rgba(var(--cs-accent-rgb), 0.3);
             box-shadow: 0 12px 40px rgba(var(--cs-accent-rgb), 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.8);
-        }
-        body.dark-mode #course-section {
-            background: linear-gradient(135deg, #241823 0%, #2d1c2b 60%, #221722 100%);
-            border-color: rgba(var(--cs-accent-rgb), 0.16);
         }
 
         /* Mini stats bar now uses its own per-card accent colors (see
@@ -23489,8 +23481,8 @@ body.dark-mode .dlt-fg textarea {
     const push  = (id, name, date, category, source, priority) =>
       items.push({ id, name, date, category, source, priority: priority || 'medium' });
 
-    (JSON.parse(localStorage.getItem('courses') || '[]')).forEach(c => {
-      if (c.deadline) push('c_'+c.id, c.title, c.deadline, CAREER_MAP[c.career]||'<i class="fa-solid fa-book-open"></i> Course', '<i class="fa-solid fa-book-open"></i> Course', mapSourcePriority(c.priority));
+    ((function(){try{var a=JSON.parse(localStorage.getItem('courses')||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}})()).forEach(c => {
+      if (c.deadline && !(Number(c.estimatedHours) > 0 && Number(c.hoursStudied) >= Number(c.estimatedHours))) push('c_'+c.id, c.title, c.deadline, CAREER_MAP[c.career]||'<i class="fa-solid fa-book-open"></i> Course', '<i class="fa-solid fa-book-open"></i> Course', mapSourcePriority(c.priority));
     });
     (JSON.parse(localStorage.getItem('goals') || '[]')).forEach(g => {
       if (g.deadline && (g.currentProgress || 0) < (g.target || 1)) push('g_'+g.id, g.title, g.deadline, CAREER_MAP[g.career]||'<i class="fa-solid fa-star"></i> Goal', '<i class="fa-solid fa-star"></i> Goal', mapSourcePriority(g.priority));
@@ -23713,7 +23705,7 @@ body.dark-mode .dlt-fg textarea {
     // Courses
     if (id.startsWith('c_')) {
       const rawId = id.slice(2);
-      const all = JSON.parse(localStorage.getItem('courses') || '[]');
+      const all = (function(){try{var a=JSON.parse(localStorage.getItem('courses')||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}})();
       const item = all.find(x => String(x.id) === rawId);
       if (!item) return false;
       item.deadline = newDate;
@@ -24465,7 +24457,7 @@ body.dark-mode .dlt-fg textarea {
     if (itemId.startsWith('c_')) {
       // ── Jump to Course ──
       const courseId = itemId.slice(2);
-      const allCourses = JSON.parse(localStorage.getItem('courses') || '[]');
+      const allCourses = (function(){try{var a=JSON.parse(localStorage.getItem('courses')||'[]');return Array.isArray(a)?a:[];}catch(e){return [];}})();
       const course = allCourses.find(c => String(c.id) === courseId);
       if (!course) {
         if (typeof showNotification === 'function') showNotification('Course not found in the list!', 'error');
@@ -31017,7 +31009,7 @@ window.DBP={
                 </div>
                 <div class="course-wizard-steplabel" id="courseWizardStepLabel">Step 1 of 3 — Course &amp; Career</div>
 
-                <form id="courseForm">
+                <form id="courseForm" novalidate>
                     <input type="hidden" id="editCourseId">
 
                     <!-- ══════════════ STEP 1 — Title + Career ══════════════ -->
@@ -31055,18 +31047,18 @@ window.DBP={
                             <div>
                                 <label style="display: block; margin-bottom: 8px; font-weight: 500;">Difficulty</label>
                                 <div class="course-pill-group" id="courseDifficultyOptions">
-                                    <div class="course-pill-option" data-value="Beginner" data-tone="green" onclick="selectCourseDifficulty('Beginner')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:-0.05em;fill:#22c55e;stroke:none;display:inline-block;margin-right:3px;"><use href="#crs-icon-circle"/></svg>Easy</div>
-                                    <div class="course-pill-option" data-value="Intermediate" data-tone="amber" onclick="selectCourseDifficulty('Intermediate')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:-0.05em;fill:#f59e0b;stroke:none;display:inline-block;margin-right:3px;"><use href="#crs-icon-circle"/></svg>Mid</div>
-                                    <div class="course-pill-option" data-value="Advanced" data-tone="red" onclick="selectCourseDifficulty('Advanced')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:-0.05em;fill:#ef4444;stroke:none;display:inline-block;margin-right:3px;"><use href="#crs-icon-circle"/></svg>Hard</div>
+                                    <div class="course-pill-option" data-value="Beginner" data-tone="green" onclick="selectCourseDifficulty('Beginner')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:-0.05em;fill:currentColor;opacity:.4;stroke:none;display:inline-block;margin-right:3px;"><use href="#crs-icon-circle"/></svg>Easy</div>
+                                    <div class="course-pill-option" data-value="Intermediate" data-tone="amber" onclick="selectCourseDifficulty('Intermediate')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:-0.05em;fill:currentColor;opacity:.7;stroke:none;display:inline-block;margin-right:3px;"><use href="#crs-icon-circle"/></svg>Mid</div>
+                                    <div class="course-pill-option" data-value="Advanced" data-tone="red" onclick="selectCourseDifficulty('Advanced')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:-0.05em;fill:currentColor;stroke:none;display:inline-block;margin-right:3px;"><use href="#crs-icon-circle"/></svg>Hard</div>
                                 </div>
                                 <input type="hidden" id="courseDifficulty" value="Intermediate">
                             </div>
                             <div>
                                 <label style="display: block; margin-bottom: 8px; font-weight: 500;">Priority</label>
                                 <div class="course-pill-group" id="coursePriorityOptions">
-                                    <div class="course-pill-option" data-value="High" data-tone="red" onclick="selectCoursePriority('High')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.75em;height:0.75em;vertical-align:-0.08em;color:#ef4444;stroke:currentColor;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:3px;"><use href="#crs-icon-chevron-up"/></svg>High</div>
-                                    <div class="course-pill-option" data-value="Medium" data-tone="amber" onclick="selectCoursePriority('Medium')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.75em;height:0.75em;vertical-align:-0.08em;color:#f59e0b;stroke:currentColor;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:3px;"><use href="#crs-icon-minus"/></svg>Mid</div>
-                                    <div class="course-pill-option" data-value="Low" data-tone="green" onclick="selectCoursePriority('Low')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.75em;height:0.75em;vertical-align:-0.08em;color:#22c55e;stroke:currentColor;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:3px;"><use href="#crs-icon-chevron-down"/></svg>Low</div>
+                                    <div class="course-pill-option" data-value="High" data-tone="red" onclick="selectCoursePriority('High')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.75em;height:0.75em;vertical-align:-0.08em;stroke:currentColor;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:3px;"><use href="#crs-icon-chevron-up"/></svg>High</div>
+                                    <div class="course-pill-option" data-value="Medium" data-tone="amber" onclick="selectCoursePriority('Medium')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.75em;height:0.75em;vertical-align:-0.08em;stroke:currentColor;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:3px;"><use href="#crs-icon-minus"/></svg>Mid</div>
+                                    <div class="course-pill-option" data-value="Low" data-tone="green" onclick="selectCoursePriority('Low')"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.75em;height:0.75em;vertical-align:-0.08em;stroke:currentColor;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;margin-right:3px;"><use href="#crs-icon-chevron-down"/></svg>Low</div>
                                 </div>
                                 <input type="hidden" id="coursePriority" value="Medium">
                             </div>
@@ -31147,7 +31139,11 @@ window.DBP={
                     <input type="hidden" id="addHoursCourseId">
                     <div style="margin-bottom: 15px;">
                         <label for="hoursToAdd" style="display: block; margin-bottom: 5px; font-weight: 500;">Hours Studied *</label>
-                        <input type="number" id="hoursToAdd" min="0.1" step="0.1" required style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                        <input type="number" id="hoursToAdd" min="0.1" max="24" step="0.1" required style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                    </div>
+                    <div id="addHoursUndoRow" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin:-4px 0 14px; padding:8px 10px; border-radius:8px; border:1px dashed var(--border-color); font-size:0.82rem; color:var(--text-muted);">
+                        <span id="addHoursUndoText"></span>
+                        <button type="button" onclick="undoLastCourseHours()" style="flex:none; background:none; border:1px solid var(--border-color); border-radius:6px; padding:4px 10px; cursor:pointer; color:var(--text-dark); font-size:0.8rem;">Undo</button>
                     </div>
                     <div style="display: flex; gap: 8px; justify-content: flex-end;">
                         <button type="button" class="add-time-btn" onclick="closeAddHoursModal()" style="background: #a3808f;">Cancel</button>
@@ -68144,13 +68140,49 @@ kbd {
 
 
         // --- Course Manager Logic ---
-        let courses = JSON.parse(localStorage.getItem('courses')) || [];
-    courses = courses.map(course => ({
-        ...course,
-        url: course.url || "", // Đảm bảo tất cả course đều có property url, mặc định là ""
-        tags: Array.isArray(course.tags) ? course.tags : [], // Đảm bảo tất cả course đều có property tags
-        notes: course.notes || "" // Đảm bảo tất cả course đều có property notes (ghi chú cá nhân)
-    }));
+        // Đọc an toàn: nếu JSON hỏng thì giữ lại bản gốc ở 'courses_corrupt_backup' (để không bị ghi đè
+        // khi lưu lần sau) rồi bắt đầu bằng danh sách rỗng, thay vì làm sập cả script.
+        let courses = (function () {
+            let raw = null;
+            try {
+                raw = localStorage.getItem('courses');
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                console.warn('Courses: dữ liệu hỏng, đã sao lưu bản gốc.', e);
+                try { if (raw) localStorage.setItem('courses_corrupt_backup', raw); } catch (e2) {}
+                return [];
+            }
+        })();
+        // Chuẩn hóa: bản ghi cũ / import thiếu field vẫn render được (không còn crash ở toFixed/localeCompare).
+        courses = courses.filter(c => c && typeof c === 'object').map(course => {
+            const est = parseFloat(course.estimatedHours);
+            const done = parseFloat(course.hoursStudied);
+            return {
+                ...course,
+                id: (course.id === undefined || course.id === null || course.id === '')
+                    ? Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+                    : course.id, // giữ nguyên kiểu id cũ để không phá liên kết Goals / Notes
+                title: String(course.title || 'Untitled course'),
+                difficulty: course.difficulty || 'Intermediate',
+                priority: course.priority || 'Medium',
+                estimatedHours: est > 0 ? est : 0,
+                hoursStudied: done > 0 ? done : 0,
+                url: course.url || "", // Đảm bảo tất cả course đều có property url, mặc định là ""
+                tags: Array.isArray(course.tags) ? course.tags : [], // Đảm bảo tất cả course đều có property tags
+                notes: course.notes || "" // Đảm bảo tất cả course đều có property notes (ghi chú cá nhân)
+            };
+        });
+
+        // Tiến độ course: một nguồn duy nhất. Chưa có ước tính giờ (<= 0) thì coi là 0%, không bao giờ NaN/Infinity.
+        function courseProgressRatio(c) {
+            const est = Number(c && c.estimatedHours);
+            const done = Number(c && c.hoursStudied) || 0;
+            if (!(est > 0)) return 0;
+            return Math.max(0, done / est);
+        }
+        function courseProgressPercent(c) { return Math.min(100, courseProgressRatio(c) * 100); }
+        function isCourseDone(c) { return courseProgressRatio(c) >= 1; }
 
         let courseReminderDismissedCareers = new Set(); // reset mỗi lần tải lại trang
         let courseSearchQuery = '';
@@ -68179,9 +68211,9 @@ kbd {
             Low: snIcon('crs-icon-chevron-down', '0.85em', '2px')
         };
         const difficultyIcons = {
-            Beginner: `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:0em;fill:#22c55e;stroke:none;display:inline-block;margin-right:2px;"><use href="#crs-icon-circle"/></svg>`,
-            Intermediate: `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:0em;fill:#f59e0b;stroke:none;display:inline-block;margin-right:2px;"><use href="#crs-icon-circle"/></svg>`,
-            Advanced: `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:0em;fill:#ef4444;stroke:none;display:inline-block;margin-right:2px;"><use href="#crs-icon-circle"/></svg>`
+            Beginner: `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:0em;fill:currentColor;opacity:.4;stroke:none;display:inline-block;margin-right:2px;"><use href="#crs-icon-circle"/></svg>`,
+            Intermediate: `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:0em;fill:currentColor;opacity:.7;stroke:none;display:inline-block;margin-right:2px;"><use href="#crs-icon-circle"/></svg>`,
+            Advanced: `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.7em;height:0.7em;vertical-align:0em;fill:currentColor;opacity:1;stroke:none;display:inline-block;margin-right:2px;"><use href="#crs-icon-circle"/></svg>`
         };
 
         // Big icon shown in the colored box at the left of each course card.
@@ -68190,12 +68222,12 @@ kbd {
         // section is reused across every career (PE, IB, English Skills, etc.),
         // so the icon set stays generic while still varying card to card.
         const courseIconVisuals = {
-            Beginner:     { icon: 'icon-sparkles',    color: '#16a34a', bg: 'rgba(34, 197, 94, 0.14)' },
-            Intermediate: { icon: 'icon-trending-up', color: '#d97706', bg: 'rgba(245, 158, 11, 0.16)' },
-            Advanced:     { icon: 'icon-flame',       color: '#dc2626', bg: 'rgba(239, 68, 68, 0.14)' }
+            Beginner:     { icon: 'icon-sparkles' },
+            Intermediate: { icon: 'icon-trending-up' },
+            Advanced:     { icon: 'icon-flame' }
         };
         function getCourseIconVisual(course) {
-            return courseIconVisuals[course.difficulty] || { icon: 'icon-book-open', color: 'var(--primary)', bg: 'rgba(var(--primary-rgb), 0.14)' };
+            return courseIconVisuals[course.difficulty] || { icon: 'icon-book-open' };
         }
 
         // --- Helper Functions ---
@@ -68304,8 +68336,8 @@ kbd {
 
             // --- Update stats counters ---
             const totalCount = allCareerCourses.length;
-            const activeCount = allCareerCourses.filter(c => (c.hoursStudied / c.estimatedHours) < 1).length;
-            const doneCount  = allCareerCourses.filter(c => (c.hoursStudied / c.estimatedHours) >= 1).length;
+            const activeCount = allCareerCourses.filter(c => !isCourseDone(c)).length;
+            const doneCount  = allCareerCourses.filter(c => isCourseDone(c)).length;
             if (document.getElementById('courseTotalCount')) document.getElementById('courseTotalCount').textContent = totalCount;
             if (document.getElementById('courseActiveCount')) document.getElementById('courseActiveCount').textContent = activeCount;
             if (document.getElementById('courseDoneCount'))  document.getElementById('courseDoneCount').textContent  = doneCount;
@@ -68319,9 +68351,9 @@ kbd {
             // --- Apply status filter ---
             let filteredCourses = [...allCareerCourses];
             if (statusFilter === 'active') {
-                filteredCourses = filteredCourses.filter(c => (c.hoursStudied / c.estimatedHours) < 1);
+                filteredCourses = filteredCourses.filter(c => !isCourseDone(c));
             } else if (statusFilter === 'completed') {
-                filteredCourses = filteredCourses.filter(c => (c.hoursStudied / c.estimatedHours) >= 1);
+                filteredCourses = filteredCourses.filter(c => isCourseDone(c));
             } else if (statusFilter === 'favorites') {
                 filteredCourses = filteredCourses.filter(c => c.favorite);
             }
@@ -68351,7 +68383,7 @@ kbd {
             } else if (sortBy === 'priority') {
                 filteredCourses.sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
             } else if (sortBy === 'progress') {
-                filteredCourses.sort((a, b) => (b.hoursStudied / b.estimatedHours) - (a.hoursStudied / a.estimatedHours));
+                filteredCourses.sort((a, b) => courseProgressRatio(b) - courseProgressRatio(a));
             } else if (sortBy === 'title') {
                 filteredCourses.sort((a, b) => a.title.localeCompare(b.title));
             } else if (sortBy === 'deadline') {
@@ -68374,7 +68406,7 @@ kbd {
             }
 
             container.innerHTML = filteredCourses.map(course => {
-                const progressPercent = Math.min(100, (course.hoursStudied / course.estimatedHours) * 100);
+                const progressPercent = courseProgressPercent(course);
                 const statusClass = getStatusClass(progressPercent);
                 const deadlineClass = progressPercent >= 100 ? '' : getDeadlineClass(course.deadline);
                 const deadlineText = course.deadline ? `${snIcon('calact-icon-calendar', '0.85em', '3px')}${formatDate(course.deadline)}` : `${snIcon('calact-icon-calendar', '0.85em', '3px')}N/A`;
@@ -68382,7 +68414,7 @@ kbd {
                 const tagsHtml = tags.length ? `<div class="course-tags-wrap">${tags.map(t => `<span class="course-tag-chip" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</span>`).join('')}</div>` : '';
                 const hasNotes = course.notes && course.notes.trim() !== '';
                 const iconVisual = getCourseIconVisual(course);
-                const iconBoxHtml = `<div class="course-icon-box" style="background:${iconVisual.bg};color:${iconVisual.color};">
+                const iconBoxHtml = `<div class="course-icon-box">
                     <svg viewBox="0 0 24 24" aria-hidden="true" style="stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;"><use href="#${iconVisual.icon}"/></svg>
                     <span class="course-icon-label">${escapeHtml(course.difficulty || 'Course')}</span>
                 </div>`;
@@ -68402,7 +68434,9 @@ kbd {
                 <div class="course-progress-container">
                     <div class="course-progress-fill ${progressPercent >= 100 ? 'completed' : ''}" style="width: ${progressPercent}%"></div>
                 </div>
-                <div class="course-progress-text">${course.hoursStudied.toFixed(1)} / ${course.estimatedHours.toFixed(1)} hrs &nbsp;·&nbsp; ${progressPercent.toFixed(0)}%</div>
+                <div class="course-progress-text">${course.estimatedHours > 0
+                    ? `${course.hoursStudied.toFixed(1)} / ${course.estimatedHours.toFixed(1)} hrs &nbsp;·&nbsp; ${progressPercent.toFixed(0)}%`
+                    : `${course.hoursStudied.toFixed(1)} hrs &nbsp;·&nbsp; no estimate yet`}</div>
                 ${course.description ? `<div class="course-description">${escapeHtml(course.description)}</div>` : ''}
                 ${tagsHtml}
                 ${hasNotes ? `
@@ -68502,8 +68536,7 @@ kbd {
             if (courseReminderDismissedCareers.has(currentCareer)) { banner.style.display = 'none'; return; }
 
             const dueSoonOrOverdue = careerCourses.filter(c => {
-                const progressPercent = (c.hoursStudied / c.estimatedHours) * 100;
-                if (progressPercent >= 100) return false; // đã hoàn thành thì bỏ qua
+                if (isCourseDone(c)) return false; // đã hoàn thành thì bỏ qua
                 const cls = getDeadlineClass(c.deadline);
                 return cls === 'overdue' || cls === 'soon';
             });
@@ -68543,6 +68576,7 @@ kbd {
                     ${moreCount > 0 ? `<div class="course-reminder-more">+ ${moreCount} more</div>` : ''}
                 </div>
             `;
+            banner.className = overdueCount > 0 ? 'is-overdue' : 'is-soon';
             banner.style.display = 'block';
         }
 
@@ -68611,6 +68645,15 @@ kbd {
                 if (!title) {
                     showNotification('Please enter a course title.', 'error');
                     document.getElementById('courseTitle').focus();
+                    return false;
+                }
+                return true;
+            }
+            if (n === 2) {
+                const est = parseFloat(document.getElementById('courseEstHours').value);
+                if (!(est >= 0.5)) {
+                    showNotification('Estimated hours must be at least 0.5.', 'error');
+                    document.getElementById('courseEstHours').focus();
                     return false;
                 }
                 return true;
@@ -68797,7 +68840,53 @@ kbd {
              if (!course) return;
              document.getElementById('addHoursCourseId').value = courseId;
              document.getElementById('hoursToAdd').value = ''; // Reset input
+             refreshAddHoursUndoRow(course);
              document.getElementById('addHoursModal').style.display = 'flex';
+        }
+
+        // Hiện dòng "Undo" cho lần cộng giờ gần nhất (chỉ các lần ghi từ nay trở đi có lịch sử).
+        function refreshAddHoursUndoRow(course) {
+            const row = document.getElementById('addHoursUndoRow');
+            if (!row) return;
+            const log = course && Array.isArray(course.hoursLog) ? course.hoursLog : [];
+            const last = log[log.length - 1];
+            if (!last) { row.style.display = 'none'; return; }
+            document.getElementById('addHoursUndoText').textContent =
+                `Last entry: +${last.hours} h (${last.xp} XP) on ${formatDate(last.at)}`;
+            row.style.display = 'flex';
+        }
+
+        // Hoàn tác lần cộng giờ gần nhất: trừ giờ, XP, giờ học trong ngày và cập nhật goal liên kết.
+        function undoLastCourseHours() {
+            const courseId = document.getElementById('addHoursCourseId').value;
+            const course = courses.find(c => c.id === courseId);
+            if (!course || !Array.isArray(course.hoursLog) || !course.hoursLog.length) return;
+            const entry = course.hoursLog.pop();
+            course.hoursStudied = Math.max(0, (course.hoursStudied || 0) - entry.hours);
+            saveCourses();
+            triggerBackup();
+
+            goals.forEach(goal => {
+                if (goal.type === 'study_hours' && goal.courseId === courseId) goal.currentProgress = course.hoursStudied;
+            });
+            saveGoals();
+
+            gamification.points = Math.max(0, gamification.points - (entry.xp || 0));
+            gamification.level = levelFromPoints(gamification.points);
+            localStorage.setItem('gamification', JSON.stringify(gamification));
+            if (entry.day && dailyStudyData[entry.day] !== undefined) {
+                dailyStudyData[entry.day] = Math.max(0, dailyStudyData[entry.day] - entry.hours);
+                safeSetLocalStorage('dailyStudyData', JSON.stringify(dailyStudyData));
+            }
+
+            renderCourses();
+            renderGoals();
+            updateGoalProgressChart();
+            updateGamificationStats();
+            updateStats();
+            updateChart();
+            refreshAddHoursUndoRow(course);
+            showNotification(`Undid +${entry.hours} h on "${course.title}"`, 'info');
         }
 
         function closeAddHoursModal() {
@@ -68813,7 +68902,7 @@ kbd {
             const difficulty = document.getElementById('courseDifficulty').value;
             const priority = document.getElementById('coursePriority').value;
             const url = document.getElementById('courseUrl').value.trim();
-            const estimatedHours = parseFloat(document.getElementById('courseEstHours').value) || 0;
+            const estimatedHours = parseFloat(document.getElementById('courseEstHours').value);
             const deadline = document.getElementById('courseDeadline').value; // Có thể là chuỗi rỗng
             const description = document.getElementById('courseDescription').value.trim();
             const tags = (document.getElementById('courseTags').value || '')
@@ -68824,6 +68913,13 @@ kbd {
 
             if (!title) {
                 showNotification('Please enter a course title.', 'error');
+                courseWizardShowStep(1);
+                document.getElementById('courseTitle').focus();
+                return;
+            }
+            if (!(estimatedHours >= 0.5)) {
+                courseWizardShowStep(2);
+                courseWizardValidateStep(2);
                 return;
             }
 
@@ -68875,9 +68971,22 @@ kbd {
         }
 
         async function deleteCourse(courseId) {
-            if (await skConfirm('Are you sure you want to delete this course?', {title: 'Delete Course', danger: true, okText: 'Delete'})) {
+            const target = courses.find(c => c.id === courseId);
+            const linkedGoals = (typeof goals !== 'undefined' ? goals : []).filter(g => g.courseId === courseId).length;
+            let linkedNotes = 0;
+            try {
+                if (window.NotesVault && typeof window.NotesVault.getCourseLinkCounts === 'function') {
+                    const counts = await window.NotesVault.getCourseLinkCounts();
+                    linkedNotes = (counts && counts[courseId]) || 0;
+                }
+            } catch (e) {}
+            let msg = `Delete "${target ? target.title : 'this course'}"?`;
+            if (linkedGoals) msg += `\n\n${linkedGoals} goal${linkedGoals > 1 ? 's' : ''} tracking this course will keep the last progress but stop updating.`;
+            if (linkedNotes) msg += `\n\n${linkedNotes} linked note${linkedNotes > 1 ? 's' : ''} stay in Notes Vault; the course link will show as removed.`;
+            if (await skConfirm(msg, {title: 'Delete Course', danger: true, okText: 'Delete'})) {
                 courses = courses.filter(c => c.id !== courseId);
                 saveCourses();
+                triggerBackup();
                 renderCourses();
                 showNotification('Course deleted.', 'info');
             }
@@ -68899,7 +69008,7 @@ kbd {
         }
 
 
-        function addHoursToCourse(event) {
+        async function addHoursToCourse(event) {
             event.preventDefault();
             const courseId = document.getElementById('addHoursCourseId').value;
             const hoursStr = document.getElementById('hoursToAdd').value.trim();
@@ -68909,11 +69018,24 @@ kbd {
                 showNotification('Please enter a valid number of hours.', 'error');
                 return;
             }
+            if (hours > 24) {
+                showNotification('A single entry can be at most 24 hours.', 'error');
+                return;
+            }
+            // Giờ lớn bất thường thường là gõ nhầm (và nhận nhiều XP) → hỏi lại trước khi ghi.
+            if (hours > 8 && !(await skConfirm(`Add ${hours} hours in one go? This will also earn ${Math.floor(hours * 10)} XP.`, {title: 'Large entry', danger: false, okText: 'Yes, add'}))) {
+                return;
+            }
 
             const course = courses.find(c => c.id === courseId);
             if (course) {
                 course.hoursStudied = (course.hoursStudied || 0) + hours;
+                const pointsForLog = Math.floor(hours * 10);
+                if (!Array.isArray(course.hoursLog)) course.hoursLog = [];
+                course.hoursLog.push({ hours, xp: pointsForLog, at: new Date().toISOString(), day: new Date().toDateString() });
+                if (course.hoursLog.length > 30) course.hoursLog.shift();
                 saveCourses();
+                triggerBackup();
 
                 goals.forEach(goal => {
                     if (goal.type === 'study_hours' && goal.courseId === courseId) {
@@ -72583,7 +72705,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (goal.type === 'study_hours') {
                 if (goal.courseId) {
                     const course = courses.find(c => c.id === goal.courseId);
-                    goal.currentProgress = course ? (course.hoursStudied || 0) : 0;
+                    goal.currentProgress = course ? (course.hoursStudied || 0) : (goal.currentProgress || 0); // course đã xóa: giữ tiến độ cuối, không reset về 0
                 } else {
                     const careerHours = studyHours[goalCareer] || {};
                     if (goal.skillNames && goal.skillNames.length) {
@@ -97687,6 +97809,105 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
   .dark-mode-container > #quoteFab,
   .dark-mode-container > #nvFab { width: 36px; height: 36px; }
 }
+</style>
+<style id="courseColorCSS">
+/* ═══ COURSE — giữ hồng neon làm màu thương hiệu; mỗi màu chỉ mang MỘT nghĩa:
+   hồng = đang học / thương hiệu · xanh lá = hoàn thành · cam = sắp đến hạn · đỏ = quá hạn / xóa.
+   Độ khó chỉ khác nhau ở icon + nhãn + độ đậm chấm; ưu tiên chỉ ở dải viền trái. ═══ */
+#course-section {
+  --c-ink: #9d2867;            /* chữ hồng đậm trên nền sáng: ≥ 7:1 */
+  --c-muted: #7d5a6b;          /* thay --text-muted (#9a7686 ≈ 3.9:1) cho chữ nhỏ: ≈ 5.9:1 */
+  --c-icon-bg: rgba(219, 39, 119, 0.10);
+  --c-warn: #b45309; --c-bad: #b91c1c; --c-good: #047857;
+  --c-good-bg: #d1fae5; --c-active-bg: rgba(219, 39, 119, 0.10);
+  --c-btn-line: rgba(157, 40, 103, 0.45);
+}
+body.dark-mode #course-section {
+  --c-ink: #f9a8d4; --c-muted: #c9a9b8;
+  --c-icon-bg: rgba(244, 114, 182, 0.14);
+  --c-warn: #fcd34d; --c-bad: #fca5a5; --c-good: #6ee7b7;
+  --c-good-bg: rgba(52, 211, 153, 0.16); --c-active-bg: rgba(244, 114, 182, 0.16);
+  --c-btn-line: rgba(249, 168, 212, 0.4);
+}
+
+/* Chữ phụ đủ tương phản */
+#course-section .course-meta,
+#course-section .course-progress-text,
+#course-section .course-description { color: var(--c-muted); }
+#course-section .course-difficulty svg { color: var(--c-ink); }
+
+/* Ô icon bên trái: một màu cho mọi độ khó */
+#course-section .course-icon-box { background: var(--c-icon-bg); color: var(--c-ink); }
+
+/* Dải ưu tiên: cùng tông hồng, đậm dần theo mức */
+#course-section .course-item[data-priority="High"]   { border-left: 4px solid #db2777; }
+#course-section .course-item[data-priority="Medium"] { border-left: 4px solid rgba(219, 39, 119, 0.42); }
+#course-section .course-item[data-priority="Low"]    { border-left: 4px solid var(--border-color); }
+body.dark-mode #course-section .course-item[data-priority="High"]   { border-left-color: #f472b6; }
+body.dark-mode #course-section .course-item[data-priority="Medium"] { border-left-color: rgba(244, 114, 182, 0.42); }
+
+/* Huy hiệu trạng thái: "Active" không phải cảnh báo nên bỏ vàng, dùng hồng */
+#course-section .course-status-badge.active { background: var(--c-active-bg); color: var(--c-ink); border: 1px solid rgba(var(--cs-accent-rgb), 0.35); }
+#course-section .course-status-badge.completed { background: var(--c-good-bg); color: var(--c-good); border: 1px solid color-mix(in srgb, var(--c-good) 45%, transparent); }
+
+/* Hạn chót: có bản riêng cho nền sáng/tối, đủ 4.5:1 */
+#course-section .course-deadline.soon { color: var(--c-warn); }
+#course-section .course-deadline.overdue { color: var(--c-bad); }
+
+/* Nút hành động: cùng một tông; đỏ chỉ xuất hiện khi trỏ vào nút Xóa */
+#course-section .course-icon-btn { color: var(--c-ink); border-color: var(--c-btn-line); background: transparent; }
+#course-section .course-icon-btn:hover { background: var(--cs-accent-solid); border-color: var(--cs-accent-solid); color: #fff; }
+body.dark-mode #course-section .course-icon-btn:hover { color: #3a1028; }
+#course-section .course-icon-btn.add-hours { background: var(--c-icon-bg); font-weight: 700; }
+#course-section .course-icon-btn.delete:hover { background: #dc2626; border-color: #dc2626; color: #fff; }
+
+/* Thanh thống kê: Active dùng hồng (đang học), Total trung tính, Done xanh lá */
+#course-section .course-stat-item.cs-total  { --cs-stat-bg: rgba(125, 90, 107, 0.07); --cs-stat-border: rgba(125, 90, 107, 0.2); --cs-stat-icon-bg: rgba(125, 90, 107, 0.14); --cs-stat-color: var(--c-muted); }
+#course-section .course-stat-item.cs-active { --cs-stat-bg: rgba(219, 39, 119, 0.07); --cs-stat-border: rgba(219, 39, 119, 0.2); --cs-stat-icon-bg: rgba(219, 39, 119, 0.14); --cs-stat-color: var(--c-ink); }
+#course-section .course-stat-item.cs-done   { --cs-stat-color: var(--c-good); }
+body.dark-mode #course-section .course-stat-item.cs-total  { --cs-stat-bg: rgba(255,255,255,0.04); --cs-stat-border: rgba(255,255,255,0.12); --cs-stat-icon-bg: rgba(255,255,255,0.08); }
+body.dark-mode #course-section .course-stat-item.cs-active { --cs-stat-bg: rgba(244,114,182,0.08); --cs-stat-border: rgba(244,114,182,0.22); --cs-stat-icon-bg: rgba(244,114,182,0.16); }
+
+/* ── Banner nhắc hạn: nền trung tính hồng; mức độ khẩn cấp chỉ thể hiện bằng dải trái + icon ── */
+#courseReminderBanner {
+  background: var(--c-icon-bg); border: 1px solid rgba(var(--cs-accent-rgb), 0.22);
+  border-left: 4px solid var(--c-warn); box-shadow: none;
+}
+body.dark-mode #courseReminderBanner { background: var(--c-icon-bg); border-color: rgba(var(--cs-accent-rgb), 0.22); border-left-color: var(--c-warn); }
+#courseReminderBanner.is-overdue, body.dark-mode #courseReminderBanner.is-overdue { border-left-color: var(--c-bad); }
+#courseReminderBanner .course-reminder-headline,
+body.dark-mode #courseReminderBanner .course-reminder-headline { color: var(--c-ink); }
+#courseReminderBanner .course-reminder-icon { color: var(--c-warn); }
+#courseReminderBanner.is-overdue .course-reminder-icon { color: var(--c-bad); }
+#courseReminderBanner .course-reminder-item-dot { background: var(--c-warn); box-shadow: none; }
+#courseReminderBanner .course-reminder-item-dot.overdue { background: var(--c-bad); box-shadow: none; }
+#courseReminderBanner .course-reminder-item-date,
+#courseReminderBanner .course-reminder-more { color: var(--c-muted); }
+
+/* ── Modal Add/Edit Course: ô chọn Độ khó / Ưu tiên cùng tông hồng khi được chọn
+   (chỉ trong #courseModal — .course-pill-option còn được Analysis / Deal Diary dùng) ── */
+#courseModal {
+  --m-ink: #9d2867; --m-bg: rgba(219, 39, 119, 0.10); --m-line: #db2777; --m-ring: rgba(219, 39, 119, 0.16);
+}
+body.dark-mode #courseModal {
+  --m-ink: #f9a8d4; --m-bg: rgba(244, 114, 182, 0.16); --m-line: #f472b6; --m-ring: rgba(244, 114, 182, 0.2);
+}
+#courseModal .course-pill-option.selected,
+body.dark-mode #courseModal .course-pill-option.selected {
+  border-color: var(--m-line); background: var(--m-bg); color: var(--m-ink); box-shadow: 0 0 0 3px var(--m-ring);
+}
+#courseModal .course-pill-option:hover { border-color: var(--m-line); }
+#courseModal .course-pill-option svg { color: var(--m-ink); }
+
+/* Nút Next/Save và thanh bước của modal Course: cùng một tông hồng (chỉ trong #courseModal) */
+#courseModal .course-wizard-btn.primary { background: #db2777; border-color: #db2777; color: #fff; box-shadow: none; }
+#courseModal .course-wizard-btn.primary:hover { background: #be185d; border-color: #be185d; filter: none; box-shadow: 0 4px 12px rgba(219, 39, 119, 0.25); }
+body.dark-mode #courseModal .course-wizard-btn.primary { background: #f472b6; border-color: #f472b6; color: #3a1028; }
+body.dark-mode #courseModal .course-wizard-btn.primary:hover { background: #f9a8d4; border-color: #f9a8d4; box-shadow: 0 4px 12px rgba(244, 114, 182, 0.25); }
+#courseModal .course-wizard-dot.done { background: rgba(219, 39, 119, 0.5); }
+#courseModal .course-wizard-dot.current { background: #db2777; }
+body.dark-mode #courseModal .course-wizard-dot.done { background: rgba(244, 114, 182, 0.5); }
+body.dark-mode #courseModal .course-wizard-dot.current { background: #f472b6; }
 </style>
 <style id="goalsCalmCSS">
 /* ═══ GOALS — bảng màu dịu: 1 tông hồng khói + tím nhạt, bỏ vàng chói / hồng neon.
