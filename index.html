@@ -53,7 +53,43 @@
                 inlineMath: [['\\(', '\\)']],
                 displayMath: [['$$', '$$'], ['\\[', '\\]']]
             },
-            svg: { fontCache: 'global' }
+            svg: { fontCache: 'global' },
+            /* Fix for pasted Gemini/ChatGPT/Pandoc LaTeX such as \text{SG\&A}.
+               KaTeX understands "\&" inside \text{...}; MathJax doesn't (no textmacros) and prints
+               a literal backslash ("SG\&A"). Rewrite it to \text{SG}\&\text{A} — "\&" is plain math-mode
+               LaTeX that every engine accepts. Hooked into MathJax's own pre-filter so it applies
+               everywhere a formula is typeset (notes, tables, flashcards, PDF export). */
+            startup: {
+                ready: function () {
+                    MathJax.startup.defaultReady();
+                    var TEXT_CMDS = /\\(text|textbf|textit|textrm|textsf|texttt|mbox|hbox)\s*\{/g;
+                    function fixTextAmp(tex) {
+                        if (typeof tex !== 'string' || tex.indexOf('\\&') < 0) return tex;
+                        var re = new RegExp(TEXT_CMDS.source, 'g'), out = '', last = 0, m;
+                        while ((m = re.exec(tex))) {
+                            var j = re.lastIndex, depth = 1, body = '';
+                            while (j < tex.length) {
+                                var c = tex[j];
+                                if (c === '\\') {
+                                    var n = tex[j + 1];
+                                    if (n === '&' && depth === 1) { body += '}\\&\\' + m[1] + '{'; j += 2; continue; }
+                                    body += c + (n === undefined ? '' : n); j += 2; continue;
+                                }
+                                if (c === '{') depth++;
+                                else if (c === '}') { depth--; if (depth === 0) break; }
+                                body += c; j++;
+                            }
+                            out += tex.slice(last, re.lastIndex) + body;
+                            last = j; re.lastIndex = j;
+                        }
+                        return out + tex.slice(last);
+                    }
+                    window.__mjxFixTextAmp = fixTextAmp;
+                    MathJax.startup.input.forEach(function (ij) {
+                        if (ij.preFilters) ij.preFilters.add(function (args) { args.math.math = fixTextAmp(args.math.math); });
+                    });
+                }
+            }
         };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
