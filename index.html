@@ -30119,10 +30119,12 @@ window.DBP={
                                 <span><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg> Badges Earned <span id="badgesCountLabel" class="badges-count-label"></span></span>
                                 <span id="badgesCollapseIcon" style="font-size:0.85rem;color:var(--text-muted);transition:transform 0.25s;margin-left:8px;">▲</span>
                             </h4>
+                            <div id="badgesDecayNote" class="badges-decay-note" hidden></div>
                             <div id="badgesList" class="badges-list">
                                 <div class="badges-empty">No badges yet — log study hours to earn your first! <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1.2em;height:1.2em;vertical-align:-0.15em;stroke:#db2777;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></svg></div>
                             </div>
                             <button type="button" id="badgesShowMoreBtn" class="badges-show-more" onclick="toggleBadgesShowAll()" style="display:none;"></button>
+                            <div id="lostBadgesBox" class="lost-badges-box" hidden></div>
                         </div>
 
                         <details class="yprog-fun" id="yprogFun">
@@ -60389,6 +60391,222 @@ kbd {
             try { localStorage.setItem('gamification', JSON.stringify(gamification)); } catch (e) {}
             updateGamificationStats();
         }
+
+        // ══════════ INACTIVITY DECAY (badges + XP) ══════════
+        // Rules: after DECAY_GRACE_DAYS days with no real study (hours logged / Focus session finished —
+        // merely opening the app does NOT count) XP starts melting by DECAY_RATE of the XP you had when you
+        // stopped, per extra day, capped at DECAY_MAX_LOSS. Level follows XP. Every earned badge is taken back
+        // (state badges like XP/Level/Streak when the number no longer holds, achievement badges like
+        // First hour / MASTERED / total hours immediately). Lost badges are kept in gamification.lostBadges
+        // and come back after a little practice (cheaper than earning them from scratch).
+        const DECAY_GRACE_DAYS = 7;
+        const DECAY_RATE = 0.02;
+        const DECAY_MAX_LOSS = 0.8;
+        const REGAIN_SKILL_HOURS = 0.5;   // skill badges (First hour / 5h / MASTERED)
+        const REGAIN_GLOBAL_HOURS = 0.5;  // total-hours / breadth badges
+        const REGAIN_CAREER_HOURS = 1;    // Career Mastered
+
+        function saveGamificationQuiet() { try { localStorage.setItem('gamification', JSON.stringify(gamification)); } catch (e) {} }
+
+        function markStudyActivity() {
+            gamification.lastStudyAt = Date.now();
+            gamification.decay = null;            // new anchor → decay baseline is recomputed on the next check
+            saveGamificationQuiet();
+            try { renderBadgeDecayUI(); } catch (e) {}
+        }
+
+        function getLastStudyAt() {
+            if (!gamification.lastStudyAt) {      // first run of this feature: the 7-day clock starts today
+                gamification.lastStudyAt = Date.now();
+                saveGamificationQuiet();
+            }
+            return gamification.lastStudyAt;
+        }
+
+        function daysSinceStudy() {
+            const a = new Date(getLastStudyAt()); a.setHours(0, 0, 0, 0);
+            const b = new Date(); b.setHours(0, 0, 0, 0);
+            return Math.max(0, Math.round((b - a) / 86400000));
+        }
+
+        // Legacy badges were saved without a key, so recover it from their text.
+        function badgeKeyOf(b) {
+            if (!b) return null;
+            if (b.key) return b.key;
+            const t = String(b.text || '');
+            let m;
+            if ((m = t.match(/^(\d+) XP earned!$/))) return `xp-${m[1]}`;
+            if ((m = t.match(/^Reached Level (\d+)!$/))) return `level-${m[1]}`;
+            if ((m = t.match(/^(\d+) day streak! Keep going!$/))) return `weekly-streak-${m[1]}`;
+            if ((m = t.match(/^(\d+) day streak!$/))) return `streak-${m[1]}`;
+            if ((m = t.match(/^(\d+) total hours logged!$/))) return `total-hours-${m[1]}`;
+            if ((m = t.match(/^(\d+) different skills started!$/))) return `breadth-${m[1]}`;
+            const unlocked = gamification.unlockedMilestones || [];
+            const careerOf = name => Object.keys(skillsData || {}).find(c => c !== 'mastery' && unlocked.includes(name(c)));
+            if ((m = t.match(/^Career Mastered: (.+)!$/))) {
+                const c = Object.keys(skillsData || {}).find(c => skillsData[c] && skillsData[c].title === m[1]);
+                return c ? `career-mastered-${c}` : null;
+            }
+            if ((m = t.match(/^MASTERED: (.+) \(\d+h\)!$/))) { const c = careerOf(c => `mastered-${c}::${m[1]}`); return c ? `mastered-${c}::${m[1]}` : null; }
+            if ((m = t.match(/^5 hours milestone in (.+)!$/))) { const c = careerOf(c => `5h-${c}::${m[1]}`); return c ? `5h-${c}::${m[1]}` : null; }
+            if ((m = t.match(/^First hour in (.+)!$/))) { const c = careerOf(c => `first-hour-${c}::${m[1]}`); return c ? `first-hour-${c}::${m[1]}` : null; }
+            return null;
+        }
+
+        function badgeKindOf(key) {
+            if (/^(xp|level|streak|weekly-streak)-/.test(key)) return 'state';
+            if (/^(mastered|5h|first-hour|total-hours|breadth|career-mastered)-/.test(key)) return 'achievement';
+            return null;
+        }
+
+        function studyTotals() {
+            let total = 0;
+            Object.keys(studyHours || {}).forEach(c => Object.values(studyHours[c] || {}).forEach(h => { if (h > 0) total += h; }));
+            return total;
+        }
+        function careerStudyTotal(career) {
+            let t = 0; Object.values((studyHours || {})[career] || {}).forEach(h => { if (h > 0) t += h; }); return t;
+        }
+        function skillHoursByKey(key) {
+            const m = key.match(/^(?:mastered|5h|first-hour)-([^:]+)::(.+)$/);
+            return m ? ((studyHours[m[1]] || {})[m[2]] || 0) : 0;
+        }
+
+        // What a lost badge still needs before it can come back (null = nothing special, natural rule applies).
+        function regainRequirement(l) {
+            const key = l.key;
+            if (/^(mastered|5h|first-hour)-/.test(key)) {
+                const need = (l.baseHours || 0) + REGAIN_SKILL_HOURS;
+                const have = skillHoursByKey(key);
+                return { ok: have >= need - 1e-9, text: `Study ${REGAIN_SKILL_HOURS}h more of this skill`, left: Math.max(0, need - have) };
+            }
+            if (/^(total-hours|breadth)-/.test(key)) {
+                const need = (l.baseTotal || 0) + REGAIN_GLOBAL_HOURS;
+                const have = studyTotals();
+                return { ok: have >= need - 1e-9, text: `Log ${REGAIN_GLOBAL_HOURS}h of study`, left: Math.max(0, need - have) };
+            }
+            if (/^career-mastered-/.test(key)) {
+                const c = key.replace('career-mastered-', '');
+                const need = (l.baseCareer || 0) + REGAIN_CAREER_HOURS;
+                const have = careerStudyTotal(c);
+                return { ok: have >= need - 1e-9, text: `Study ${REGAIN_CAREER_HOURS}h in this career`, left: Math.max(0, need - have) };
+            }
+            if (/^streak-/.test(key)) {
+                const n = parseInt(key.split('-')[1], 10);
+                const st = getEffectiveStreakState().streak;
+                return { ok: st >= n, text: `Rebuild a ${n}-day streak`, left: Math.max(0, n - st) };
+            }
+            if (/^xp-/.test(key)) { const n = parseInt(key.split('-')[1], 10); return { ok: (gamification.points || 0) >= n, text: `Earn XP back to ${n}`, left: 0 }; }
+            if (/^level-/.test(key)) { const n = parseInt(key.split('-')[1], 10); return { ok: (gamification.level || 1) >= n, text: `Get back to Level ${n}`, left: 0 }; }
+            if (/^weekly-streak-/.test(key)) { return { ok: true, text: 'Reach that streak again', left: 0 }; }
+            return { ok: true, text: '', left: 0 };
+        }
+
+        function isBadgeRegainBlocked(key) {
+            const l = (gamification.lostBadges || []).find(x => x.key === key);
+            if (!l) return false;
+            return !regainRequirement(l).ok;
+        }
+
+        function revokeBadge(b, key) {
+            gamification.badges = (gamification.badges || []).filter(x => x !== b);
+            gamification.unlockedMilestones = (gamification.unlockedMilestones || []).filter(k => k !== key);
+            if (!Array.isArray(gamification.lostBadges)) gamification.lostBadges = [];
+            if (gamification.lostBadges.some(l => l.key === key)) return;
+            const m = key.match(/^(?:mastered|5h|first-hour)-([^:]+)::/);
+            gamification.lostBadges.unshift({
+                key, text: b.text, icon: b.icon, lostAt: Date.now(),
+                baseHours: skillHoursByKey(key),
+                baseTotal: studyTotals(),
+                baseCareer: key.startsWith('career-mastered-') ? careerStudyTotal(key.replace('career-mastered-', '')) : (m ? careerStudyTotal(m[1]) : 0)
+            });
+            gamification.lostBadges = gamification.lostBadges.slice(0, 120);
+        }
+
+        function applyInactivityDecay() {
+            let days;
+            try { days = daysSinceStudy(); } catch (e) { return; }
+            const over = days - DECAY_GRACE_DAYS;
+            let changed = false;
+            if (over > 0) {
+                let d = gamification.decay;
+                if (!d || d.anchor !== gamification.lastStudyAt) {
+                    d = gamification.decay = { anchor: gamification.lastStudyAt, baseXP: gamification.points || 0, lost: 0 };
+                }
+                const target = Math.floor(Math.min(d.baseXP * DECAY_MAX_LOSS, d.baseXP * DECAY_RATE * over));
+                const delta = target - d.lost;
+                if (delta > 0) {
+                    gamification.points = Math.max(0, (gamification.points || 0) - delta);
+                    gamification.level = levelFromPoints(gamification.points);
+                    d.lost = target;
+                    changed = true;
+                }
+                // Take back every badge that no longer holds.
+                const effStreak = getEffectiveStreakState().streak;
+                const lostNow = [];
+                (gamification.badges || []).slice().forEach(b => {
+                    const key = badgeKeyOf(b); const kind = key && badgeKindOf(key);
+                    if (!kind) return;
+                    let revoke = false;
+                    if (kind === 'achievement') revoke = true;
+                    else if (/^xp-/.test(key)) revoke = (gamification.points || 0) < parseInt(key.split('-')[1], 10);
+                    else if (/^level-/.test(key)) revoke = (gamification.level || 1) < parseInt(key.split('-')[1], 10);
+                    else revoke = effStreak < parseInt(key.split('-').pop(), 10);
+                    if (revoke) { revokeBadge(b, key); lostNow.push(b.text); changed = true; }
+                });
+                if (changed) {
+                    saveGamificationQuiet();
+                    try { updateGamificationStats(); } catch (e) {}
+                    if (typeof showNotification === 'function' && (delta > 0 || lostNow.length)) {
+                        showNotification(`You haven't studied for ${days} days: −${d.lost} XP so far${lostNow.length ? `, ${lostNow.length} badge${lostNow.length > 1 ? 's' : ''} taken back` : ''}. Study again to win them back.`, 'info');
+                    }
+                }
+            }
+            try { renderBadgeDecayUI(); } catch (e) {}
+        }
+
+        function renderBadgeDecayUI() {
+            const note = document.getElementById('badgesDecayNote');
+            const box = document.getElementById('lostBadgesBox');
+            if (!note || !box) return;
+            const days = daysSinceStudy();
+            const left = DECAY_GRACE_DAYS - days;
+            const lost = gamification.lostBadges || [];
+            if (days > DECAY_GRACE_DAYS) {
+                const d = gamification.decay;
+                note.className = 'badges-decay-note bdn-bad';
+                note.textContent = `${days} days without studying — ${d && d.lost ? `−${d.lost} XP so far (max −${Math.round(DECAY_MAX_LOSS * 100)}%)` : 'XP is melting'}. Log any study to stop it and win badges back.`;
+                note.hidden = false;
+            } else if (days >= DECAY_GRACE_DAYS - 3 && days > 0) {
+                note.className = 'badges-decay-note bdn-warn';
+                note.textContent = left > 0
+                    ? `No study for ${days} day${days > 1 ? 's' : ''}. ${left} more day${left > 1 ? 's' : ''} and your XP and badges start slipping — opening the app doesn't count, log some study.`
+                    : `No study for ${days} days — log some study today or XP starts slipping tomorrow.`;
+                note.hidden = false;
+            } else { note.hidden = true; note.textContent = ''; }
+
+            if (!lost.length) { box.hidden = true; box.innerHTML = ''; return; }
+            const open = box.dataset.open === '1';
+            box.hidden = false;
+            box.innerHTML = `<button type="button" class="lost-badges-toggle" onclick="toggleLostBadges()">Lost badges (${lost.length}) ${open ? '▲' : '▼'}</button>` +
+                (open ? `<div class="lost-badges-list">${lost.map(l => {
+                    const icon = normalizeBadgeIcon(l.icon);
+                    const r = regainRequirement(l);
+                    return `<div class="badge-card badge-card-lost" title="Lost ${new Date(l.lostAt).toLocaleDateString()}">
+                        <span class="badge-card-icon">${icon}</span>
+                        <span class="badge-card-text"><span class="badge-card-title">${escapeHtml(stripLegacyBadgeEmoji(l.text))}</span>
+                        <span class="badge-card-sub">${escapeHtml(r.text || 'Study again to win it back')}</span></span></div>`;
+                }).join('')}</div>` : '');
+        }
+        function toggleLostBadges() {
+            const box = document.getElementById('lostBadgesBox'); if (!box) return;
+            box.dataset.open = box.dataset.open === '1' ? '0' : '1';
+            renderBadgeDecayUI();
+        }
+        // Re-check when the tab is reopened / left open overnight.
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) { try { applyInactivityDecay(); } catch (e) {} } });
+        setInterval(() => { try { applyInactivityDecay(); } catch (e) {} }, 3600000);
+
         function yprogReducedMotion() {
             try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
         }
@@ -61430,7 +61648,9 @@ kbd {
             try { loadCareer(careerToLoad); } catch (e) { console.error('loadCareer failed:', e); }
             try { updateStats(); } catch (e) { console.error('updateStats failed:', e); }
             try { updateGamificationStats(); } catch (e) { console.error('updateGamificationStats failed:', e); }
-            try { updateDailyStreak(); } catch (e) { console.error('updateDailyStreak failed:', e); }
+            // Opening the app is NOT study: no streak bump here. Instead apply inactivity decay + backfill milestones.
+            try { applyInactivityDecay(); } catch (e) { console.error('applyInactivityDecay failed:', e); }
+            try { checkGlobalAchievements(); } catch (e) { console.error('checkGlobalAchievements failed:', e); }
             try { getRandomMeme(); } catch (e) { console.error('getRandomMeme failed:', e); }
             try { updateDailyStudyDisplay(); } catch (e) { console.error('updateDailyStudyDisplay failed:', e); }
 
@@ -62306,10 +62526,18 @@ kbd {
         function addMilestoneAchievement(key, text, icon = '<i class="fa-solid fa-trophy"></i>') {
             if (!Array.isArray(gamification.unlockedMilestones)) gamification.unlockedMilestones = [];
             if (gamification.unlockedMilestones.includes(key)) return;
+            // A badge taken back by inactivity only returns after the small "practice" requirement is met.
+            if (isBadgeRegainBlocked(key)) return;
+            const wasLost = (gamification.lostBadges || []).some(l => l.key === key);
+            if (wasLost) gamification.lostBadges = gamification.lostBadges.filter(l => l.key !== key);
+            // Lower tiers of the same skill are superseded once a higher one is regained.
+            const sk = key.match(/^(mastered|5h|first-hour)-(.+)$/);
+            if (sk && wasLost) gamification.lostBadges = (gamification.lostBadges || []).filter(l => !(/^(mastered|5h|first-hour)-/.test(l.key) && l.key.replace(/^(mastered|5h|first-hour)-/, '') === sk[2]));
             gamification.unlockedMilestones.push(key);
             localStorage.setItem('gamification', JSON.stringify(gamification));
-            addAchievement(text, icon);
-            showNotification(`Achievement Unlocked: ${text}`, 'achievement');
+            addAchievement(text, icon, key);
+            showNotification(wasLost ? `Badge regained: ${text}` : `Achievement Unlocked: ${text}`, 'achievement');
+            try { renderBadgeDecayUI(); } catch (e) {}
         }
 
         // Cross-skill / cross-career badges. Cheap to recompute, so this is
@@ -62372,7 +62600,7 @@ kbd {
             });
         }
 
-        function addAchievement(text, icon = '<i class="fa-solid fa-trophy"></i>') {
+        function addAchievement(text, icon = '<i class="fa-solid fa-trophy"></i>', key) {
             // Ephemeral toast — same pop-and-fade feedback as before.
             const achievementsDiv = document.getElementById('achievements');
             if (achievementsDiv) {
@@ -62394,8 +62622,8 @@ kbd {
             const todayKey = new Date().toDateString();
             const alreadyToday = gamification.badges.some(b => b.text === text && b.date === todayKey);
             if (!alreadyToday) {
-                gamification.badges.unshift({ text, icon, date: todayKey, ts: Date.now() });
-                gamification.badges = gamification.badges.slice(0, 50); // keep history bounded
+                gamification.badges.unshift(key ? { text, icon, date: todayKey, ts: Date.now(), key } : { text, icon, date: todayKey, ts: Date.now() });
+                gamification.badges = gamification.badges.slice(0, 200); // keep history bounded
                 localStorage.setItem('gamification', JSON.stringify(gamification));
             }
             renderBadges();
@@ -62453,6 +62681,7 @@ kbd {
         }
 
         function renderBadges() {
+            try { renderBadgeDecayUI(); } catch (e) {}
             const container = document.getElementById('badgesList');
             const countLabel = document.getElementById('badgesCountLabel');
             const showMoreBtn = document.getElementById('badgesShowMoreBtn');
@@ -62511,6 +62740,8 @@ kbd {
 
 
         function updateDailyStreak() {
+            // Only called when real study is logged (not on page load) → this is the "last studied" anchor.
+            markStudyActivity();
             const today = new Date().toDateString();
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
@@ -64167,6 +64398,7 @@ kbd {
                 fireBrowserNotification(notificationTitle, notificationBody);
 
                 const xpReward = 25;
+                try { markStudyActivity(); } catch (e) {}
                 gamification.points += xpReward;
                 gamification.level = levelFromPoints(gamification.points);
                 localStorage.setItem('gamification', JSON.stringify(gamification));
@@ -97839,14 +98071,32 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 .dbp-title span,
 .correlation-title span { font-family: inherit; }
 </style>
+<style id="badge-decay-css">
+.badges-decay-note { margin: 0 0 10px; padding: 9px 12px; border-radius: 10px; font-size: .8rem; font-weight: 600; line-height: 1.4; }
+.badges-decay-note[hidden], .lost-badges-box[hidden] { display: none; }
+.badges-decay-note.bdn-warn { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35); color: #9a5a06; }
+.badges-decay-note.bdn-bad { background: rgba(219,39,119,.10); border: 1px solid rgba(219,39,119,.35); color: #9d2867; }
+.dark-mode .badges-decay-note.bdn-warn { background: rgba(245,158,11,.14); color: #f6c978; }
+.dark-mode .badges-decay-note.bdn-bad { background: rgba(244,114,182,.14); color: #f9a8d4; }
+.lost-badges-box { margin-top: 10px; }
+.lost-badges-toggle { width: 100%; background: none; border: 1px dashed rgba(157,40,103,.35); border-radius: 10px; padding: 8px; cursor: pointer; font: inherit; font-size: .8rem; font-weight: 700; color: #9d2867; }
+.dark-mode .lost-badges-toggle { color: #f9a8d4; border-color: rgba(249,168,212,.35); }
+.lost-badges-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-top: 8px; }
+.badge-card-lost { filter: grayscale(1); opacity: .6; }
+</style>
 <style id="ft-pink-text">
 /* Focus Timer: chữ đen (số thống kê, "Today: x / y min", "Focused minutes by goal") → hồng theo theme */
 .focus-timer-card .ft-stat-chip-value,
 .focus-timer-card #ftGoalProgressLabel,
-.focus-timer-card .ft-inline-chart-title { color: #9d2867; }
+.focus-timer-card .ft-inline-chart-title,
+.focus-timer-card .ft-time,
+.focus-timer-card .ft-energy-chip { color: #9d2867; }
+.focus-timer-card .ft-energy-chip.active, .focus-timer-card .ft-time:hover { color: var(--ft-accent-deep); }
 .dark-mode .focus-timer-card .ft-stat-chip-value,
 .dark-mode .focus-timer-card #ftGoalProgressLabel,
-.dark-mode .focus-timer-card .ft-inline-chart-title { color: #f9a8d4; }
+.dark-mode .focus-timer-card .ft-inline-chart-title,
+.dark-mode .focus-timer-card .ft-time,
+.dark-mode .focus-timer-card .ft-energy-chip { color: #f9a8d4; }
 </style>
 <style id="headerLaunchersCSS">
 /* Quote + Notes Vault: chuyển từ nút nổi góc trái dưới lên thanh icon ở header,
@@ -97874,6 +98124,23 @@ document.addEventListener('DOMContentLoaded', () => PLANEXT.init());
 .dark-mode-container > #nvFab[aria-expanded="true"] { background: rgba(219, 113, 175, 0.3); border-color: #db2777; }
 .dark-mode .dark-mode-container > #quoteFab.quote-fab-open,
 .dark-mode .dark-mode-container > #nvFab[aria-expanded="true"] { background: rgba(244, 114, 182, 0.22); border-color: #f472b6; }
+/* Đồng bộ với 6 nút còn lại (.dark-mode-toggle): cùng lớp "glow" hồng nhịp nhẹ bên trong nút (::after + overflow hidden),
+   bỏ vòng sóng ngoài của Quote, cùng hiệu ứng hover. Chấm thông báo dời vào trong để không bị cắt. */
+.dark-mode-container > #quoteFab,
+.dark-mode-container > #nvFab { overflow: hidden; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.dark-mode-container > #quoteFab::after,
+.dark-mode-container > #quoteFab.quote-fab-seen::after,
+.dark-mode-container > #nvFab::after {
+  content: ''; display: block; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; inset: auto;
+  top: -50%; left: -50%; background: radial-gradient(circle, rgba(219, 113, 175, 0.4) 0%, transparent 70%);
+  animation: pulseGlow 2s ease-in-out infinite; pointer-events: none; border-radius: 50%; border: 0;
+}
+.dark-mode-container > #quoteFab:hover,
+.dark-mode-container > #nvFab:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); }
+.dark-mode .dark-mode-container > #quoteFab:hover,
+.dark-mode .dark-mode-container > #nvFab:hover { box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); }
+.dark-mode-container > #quoteFab.quote-fab-new::before { top: 4px; right: 4px; }
+.dark-mode-container > #quoteFab .quote-fab-filter-dot { bottom: 4px; right: 4px; }
 .dark-mode-container > #quoteFab:focus-visible,
 .dark-mode-container > #nvFab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
