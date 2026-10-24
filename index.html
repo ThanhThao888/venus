@@ -14346,6 +14346,9 @@
     @media (hover: none), (pointer: coarse) { .ft-fv-hint { display: none; } }
     .ft-fv-enter { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; padding: 9px 14px; border-radius: 999px; border: 1px dashed var(--ft-accent-border); background: transparent; color: var(--ft-accent-deep); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: background 0.15s, opacity 0.2s; }
     .ft-fv-enter:hover { background: var(--ft-accent-soft); }
+    .ft-float-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; max-width: 360px; margin-top: 10px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--ft-accent-border); background: transparent; color: var(--ft-accent-deep); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .ft-float-btn:hover { background: var(--ft-accent-soft); }
+    .ft-float-btn.on { background: var(--ft-accent-soft); }
     .focus-timer-card.ft-quiet #ftFvEnterBtn { opacity: 0.1; transition: opacity 0.8s ease; }
     @media (prefers-reduced-motion: reduce) { .ft-fv.open { animation: none; } }
 
@@ -30432,6 +30435,10 @@ window.DBP={
                                         <span style="font-size:15px;"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#ft-icon-shuffle"/></svg></span>
                                     </button>
                                 </div>
+                                <button type="button" class="ft-float-btn" id="ftFloatBtn" onclick="ftFloatToggle()" style="display:none;" title="Open a small always-on-top timer that stays visible over YouTube, Bilibili, Coursera or any other tab/app">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="8" height="6" rx="1" fill="currentColor"/></svg>
+                                    <span id="ftFloatBtnLabel">Float timer</span>
+                                </button>
                                 <div class="ft-start-hint ft-launch-only" id="ftStartHint" role="status" hidden>Pick a goal to start</div>
                                 <!-- Distraction Parking Lot trigger (work phase of a Focus session only) -->
                                 <button type="button" class="ft-capture-btn ft-focus-only" id="ftCaptureBtn" onclick="ftOpenParking()" style="display:none;" title="Park a distracting thought without leaving your session">
@@ -64218,6 +64225,7 @@ kbd {
             if (disp) disp.textContent = formatTime(Math.max(0, remainingSeconds));
             const fvT = document.getElementById('ftFvTime');   // Focus View mirrors the same value
             if (fvT) { const t = formatTime(Math.max(0, remainingSeconds)); if (fvT.textContent !== t) fvT.textContent = t; }
+            try { ftFloatSync(); } catch (e) {}
         }
 
         function persistTimerState() {
@@ -67919,6 +67927,133 @@ kbd {
             renderFtModeUI();
             ftFlushDeferredReview();
         }
+
+
+        // ── Floating timer ───────────────────────────────────────────
+        // 1) Tab title shows the countdown (works in every browser).
+        // 2) Document Picture-in-Picture: a small always-on-top window (Chrome/Edge 116+)
+        //    that stays visible over YouTube / Bilibili / Coursera / any other app.
+        var ftFloatWin = null;
+        var ftFloatTimer = null;
+        var ftBaseTitle = document.title;
+        var ftFloatEls = null;
+
+        function ftLiveRemaining() {
+            // Computed from timestamps, so it stays right even when the main tab is throttled in the background.
+            if (timerRunning && focusStartTimestamp && typeof remainingAtStart === 'number') {
+                return Math.max(0, remainingAtStart - Math.floor((Date.now() - focusStartTimestamp) / 1000));
+            }
+            return Math.max(0, remainingSeconds);
+        }
+
+        function ftTabTitleSync() {
+            let t = ftBaseTitle;
+            const rem = ftLiveRemaining();
+            if (timerRunning) t = (ftMode === 'break' ? '☕ ' : '⏱ ') + formatTime(rem) + (ftMode === 'break' ? ' · Break' : ' · Focus');
+            else if (remainingSeconds <= 0) t = '✅ Done · ' + ftBaseTitle;
+            else if (ftMode === 'work' && focusOpenLogId) t = '⏸ ' + formatTime(rem) + ' · Paused';
+            if (document.title !== t) document.title = t;
+        }
+
+        function ftFloatSupported() { return 'documentPictureInPicture' in window; }
+
+        function ftFloatSync() {
+            ftTabTitleSync();
+            const btn = document.getElementById('ftFloatBtn');
+            if (btn) {
+                // Only offered where it works, and not during a running break (a break has no pause control).
+                const show = ftFloatSupported() && !(ftMode === 'break' && timerRunning);
+                btn.style.display = show || ftFloatWin ? '' : 'none';
+            }
+            ftFloatRender();
+        }
+
+        function ftFloatRender() {
+            if (!ftFloatWin || !ftFloatEls) return;
+            const rem = ftLiveRemaining();
+            const dur = Math.max(1, timerDuration);
+            const isBreak = ftMode === 'break';
+            const done = !timerRunning && remainingSeconds <= 0;
+            ftFloatEls.time.textContent = formatTime(rem);
+            ftFloatEls.ring.style.strokeDashoffset = String(326.7 * (1 - Math.max(0, Math.min(1, rem / dur))));
+            ftFloatEls.ring.style.stroke = isBreak ? '#f472b6' : (timerRunning && rem <= 60 ? '#ef4444' : '#db2777');
+            ftFloatEls.status.textContent = done ? 'Done 🎉' : isBreak ? (timerRunning ? 'On break…' : 'Break') : timerRunning ? 'Focusing…' : (focusOpenLogId ? 'Paused' : 'Ready');
+            ftFloatEls.goal.textContent = (!isBreak && focusCurrentGoal) ? String(focusCurrentGoal) : '';
+            if (isBreak) {
+                ftFloatEls.btn.style.display = 'none';
+            } else {
+                ftFloatEls.btn.style.display = '';
+                ftFloatEls.btn.textContent = timerRunning ? '⏸ Pause' : (done ? '↺ Back' : '▶ Start');
+            }
+        }
+
+        function ftFloatTick() {
+            // Runs on the floating window's own clock, which is never throttled, so the numbers and the
+            // end-of-session alarm stay on time even if the main tab sleeps in the background.
+            if (timerRunning && ftLiveRemaining() <= 0) { try { tick(); } catch (e) {} }
+            ftFloatSync();
+        }
+
+        async function ftFloatOpen() {
+            if (!ftFloatSupported()) return;
+            if (ftFloatWin) { try { ftFloatWin.focus(); } catch (e) {} return; }
+            let w;
+            try {
+                w = await window.documentPictureInPicture.requestWindow({ width: 230, height: 270 });
+            } catch (e) {
+                if (typeof showNotification === 'function') showNotification('Could not open the floating timer: ' + (e && e.message || e), 'warning');
+                return;
+            }
+            const d = w.document;
+            d.title = 'Focus Timer';
+            d.head.insertAdjacentHTML('beforeend', `<style>
+                *{box-sizing:border-box}
+                html,body{margin:0;height:100%}
+                body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px;
+                     background:#1f1020;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;user-select:none}
+                .wrap{position:relative;width:150px;height:150px}
+                svg{width:100%;height:100%;transform:rotate(-90deg)}
+                circle{fill:none;stroke-width:8;stroke-linecap:round}
+                .bg{stroke:rgba(255,255,255,.14)}
+                .pr{stroke:#db2777;stroke-dasharray:326.7;transition:stroke-dashoffset .4s linear}
+                .in{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+                .t{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+                .s{font-size:12px;opacity:.75;margin-top:2px}
+                .g{font-size:12px;opacity:.85;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:15px}
+                button{font:inherit;font-size:13px;font-weight:700;color:#fff;background:#db2777;border:0;border-radius:999px;padding:7px 22px;cursor:pointer}
+                button:hover{background:#be1e68}
+            </style>`);
+            d.body.innerHTML = `<div class="g" id="g"></div>
+                <div class="wrap"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="pr" id="r" cx="60" cy="60" r="52" stroke-dashoffset="0"/></svg>
+                <div class="in"><div class="t" id="t">00:00</div><div class="s" id="s"></div></div></div>
+                <button id="b" type="button"></button>`;
+            ftFloatEls = { time: d.getElementById('t'), ring: d.getElementById('r'), status: d.getElementById('s'), goal: d.getElementById('g'), btn: d.getElementById('b') };
+            ftFloatEls.btn.addEventListener('click', () => {
+                if (!timerRunning && remainingSeconds <= 0) { focusResetTimer(); }   // after "Done": back to a fresh timer
+                else ftToggleTimer();
+                ftFloatSync();
+            });
+            ftFloatWin = w;
+            ftFloatTimer = w.setInterval(ftFloatTick, 500);
+            w.addEventListener('pagehide', () => {
+                try { w.clearInterval(ftFloatTimer); } catch (e) {}
+                ftFloatWin = null; ftFloatEls = null; ftFloatTimer = null;
+                const lbl = document.getElementById('ftFloatBtnLabel'); if (lbl) lbl.textContent = 'Float timer';
+                const b = document.getElementById('ftFloatBtn'); if (b) b.classList.remove('on');
+                ftFloatSync();
+            });
+            const lbl = document.getElementById('ftFloatBtnLabel'); if (lbl) lbl.textContent = 'Close floating timer';
+            const b = document.getElementById('ftFloatBtn'); if (b) b.classList.add('on');
+            ftFloatSync();
+        }
+
+        function ftFloatToggle() {
+            if (ftFloatWin) { try { ftFloatWin.close(); } catch (e) {} return; }
+            ftFloatOpen();
+        }
+
+        window.addEventListener('pagehide', () => { try { if (ftFloatWin) ftFloatWin.close(); } catch (e) {} });
+        document.addEventListener('DOMContentLoaded', () => { try { ftFloatSync(); } catch (e) {} });
 
         // change duration by double-click
         const timerDisplayEl = document.getElementById('timerDisplay');
