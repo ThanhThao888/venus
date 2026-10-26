@@ -68808,7 +68808,7 @@ kbd {
                 return;
             }
 
-            container.innerHTML = filteredCourses.map(course => {
+            container.innerHTML = filteredCourses.map((course, cgIdx) => {
                 const progressPercent = courseProgressPercent(course);
                 const statusClass = getStatusClass(progressPercent);
                 const deadlineClass = progressPercent >= 100 ? '' : getDeadlineClass(course.deadline);
@@ -68821,25 +68821,28 @@ kbd {
                     <svg viewBox="0 0 24 24" aria-hidden="true" style="stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;"><use href="#${iconVisual.icon}"/></svg>
                     <span class="course-icon-label">${escapeHtml(course.difficulty || 'Course')}</span>
                 </div>`;
-            return `<div class="course-item" data-career="${course.career}" data-id="${course.id}" data-priority="${course.priority}">
+            return `<div class="course-item" data-career="${course.career}" data-id="${course.id}" data-priority="${course.priority}" data-status="${progressPercent >= 100 ? 'completed' : (deadlineClass === 'overdue' || deadlineClass === 'soon' ? deadlineClass : 'active')}" style="--cg-i:${Math.min(cgIdx, 8)}">
                 ${iconBoxHtml}
                 <div class="course-card-body">
                 <div class="course-header">
                     <div class="course-title">${escapeHtml(course.title)}</div>
                     <span class="favorite-icon" onclick="toggleFavorite('${course.id}')" title="${course.favorite ? 'Remove from favorites' : 'Add to favorites'}"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em;height:1em;color:#f5b400;stroke:currentColor;stroke-width:2;fill:${course.favorite ? 'currentColor' : 'none'};stroke-linecap:round;stroke-linejoin:round;display:inline-block;"><use href="#sn-icon-star"/></svg></span>
-                    <span class="course-status-badge ${statusClass}">${progressPercent >= 100 ? 'Completed' : 'Active'}</span>
+                    <span class="course-status-badge ${progressPercent < 100 && (deadlineClass === 'overdue' || deadlineClass === 'soon') ? deadlineClass : statusClass}">${progressPercent >= 100 ? '<i class="fa-solid fa-circle-check"></i> Completed' : deadlineClass === 'overdue' ? '<i class="fa-solid fa-triangle-exclamation"></i> Overdue' : deadlineClass === 'soon' ? '<i class="fa-solid fa-clock"></i> Due Soon' : '<i class="fa-solid fa-rocket"></i> Active'}</span>
                 </div>
                 <div class="course-meta">
                     <div class="course-difficulty">${difficultyIcons[course.difficulty]|| ''} ${course.difficulty}</div>
-                    <div class="course-priority">${priorityIcons[course.priority]|| ''} ${course.priority}</div>
+                    <div class="course-priority course-priority-badge priority-${String(course.priority || 'Medium').toLowerCase()}" title="Priority: ${escapeAttr(course.priority || 'Medium')}"><span class="course-priority-dot"></span> ${escapeHtml(course.priority || 'Medium')}</div>
                     <div class="course-deadline ${deadlineClass}">${deadlineText}</div>
                 </div>
-                <div class="course-progress-container">
+                <div class="course-progress-row">
+                    <span>${course.estimatedHours > 0
+                        ? `${course.hoursStudied.toFixed(1)} / ${course.estimatedHours.toFixed(1)} hrs`
+                        : `${course.hoursStudied.toFixed(1)} hrs &nbsp;·&nbsp; no estimate yet`}</span>
+                    ${course.estimatedHours > 0 ? `<span class="course-progress-percent">${progressPercent.toFixed(0)}%</span>` : ''}
+                </div>
+                <div class="course-progress-container" role="progressbar" aria-label="${escapeAttr(course.title)} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progressPercent)}">
                     <div class="course-progress-fill ${progressPercent >= 100 ? 'completed' : ''}" style="width: ${progressPercent}%"></div>
                 </div>
-                <div class="course-progress-text">${course.estimatedHours > 0
-                    ? `${course.hoursStudied.toFixed(1)} / ${course.estimatedHours.toFixed(1)} hrs &nbsp;·&nbsp; ${progressPercent.toFixed(0)}%`
-                    : `${course.hoursStudied.toFixed(1)} hrs &nbsp;·&nbsp; no estimate yet`}</div>
                 ${course.description ? `<div class="course-description">${escapeHtml(course.description)}</div>` : ''}
                 ${tagsHtml}
                 ${hasNotes ? `
@@ -99672,4 +99675,355 @@ if(typeof e==='function')window.openEditGoalModal=function(){var r=e.apply(this,
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape'){var m=$('#goalModal');if(m&&m.style.display!=='none'&&typeof closeGoalModal==='function')closeGoalModal()}});
 })();
 </script>
+<style id="coursesGoalsPolishCSS">
+/* ═══════════════════════════════════════════════════════════════════════
+   COURSES ← mượn ngôn ngữ thiết kế của GOALS (goalsCalmCSS + .goal-item)
+   · Thẻ bo 18px, viền trái theo ưu tiên, hover nhấc 3px + glow + sheen
+   · Hàng tiến độ (giờ học trái / % phải) trên thanh 8px bo tròn, có animation
+   · Badge trạng thái dạng pill + icon (Active / Due Soon / Overdue / Completed)
+   · Pill ưu tiên có chấm màu; nút action 36px bo 10px, nhấc + đổ màu khi hover
+   · Bảng màu dịu: hồng khói + tím nhạt (cùng tông Goals). Đặt cuối file nên thắng rule cũ.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+body #course-section {
+  --cg-accent: #a8566f; --cg-accent-hi: #b8647e; --cg-ink: #8a4660;
+  --cg-rose: #c98aa2; --cg-lav: #a58cc0;
+  --cg-line: rgba(168, 86, 112, 0.22); --cg-soft: rgba(168, 86, 112, 0.07);
+  --cg-bar: rgba(168, 86, 112, 0.14); --cg-sheen: rgba(168, 86, 112, 0.07);
+  --cg-card: var(--bg-white); --cg-card-line: rgba(168, 86, 112, 0.2);
+  --cg-warn: #9a6a1f; --cg-bad: #b4414f; --cg-good: #2f8a6c;
+  --cg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+body.dark-mode #course-section {
+  --cg-accent: #a85670; --cg-accent-hi: #b8647e; --cg-ink: #ecc3d4;
+  --cg-line: rgba(214, 160, 184, 0.2); --cg-soft: rgba(255, 255, 255, 0.04);
+  --cg-bar: rgba(255, 255, 255, 0.09); --cg-sheen: rgba(255, 255, 255, 0.05);
+  --cg-card: #2a2029; --cg-card-line: #433341;
+  --cg-warn: #e3c58f; --cg-bad: #f0a3ab; --cg-good: #93d3bc;
+}
+
+/* ── Keyframes ── */
+@keyframes cgCardIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes cgBarReveal {
+  from { clip-path: inset(0 100% 0 0 round 999px); }
+  to   { clip-path: inset(0 0 0 0 round 999px); }
+}
+@keyframes cgBarFlow {
+  from { background-position: 0% 0; }
+  to   { background-position: 200% 0; }
+}
+@keyframes cgShimmer {
+  0%, 55% { transform: translateX(-120%); }
+  100%    { transform: translateX(260%); }
+}
+@keyframes cgDotPulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes cgBlink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+@keyframes cgPercentPop {
+  from { opacity: 0; transform: translateY(4px) scale(0.9); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Thẻ course ── */
+body #course-section .course-item {
+  border-radius: 18px;
+  padding: 20px 22px 18px;
+  gap: 18px;
+  background: var(--cg-card);
+  border: 1px solid var(--cg-card-line);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  transition: transform 0.35s var(--cg-ease), box-shadow 0.35s var(--cg-ease), border-color 0.25s ease;
+  animation: cgCardIn 0.5s var(--cg-ease) both;
+  animation-delay: calc(var(--cg-i, 0) * 45ms);
+}
+body #course-section .course-item.course-highlight-flash { animation: skillHighlightPulse 2s ease; }
+body.dark-mode #course-section .course-item {
+  background: var(--cg-card); border-color: var(--cg-card-line);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+
+/* Viền trái theo ưu tiên (cùng tông Goals) + đổi sang accent khi hover */
+body #course-section .course-item[data-priority="High"]   { border-left: 4px solid var(--cg-accent); }
+body #course-section .course-item[data-priority="Medium"] { border-left: 4px solid color-mix(in srgb, var(--cg-accent) 45%, transparent); }
+body #course-section .course-item[data-priority="Low"]    { border-left: 4px solid var(--cg-line); }
+body.dark-mode #course-section .course-item[data-priority="High"]   { border-left-color: var(--cg-accent-hi); }
+body.dark-mode #course-section .course-item[data-priority="Medium"] { border-left-color: color-mix(in srgb, var(--cg-accent-hi) 45%, transparent); }
+body.dark-mode #course-section .course-item[data-priority="Low"]    { border-left-color: var(--cg-line); }
+body #course-section .course-item[data-status="completed"] { border-left-color: var(--cg-good); }
+body #course-section .course-item[data-status="overdue"]   { border-left-color: var(--cg-bad); }
+body #course-section .course-item[data-status="soon"]      { border-left-color: var(--cg-warn); }
+body.dark-mode #course-section .course-item[data-status="completed"] { border-left-color: var(--cg-good); }
+body.dark-mode #course-section .course-item[data-status="overdue"]   { border-left-color: var(--cg-bad); }
+body.dark-mode #course-section .course-item[data-status="soon"]      { border-left-color: var(--cg-warn); }
+
+body #course-section .course-item:hover,
+body.dark-mode #course-section .course-item:hover {
+  transform: translateY(-3px);
+  border-color: var(--cg-line);
+  box-shadow: 0 10px 26px rgba(168, 86, 112, 0.16), 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+body.dark-mode #course-section .course-item:hover { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38); }
+body #course-section .course-item:hover[data-priority] { border-left-color: var(--cg-accent); }
+body.dark-mode #course-section .course-item:hover[data-priority] { border-left-color: var(--cg-accent-hi); }
+body #course-section .course-item[data-status="completed"]:hover { border-left-color: var(--cg-good); }
+body #course-section .course-item[data-status="overdue"]:hover   { border-left-color: var(--cg-bad); }
+body #course-section .course-item[data-status="soon"]:hover      { border-left-color: var(--cg-warn); }
+body.dark-mode #course-section .course-item[data-status="completed"]:hover { border-left-color: var(--cg-good); }
+body.dark-mode #course-section .course-item[data-status="overdue"]:hover   { border-left-color: var(--cg-bad); }
+body.dark-mode #course-section .course-item[data-status="soon"]:hover      { border-left-color: var(--cg-warn); }
+body #course-section .course-item:active { transform: translateY(-1px) scale(0.998); }
+
+/* Glow mềm góc trên-trái + vệt sáng quét ngang khi hover */
+body #course-section .course-item::before {
+  border-radius: inherit;
+  background: radial-gradient(circle at 12% 0%, rgba(168, 86, 112, 0.10) 0%, transparent 55%);
+  opacity: 0; transition: opacity 0.35s ease;
+}
+body #course-section .course-item:hover::before { opacity: 1; }
+body #course-section .course-item::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(115deg, transparent 38%, var(--cg-sheen) 50%, transparent 62%);
+  transform: translateX(-120%); opacity: 0;
+  transition: transform 0.9s var(--cg-ease), opacity 0.3s ease;
+}
+body #course-section .course-item:hover::after { transform: translateX(120%); opacity: 1; }
+
+/* ── Ô icon bên trái ── */
+body #course-section .course-icon-box {
+  border-radius: 18px;
+  background: linear-gradient(150deg, var(--cg-soft), color-mix(in srgb, var(--cg-lav) 16%, transparent));
+  color: var(--cg-ink);
+  box-shadow: inset 0 0 0 1.5px var(--cg-line), 0 4px 12px rgba(168, 86, 112, 0.10);
+  transition: transform 0.4s var(--cg-ease), box-shadow 0.3s ease, background 0.3s ease;
+}
+body #course-section .course-item:hover .course-icon-box {
+  transform: translateY(-2px) rotate(-3deg) scale(1.05);
+  box-shadow: inset 0 0 0 1.5px var(--cg-accent), 0 8px 18px rgba(168, 86, 112, 0.22);
+}
+body #course-section .course-icon-box svg { transition: transform 0.4s var(--cg-ease); }
+body #course-section .course-item:hover .course-icon-box svg { transform: scale(1.1); }
+body #course-section .course-item[data-status="completed"] .course-icon-box {
+  color: var(--cg-good);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--cg-good) 14%, transparent), color-mix(in srgb, var(--cg-good) 5%, transparent));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cg-good) 40%, transparent), 0 4px 12px color-mix(in srgb, var(--cg-good) 14%, transparent);
+}
+
+/* ── Tiêu đề, meta ── */
+body #course-section .course-title { font-size: 1.08rem; line-height: 1.32; letter-spacing: -0.2px; }
+body #course-section .course-header { margin-bottom: 10px; gap: 10px; }
+body #course-section .course-meta { gap: 8px 14px; font-size: 0.82rem; margin-bottom: 14px; }
+body #course-section .course-difficulty,
+body #course-section .course-deadline { font-weight: 500; }
+body #course-section .course-deadline.soon,
+body #course-section .course-deadline.overdue { font-weight: 700; }
+
+/* Favorite star */
+body #course-section .favorite-icon { transition: transform 0.25s var(--cg-ease), color 0.2s ease; display: inline-flex; }
+body #course-section .favorite-icon:hover { transform: scale(1.25) rotate(-12deg); }
+body #course-section .favorite-icon:active { transform: scale(0.85); }
+
+/* ── Badge trạng thái (pill + icon) ── */
+body #course-section .course-status-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 999px;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+  border: 1px solid transparent; box-shadow: none; white-space: nowrap;
+}
+body #course-section .course-status-badge.active,
+body.dark-mode #course-section .course-status-badge.active {
+  background: var(--cg-soft); color: var(--cg-ink); border-color: var(--cg-line);
+}
+body #course-section .course-status-badge.completed,
+body.dark-mode #course-section .course-status-badge.completed {
+  background: color-mix(in srgb, var(--cg-good) 14%, transparent); color: var(--cg-good);
+  border-color: color-mix(in srgb, var(--cg-good) 40%, transparent);
+}
+body #course-section .course-status-badge.soon,
+body.dark-mode #course-section .course-status-badge.soon {
+  background: color-mix(in srgb, var(--cg-warn) 14%, transparent); color: var(--cg-warn);
+  border-color: color-mix(in srgb, var(--cg-warn) 42%, transparent);
+}
+body #course-section .course-status-badge.overdue,
+body.dark-mode #course-section .course-status-badge.overdue {
+  background: color-mix(in srgb, var(--cg-bad) 13%, transparent); color: var(--cg-bad);
+  border-color: color-mix(in srgb, var(--cg-bad) 42%, transparent);
+}
+body #course-section .course-status-badge.overdue i { animation: cgBlink 1.8s ease-in-out infinite; }
+body #course-section .course-status-badge.completed i { animation: cgPercentPop 0.5s var(--cg-ease) both; }
+body #course-section .course-status-badge.paused {
+  background: var(--cg-soft); color: var(--text-muted); border-color: var(--cg-line);
+}
+
+/* ── Pill ưu tiên có chấm (giống .goal-priority-badge) ── */
+body #course-section .course-priority-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 600;
+  border: 1px solid transparent; line-height: 1.5;
+}
+body #course-section .course-priority-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+body #course-section .course-priority-badge.priority-high {
+  background: color-mix(in srgb, var(--cg-bad) 10%, transparent); color: var(--cg-bad);
+  border-color: color-mix(in srgb, var(--cg-bad) 24%, transparent);
+}
+body #course-section .course-priority-badge.priority-medium {
+  background: color-mix(in srgb, var(--cg-warn) 10%, transparent); color: var(--cg-warn);
+  border-color: color-mix(in srgb, var(--cg-warn) 24%, transparent);
+}
+body #course-section .course-priority-badge.priority-low {
+  background: color-mix(in srgb, var(--cg-good) 10%, transparent); color: var(--cg-good);
+  border-color: color-mix(in srgb, var(--cg-good) 24%, transparent);
+}
+body #course-section .course-priority-badge.priority-high .course-priority-dot { animation: cgDotPulse 2.2s ease-out infinite; }
+
+/* ── Hàng tiến độ + thanh progress ── */
+body #course-section .course-progress-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  margin: 2px 0 8px; font-size: 0.85rem; font-weight: 600; color: var(--text-dark);
+  font-variant-numeric: tabular-nums;
+}
+body #course-section .course-progress-percent {
+  font-weight: 800; color: var(--cg-ink);
+  animation: cgPercentPop 0.5s var(--cg-ease) 0.35s both;
+}
+body #course-section .course-item[data-status="completed"] .course-progress-percent { color: var(--cg-good); }
+body #course-section .course-item[data-status="soon"] .course-progress-percent { color: var(--cg-warn); }
+body #course-section .course-item[data-status="overdue"] .course-progress-percent { color: var(--cg-bad); }
+
+body #course-section .course-progress-container {
+  height: 8px; border-radius: 999px; background: var(--cg-bar);
+  margin: 0 0 12px; overflow: hidden; position: relative;
+}
+body #course-section .course-progress-fill {
+  position: relative; overflow: hidden; border-radius: 999px;
+  background: linear-gradient(90deg, var(--cg-accent), var(--cg-rose) 50%, var(--cg-lav) 100%);
+  background-size: 200% 100%;
+  transition: width 0.7s var(--cg-ease);
+  animation: cgBarReveal 1s var(--cg-ease) 0.2s both, cgBarFlow 7s linear 1.2s infinite;
+}
+body #course-section .course-progress-fill::after {
+  content: ""; position: absolute; inset: 0; width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: translateX(-120%);
+  animation: cgShimmer 3.2s ease-in-out 1.4s infinite;
+}
+body #course-section .course-progress-fill.completed {
+  background: linear-gradient(90deg, var(--cg-good), color-mix(in srgb, var(--cg-good) 70%, #fff));
+  background-size: 100% 100%;
+  animation: cgBarReveal 1s var(--cg-ease) 0.2s both;
+}
+body #course-section .course-progress-fill.completed::after { display: none; }
+
+/* ── Mô tả, tag, ghi chú ── */
+body #course-section .course-description {
+  background: var(--cg-soft); border-left: 3px solid var(--cg-line);
+  border-radius: 10px; backdrop-filter: none; -webkit-backdrop-filter: none;
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+body #course-section .course-item:hover .course-description { border-left-color: var(--cg-accent); }
+body #course-section .course-tag-chip { transition: transform 0.2s var(--cg-ease), box-shadow 0.2s ease, background 0.2s ease; }
+body #course-section .course-tag-chip:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(168, 86, 112, 0.16); }
+body #course-section .course-note-toggle { transition: background 0.2s ease, transform 0.2s ease; }
+body #course-section .course-note-toggle:active { transform: scale(0.97); }
+body #course-section .course-note-preview.open { animation: cgCardIn 0.3s var(--cg-ease) both; }
+
+/* ── Hàng nút action ── */
+body #course-section .course-actions {
+  margin-top: 14px; padding-top: 14px; gap: 8px;
+  border-top: 1px solid var(--cg-line);
+}
+body #course-section .course-icon-btn,
+body.dark-mode #course-section .course-icon-btn {
+  width: 36px; height: 36px; border-radius: 10px;
+  border: 1px solid var(--cg-line); background: var(--cg-card); color: var(--cg-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: transform 0.22s var(--cg-ease), background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.25s ease;
+}
+body.dark-mode #course-section .course-icon-btn { background: var(--cg-soft); }
+body #course-section .course-icon-btn svg { transition: transform 0.25s var(--cg-ease); }
+body #course-section .course-icon-btn:hover svg { transform: scale(1.14); }
+body #course-section .course-icon-btn:hover,
+body.dark-mode #course-section .course-icon-btn:hover {
+  transform: translateY(-2px);
+  background: var(--cg-accent); border-color: var(--cg-accent); color: #fff;
+  box-shadow: 0 6px 14px rgba(168, 86, 112, 0.28);
+}
+body #course-section .course-icon-btn:active { transform: translateY(0) scale(0.93); box-shadow: none; }
+body #course-section .course-icon-btn:focus-visible { outline: 2px solid var(--cg-accent); outline-offset: 2px; }
+body #course-section .course-icon-btn.add-hours,
+body.dark-mode #course-section .course-icon-btn.add-hours { background: var(--cg-soft); font-weight: 700; }
+body #course-section .course-icon-btn.add-hours:hover,
+body.dark-mode #course-section .course-icon-btn.add-hours:hover { background: var(--cg-accent); }
+body #course-section .course-icon-btn.open-link:hover,
+body.dark-mode #course-section .course-icon-btn.open-link:hover {
+  background: var(--cg-good); border-color: var(--cg-good); color: #fff;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--cg-good) 35%, transparent);
+}
+body #course-section .course-icon-btn.delete,
+body.dark-mode #course-section .course-icon-btn.delete {
+  color: var(--cg-bad); border-color: color-mix(in srgb, var(--cg-bad) 32%, transparent);
+  background: color-mix(in srgb, var(--cg-bad) 6%, transparent); margin-left: auto;
+}
+body #course-section .course-icon-btn.delete:hover,
+body.dark-mode #course-section .course-icon-btn.delete:hover {
+  background: #dc2626; border-color: #dc2626; color: #fff;
+  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.3);
+}
+body #course-section .course-note-badge { transition: transform 0.22s var(--cg-ease), box-shadow 0.25s ease, background 0.2s ease; }
+body #course-section .course-note-badge:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(168, 86, 112, 0.2); }
+body #course-section .course-note-badge:active { transform: scale(0.95); }
+
+/* ── Nút Add Course + thanh thống kê: cùng ngôn ngữ nút chính của Goals ── */
+body #course-section .goal-add-btn,
+body.dark-mode #course-section .goal-add-btn {
+  background: var(--cg-accent); color: #fff; border-color: transparent; box-shadow: none;
+  transition: transform 0.25s var(--cg-ease), background 0.2s ease, box-shadow 0.25s ease;
+}
+body #course-section .goal-add-btn:hover,
+body.dark-mode #course-section .goal-add-btn:hover {
+  background: var(--cg-accent-hi); color: #fff; transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(168, 86, 112, 0.3);
+}
+body #course-section .goal-add-btn:active { transform: scale(0.98); box-shadow: none; }
+body #course-section .course-stat-item { transition: transform 0.25s var(--cg-ease), box-shadow 0.25s ease; }
+body #course-section .course-stat-item:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(168, 86, 112, 0.14); }
+
+/* ── Điện thoại ── */
+@media (max-width: 480px) {
+  body #course-section .course-item { padding: 16px; gap: 12px; }
+  body #course-section .course-actions { gap: 6px; }
+  body #course-section .course-icon-btn { flex: 1 1 auto; }
+  body #course-section .course-icon-btn.delete { flex: 0 0 36px; }
+}
+
+/* ── Tôn trọng "giảm chuyển động" ── */
+@media (prefers-reduced-motion: reduce) {
+  body #course-section .course-item,
+  body #course-section .course-progress-fill,
+  body #course-section .course-progress-fill::after,
+  body #course-section .course-progress-percent,
+  body #course-section .course-priority-dot,
+  body #course-section .course-status-badge i,
+  body #course-section .course-note-preview.open { animation: none !important; }
+  body #course-section .course-item,
+  body #course-section .course-item::after,
+  body #course-section .course-icon-box,
+  body #course-section .course-icon-btn,
+  body #course-section .course-progress-fill { transition: none !important; }
+  body #course-section .course-item:hover,
+  body #course-section .course-item:hover .course-icon-box,
+  body #course-section .course-icon-btn:hover { transform: none; }
+}
+
+</style>
 </body>
