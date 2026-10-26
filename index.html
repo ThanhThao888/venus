@@ -99624,12 +99624,22 @@ function chips(host,items,cb,label){
   host.appendChild(w);return w;
 }
 function iso(d){return d.toISOString().slice(0,10)}
+var tHost=null,SUG={
+ pe:['Build a full LBO model','Master deal sourcing & screening','Write an investment committee memo','Ace PE case-study interviews','Learn value-creation levers'],
+ ib:['Master M&A and DCF valuation','Ace IB technical interviews','Build comps and precedent models','Learn pitchbook formatting','Complete 100 interview questions'],
+ hf:['Build a long/short equity pitch','Master risk and position sizing','Learn factor models & backtesting','Write a stock pitch memo','Track macro themes weekly'],
+ sc:['Master case structuring (MECE)','Complete 30 case interviews','Practice market-sizing drills','Build a profitability framework deck','Learn Excel and PowerPoint fast'],
+ _:['Master Financial Modeling','Pass CFA Level I','Ace technical interviews']};
+function refreshTitles(){
+  if(!tHost)return;var t=$('#goalTitle'),old=$('.gm-chips[aria-label="Title suggestions"]',tHost);if(old)old.remove();
+  var c='';try{c=currentCareer}catch(e){}var list=(SUG[c]||SUG._).slice(0,4);
+  chips(tHost,list.map(function(x){return[x,x]}),function(v){setVal(t,v);t.dispatchEvent(new Event('gm'));t.focus()},'Title suggestions');
+}
 function build(){
   var t=$('#goalTitle');if(!t||t.dataset.gm)return;t.dataset.gm=1;
   var lab=t.previousElementSibling;if(lab){var c=document.createElement('span');c.className='gm-count';lab.appendChild(c);
     var up=function(){c.textContent=t.value.length+'/80'};t.addEventListener('input',up);t.addEventListener('gm',up);up()}
-  chips(t.parentNode,[['Master Financial Modeling','Master Financial Modeling'],['Pass CFA Level I','Pass CFA Level I'],['Ace IB technicals','Ace IB technical interviews'],['Build an LBO model','Build a full LBO model']],
-    function(v){setVal(t,v);t.dispatchEvent(new Event('gm'));t.focus()},'Title suggestions');
+  tHost=t.parentNode;refreshTitles();
   var dl=$('#goalDeadline');
   chips(dl.parentNode,[['+2 wks',14],['+1 mo',30],['+3 mo',91],['+6 mo',182]],function(n){setVal(dl,iso(new Date(Date.now()+7*3600e3+n*DAY)))},'Deadline shortcuts');
   var tg=$('#goalTarget');
@@ -99656,7 +99666,7 @@ function draw(){
   p.innerHTML='<div class="r"><span><i class="fa-solid fa-wand-magic-sparkles"></i> Plan preview</span><span class="big">'+(Math.round(perDay*10)/10)+' '+unit+'/day</span></div>'+extra;
 }
 var o=window.openAddGoalModal;
-if(typeof o==='function')window.openAddGoalModal=function(){var r=o.apply(this,arguments);build();setTimeout(function(){var t=$('#goalTitle');if(t){t.dispatchEvent(new Event('gm'));t.focus()}draw()},60);return r};
+if(typeof o==='function')window.openAddGoalModal=function(){var r=o.apply(this,arguments);build();refreshTitles();setTimeout(function(){var t=$('#goalTitle');if(t){t.dispatchEvent(new Event('gm'));t.focus()}draw()},60);return r};
 var e=window.openEditGoalModal;
 if(typeof e==='function')window.openEditGoalModal=function(){var r=e.apply(this,arguments);build();setTimeout(draw,60);return r};
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape'){var m=$('#goalModal');if(m&&m.style.display!=='none'&&typeof closeGoalModal==='function')closeGoalModal()}});
