@@ -99418,4 +99418,111 @@ body.dark-mode #yourProgressCard .yprog-chart-hint { color: rgba(247, 227, 240, 
     if (sel) sel.addEventListener('change', function () { setTimeout(syncStart, 0); });
 })();
 </script>
+<script>
+/* ===== Goals Plus: capacity planner, pause, pin, per-day pace, ICS export ===== */
+(function(){
+'use strict';
+var DAY=864e5, $=function(s,r){return (r||document).querySelector(s)};
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function G(){try{return goals}catch(e){return []}}
+function save(){try{saveGoals()}catch(e){}}
+function toast(m,t){try{showNotification(m,t||'info')}catch(e){}}
+function now(){try{return getVietnamNow().getTime()}catch(e){return Date.now()}}
+function endTs(g){try{return +getVietnamDeadlineEnd(g.deadline)}catch(e){return NaN}}
+function pct(g){try{return getGoalProgressPercent(g)}catch(e){return 0}}
+function done(g){try{return getGoalStatus(g)==='completed'}catch(e){return pct(g)>=100}}
+function left(g){var t=+g.target||0,p=+g.currentProgress||0;return Math.max(0,t-p)}
+function daysLeft(g){var e=endTs(g);return isNaN(e)?null:Math.max(1,Math.ceil((e-now())/DAY))}
+function unit(g){try{return getGoalUnitLabel(g.type,g.customUnit)}catch(e){return g.type==='study_hours'?'h':''}}
+function fmt(n){return n>=10?Math.round(n):Math.round(n*10)/10}
+function weeklyCapacity(){ // avg study hours/week over last 28 days
+  var d=window.dailyStudyData||{},s=0,t=new Date(now());
+  for(var i=0;i<28;i++){var k=new Date(t-i*DAY).toISOString().slice(0,10);s+=parseFloat(d[k])||0}
+  return s/4;
+}
+function active(){return G().filter(function(g){return g.career===currentCareer&&!done(g)})}
+
+/* ---------- styles ---------- */
+var st=document.createElement('style');
+st.textContent='.gp-panel{border:1px solid var(--border-color);background:var(--bg-white);border-radius:12px;padding:12px;margin-bottom:14px;font-size:.82rem;color:var(--text-dark)}'
++'.gp-panel h4{margin:0 0 8px;font-size:.9rem;display:flex;justify-content:space-between;align-items:center;gap:6px}'
++'.gp-bar{height:8px;border-radius:6px;background:var(--border-color);overflow:hidden;margin:6px 0}.gp-bar i{display:block;height:100%;border-radius:6px}'
++'.gp-ok{background:#22c55e}.gp-warn{background:#f59e0b}.gp-bad{background:#ef4444}'
++'.gp-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.gp-chip{font-size:.72rem;padding:2px 8px;border-radius:999px;background:rgba(var(--primary-rgb),.14);color:var(--theme-accent-deep)}'
++'.gp-btn{border:1px solid var(--border-color);background:transparent;color:var(--text-dark);border-radius:8px;padding:3px 9px;font-size:.72rem;cursor:pointer}.gp-btn:hover{background:rgba(var(--primary-rgb),.15)}'
++'.gp-paused{opacity:.55}.gp-pin{box-shadow:inset 3px 0 0 var(--primary-dark)}.gp-list{margin:6px 0 0;padding:0;list-style:none}.gp-list li{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px dashed var(--border-color)}';
+document.head.appendChild(st);
+
+/* ---------- capacity panel ---------- */
+function panel(){
+  var c=$('#goalsContainer'); if(!c)return;
+  var old=$('#gpPanel'); if(old)old.remove();
+  var list=active().filter(function(g){return !g.pausedAt&&g.deadline&&left(g)>0});
+  var el=document.createElement('div');el.id='gpPanel';el.className='gp-panel';
+  if(!list.length){el.innerHTML='<h4>Weekly capacity</h4><span style="color:var(--text-muted)">No active goals with a deadline to plan for.</span>';c.parentNode.insertBefore(el,c);return}
+  var hrs=0,rows='';
+  list.forEach(function(g){
+    var dl=daysLeft(g),perDay=left(g)/dl,perWeek=perDay*7;
+    if(g.type==='study_hours')hrs+=perWeek;
+    rows+='<li><span>'+(g.pinned?'\u2605 ':'')+esc(g.title)+'</span><b>'+fmt(perDay)+' '+esc(unit(g))+'/day</b></li>';
+  });
+  var cap=weeklyCapacity(),ratio=cap>0?hrs/cap:(hrs>0?9:0),cls=ratio<=.9?'gp-ok':ratio<=1.25?'gp-warn':'gp-bad';
+  var verdict=hrs===0?'No study-hour load.':ratio<=.9?'On track: your recent pace covers it.':ratio<=1.25?'Tight: you need slightly more than your recent pace.':'Overloaded: consider extending a deadline or pausing a goal.';
+  el.innerHTML='<h4><span>Weekly capacity</span><button class="gp-btn" id="gpIcs">Export .ics</button></h4>'
+  +'<div>Needed: <b>'+fmt(hrs)+'h/wk</b> · Your 4-week avg: <b>'+fmt(cap)+'h/wk</b></div>'
+  +'<div class="gp-bar"><i class="'+cls+'" style="width:'+Math.min(100,Math.round(ratio*100))+'%"></i></div>'
+  +'<div style="color:var(--text-muted)">'+verdict+'</div><ul class="gp-list">'+rows+'</ul>';
+  c.parentNode.insertBefore(el,c);
+  $('#gpIcs').onclick=exportIcs;
+}
+
+/* ---------- per-card controls ---------- */
+function decorate(){
+  var c=$('#goalsContainer'); if(!c)return;
+  var pinned=[];
+  c.querySelectorAll('.goal-item[data-id]').forEach(function(card){
+    var g=G().find(function(x){return String(x.id)===card.getAttribute('data-id')}); if(!g||card.querySelector('.gp-row'))return;
+    card.classList.toggle('gp-paused',!!g.pausedAt);card.classList.toggle('gp-pin',!!g.pinned);
+    if(g.pinned)pinned.push(card);
+    var row=document.createElement('div');row.className='gp-row';
+    if(!done(g)&&g.deadline&&!g.pausedAt&&left(g)>0){var dl=daysLeft(g);row.innerHTML='<span class="gp-chip">Needs '+fmt(left(g)/dl)+' '+esc(unit(g))+'/day for '+dl+'d</span>'}
+    if(g.pausedAt)row.innerHTML+='<span class="gp-chip">Paused</span>';
+    var b1=document.createElement('button');b1.className='gp-btn';b1.textContent=g.pinned?'Unpin':'Pin';b1.onclick=function(e){e.stopPropagation();g.pinned=!g.pinned;save();rerender()};
+    row.appendChild(b1);
+    if(!done(g)){var b2=document.createElement('button');b2.className='gp-btn';b2.textContent=g.pausedAt?'Resume':'Pause';b2.onclick=function(e){e.stopPropagation();toggleP(g)};row.appendChild(b2)}
+    card.appendChild(row);
+  });
+  pinned.reverse().forEach(function(p){p.parentNode.insertBefore(p,p.parentNode.firstChild)});
+}
+function toggleP(g){
+  if(g.pausedAt){var days=Math.round((now()-g.pausedAt)/DAY);
+    if(g.deadline&&days>0){var d=new Date(endTs(g)+days*DAY-1);g.deadline=d.toISOString().slice(0,10)}
+    delete g.pausedAt;toast('Resumed. Deadline moved forward '+days+' day(s).','success')}
+  else{g.pausedAt=now();toast('Goal paused. Its deadline is frozen until you resume.')}
+  save();rerender();
+}
+var busy=false;
+function rerender(){busy=true;try{window.renderGoals()}finally{busy=false}}
+
+/* ---------- ICS export ---------- */
+function exportIcs(){
+  var L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Finance Skills Tracker//Goals//EN'];
+  active().filter(function(g){return g.deadline&&!g.pausedAt}).forEach(function(g){
+    var d=String(g.deadline).slice(0,10).replace(/-/g,'');
+    L.push('BEGIN:VEVENT','UID:goal-'+g.id+'@tracker','DTSTAMP:'+new Date().toISOString().replace(/[-:]|\.\d+/g,''),
+      'DTSTART;VALUE=DATE:'+d,'SUMMARY:Goal due: '+String(g.title).replace(/[,;\n]/g,' '),
+      'DESCRIPTION:'+Math.round(pct(g))+'% done','END:VEVENT')});
+  L.push('END:VCALENDAR');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([L.join('\r\n')],{type:'text/calendar'}));
+  a.download='goal-deadlines.ics';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},1500);
+}
+
+/* ---------- hook render ---------- */
+var orig=window.renderGoals;
+if(typeof orig==='function'){
+  window.renderGoals=function(){var r=orig.apply(this,arguments);try{panel();decorate()}catch(e){console.warn('GoalsPlus',e)}return r};
+  setTimeout(function(){try{window.renderGoals()}catch(e){}},300);
+}else console.warn('GoalsPlus: renderGoals not found');
+})();
+</script>
 </body>
