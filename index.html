@@ -37179,8 +37179,82 @@ const EnglishDaily = (function () {
             </button>
         </div>
         
+        <!-- Card type switch (General Q&A / Vocabulary) -->
+        <div class="fcv-switch" id="fcvSwitch" role="tablist" aria-label="Card type">
+            <button type="button" role="tab" id="fcvTabGeneral" onclick="fcSetMode('general')"><i class="fa-regular fa-circle-question"></i> General</button>
+            <button type="button" role="tab" id="fcvTabVocab" onclick="fcSetMode('vocab')"><i class="fa-solid fa-language"></i> Vocabulary</button>
+        </div>
+
+        <!-- Vocabulary pane -->
+        <div id="fcVocabPane" class="fcv-pane" hidden>
+            <div class="fcv-paste">
+                <div class="fcv-paste-head">
+                    <label for="fcvPaste">Paste result from AI</label>
+                    <button type="button" class="fcv-copy" id="fcvCopyBtn" onclick="fcvCopyPrompt(this)" title="Copy prompt: send it to your AI once, then just send words">
+                        <i class="fa-regular fa-copy"></i> <span>Copy AI prompt</span>
+                    </button>
+                </div>
+                <textarea id="fcvPaste" rows="2" spellcheck="false" placeholder="Paste the AI reply here (one word or many) and the form fills itself in" oninput="fcvSchedulePaste()"></textarea>
+                <div id="fcvPasteStatus" class="fcv-status" role="status" aria-live="polite"></div>
+                <div id="fcvBulk" class="fcv-bulk" hidden></div>
+            </div>
+
+            <div class="fcv-grid">
+                <div class="fcv-field fcv-span2">
+                    <label for="fcvWord">Word or phrase *</label>
+                    <div class="fcv-word-row">
+                        <input type="text" id="fcvWord" autocomplete="off" placeholder="e.g. hawkish">
+                        <button type="button" class="fcv-icon-btn" onclick="fcvSpeak(document.getElementById('fcvWord').value)" title="Listen" aria-label="Listen to pronunciation"><i class="fa-solid fa-volume-high"></i></button>
+                    </div>
+                    <div id="fcvDup" class="fcv-dup" hidden></div>
+                </div>
+                <div class="fcv-field">
+                    <label for="fcvPos">Part of speech</label>
+                    <select id="fcvPos"><option value="">—</option></select>
+                </div>
+                <div class="fcv-field">
+                    <label for="fcvLevel">Level</label>
+                    <select id="fcvLevel"><option value="">—</option></select>
+                </div>
+                <div class="fcv-field fcv-span2">
+                    <label for="fcvIpa">Pronunciation (IPA)</label>
+                    <input type="text" id="fcvIpa" autocomplete="off" placeholder="/ˈhɔːkɪʃ/">
+                </div>
+                <div class="fcv-field fcv-span2">
+                    <label for="fcvMeaning">Meaning (simple English) *</label>
+                    <input type="text" id="fcvMeaning" autocomplete="off" placeholder="in favour of higher interest rates to control inflation">
+                </div>
+                <div class="fcv-field fcv-span2">
+                    <label for="fcvVi">Vietnamese</label>
+                    <input type="text" id="fcvVi" autocomplete="off" placeholder="diều hâu (ủng hộ thắt chặt tiền tệ)">
+                </div>
+                <div class="fcv-field fcv-span2">
+                    <label for="fcvExample">Example sentence</label>
+                    <textarea id="fcvExample" rows="2" placeholder="The central bank sounded hawkish after the inflation report."></textarea>
+                </div>
+                <div class="fcv-field fcv-span2">
+                    <label for="fcvColloc">Collocations / synonyms</label>
+                    <input type="text" id="fcvColloc" autocomplete="off" placeholder="hawkish stance, hawkish tone · opposite: dovish">
+                </div>
+                <div class="fcv-field fcv-span2">
+                    <label for="fcvNote">Note / memory tip</label>
+                    <input type="text" id="fcvNote" autocomplete="off" placeholder="Hawks are aggressive, so hawkish = tough on inflation">
+                </div>
+            </div>
+
+            <label class="fcv-check"><input type="checkbox" id="fcvReverse"> Also create a reverse card (meaning → word)</label>
+
+            <div class="fcv-preview" id="fcvPreview" aria-live="polite">
+                <div class="fcv-preview-label">Card preview</div>
+                <div class="fcv-preview-cards">
+                    <div class="fcv-pv"><span>Front</span><div id="fcvPvFront"></div></div>
+                    <div class="fcv-pv"><span>Back</span><div id="fcvPvBack"></div></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Formatting Guide -->
-        <details class="formatting-guide">
+        <details class="formatting-guide" id="fcFormatGuide">
             <summary><i class="fa-solid fa-book-open"></i> Formatting Guide & Tips</summary>
             <div class="formatting-guide-content">
                 <strong><i class="fa-solid fa-pen"></i> Markdown Syntax:</strong><br>
@@ -37203,7 +37277,7 @@ const EnglishDaily = (function () {
         
         <form onsubmit="event.preventDefault(); saveFlashcard();">
             <!-- Question -->
-            <div style="margin-bottom: 20px;">
+            <div style="margin-bottom: 20px;" id="fcGenQuestionWrap">
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--fc-text); font-size: 0.95rem;">
                     <i class="fa-regular fa-circle-question"></i> Question *
                 </label>
@@ -37266,7 +37340,7 @@ const EnglishDaily = (function () {
             </div>
 
             <!-- Answer -->
-            <div style="margin-bottom: 25px;">
+            <div style="margin-bottom: 25px;" id="fcGenAnswerWrap">
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--fc-text); font-size: 0.95rem;">
                     <i class="fa-solid fa-check"></i> Answer *
                 </label>
@@ -37287,6 +37361,9 @@ const EnglishDaily = (function () {
                     class="flashcard-btn fc-btn-secondary"
                 >
                     Cancel
+                </button>
+                <button type="button" id="fcvSaveNextBtn" class="flashcard-btn fc-btn-secondary" onclick="fcvSaveNext()" hidden>
+                    <i class="fa-solid fa-forward"></i> Save &amp; add next
                 </button>
                 <button 
                     type="submit"
@@ -90529,6 +90606,8 @@ function importFlashcards(event) {
             nextReview: c.nextReview || now,
             reviewCount: typeof c.reviewCount === 'number' ? c.reviewCount : 0,
             lastMasteryUpdate: c.lastMasteryUpdate || now,
+            type: c.type === 'vocab' ? 'vocab' : 'general',
+            vocab: (c.type === 'vocab' && c.vocab && typeof c.vocab === 'object') ? c.vocab : null,
             easeFactor: typeof c.easeFactor === 'number' ? c.easeFactor : 2.5,
             interval: typeof c.interval === 'number' ? c.interval : 0,
             repetitions: typeof c.repetitions === 'number' ? c.repetitions : 0
@@ -90609,6 +90688,7 @@ function getRandomFlashcard() {
     if (questionEl) {
         questionEl.innerHTML = formatFlashcardText(currentFlashcard.question);
         renderLatex(questionEl);
+        if (currentFlashcard.type === 'vocab' && currentFlashcard.vocab && currentFlashcard.vocab.word) questionEl.insertAdjacentHTML('beforeend', fcvSpeakBtn(currentFlashcard.vocab.word));
     }
     
     if (answerEl) {
@@ -90681,6 +90761,7 @@ function openAddFlashcardModal(flashcardId = null) {
         editingFlashcardId = null;
     }
     
+    fcvOnOpen(flashcardId ? flashcards.find(f => f.id === flashcardId) : null);
     modal.style.display = 'flex';
 }
 
@@ -90691,6 +90772,7 @@ function closeAddFlashcardModal() {
 }
 
 function saveFlashcard() {
+    if (fcMode === 'vocab' && !fcvPrepareSave()) return;
     const questionInput = document.getElementById('newFlashcardQuestion');
     const answerInput = document.getElementById('newFlashcardAnswer');
     const imageInput = document.getElementById('newFlashcardImage');
@@ -90716,6 +90798,8 @@ function saveFlashcard() {
             flashcards[index].answer = answer;
             flashcards[index].imageUrl = imageUrl;
             flashcards[index].tags = fcGetSelectedTags();
+            flashcards[index].type = fcMode === 'vocab' ? 'vocab' : 'general';
+            flashcards[index].vocab = fcMode === 'vocab' ? fcvCollect() : null;
             showNotification('✅ Flashcard updated!', 'success');
         }
     } else {
@@ -90731,12 +90815,21 @@ function saveFlashcard() {
             mastery: 0,
             nextReview: now.toISOString(),
             reviewCount: 0,
-            lastMasteryUpdate: now.toISOString()
+            lastMasteryUpdate: now.toISOString(),
+            type: fcMode === 'vocab' ? 'vocab' : 'general',
+            vocab: fcMode === 'vocab' ? fcvCollect() : null
         });
+        if (fcMode === 'vocab' && document.getElementById('fcvReverse') && document.getElementById('fcvReverse').checked) fcvPushReverse(fcvCollect(), now, imageUrl);
         showNotification('✅ Flashcard added!', 'success');
     }        
 
     saveFlashcardsToStorage();
+    if (fcKeepOpen && fcMode === 'vocab' && !editingFlashcardId) {
+        fcvResetFields();
+        getRandomFlashcard();
+        renderManageFlashcards();
+        return;
+    }
     closeAddFlashcardModal();
     getRandomFlashcard();
     renderManageFlashcards();
@@ -90840,7 +90933,7 @@ function renderManageFlashcards() {
                 <div style="display: flex; justify-content: space-between; gap: 15px; margin-bottom: 8px;">
                     <div style="flex: 1;">
                         <div class="manage-flashcard-question">
-                            ${escapeHtml(flashcard.question.substring(0, 100))}${flashcard.question.length > 100 ? '...' : ''}
+                            ${fcvListLabel(flashcard)}
                         </div>
                         ${tagsHtml}
                         <div class="manage-flashcard-date">
@@ -91096,6 +91189,7 @@ function loadFullscreenCard() {
     if (questionEl) {
         questionEl.innerHTML = formatFlashcardText(card.question);
         renderLatex(questionEl);
+        if (card.type === 'vocab' && card.vocab && card.vocab.word) questionEl.insertAdjacentHTML('beforeend', fcvSpeakBtn(card.vocab.word));
     }
 
     if (answerEl) {
@@ -91502,7 +91596,7 @@ function setupKeyboardShortcuts() {
 const FC_CFA_TAGS = [
     'Fixed Income', 'Equity', 'Derivatives', 'Alternative Investments',
     'Portfolio Mgmt', 'Economics', 'Ethics', 'Quant Methods',
-    'Corporate Finance', 'Financial Reporting'
+    'Corporate Finance', 'Financial Reporting', 'Vocabulary'
 ];
 
 /** Set the hidden input + preview from a base64 or URL string */
@@ -91615,6 +91709,332 @@ function fcToggleTag(tag) {
     else _fcSelectedTags.splice(idx, 1);
     fcRenderTagChips(_fcSelectedTags);
 }
+
+
+// ===================================================================
+//  VOCABULARY MODE (Add Flashcard)
+// ===================================================================
+let fcMode = (function () { try { return localStorage.getItem('fcAddMode') === 'vocab' ? 'vocab' : 'general'; } catch (e) { return 'general'; } })();
+let fcvEntries = [];
+let _fcvPasteTimer = null;
+const FCV_POS = ['noun', 'verb', 'adjective', 'adverb', 'phrasal verb', 'idiom', 'phrase', 'collocation', 'preposition', 'other'];
+const FCV_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+const FCV_FIELDS = [
+    ['fcvWord',    /^(word|term|vocab(ulary)?|phrase|headword|expression)$/i, 'Word'],
+    ['fcvPos',     /^(part of speech|pos|word class|type)$/i, 'Part of speech'],
+    ['fcvIpa',     /^(ipa|pronunciation|phonetics?)$/i, 'IPA'],
+    ['fcvLevel',   /^(level|cefr|cefr level)$/i, 'Level'],
+    ['fcvMeaning', /^(meaning|definition|english|english meaning|def)$/i, 'Meaning'],
+    ['fcvVi',      /^(vietnamese|vi|nghĩa|nghia|translation|vietnamese meaning)$/i, 'Vietnamese'],
+    ['fcvExample', /^(example|sentence|example sentence)$/i, 'Example'],
+    ['fcvColloc',  /^(collocations?|synonyms?|collocations? ?\/ ?synonyms?|related)$/i, 'Collocations'],
+    ['fcvNote',    /^(note|notes|tip|mnemonic|usage|memory tip)$/i, 'Note']
+];
+const FCV_KEYS = { fcvWord: 'word', fcvPos: 'pos', fcvIpa: 'ipa', fcvLevel: 'level', fcvMeaning: 'meaning', fcvVi: 'vi', fcvExample: 'example', fcvColloc: 'colloc', fcvNote: 'note' };
+
+function fcvAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+function fcvInitSelects() {
+    const pos = document.getElementById('fcvPos'), lv = document.getElementById('fcvLevel');
+    if (pos && pos.options.length <= 1) FCV_POS.forEach(p => pos.add(new Option(p, p)));
+    if (lv && lv.options.length <= 1) FCV_LEVELS.forEach(l => lv.add(new Option(l, l)));
+}
+
+function fcSetMode(mode, opts) {
+    opts = opts || {};
+    fcMode = mode === 'vocab' ? 'vocab' : 'general';
+    if (!opts.silent) { try { localStorage.setItem('fcAddMode', fcMode); } catch (e) {} }
+    const vocab = fcMode === 'vocab';
+    const show = (id, on) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
+    show('fcVocabPane', vocab);
+    show('fcvSaveNextBtn', vocab && !editingFlashcardId);
+    ['fcGenQuestionWrap', 'fcGenAnswerWrap', 'fcFormatGuide'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = vocab ? 'none' : ''; });
+    // hidden required fields would block form submission ("not focusable")
+    const q = document.getElementById('newFlashcardQuestion'), a = document.getElementById('newFlashcardAnswer');
+    if (q) q.required = !vocab;
+    if (a) a.required = !vocab;
+    const tg = document.getElementById('fcvTabGeneral'), tv = document.getElementById('fcvTabVocab');
+    if (tg) { tg.classList.toggle('is-active', !vocab); tg.setAttribute('aria-selected', String(!vocab)); }
+    if (tv) { tv.classList.toggle('is-active', vocab); tv.setAttribute('aria-selected', String(vocab)); }
+    if (vocab) {
+        fcvInitSelects();
+        if (!opts.silent && !editingFlashcardId && !_fcSelectedTags.includes('Vocabulary')) fcRenderTagChips(_fcSelectedTags.concat('Vocabulary'));
+        fcvUpdatePreview();
+    }
+}
+
+function fcvSetFields(d) {
+    d = d || {};
+    fcvInitSelects();
+    FCV_FIELDS.forEach(([id]) => {
+        const el = document.getElementById(id); if (!el) return;
+        const v = d[FCV_KEYS[id]] || '';
+        if (el.tagName === 'SELECT' && v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v));
+        el.value = v;
+    });
+}
+
+function fcvCollect() {
+    const v = id => ((document.getElementById(id) || {}).value || '').trim();
+    const out = {};
+    Object.keys(FCV_KEYS).forEach(id => { out[FCV_KEYS[id]] = v(id); });
+    return out;
+}
+function fcvMeta(d) { return [d.pos ? '*' + d.pos + '*' : '', d.ipa, d.level].filter(Boolean).join(' · '); }
+function fcvQuestion(d) { const m = fcvMeta(d); return '### ' + d.word + (m ? '\n\n' + m : ''); }
+function fcvAnswer(d) {
+    const p = [];
+    if (d.meaning) p.push('**' + d.meaning + '**');
+    if (d.vi) p.push('**Vietnamese:** ' + d.vi);
+    if (d.example) p.push('> *' + d.example.replace(/\n+/g, ' ') + '*');
+    if (d.colloc) p.push('**Collocations / synonyms:** ' + d.colloc);
+    if (d.note) p.push('**Note:** ' + d.note);
+    return p.join('\n\n');
+}
+function fcvReverseQA(d) {
+    const q = '**' + d.meaning + '**' + (d.vi ? '\n\n' + d.vi : '');
+    const m = fcvMeta(d);
+    const a = '### ' + d.word + (m ? '\n\n' + m : '') + (d.example ? '\n\n> *' + d.example.replace(/\n+/g, ' ') + '*' : '');
+    return { q, a };
+}
+
+function fcvUpdatePreview() {
+    const d = fcvCollect();
+    const f = document.getElementById('fcvPvFront'), b = document.getElementById('fcvPvBack');
+    if (!f || !b) return;
+    const empty = '<em class="fcv-empty">Fill in the form to preview</em>';
+    f.innerHTML = d.word ? formatFlashcardText(fcvQuestion(d)) : empty;
+    b.innerHTML = d.meaning ? formatFlashcardText(fcvAnswer(d)) : empty;
+    // duplicate warning
+    const dup = document.getElementById('fcvDup');
+    if (dup) {
+        const hit = d.word && fcvFindDup(d.word);
+        dup.hidden = !hit;
+        if (hit) dup.textContent = 'This word is already in your flashcards.';
+    }
+}
+function fcvFindDup(word) {
+    const w = String(word || '').trim().toLowerCase();
+    if (!w) return null;
+    return flashcards.find(c => c.type === 'vocab' && c.vocab && String(c.vocab.word || '').trim().toLowerCase() === w && c.id !== editingFlashcardId) || null;
+}
+
+function fcvSpeak(text) {
+    text = String(text || '').trim();
+    if (!text) return;
+    try {
+        if (!('speechSynthesis' in window)) { showNotification('Your browser does not support speech.', 'info'); return; }
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-US'; u.rate = 0.9;
+        window.speechSynthesis.speak(u);
+    } catch (e) {}
+}
+function fcvSpeakBtn(word) {
+    return '<button type="button" class="fcv-speak" data-w="' + fcvAttr(word) + '" onclick="event.stopPropagation();fcvSpeak(this.dataset.w)" aria-label="Pronounce ' + fcvAttr(word) + '" title="Listen"><i class="fa-solid fa-volume-high"></i></button>';
+}
+function fcvListLabel(card) {
+    if (card.type === 'vocab' && card.vocab && card.vocab.word) {
+        const t = card.vocab.word + (card.vocab.pos ? ' (' + card.vocab.pos + ')' : '') + (card.vocab.meaning ? ' — ' + card.vocab.meaning : '');
+        return escapeHtml(t.length > 100 ? t.substring(0, 100) + '...' : t);
+    }
+    return escapeHtml(card.question.substring(0, 100)) + (card.question.length > 100 ? '...' : '');
+}
+
+/* ----- AI prompt (send a word, get every field back) ----- */
+function fcvBuildPrompt() {
+    return [
+        'You are a vocabulary assistant for my flashcard app. From now on I will send you English words or phrases (one, or several, one per line).',
+        'For each one, reply in EXACTLY the format below: plain text, one field per line, no markdown, no extra commentary. If I send several, leave one blank line between entries.',
+        '',
+        'Word: <the word or phrase, in its base form>',
+        'Part of Speech: <one of: ' + FCV_POS.join(' | ') + '>',
+        'IPA: <American IPA, written between slashes>',
+        'Level: <CEFR level: ' + FCV_LEVELS.join(' | ') + '>',
+        'Meaning: <a simple English definition, B1 vocabulary, under 15 words>',
+        'Vietnamese: <short, natural Vietnamese meaning>',
+        'Example: <one natural sentence; use a finance, business or everyday context>',
+        'Collocations: <3-4 common collocations or synonyms, separated by commas>',
+        'Note: <one short tip: common mistake, register, word family, or memory trick; write N/A if none>',
+        '',
+        'If a field does not apply, write N/A. Reply with the entries only.'
+    ].join('\n');
+}
+function fcvCopyPrompt(btn) {
+    const text = fcvBuildPrompt();
+    const done = () => {
+        if (btn) { btn.classList.add('is-copied'); const sp = btn.querySelector('span'); if (sp) sp.textContent = 'Copied'; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.classList.remove('is-copied'); if (sp) sp.textContent = 'Copy AI prompt'; }, 1600); }
+        showNotification('Prompt copied. Paste it into your AI, then just send words.', 'success');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(() => fcvCopyFallback(text, done));
+    else fcvCopyFallback(text, done);
+}
+function fcvCopyFallback(text, done) {
+    try {
+        const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;';
+        document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove();
+        if (ok) { done(); return; }
+    } catch (e) {}
+    showNotification('Could not copy automatically. Please try again.', 'error');
+}
+
+/* ----- parse the pasted reply ----- */
+function fcvParse(raw) {
+    const entries = []; let cur = null, last = null;
+    const clean = t => t.replace(/\*\*|__|`/g, '').replace(/^\s*(?:[-*•>]+|\d+[.)])\s+/, '').trim();
+    String(raw).split(/\r?\n/).forEach(line0 => {
+        const line = clean(line0);
+        if (!line) return;
+        const m = line.match(/^([A-Za-zÀ-ỹ][A-Za-zÀ-ỹ \/\.]{0,30}?)\s*[:：]\s*(.*)$/);
+        let hit = null;
+        if (m) hit = FCV_FIELDS.find(f => f[1].test(m[1].trim()));
+        if (hit) {
+            const id = hit[0];
+            if (id === 'fcvWord' && cur && cur.fcvWord !== undefined) { cur = {}; entries.push(cur); }
+            if (!cur) { cur = {}; entries.push(cur); }
+            if (cur[id] !== undefined && id !== 'fcvWord') { /* duplicate label inside one entry: keep the first */ last = null; return; }
+            cur[id] = m[2].trim(); last = id;
+        } else if (cur && last && (last === 'fcvExample' || last === 'fcvMeaning' || last === 'fcvNote')) {
+            cur[last] += ' ' + line;   // value wrapped onto the next line
+        }
+    });
+    return entries.filter(e => e.fcvWord);
+}
+function fcvNorm(id, v) {
+    v = String(v == null ? '' : v).replace(/^["'“”‘’<\[(]+|["'“”‘’>\])]+$/g, '').trim();
+    if (!v || /^(n\/?a|none|unknown|not\s*(available|applicable)|-+|—|\?+)$/i.test(v)) return '';
+    if (id === 'fcvIpa') { v = v.replace(/^[\/\[]+|[\/\]]+$/g, '').trim(); return v ? '/' + v + '/' : ''; }
+    if (id === 'fcvLevel') { const m = v.toUpperCase().match(/\b([ABC][12])\b/); return m ? m[1] : ''; }
+    if (id === 'fcvPos') {
+        const low = v.toLowerCase();
+        const hit = FCV_POS.slice().sort((a, b) => b.length - a.length).find(p => low.includes(p));
+        if (hit) return hit;
+        if (/^(n|n\.)$/.test(low)) return 'noun'; if (/^(v|v\.)$/.test(low)) return 'verb';
+        if (/^(adj|adj\.)$/.test(low)) return 'adjective'; if (/^(adv|adv\.)$/.test(low)) return 'adverb';
+        return 'other';
+    }
+    return v;
+}
+function fcvEntryToData(e) {
+    const d = {};
+    Object.keys(FCV_KEYS).forEach(id => { d[FCV_KEYS[id]] = e[id] === undefined ? '' : fcvNorm(id, e[id]); });
+    return d;
+}
+
+function fcvSchedulePaste() { clearTimeout(_fcvPasteTimer); _fcvPasteTimer = setTimeout(fcvApplyPaste, 150); }
+function fcvApplyPaste() {
+    const box = document.getElementById('fcvPaste'), st = document.getElementById('fcvPasteStatus'), bulk = document.getElementById('fcvBulk');
+    if (!box || !st) return;
+    const raw = box.value;
+    st.className = 'fcv-status'; if (bulk) bulk.hidden = true;
+    if (!raw.trim()) { st.textContent = ''; fcvEntries = []; return; }
+    const parsed = fcvParse(raw).map(fcvEntryToData).filter(d => d.word);
+    fcvEntries = parsed;
+    if (!parsed.length) { st.textContent = 'No fields found. Ask the AI to reply in the prompt’s format.'; st.classList.add('warn'); return; }
+    fcvSetFields(parsed[0]);
+    fcvUpdatePreview();
+    const missing = []; if (!parsed[0].meaning) missing.push('Meaning');
+    st.classList.add(missing.length ? 'warn' : 'ok');
+    st.textContent = missing.length ? 'Filled the form, but ' + missing.join(', ') + ' is missing.' : 'Filled the form from the pasted reply.';
+    if (parsed.length > 1 && bulk) {
+        bulk.hidden = false;
+        const names = parsed.map(d => d.word);
+        bulk.innerHTML = '<span><b>' + parsed.length + ' words found:</b> ' + escapeHtml(names.slice(0, 6).join(', ')) + (names.length > 6 ? ', …' : '') + '</span>'
+            + '<button type="button" class="fcv-bulk-btn" onclick="fcvAddAll()">Add all ' + parsed.length + '</button>';
+    }
+}
+
+function fcvMakeCard(d, now, imageUrl, tags) {
+    return {
+        id: '', question: fcvQuestion(d), answer: fcvAnswer(d), imageUrl: imageUrl || '',
+        tags: tags, createdAt: now.toISOString(), lastReviewed: now.toISOString(), mastery: 0,
+        nextReview: now.toISOString(), reviewCount: 0, lastMasteryUpdate: now.toISOString(),
+        type: 'vocab', vocab: d
+    };
+}
+function fcvAddAll() {
+    if (!fcvEntries.length) return;
+    const now = new Date(); let added = 0, skipped = 0, seq = 0;
+    const withReverse = !!(document.getElementById('fcvReverse') || {}).checked;
+    const seen = new Set();
+    fcvEntries.forEach(d => {
+        const key = d.word.toLowerCase();
+        if (!d.meaning || seen.has(key) || fcvFindDup(d.word)) { skipped++; return; }
+        seen.add(key);
+        const c = fcvMakeCard(d, now, '', ['Vocabulary']); c.id = (Date.now() + (seq++)).toString();
+        flashcards.push(c); added++;
+        if (withReverse) {
+            const r = fcvReverseQA(d);
+            flashcards.push({ id: (Date.now() + (seq++)).toString(), question: r.q, answer: r.a, imageUrl: '', tags: ['Vocabulary'], createdAt: now.toISOString(), lastReviewed: now.toISOString(), mastery: 0, nextReview: now.toISOString(), reviewCount: 0, lastMasteryUpdate: now.toISOString(), type: 'general', vocab: null });
+        }
+    });
+    if (!added) { showNotification('Nothing to add: every word is a duplicate or has no meaning.', 'warning'); return; }
+    saveFlashcardsToStorage();
+    closeAddFlashcardModal();
+    getRandomFlashcard();
+    renderManageFlashcards();
+    showNotification('Added ' + added + ' vocabulary card' + (added > 1 ? 's' : '') + (skipped ? ' (' + skipped + ' skipped)' : '') + '.', 'success');
+}
+
+/* used by saveFlashcard(): validates the vocab form and fills the hidden question/answer fields */
+function fcvPrepareSave() {
+    const d = fcvCollect();
+    if (!d.word) { showNotification('Please enter the word or phrase.', 'warning'); const el = document.getElementById('fcvWord'); if (el) el.focus(); return false; }
+    if (!d.meaning) { showNotification('Please enter the meaning.', 'warning'); const el = document.getElementById('fcvMeaning'); if (el) el.focus(); return false; }
+    document.getElementById('newFlashcardQuestion').value = fcvQuestion(d);
+    document.getElementById('newFlashcardAnswer').value = fcvAnswer(d);
+    if (!_fcSelectedTags.includes('Vocabulary')) _fcSelectedTags.push('Vocabulary');
+    return true;
+}
+function fcvPushReverse(d, now, imageUrl) {
+    const r = fcvReverseQA(d);
+    flashcards.push({ id: (Date.now() + 1).toString(), question: r.q, answer: r.a, imageUrl: imageUrl || '', tags: fcGetSelectedTags(), createdAt: now.toISOString(), lastReviewed: now.toISOString(), mastery: 0, nextReview: now.toISOString(), reviewCount: 0, lastMasteryUpdate: now.toISOString(), type: 'general', vocab: null });
+}
+let fcKeepOpen = false;
+function fcvSaveNext() {
+    fcKeepOpen = true;
+    try { saveFlashcard(); } finally { fcKeepOpen = false; }
+}
+function fcvResetFields() {
+    fcvSetFields({});
+    const p = document.getElementById('fcvPaste'); if (p) p.value = '';
+    const st = document.getElementById('fcvPasteStatus'); if (st) { st.textContent = ''; st.className = 'fcv-status'; }
+    const b = document.getElementById('fcvBulk'); if (b) b.hidden = true;
+    fcvEntries = [];
+    fcClearImage();
+    fcvUpdatePreview();
+    const w = document.getElementById('fcvWord'); if (w) w.focus();
+}
+/* called from openAddFlashcardModal */
+function fcvOnOpen(editCard) {
+    fcvInitSelects();
+    const pane = document.getElementById('fcVocabPane');
+    if (pane && !pane._wired) {
+        pane._wired = true;
+        pane.addEventListener('input', e => { if (e.target.id !== 'fcvPaste') fcvUpdatePreview(); });
+        pane.addEventListener('change', fcvUpdatePreview);
+    }
+    const sw = document.getElementById('fcvSwitch');
+    if (editCard) {
+        if (sw) sw.hidden = true;
+        const isVocab = editCard.type === 'vocab' && editCard.vocab;
+        if (isVocab) fcvSetFields(editCard.vocab); else fcvSetFields({});
+        fcSetMode(isVocab ? 'vocab' : 'general', { silent: true });
+    } else {
+        if (sw) sw.hidden = false;
+        fcvSetFields({});
+        const p = document.getElementById('fcvPaste'); if (p) p.value = '';
+        const st = document.getElementById('fcvPasteStatus'); if (st) { st.textContent = ''; st.className = 'fcv-status'; }
+        const b = document.getElementById('fcvBulk'); if (b) b.hidden = true;
+        const rv = document.getElementById('fcvReverse'); if (rv) rv.checked = false;
+        fcvEntries = [];
+        fcSetMode(fcMode, { silent: true });
+        if (fcMode === 'vocab') fcRenderTagChips(['Vocabulary']);
+    }
+    fcvUpdatePreview();
+}
+window.fcSetMode = fcSetMode; window.fcvSpeak = fcvSpeak; window.fcvCopyPrompt = fcvCopyPrompt;
+window.fcvSchedulePaste = fcvSchedulePaste; window.fcvAddAll = fcvAddAll; window.fcvSaveNext = fcvSaveNext;
 
 // ===== INITIALIZATION =====
 
@@ -101980,5 +102400,62 @@ body #course-section .course-stat-item:hover { transform: translateY(-2px); box-
 #englishDailyCard .ed-x { flex: none; width: 22px; height: 22px; border: 0; border-radius: 50%; background: transparent; color: var(--ed-mute); cursor: pointer; font-size: 1rem; line-height: 1; }
 #englishDailyCard .ed-x:hover { background: rgba(239,68,68,.14); color: #ef4444; }
 @media (prefers-reduced-motion: reduce) { #englishDailyCard .ed-ring-arc, #englishDailyCard .ed-wd-bar > i, #englishDailyCard .ed-topic-new { transition: none; } }
+
+/* ═══ Add Flashcard — Vocabulary mode ═══ */
+#addFlashcardModal .fcv-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: -10px 0 18px; border-radius: 999px; background: var(--fc-primary-light); border: 1px solid var(--fc-border); }
+#addFlashcardModal .fcv-switch[hidden], #addFlashcardModal [hidden] { display: none !important; }
+#addFlashcardModal .fcv-switch button { border: 0; background: transparent; color: var(--fc-text-muted, #9a7686); padding: 9px 12px; border-radius: 999px; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; transition: background .2s, color .2s, box-shadow .2s; }
+#addFlashcardModal .fcv-switch button:hover { color: var(--fc-text); }
+#addFlashcardModal .fcv-switch button.is-active { background: var(--fc-bg); color: var(--fc-primary); box-shadow: 0 1px 4px rgba(0,0,0,.12), 0 0 0 1px var(--fc-border); }
+#addFlashcardModal .fcv-switch button:focus-visible, #addFlashcardModal .fcv-copy:focus-visible, #addFlashcardModal .fcv-icon-btn:focus-visible { outline: 2px solid var(--fc-primary); outline-offset: 2px; }
+
+#addFlashcardModal .fcv-paste { margin-bottom: 18px; padding: 14px; border-radius: 14px; background: var(--fc-primary-light); border: 1px dashed var(--fc-border); }
+#addFlashcardModal .fcv-paste-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+#addFlashcardModal .fcv-paste-head label, #addFlashcardModal .fcv-field label { font-weight: 600; font-size: .88rem; color: var(--fc-text); }
+#addFlashcardModal .fcv-copy { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--fc-border); background: var(--fc-bg); color: var(--fc-primary); font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+#addFlashcardModal .fcv-copy:hover { border-color: var(--fc-primary); background: var(--fc-primary-light); }
+#addFlashcardModal .fcv-copy.is-copied { color: #16a34a; border-color: #16a34a; }
+#addFlashcardModal .fcv-paste textarea, #addFlashcardModal .fcv-field input, #addFlashcardModal .fcv-field select, #addFlashcardModal .fcv-field textarea {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; border: 2px solid var(--fc-border); border-radius: 10px; background: var(--fc-bg); color: var(--fc-text); font: inherit; font-size: .92rem; transition: border-color .15s, box-shadow .15s; }
+#addFlashcardModal .fcv-paste textarea { resize: vertical; min-height: 52px; font-size: .85rem; }
+#addFlashcardModal .fcv-paste textarea:focus, #addFlashcardModal .fcv-field input:focus, #addFlashcardModal .fcv-field select:focus, #addFlashcardModal .fcv-field textarea:focus { outline: none; border-color: var(--fc-primary); box-shadow: 0 0 0 3px var(--fc-primary-light); }
+#addFlashcardModal .fcv-status { min-height: 0; margin-top: 6px; font-size: .8rem; color: var(--fc-text-muted, #9a7686); }
+#addFlashcardModal .fcv-status:empty { display: none; }
+#addFlashcardModal .fcv-status.ok { color: #16a34a; }
+#addFlashcardModal .fcv-status.warn { color: #d97706; }
+#addFlashcardModal .fcv-bulk { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: var(--fc-bg); border: 1px solid var(--fc-border); font-size: .82rem; color: var(--fc-text); }
+#addFlashcardModal .fcv-bulk-btn { flex: none; padding: 6px 14px; border: 0; border-radius: 999px; background: linear-gradient(135deg, var(--fc-primary), var(--fc-primary-hover)); color: #fff; font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.dark-mode #addFlashcardModal .fcv-bulk-btn { color: #1a1019; }
+
+#addFlashcardModal .fcv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+#addFlashcardModal .fcv-field { min-width: 0; }
+#addFlashcardModal .fcv-field label { display: block; margin-bottom: 6px; }
+#addFlashcardModal .fcv-span2 { grid-column: 1 / -1; }
+#addFlashcardModal .fcv-field textarea { resize: vertical; min-height: 56px; line-height: 1.5; }
+#addFlashcardModal .fcv-word-row { display: flex; gap: 8px; }
+#addFlashcardModal .fcv-icon-btn { flex: none; width: 42px; border: 2px solid var(--fc-border); border-radius: 10px; background: var(--fc-bg); color: var(--fc-primary); cursor: pointer; transition: background .15s; }
+#addFlashcardModal .fcv-icon-btn:hover { background: var(--fc-primary-light); }
+#addFlashcardModal .fcv-dup { margin-top: 6px; font-size: .78rem; font-weight: 600; color: #d97706; }
+#addFlashcardModal .fcv-check { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: .86rem; color: var(--fc-text); cursor: pointer; }
+
+#addFlashcardModal .fcv-preview { margin-bottom: 20px; padding: 14px; border-radius: 14px; background: var(--fc-bg); border: 1px solid var(--fc-border); }
+#addFlashcardModal .fcv-preview-label { margin-bottom: 10px; font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fc-primary); }
+#addFlashcardModal .fcv-preview-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#addFlashcardModal .fcv-pv { min-width: 0; padding: 12px 14px; border-radius: 12px; background: var(--fc-primary-light); }
+#addFlashcardModal .fcv-pv > span { display: block; margin-bottom: 6px; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fc-text-muted, #9a7686); }
+#addFlashcardModal .fcv-pv > div { font-size: .88rem; line-height: 1.55; color: var(--fc-text); overflow-wrap: anywhere; }
+#addFlashcardModal .fcv-pv h3 { margin: 0 0 4px; font-size: 1.25rem; color: var(--fc-primary); }
+#addFlashcardModal .fcv-pv p { margin: 0 0 8px; }
+#addFlashcardModal .fcv-pv blockquote { margin: 8px 0; padding: 4px 10px; border-left: 3px solid var(--fc-primary); color: var(--fc-text-muted, #9a7686); }
+#addFlashcardModal .fcv-empty { color: var(--fc-text-muted, #9a7686); font-size: .8rem; }
+
+.fcv-speak { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: 6px 0 0 8px; border: 1px solid rgba(219,113,175,.4); border-radius: 50%; background: transparent; color: var(--fc-primary, #db2777); cursor: pointer; vertical-align: middle; transition: background .15s, transform .15s; }
+.fcv-speak:hover { background: rgba(219,113,175,.14); transform: scale(1.06); }
+.fcv-speak:focus-visible { outline: 2px solid var(--fc-primary, #db2777); outline-offset: 2px; }
+
+@media (max-width: 640px) {
+    #addFlashcardModal .fcv-grid, #addFlashcardModal .fcv-preview-cards { grid-template-columns: 1fr; }
+    #addFlashcardModal .fcv-paste-head { flex-wrap: wrap; }
+}
 </style>
 </body>
