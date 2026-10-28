@@ -5,6 +5,109 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <title> Finance Career Skills Tracker </title>
+    <script>
+/* ===== Vietnam time (UTC+7) — chạy TRƯỚC mọi script khác =====
+   Toàn bộ app tính ngày/giờ theo giờ Việt Nam (Asia/Ho_Chi_Minh, UTC+7, không DST),
+   bất kể máy/trình duyệt đang để múi giờ nào. Lớp này làm cho các hàm "giờ máy" của Date
+   (getHours, getDate, setHours, new Date(y,m,d,...), new Date('2026-10-28T09:00'),
+   toLocaleDateString, toDateString, Intl.DateTimeFormat không chỉ định timeZone...)
+   trả về/nhận đúng giờ VN. Các hàm UTC (getUTC*, toISOString, Date.UTC, Date.now, getTime)
+   không đổi. Kết quả giống hệt khi chạy trên máy đặt múi giờ VN. */
+(function () {
+    if (typeof window === 'undefined' || window.__VN_TZ_SHIM__) return;
+    window.__VN_TZ_SHIM__ = true;
+
+    var OFF = 7 * 3600000;
+    var TZ = 'Asia/Ho_Chi_Minh';
+    var ND = Date, P = ND.prototype;
+    var nGetTime = P.getTime, nSetTime = P.setTime, nGTO = P.getTimezoneOffset;
+    var nToUTCString = P.toUTCString;
+
+    // ---- getters: đọc trường "giờ treo tường VN" ----
+    ['FullYear', 'Month', 'Date', 'Day', 'Hours', 'Minutes', 'Seconds'].forEach(function (n) {
+        var u = 'getUTC' + n;
+        P['get' + n] = function () {
+            var t = nGetTime.call(this);
+            return t !== t ? NaN : new ND(t + OFF)[u]();
+        };
+    });
+    P.getYear = function () { var y = this.getFullYear(); return y !== y ? NaN : y - 1900; };
+
+    // ---- setters: ghi theo giờ VN rồi quy lại timestamp ----
+    ['FullYear', 'Month', 'Date', 'Hours', 'Minutes', 'Seconds'].forEach(function (n) {
+        var u = 'setUTC' + n;
+        P['set' + n] = function () {
+            var t = nGetTime.call(this);
+            if (t !== t) { if (n !== 'FullYear') return NaN; t = -OFF; }
+            var d = new ND(t + OFF);
+            d[u].apply(d, arguments);
+            return nSetTime.call(this, nGetTime.call(d) - OFF);
+        };
+    });
+    P.getTimezoneOffset = function () { var t = nGetTime.call(this); return t !== t ? NaN : -420; };
+
+    // ---- chuỗi hiển thị ----
+    function wall(d) { var t = nGetTime.call(d); return t !== t ? null : nToUTCString.call(new ND(t + OFF)); }
+    P.toDateString = function () { var s = wall(this); return s ? s.slice(0, 3) + ' ' + s.slice(8, 11) + ' ' + s.slice(5, 7) + ' ' + s.slice(12, 16) : 'Invalid Date'; };
+    P.toTimeString = function () { var s = wall(this); return s ? s.slice(17, 25) + ' GMT+0700 (Indochina Time)' : 'Invalid Date'; };
+    P.toString = function () { var s = wall(this); return s ? this.toDateString() + ' ' + this.toTimeString() : 'Invalid Date'; };
+
+    function withTZ(o) {
+        if (o == null) return { timeZone: TZ };
+        if (o.timeZone !== undefined) return o;
+        var c = Object.assign({}, o); c.timeZone = TZ; return c;
+    }
+    ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'].forEach(function (n) {
+        var nat = P[n];
+        P[n] = function (l, o) { return nat.call(this, l, withTZ(o)); };
+    });
+
+    // ---- Intl.DateTimeFormat mặc định timeZone = VN ----
+    if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+        var NDTF = Intl.DateTimeFormat;
+        var DTF = function (l, o) {
+            return Reflect.construct(NDTF, [l, withTZ(o)], new.target || DTF);
+        };
+        DTF.prototype = NDTF.prototype;
+        DTF.supportedLocalesOf = NDTF.supportedLocalesOf;
+        try { Object.defineProperty(NDTF.prototype, 'constructor', { value: DTF, writable: true, configurable: true }); } catch (e) {}
+        Intl.DateTimeFormat = DTF;
+    }
+
+    // ---- parse chuỗi không có múi giờ → hiểu là giờ VN ----
+    var RE_ISO_DATE = /^[+-]?\d{4,6}-\d{2}-\d{2}$/;                                   // UTC theo chuẩn
+    var RE_ISO_LOCAL = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:[.,]\d{1,9})?)?)$/; // giờ địa phương
+    var RE_ZONE_NAME = /(?:Z|\bGMT\b|\bUTC\b|\b[A-Z]{3,4}T\b)(?:\s*\(.*\))?\s*$/;
+    var RE_ZONE_OFFSET = /[+-]\d{2}:?\d{2}\s*(?:\(.*\))?$/;  // chỉ xét khi chuỗi có phần giờ (có ':')
+    function hasZone(s) { return RE_ZONE_NAME.test(s) || (s.indexOf(':') > 0 && RE_ZONE_OFFSET.test(s)); }
+    function parseStr(s) {
+        s = String(s).trim();
+        if (RE_ISO_DATE.test(s) || hasZone(s)) return ND.parse(s);
+        var m = RE_ISO_LOCAL.exec(s);
+        if (m) { var u = ND.parse(m[1] + 'T' + m[2].replace(',', '.') + 'Z'); return u - OFF; }
+        var t = ND.parse(s);                       // dạng khác ("Oct 28, 2026 10:00", "2026/10/28"): máy hiểu theo giờ máy
+        if (t !== t) return t;
+        var mOff = -nGTO.call(new ND(t)) * 60000;  // đổi sang giờ VN
+        return t + mOff - OFF;
+    }
+
+    // ---- constructor: new Date(y, m, d, h...) và new Date('...') theo giờ VN ----
+    var VNDate = function Date() {
+        if (!new.target) return P.toString.call(new ND());
+        var a = arguments, n = a.length;
+        if (n === 0) return Reflect.construct(ND, [], new.target);
+        if (n === 1) return Reflect.construct(ND, [typeof a[0] === 'string' ? parseStr(a[0]) : a[0]], new.target);
+        return Reflect.construct(ND, [ND.UTC.apply(null, a) - OFF], new.target);
+    };
+    VNDate.prototype = P;
+    Object.defineProperty(P, 'constructor', { value: VNDate, writable: true, configurable: true });
+    VNDate.now = ND.now;
+    VNDate.UTC = ND.UTC;
+    VNDate.parse = function (s) { return parseStr(s); };
+    Object.defineProperty(VNDate, 'length', { value: 7, configurable: true });
+    window.Date = VNDate;
+})();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>/* Live Preview editor (CodeMirror 6, bundled) */
 (()=>{var Ur=[],ha=[];(()=>{let n="lc,34,7n,7,7b,19,,,,2,,2,,,20,b,1c,l,g,,2t,7,2,6,2,2,,4,z,,u,r,2j,b,1m,9,9,,o,4,,9,,3,,5,17,3,1n,9,16,o,,x,1i,3,,i,,7,a,2,t,3,1k,,,7,2,2,2,3,9,,a,2,q,,2,3,1k,,,5,4,2,2,3,3,,u,2,3,,b,3,1k,,,8,,3,,3,k,2,m,6,,3,1k,,,7,2,2,2,3,7,3,a,2,u,,1n,5,3,3,,4,9,,14,5,1j,,,7,,3,,4,7,2,b,2,t,3,1k,,,7,,3,,4,7,2,b,2,f,,c,4,1j,2,,7,,3,,4,9,,a,2,t,3,1y,,4,6,,,,8,i,2,1p,,,8,c,8,2q,,,a,b,7,21,2,r,,,,,,4,2,1d,k,,2,5,b,,10,9,,2u,b,,6,n,4,4,3,g,4,d,,,3,6,,f,,jj,3,qa,4,s,3,t,2,u,2,1s,w,9,,19,3,,,39,2,y,,3a,c,4,c,63,5,1l,a,,,,,2,o,2,,1c,1a,2,c,k,5,1b,h,12,9,c,3,u,d,1k,e,1c,k,48,3,,l,4,,6,,2,3,5i,1s,ek,,5f,x,2da,3,3x,,2o,w,fe,6,2x,2,n9w,4,,a,w,2,28,2,7k,,3,,4,,n,5,4,,2b,2,1e,i,q,i,d,,12,8,p,d,18,4,1b,e,10,,1v,e,c,,8,2,1a,,1f,,,3,2,2,5,2,,,15,5,5,2,6k,8,,2,fn4,,kh,g,g,g,a6,2,gt,,6a,,45,5,1ae,3,,2,5,4,14,3,4,,4l,2,fx,4,1t,5,8t,2,25,6,1y,b,1d,4,3e,3,1h,f,15,,2,2,a,4,19,b,7,,1p,3,10,e,g,2,18,,c,3,1c,e,8,4,,2,2k,c,6,,2,,4d,c,l,4,1j,2,,7,2,2,2,3,9,,a,2,2,7,3,5,1v,9,,,2,,,4,,5,,,e,2,2a,i,n,,29,k,6j,7,2,9,r,2,2a,h,2y,d,2t,3,2,a,74,f,6t,6,,2,2,4,,,,2,3x,7,2,7,3,,s,a,14,7,,4,8,,9,b,1a,g,5i,8,5j,8,,8,2a,m,,e,3e,6,3,,,2,,7,,,1u,5,,2,,5,9n,4,9,2,,,1c,7,3,5,n,,44l,,6,f,8ug,i,1xc,5,1n,7,t4,,,1j,7,4,29,,b,2,f57,2,3mp,1a,2,n,f2,5,3,6,8,8,2,7,u,4,44,3,1iz,1j,4,1e,8,,e,,m,5,,f,11s,7,,h,2,7,,2,,5,2s,,4g,7,af,,1p,4,e4,4,72,2,6r,,2,,7,2,5,,d6,7,31,7,240,5".split(",").map(e=>e?parseInt(e,36):1);for(let e=0,t=0;e<n.length;e++)(e%2?ha:Ur).push(t=t+n[e])})();function vd(n){if(n<768)return!1;for(let e=0,t=Ur.length;;){let i=e+t>>1;if(n<Ur[i])t=i;else if(n>=ha[i])e=i+1;else return!0;if(e==t)return!1}}function oa(n){return n>=127462&&n<=127487}var la=8205;function ca(n,e,t=!0,i=!0){return(t?fa:Pd)(n,e,i)}function fa(n,e,t){if(e==n.length)return e;e&&ua(n.charCodeAt(e))&&da(n.charCodeAt(e-1))&&e--;let i=Nr(n,e);for(e+=aa(i);e<n.length;){let r=Nr(n,e);if(i==la||r==la||t&&vd(r))e+=aa(r),i=r;else if(oa(r)){let s=0,o=e-2;for(;o>=0&&oa(Nr(n,o));)s++,o-=2;if(s%2==0)break;e+=2}else break}return e}function Pd(n,e,t){for(;e>1;){let i=fa(n,e-2,t);if(i<e)return i;e--}return 0}function Nr(n,e){let t=n.charCodeAt(e);if(!da(t)||e+1==n.length)return t;let i=n.charCodeAt(e+1);return ua(i)?(t-55296<<10)+(i-56320)+65536:t}function ua(n){return n>=56320&&n<57344}function da(n){return n>=55296&&n<56320}function aa(n){return n<65536?1:2}var D=class n{lineAt(e){if(e<0||e>this.length)throw new RangeError(`Invalid position ${e} in document of length ${this.length}`);return this.lineInner(e,!1,1,0)}line(e){if(e<1||e>this.lines)throw new RangeError(`Invalid line number ${e} in ${this.lines}-line document`);return this.lineInner(e,!0,1,0)}replace(e,t,i){[e,t]=di(this,e,t);let r=[];return this.decompose(0,e,r,2),i.length&&i.decompose(0,i.length,r,3),this.decompose(t,this.length,r,1),ci.from(r,this.length-(t-e)+i.length)}append(e){return this.replace(this.length,this.length,e)}slice(e,t=this.length){[e,t]=di(this,e,t);let i=[];return this.decompose(e,t,i,0),ci.from(i,t-e)}eq(e){if(e==this)return!0;if(e.length!=this.length||e.lines!=this.lines)return!1;let t=this.scanIdentical(e,1),i=this.length-this.scanIdentical(e,-1),r=new qt(this),s=new qt(e);for(let o=t,l=t;;){if(r.next(o),s.next(o),o=0,r.lineBreak!=s.lineBreak||r.done!=s.done||r.value!=s.value)return!1;if(l+=r.value.length,r.done||l>=i)return!0}}iter(e=1){return new qt(this,e)}iterRange(e,t=this.length){return new En(this,e,t)}iterLines(e,t){let i;if(e==null)i=this.iter();else{t==null&&(t=this.lines+1);let r=this.line(e).from;i=this.iterRange(r,Math.max(r,t==this.lines+1?this.length:t<=1?0:this.line(t-1).to))}return new zn(i)}toString(){return this.sliceString(0)}toJSON(){let e=[];return this.flatten(e),e}constructor(){}static of(e){if(e.length==0)throw new RangeError("A document must have at least one line");return e.length==1&&!e[0]?n.empty:e.length<=32?new $e(e):ci.from($e.split(e,[]))}},$e=class n extends D{constructor(e,t=Cd(e)){super(),this.text=e,this.length=t}get lines(){return this.text.length}get children(){return null}lineInner(e,t,i,r){for(let s=0;;s++){let o=this.text[s],l=r+o.length;if((t?i:l)>=e)return new Fr(r,l,i,o);r=l+1,i++}}decompose(e,t,i,r){let s=e<=0&&t>=this.length?this:new n(Oa(this.text,e,t),Math.min(t,this.length)-Math.max(0,e));if(r&1){let o=i.pop(),l=Ln(s.text,o.text.slice(),0,s.length);if(l.length<=32)i.push(new n(l,o.length+s.length));else{let a=l.length>>1;i.push(new n(l.slice(0,a)),new n(l.slice(a)))}}else i.push(s)}replace(e,t,i){if(!(i instanceof n))return super.replace(e,t,i);[e,t]=di(this,e,t);let r=Ln(this.text,Ln(i.text,Oa(this.text,0,e)),t),s=this.length+i.length-(t-e);return r.length<=32?new n(r,s):ci.from(n.split(r,[]),s)}sliceString(e,t=this.length,i=`
@@ -32785,14 +32888,17 @@ window.DBP={
                         <div id="sleepReminderProgress" style="margin-top:9px;"></div>
                         <div id="sleepReminderStatus" style="font-size:0.79rem; color:var(--text-muted); margin-top:8px; line-height:1.55;"></div>
                         <div id="sleepReminderPermBadge" style="display:none; margin-top:9px;"></div>
-                        <div style="display:flex; align-items:center; gap:10px; margin-top:11px;">
+                        <div style="display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:11px;">
                             <button type="button" class="sleep-reminder-test-btn" onclick="testSleepReminder()">
                                 <svg class="icon-svg" aria-hidden="true" style="width:13px;height:13px;vertical-align:-2px;"><use href="#icon-bell"></use></svg> Preview notification
+                            </button>
+                            <button type="button" class="sleep-reminder-test-btn" onclick="exportSleepReminderICS()" title="Download a calendar file with daily bedtime alarms that work even when this tab is closed">
+                                <svg class="icon-svg" aria-hidden="true" style="width:13px;height:13px;vertical-align:-2px;"><use href="#icon-calendar"></use></svg> Add to calendar (.ics)
                             </button>
                         </div>
                         <div style="font-size:0.72rem; color:var(--text-muted); margin-top:10px; line-height:1.5; border-top:1px dashed var(--theme-border-strong); padding-top:9px;">
                             <svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;vertical-align:-1px;"><use href="#icon-triangle-alert"></use></svg>
-                            Note: this reminder runs inside the browser tab (it is not a background system notification) — keep this tab open (in the background is fine, it doesn't need focus) at the reminder time to receive it. Closing the tab or quitting the browser means no reminder. When it fires it plays 3 soft chimes and the notification stays until you dismiss it (it won't disappear after a few seconds).
+                            Note: this reminder runs inside the browser tab (it is not a background system notification) — keep this tab open (in the background is fine, it doesn't need focus) at the reminder time to receive it. Closing the tab or quitting the browser means no reminder. When it fires it plays 3 soft chimes and the notification stays until you dismiss it (it won't disappear after a few seconds). <strong>To be reminded even when the tab is closed, use “Add to calendar (.ics)”</strong> — your phone or computer calendar will then alert you every day (re-export it if your bedtime target changes; importing again updates the same events).
                         </div>
                     </div>
                 </div>
@@ -32936,10 +33042,13 @@ window.DBP={
                     style="font-size:0.72rem; padding:4px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer;">30d</button>
             </div>
             <div class="chart-container" style="margin: 0 0 6px;">
-                <canvas id="sleepChart"></canvas>
+                <canvas id="sleepChart" role="img" aria-label="Bar chart of hours slept per night" aria-describedby="sleepChartSummary">Hours slept per night. A text version of this chart is available below.</canvas>
             </div>
+            <!-- Text alternative for screen readers (visually hidden, filled in by renderSleepChart) -->
+            <div id="sleepChartSummary" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;"></div>
+            <div id="sleepBarLegend" role="group" aria-label="Bar colour legend" style="font-size:0.7rem; color:var(--text-muted); margin: 0 0 8px; display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center;"></div>
             <div style="font-size:0.7rem; color:var(--text-muted); margin: 0 0 20px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span><svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-pencil"></use></svg> Tap a bar to edit that night</span>
+                <span><svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-pencil"></use></svg> Tap a bar to edit that night <em id="sleepChartGapNote" style="margin-left:6px; opacity:.85;"></em></span>
                 <span style="display:flex; align-items:center; gap:5px;">
                     <span style="display:inline-flex; align-items:center; gap:3px;">
                         <span style="width:5px;height:5px;border-radius:50%;background:rgba(184, 146, 201,0.4);border:1px solid #b892c9;display:inline-block;"></span>
@@ -32957,8 +33066,10 @@ window.DBP={
                     <svg class="icon-svg" aria-hidden="true"><use href="#icon-timer"></use></svg> Sleep Timeline <span style="font-weight:400;">(bedtime → wake-up)</span>
                 </div>
                 <div class="chart-container" id="sleepTimelineWrap" style="margin:0 0 4px;">
-                    <canvas id="sleepTimelineChart"></canvas>
+                    <canvas id="sleepTimelineChart" role="img" aria-label="Sleep timeline: bedtime to wake-up for each night" aria-describedby="sleepTimelineSummary">Bedtime and wake-up time for each night. A text version of this chart is available below.</canvas>
                 </div>
+                <!-- Text alternative for screen readers (visually hidden, filled in by renderSleepTimelineChart) -->
+                <div id="sleepTimelineSummary" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;"></div>
                 <div style="font-size:0.7rem; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
                     <span><svg class="icon-svg" aria-hidden="true" style="width:12px;height:12px;"><use href="#icon-pencil"></use></svg> Tap a row to edit that night</span>
                     <span id="sleepTimelineNapLegend" style="display:none; align-items:center; gap:5px;">
@@ -50249,7 +50360,7 @@ kbd {
             app: 'FinanceTracker-NotesVault', schema: BACKUP_SCHEMA, exportedAt: new Date().toISOString(),
             notes: backup.notes, revisions: backup.revisions, fileLinks: backup.fileLinks, attachments: backup.attachments
         };
-        download(JSON.stringify(payload, null, 2), 'notes-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json');
+        download(JSON.stringify(payload, null, 2), 'notes-vault-backup-' + toLocalDateStr(new Date()) + '.json', 'application/json');
     }
     // The raw notes + their version history + file-link metadata (all three IndexedDB stores),
     // flushed and ready to embed in any backup file — used both by this module's own Export
@@ -57322,7 +57433,7 @@ kbd {
         const rootNote = (!lkIdx && tmUI.opts.root) ? S.notes.find((n) => n.id === tmUI.opts.root) : null;
         let title = lkIdx ? 'Link map \u2014 ' + mapTitle(lkIdx)
             : 'Note map' + (rootNote ? ' \u2014 ' + mapTitle(rootNote) : (tmUI.opts.folder ? ' \u2014 ' + tmUI.opts.folder : ''));
-        if (S.notes.some((n) => fold(String(n.title || '').trim()) === fold(title))) title += ' (' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ')';
+        if (S.notes.some((n) => fold(String(n.title || '').trim()) === fold(title))) title += ' (' + (toLocalDateStr(new Date()) + ' ' + String(new Date().getHours()).padStart(2, '0') + ':' + String(new Date().getMinutes()).padStart(2, '0')) + ')';
         const md = '# ' + title + '\n\n> Generated from ' + (lkIdx ? 'the links in \u201C' + mapTitle(lkIdx) + '\u201D' : 'the parent / sub-note / connection relations set on each note')
             + '. In Read mode, click a box to open that note. Edit the diagram below to adjust it.\n\n```mermaid\n' + code + '\n```\n';
         const id = uid(), now = Date.now();
@@ -70745,7 +70856,7 @@ kbd {
         // whichever career tab happens to be open.
         function checkGoalDeadlineReminders() {
             if (typeof goals === 'undefined' || !Array.isArray(goals) || !goals.length) return;
-            const todayKey = (typeof getVietnamDateStr === 'function') ? getVietnamDateStr() : new Date().toISOString().slice(0, 10);
+            const todayKey = (typeof getVietnamDateStr === 'function') ? getVietnamDateStr() : toLocalDateStr(new Date());
             if (localStorage.getItem('goalReminderShownDate') === todayKey) return;
 
             const overdue = [];
@@ -74892,9 +75003,16 @@ document.addEventListener('DOMContentLoaded', function() {
         // Windred et al. 2024: tính đều đặn của giấc ngủ dự báo sức khỏe mạnh hơn cả
         // thời lượng. Dùng phép "dịch trục 12h" để giờ quanh nửa đêm (23h & 1h) không
         // bị tính lệch xa nhau giả tạo khi lấy độ lệch chuẩn thô.
+        // Giờ Việt Nam = UTC+7 cố định (VN không có DST) → tính thẳng từ timestamp, KHÔNG phụ thuộc
+        // múi giờ của máy/trình duyệt. Dùng cho mọi chỗ cần "phút trong ngày theo giờ VN".
+        const VN_UTC_OFFSET_MS = 7 * 3600000;
+        function vnMsIntoDay(ts) {
+            return (((ts + VN_UTC_OFFSET_MS) % 86400000) + 86400000) % 86400000;
+        }
+        function vnMinuteOfDay(ts) { return Math.floor(vnMsIntoDay(ts) / 60000); }
+
         function clockMinutesAnchored(ts) {
-            const d = new Date(ts);
-            const m = d.getHours() * 60 + d.getMinutes();
+            const m = vnMinuteOfDay(ts);
             // Dịch để vùng "giữa trưa" (12h) trở thành điểm nối vòng thay vì nửa đêm,
             // vì hầu hết giờ ngủ/dậy nằm trong khung 18h–12h, không cắt ngang điểm nối.
             return ((m + 720) % 1440) - 720;
@@ -75416,7 +75534,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            const todayStr = new Date().toISOString().slice(0, 10);
+            const todayStr = toLocalDateStr(new Date()); // ngày VN, không phải ngày UTC
             link.href = url;
             link.download = `sleep_sessions_${todayStr}.csv`;
             document.body.appendChild(link);
@@ -76118,8 +76236,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // thể hơn bản cũ (chỉ có "đến giờ ngủ"): nêu rõ giờ mục tiêu, giờ hiện
         // tại — chỉ nêu số liệu, không kèm lời khuyên.
         function buildSleepReminderCopy(timeLabel) {
-            const now = new Date();
-            const nowLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const nowMin = vnMinuteOfDay(Date.now()); // giờ VN, không theo múi giờ máy
+            const nowLabel = `${String(Math.floor(nowMin / 60)).padStart(2, '0')}:${String(nowMin % 60).padStart(2, '0')}`;
             return {
                 title: 'Time to get ready for bed',
                 body: `It is ${nowLabel} now; your bedtime target is ${timeLabel} (based on your 14-night median wake time).`,
@@ -76154,6 +76272,112 @@ document.addEventListener('DOMContentLoaded', function() {
             updateSleepReminderStatus();
         }
 
+        // ===== Xuất nhắc ngủ ra Lịch (.ics) =====
+        // Nhắc trong tab chỉ chạy khi tab đang mở. File .ics thêm 2 sự kiện LẶP HẰNG NGÀY
+        // (wind-down + giờ đi ngủ) vào lịch của điện thoại/máy tính — hệ điều hành tự báo thức, không
+        // cần mở app. Gắn TZID=Asia/Ho_Chi_Minh (UTC+7) nên luôn báo đúng GIỜ VIỆT NAM, khớp với giờ ngủ trong app.
+        // UID cố định + SEQUENCE tăng dần: xuất lại và nhập lại sẽ CẬP NHẬT sự kiện cũ, không nhân đôi.
+        const SLEEP_ICS_WINDDOWN_MIN = 30; // wind-down báo sớm hơn giờ ngủ bao nhiêu phút
+
+        function icsEscapeText(t) {
+            return String(t).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+        }
+        function icsFoldLine(line) { // RFC 5545: tối đa 75 octet/dòng, dòng tiếp bắt đầu bằng 1 khoảng trắng
+            if (line.length <= 73) return line;
+            const out = [];
+            let i = 0;
+            while (i < line.length) { out.push((i ? ' ' : '') + line.slice(i, i + (i ? 72 : 73))); i += (i ? 72 : 73); }
+            return out.join('\r\n');
+        }
+        // d là Date có các trường UTC đang mang "giờ treo tường VN" (xem makeEvent) → in ra bằng getUTC*.
+        function icsLocalStamp(d) {
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}00`;
+        }
+
+        function buildSleepReminderICS(target) {
+            const p2 = n => String(n).padStart(2, '0');
+            const timeLabel = `${p2(target.hh)}:${p2(target.mm)}`;
+            const nowSec = Math.floor(Date.now() / 1000);
+            const dtstamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+            const makeEvent = (uid, offsetMin, summary, desc) => {
+                // Ngày + giờ theo GIỜ VN: lấy "hôm nay ở VN" rồi dựng giờ treo tường VN trong trường UTC
+                // của Date (phút âm tự lùi giờ/ngày). Không dùng múi giờ của máy.
+                const vnNow = new Date(Date.now() + VN_UTC_OFFSET_MS);
+                const start = new Date(Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate(), target.hh, target.mm - offsetMin, 0));
+                const end = new Date(start.getTime() + 15 * 60000);
+                return [
+                    'BEGIN:VEVENT',
+                    `UID:${uid}`,
+                    `DTSTAMP:${dtstamp}`,
+                    `SEQUENCE:${nowSec}`,
+                    `DTSTART;TZID=Asia/Ho_Chi_Minh:${icsLocalStamp(start)}`,
+                    `DTEND;TZID=Asia/Ho_Chi_Minh:${icsLocalStamp(end)}`,
+                    'RRULE:FREQ=DAILY',
+                    `SUMMARY:${icsEscapeText(summary)}`,
+                    `DESCRIPTION:${icsEscapeText(desc)}`,
+                    'TRANSP:TRANSPARENT',
+                    'BEGIN:VALARM',
+                    'ACTION:DISPLAY',
+                    `DESCRIPTION:${icsEscapeText(summary)}`,
+                    'TRIGGER:PT0S',
+                    'END:VALARM',
+                    'END:VEVENT'
+                ];
+            };
+            const basis = `Bedtime target ${timeLabel} = 14-night median wake time − sleep goal (${getSleepGoal()}h) − average time to fall asleep.`;
+            const lines = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//Sleep Tracker//Bedtime Reminder//EN',
+                'CALSCALE:GREGORIAN',
+                'METHOD:PUBLISH',
+                'X-WR-CALNAME:Sleep reminders',
+                // Giờ VN cố định UTC+7 (không DST) → báo đúng giờ VN dù lịch đang mở ở múi giờ nào
+                'BEGIN:VTIMEZONE',
+                'TZID:Asia/Ho_Chi_Minh',
+                'BEGIN:STANDARD',
+                'DTSTART:19700101T000000',
+                'TZOFFSETFROM:+0700',
+                'TZOFFSETTO:+0700',
+                'TZNAME:ICT',
+                'END:STANDARD',
+                'END:VTIMEZONE',
+                ...makeEvent('sleep-winddown-daily@sleep-tracker.local', SLEEP_ICS_WINDDOWN_MIN,
+                    'Wind down — screens off, lights low',
+                    `Bedtime is at ${timeLabel}. Start winding down now. ${basis}`),
+                ...makeEvent('sleep-bedtime-daily@sleep-tracker.local', 0,
+                    'Bedtime — time to sleep',
+                    `${basis} Remember to tap Start Sleep in the app.`),
+                'END:VCALENDAR'
+            ];
+            return lines.map(icsFoldLine).join('\r\n') + '\r\n';
+        }
+
+        function exportSleepReminderICS() {
+            const target = computeSmartBedtimeTarget();
+            if (!target) {
+                if (typeof showNotification === 'function') {
+                    showNotification('<svg class="icon-svg" aria-hidden="true"><use href="#icon-triangle-alert"></use></svg> Log at least 3 nights first — the bedtime time is calculated from your wake times.', 'warning');
+                }
+                return;
+            }
+            const ics = buildSleepReminderICS(target);
+            const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'bedtime-reminders.ics';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+            if (typeof showNotification === 'function') {
+                const t = `${String(target.hh).padStart(2, '0')}:${String(target.mm).padStart(2, '0')}`;
+                showNotification(`<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Calendar file downloaded — open it to add daily reminders at ${t} (and ${SLEEP_ICS_WINDDOWN_MIN} min earlier).`, 'success', { duration: 9000 });
+            }
+        }
+
         function setSleepReminderEnabled(enabled) {
             localStorage.setItem(SLEEP_REMINDER_KEY, enabled ? '1' : '0');
             if (enabled && 'Notification' in window && Notification.permission === 'default') {
@@ -76172,11 +76396,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Tìm lần xuất hiện TIẾP THEO của giờ HH:MM này (hôm nay hoặc mai) — cách chuẩn
             // để xử lý cả trường hợp giờ ngủ mục tiêu rơi vào sau nửa đêm (vd 00:30).
-            const candidate = new Date();
-            candidate.setHours(target.hh, target.mm, 0, 0);
-            if (candidate.getTime() <= Date.now()) candidate.setDate(candidate.getDate() + 1);
-
-            const msUntil = candidate.getTime() - Date.now();
+            // Tính theo GIỜ VIỆT NAM (khớp dòng "Will remind you at … (Vietnam time)"), không theo múi giờ máy.
+            let msUntil = (target.hh * 60 + target.mm) * 60000 - vnMsIntoDay(Date.now());
+            if (msUntil <= 0) msUntil += 86400000;
             if (msUntil > 24 * 60 * 60 * 1000) return; // an toàn, tránh timeout quá dài
 
             sleepReminderTimeoutId = setTimeout(() => {
@@ -78620,7 +78842,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const today = new Date(); today.setHours(0,0,0,0);
             const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-            const dayNames = ['CN','T2','T3','T4','T5','T6','T7'];
+            const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
             function relativeDay(ts) {
                 const d = new Date(ts); const d0 = new Date(d); d0.setHours(0,0,0,0);
                 if (d0.getTime() === today.getTime()) return 'Today';
@@ -78819,12 +79041,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 weekday: get('weekday') // 'Sun','Mon',...,'Sat'
             };
         }
-        const VN_WEEKDAY_TO_VI = { Sun:'CN', Mon:'T2', Tue:'T3', Wed:'T4', Thu:'T5', Fri:'T6', Sat:'T7' };
+        // Tên thứ viết tắt tiếng Anh (giao diện app là tiếng Anh) — index 0 = Sunday.
+        const SLEEP_WEEKDAYS_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-        // Nhãn "Thứ dd/mm" cho 1 trục ngày, luôn tính theo giờ VN.
+        // Nhãn "Ddd dd/mm" (vd "Fri 02/10") cho 1 trục ngày, luôn tính theo giờ VN.
+        // getVNDateTimeParts().weekday đã là 'Sun'..'Sat' nên dùng thẳng, chỉ chuẩn hoá phòng khi
+        // trình duyệt trả về dạng khác (vd "Thu." hoặc "Thur").
         function vnDayLabel(ts) {
             const p = getVNDateTimeParts(ts);
-            return `${VN_WEEKDAY_TO_VI[p.weekday] || p.weekday} ${String(p.day).padStart(2,'0')}/${String(p.month).padStart(2,'0')}`;
+            const wd = SLEEP_WEEKDAYS_EN.find(w => String(p.weekday || '').slice(0, 3).toLowerCase() === w.toLowerCase()) || p.weekday;
+            return `${wd} ${String(p.day).padStart(2,'0')}/${String(p.month).padStart(2,'0')}`;
         }
 
         function setSleepChartRange(days) {
@@ -78900,8 +79126,16 @@ document.addEventListener('DOMContentLoaded', function() {
             if (durTrend && Math.abs(durTrend.diff) >= 0.3) {
                 const more = durTrend.diff > 0;
                 const closerToGoal = Math.abs(durTrend.avgLast - goal) < Math.abs(durTrend.avgPrev - goal);
-                let tone = closerToGoal ? 'positive' : 'caution';
-                let text = `This week you slept on average <strong>${more ? 'more' : 'less'} by ${Math.abs(durTrend.diff).toFixed(1)}h</strong> than last week (${durTrend.avgPrev.toFixed(1)}h → ${durTrend.avgLast.toFixed(1)}h); your current goal is ${goal}h.`;
+                // Khoảng cách tới mục tiêu của tuần này — để giọng banner không "tô xanh" một tuần vẫn
+                // còn thiếu nhiều (vd 6.4h so với mục tiêu 8h): cải thiện nhưng còn xa mục tiêu → tông trung tính.
+                const gap = durTrend.avgLast - goal; // <0: thiếu, >0: dư
+                const STILL_FAR = 1.0;
+                let tone = closerToGoal ? (gap < -STILL_FAR ? 'info' : 'positive') : 'caution';
+                let goalNote;
+                if (Math.abs(gap) <= 0.25) goalNote = `right around your ${goal}h goal`;
+                else if (gap < 0) goalNote = `${more ? 'still ' : ''}${Math.abs(gap).toFixed(1)}h below your ${goal}h goal`;
+                else goalNote = `${gap.toFixed(1)}h above your ${goal}h goal`;
+                let text = `This week you slept <strong>${Math.abs(durTrend.diff).toFixed(1)}h ${more ? 'more' : 'less'} per night</strong> than last week (${durTrend.avgPrev.toFixed(1)}h → ${durTrend.avgLast.toFixed(1)}h), ${goalNote}.`;
                 if (debt) {
                     tone = 'caution';
                     text += ` Sleep debt is now ${debt.debt.toFixed(1)}h (${debt.expected}-night ledger).`;
@@ -78980,25 +79214,145 @@ document.addEventListener('DOMContentLoaded', function() {
             5: { color: 'rgba(152, 104, 174,1)',    border: '#5b21b6', radius: 8 }
         };
 
+        // Dựng N "ô ngày" liên tiếp (theo giờ VN) cho Sleep Chart: mỗi ô = 1 ngày lịch, gán
+        // theo ngày BẮT ĐẦU của phiên (khớp nhãn vnDayLabel). Đêm nào chưa log → ô trống
+        // (session = null) thay vì bị bỏ qua, để nút 7d/14d/30d đúng nghĩa là 7/14/30 NGÀY.
+        // Ô cuối là hôm nay nếu đã có phiên bắt đầu hôm nay; chưa có thì lùi về hôm qua để
+        // không hiện một ô trống "oan" cho đêm nay còn chưa tới.
+        function buildSleepDaySlots(days) {
+            const dayKey = ts => { const p = getVNDateTimeParts(ts); return Date.UTC(p.year, p.month - 1, p.day) / 86400000; };
+            const byDay = new Map();
+            getSortedSleepSessions().forEach(sess => {
+                if (typeof sess.start !== 'number' || isNaN(sess.start)) return;
+                const k = dayKey(sess.start);
+                if (!byDay.has(k)) byDay.set(k, []);
+                byDay.get(k).push(sess);
+            });
+            const todayKey = dayKey(Date.now());
+            const endKey = byDay.has(todayKey) ? todayKey : todayKey - 1;
+            const slots = [];
+            for (let k = endKey - days + 1; k <= endKey; k++) {
+                const list = byDay.get(k) || [];
+                // Nhiều phiên cùng ngày (ngủ chia đoạn): cộng tổng giờ, phiên dài nhất làm đại diện (sửa/chất lượng)
+                const primary = list.reduce((best, x) => (!best || x.duration > best.duration) ? x : best, null);
+                const total = list.length ? parseFloat(list.reduce((a, x) => a + (x.duration || 0), 0).toFixed(2)) : null;
+                slots.push({ key: k, label: vnDayLabel(Date.UTC(1970, 0, 1) + k * 86400000 + 5 * 3600000), session: primary, sessions: list, total });
+            }
+            return slots;
+        }
+
+        // ===== Màu cột theo thời lượng — dùng chung cho chart Hours, Timeline và legend =====
+        // 4 mức: đỏ (<3h hoặc >16h) KHÔNG phải "ngủ tệ" mà là "nghi nhập sai / quên bấm Stop";
+        // vàng = ngủ thiếu nhiều; xanh = đạt mục tiêu; hồng = gần mục tiêu (thiếu nhẹ hoặc dư nhiều).
+        // Cột đỏ có thêm sọc chéo để phân biệt được mà không cần dựa vào màu (người khó phân biệt màu).
+        function sleepBarStatus(duration, goal) {
+            if (duration > 16 || duration < 3) return { key: 'check', label: 'Check this entry (under 3h or over 16h \u2014 possibly a typo or a missed Stop)', rgb: '239,68,68', border: '#ef4444' };
+            if (duration < goal - 1.5) return { key: 'short', label: 'Short night', rgb: '245,158,11', border: '#f59e0b' };
+            if (duration >= goal - 0.25 && duration <= goal + 1.5) return { key: 'ok', label: 'On target', rgb: '16,185,129', border: '#10b981' };
+            return { key: 'near', label: 'Close to target', rgb: '209,123,150', border: '#d17b96' };
+        }
+        let _sleepStripePatterns = {};
+        function sleepStripePattern(rgb, alpha) {
+            const k = rgb + '|' + alpha;
+            if (_sleepStripePatterns[k]) return _sleepStripePatterns[k];
+            try {
+                const c = document.createElement('canvas'); c.width = 8; c.height = 8;
+                const g = c.getContext('2d');
+                g.fillStyle = `rgba(${rgb},${alpha})`; g.fillRect(0, 0, 8, 8);
+                g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2;
+                g.beginPath(); g.moveTo(-2, 10); g.lineTo(10, -2); g.moveTo(-2, 2); g.lineTo(2, -2); g.moveTo(6, 10); g.lineTo(10, 6); g.stroke();
+                const pat = g.createPattern(c, 'repeat');
+                if (pat) { _sleepStripePatterns[k] = pat; return pat; }
+            } catch (e) {}
+            return `rgba(${rgb},${alpha})`;
+        }
+        function sleepBarColors(duration, goal, alpha) {
+            const st = sleepBarStatus(duration, goal);
+            return { bg: st.key === 'check' ? sleepStripePattern(st.rgb, alpha) : `rgba(${st.rgb},${alpha})`, border: st.border, status: st };
+        }
+        function renderSleepBarLegend(goal) {
+            const el = document.getElementById('sleepBarLegend');
+            if (!el) return;
+            const f = n => String(Math.round(n * 100) / 100).replace(/\.0+$/, '');
+            const item = (swatchStyle, text) => `<span style="display:inline-flex; align-items:center; gap:5px;"><span aria-hidden="true" style="width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 auto;${swatchStyle}"></span>${text}</span>`;
+            const sw = st => `background:rgba(${st.rgb},0.7);border:1px solid ${st.border};`;
+            el.innerHTML =
+                item(sw(sleepBarStatus(goal, goal)), `On target (${f(goal - 0.25)}\u2013${f(goal + 1.5)}h)`) +
+                item(sw(sleepBarStatus(goal - 1, goal)), 'Close (a bit short or long)') +
+                item(sw(sleepBarStatus(goal - 2, goal)), `Short (under ${f(goal - 1.5)}h)`) +
+                item(`background:repeating-linear-gradient(135deg, rgba(239,68,68,0.85) 0 3px, rgba(255,255,255,0.7) 3px 5px);border:1px solid #ef4444;`, 'Check entry (under 3h or over 16h \u2014 likely a typo or missed Stop, not necessarily bad sleep)');
+        }
+
+        // ===== Văn bản thay thế (text alternative) cho 2 canvas chart — để screen reader đọc được =====
+        // Canvas không có cấu trúc DOM nên người dùng màn hình đọc chỉ nghe "image". Mỗi chart có
+        // role="img" + aria-describedby trỏ tới 1 khối chữ ẩn (chỉ ẩn bằng clip, KHÔNG dùng display:none
+        // vì như vậy screen reader bỏ qua luôn). Khối này được dựng lại mỗi lần chart vẽ lại.
+        function sleepA11yEscape(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function sleepA11yNum(n) { return String(Math.round(n * 100) / 100); }
+        function sleepA11yStatusText(duration, goal) {
+            const st = sleepBarStatus(duration, goal);
+            return st.key === 'check' ? 'check this entry' : st.label.toLowerCase();
+        }
+        function updateSleepChartA11y(slots, goal, qualityLabels) {
+            const ctx = document.getElementById('sleepChart');
+            const box = document.getElementById('sleepChartSummary');
+            const n = slots.length;
+            const logged = slots.filter(sl => sl.total != null);
+            const avg = logged.length ? logged.reduce((a, sl) => a + sl.total, 0) / logged.length : null;
+            const head = `Hours slept per night over the last ${n} days. Goal: ${sleepA11yNum(goal)} hours. ` +
+                (logged.length
+                    ? `${logged.length} of ${n} nights logged, average ${sleepA11yNum(avg)} hours.`
+                    : 'No nights logged in this period.');
+            if (ctx) ctx.setAttribute('aria-label', `Bar chart of hours slept per night, last ${n} days. ${logged.length ? `Average ${sleepA11yNum(avg)} hours, goal ${sleepA11yNum(goal)} hours.` : 'No nights logged.'}`);
+            if (!box) return;
+            const items = slots.map(sl => {
+                if (sl.total == null) return `<li>${sleepA11yEscape(sl.label)}: not logged</li>`;
+                const q = sl.session && sl.session.quality ? `, quality ${sleepA11yEscape(qualityLabels[sl.session.quality])}` : '';
+                return `<li>${sleepA11yEscape(sl.label)}: ${sleepA11yNum(sl.total)} hours, ${sleepA11yEscape(sleepA11yStatusText(sl.total, goal))}${q}</li>`;
+            });
+            box.innerHTML = `<p>${sleepA11yEscape(head)}</p><ul>${items.join('')}</ul>`;
+        }
+        function updateSleepTimelineA11y(rows, ranges, napsByRow, labels, goal, qualityLabels) {
+            const ctx = document.getElementById('sleepTimelineChart');
+            const box = document.getElementById('sleepTimelineSummary');
+            const logged = rows.filter(r => r.session).length;
+            const days = new Set(rows.map(r => r.key)).size;
+            if (ctx) ctx.setAttribute('aria-label', `Sleep timeline for the last ${days} days: bedtime to wake-up for each night. ${logged} ${logged === 1 ? 'sleep' : 'sleeps'} logged.`);
+            if (!box) return;
+            const napText = arr => arr.map(nap => {
+                const s = sleepTimeToAxisHour(nap[0]);
+                return `nap ${axisHourToClockLabel(s)} to ${axisHourToClockLabel(s + (nap[1] - nap[0]) / 3600000)}`;
+            }).join(', ');
+            const items = rows.map((r, i) => {
+                const label = sleepA11yEscape(labels[i]);
+                const naps = napsByRow[i] && napsByRow[i].length ? napText(napsByRow[i]) : '';
+                if (!r.session) return `<li>${label}: not logged${naps ? `, ${sleepA11yEscape(naps)}` : ''}</li>`;
+                const q = r.session.quality ? `, quality ${sleepA11yEscape(qualityLabels[r.session.quality])}` : '';
+                const bed = axisHourToClockLabel(ranges[i][0]);
+                const wake = axisHourToClockLabel(ranges[i][1]);
+                return `<li>${label}: bedtime ${bed}, wake-up ${wake}, ${sleepA11yNum(r.session.duration)} hours${q}${naps ? `, ${sleepA11yEscape(naps)}` : ''}</li>`;
+            });
+            box.innerHTML = `<p>Sleep timeline, bedtime to wake-up, last ${days} days. Goal: ${sleepA11yNum(goal)} hours.</p><ul>${items.join('')}</ul>`;
+        }
+
         function renderSleepChart() {
             const ctx = document.getElementById('sleepChart');
             if (!ctx) return;
             
             const goal = getSleepGoal();
-            const recentSessions = getSortedSleepSessions().slice(-sleepChartRangeDays); // N phiên gần nhất theo range đã chọn, đúng thứ tự thời gian
-            const labels = recentSessions.map(session => vnDayLabel(session.start));
-            const durations = recentSessions.map(session => session.duration);
-            const qualities = recentSessions.map(session => session.quality || 0);
+            const slots = buildSleepDaySlots(sleepChartRangeDays); // N NGÀY gần nhất (đêm chưa log = ô trống)
+            const recentSessions = slots.flatMap(sl => sl.sessions); // Timeline dùng đúng cùng cửa sổ ngày
+            const labels = slots.map(sl => sl.label);
+            const durations = slots.map(sl => sl.total);          // null = chưa log đêm đó
+            const qualities = slots.map(sl => (sl.session && sl.session.quality) || 0);
+            const missingNights = slots.filter(sl => !sl.session).length;
 
             // Tô màu từng cột theo mức độ đạt mục tiêu, không còn 1 màu xanh cố định
             const qualityLabels = ['Not rated','Very poor','Poor','Okay','Good','Very good'];
-            function colorForDuration(duration) {
-                if (duration > 16 || duration < 3) return { bg: 'rgba(239,68,68,0.7)', border: '#ef4444' };
-                if (duration < goal - 1.5) return { bg: 'rgba(245,158,11,0.7)', border: '#f59e0b' };
-                if (duration >= goal - 0.25 && duration <= goal + 1.5) return { bg: 'rgba(16,185,129,0.7)', border: '#10b981' };
-                return { bg: 'rgba(209,123,150,0.7)', border: '#d17b96' };
-            }
-            const barColors = durations.map(colorForDuration);
+            function colorForDuration(duration) { return sleepBarColors(duration, goal, 0.7); }
+            const barColors = durations.map(d => d == null ? { bg: 'transparent', border: 'transparent' } : colorForDuration(d));
 
             // Chấm chất lượng đặt cao hơn đỉnh cột 1 khoảng cố định — không có ý nghĩa
             // "giá trị" theo trục Y, chỉ để chấm luôn nổi rõ phía trên cột dù cột cao/thấp.
@@ -79058,6 +79412,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false, // khung .chart-container có height cố định → không được ép tỉ lệ 2:1
                     // Click-to-edit (#8): bấm vào bất kỳ đâu trong cột (kể cả phần trống
                     // phía trên, dưới chấm Quality) đều mở modal sửa đêm đó — dùng
                     // getElementsAtEventForMode với mode 'index' + intersect:false thay vì
@@ -79068,7 +79423,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
                         const barEl = els.find(el => el.datasetIndex === 0);
                         if (!barEl) return;
-                        const session = recentSessions[barEl.index];
+                        const session = slots[barEl.index] && slots[barEl.index].session;
                         if (session) editSleepSession(session.id);
                     },
                     onHover: (evt, elements, chart) => {
@@ -79090,6 +79445,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                         return `Quality: ${qualityLabels[q]} (${q}/5)`;
                                     }
                                     return `Duration: ${context.parsed.y} hours`;
+                                },
+                                afterLabel: function(context) {
+                                    if (context.datasetIndex !== 0 || context.parsed.y == null) return '';
+                                    return sleepBarStatus(context.parsed.y, goal).label;
                                 }
                             }
                         }
@@ -79122,7 +79481,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 sleepChart.update();
             }
 
-            renderSleepTimelineChart(recentSessions, goal);
+            const gapNote = document.getElementById('sleepChartGapNote');
+            if (gapNote) {
+                gapNote.textContent = missingNights > 0
+                    ? `${missingNights} ${missingNights === 1 ? 'night' : 'nights'} not logged`
+                    : '';
+            }
+
+            updateSleepChartA11y(slots, goal, qualityLabels);
+            renderSleepBarLegend(goal);
+            renderSleepTimelineChart(recentSessions, goal, slots);
             renderSleepHeatmap();
             renderSleepInsightBanner();
             renderWeekdayWeekendCard();
@@ -79156,52 +79524,68 @@ document.addEventListener('DOMContentLoaded', function() {
             return `${String(hFinal % 24).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
         }
 
-        function renderSleepTimelineChart(recentSessions, goal) {
+        function renderSleepTimelineChart(recentSessions, goal, slots) {
             const ctx = document.getElementById('sleepTimelineChart');
             if (!ctx) return;
 
-            recentSessions = recentSessions || getSortedSleepSessions().slice(-sleepChartRangeDays);
             goal = (typeof goal === 'number') ? goal : getSleepGoal();
+            // Mỗi NGÀY trong cửa sổ có ít nhất 1 hàng: ngày có phiên ngủ → 1 hàng/phiên (như cũ, nhiều phiên
+            // cùng ngày vẫn tách hàng); ngày không có phiên nào → 1 hàng trống ghi "not logged".
+            slots = slots || buildSleepDaySlots(sleepChartRangeDays);
+            const rows = [];
+            slots.forEach(sl => {
+                if (sl.sessions.length) sl.sessions.forEach(se => rows.push({ session: se, key: sl.key, label: sl.label }));
+                else rows.push({ session: null, key: sl.key, label: sl.label });
+            });
+            const rowSessions = rows.map(r => r.session); // null = đêm chưa log
+            recentSessions = rowSessions;                 // giữ tên cũ cho onClick/tooltip (đã kiểm null)
 
             // Nếu 2+ session bắt đầu cùng 1 ngày (VD: ngủ trưa + ngủ đêm), nhãn ngày sẽ
             // trùng nhau y hệt và người xem không phân biệt được hàng nào là hàng nào.
             // Khi phát hiện trùng, thêm giờ đi ngủ vào sau nhãn ngày để tách biệt.
-            const rawLabels = recentSessions.map(session => vnDayLabel(session.start));
+            const rawLabels = rows.map(r => r.session ? vnDayLabel(r.session.start) : r.label);
             const labelCounts = {};
             rawLabels.forEach(l => { labelCounts[l] = (labelCounts[l] || 0) + 1; });
             const labels = rawLabels.map((l, i) => {
-                if (labelCounts[l] <= 1) return l;
+                if (labelCounts[l] <= 1 || !rowSessions[i]) return l;
                 const bedtimeClock = axisHourToClockLabel(sleepTimeToAxisHour(recentSessions[i].start));
                 return `${l} · ${bedtimeClock}`;
             });
 
             const qualityLabels = ['Not rated','Very poor','Poor','Okay','Good','Very good'];
-            function colorForDuration(duration) {
-                if (duration > 16 || duration < 3) return { bg: 'rgba(239,68,68,0.75)', border: '#ef4444' };
-                if (duration < goal - 1.5) return { bg: 'rgba(245,158,11,0.75)', border: '#f59e0b' };
-                if (duration >= goal - 0.25 && duration <= goal + 1.5) return { bg: 'rgba(16,185,129,0.75)', border: '#10b981' };
-                return { bg: 'rgba(209,123,150,0.75)', border: '#d17b96' };
-            }
+            function colorForDuration(duration) { return sleepBarColors(duration, goal, 0.75); }
 
-            const ranges = recentSessions.map(session => {
+            const ranges = rowSessions.map(session => {
+                if (!session) return null; // hàng trống: không vẽ thanh
                 const xStart = sleepTimeToAxisHour(session.start);
                 return [xStart, xStart + session.duration];
             });
-            const barColors = recentSessions.map(session => colorForDuration(session.duration));
+            const barColors = rowSessions.map(session => session ? colorForDuration(session.duration) : { bg: 'transparent', border: 'transparent' });
 
             // Gán nap vào đúng 1 hàng: hàng của đêm ngủ chính diễn ra NGAY SAU nap đó — tức
             // nap thuộc "khung ban ngày" giữa lúc dậy của đêm liền trước và giờ đi ngủ của
             // đêm này. Nhờ vậy đọc một hàng là đọc trọn "nap ban ngày → tối đến giờ ngủ chính"
             // theo đúng trình tự thời gian, không cần thêm hàng riêng cho nap.
             const naps = getSleepNapsSafe().filter(n => n && typeof n.start === 'number' && !isNaN(n.start));
-            const napsByRow = recentSessions.map(() => []);
+            const napsByRow = rows.map(() => []);
+            const napDayKey = ts => { const p = getVNDateTimeParts(ts); return Date.UTC(p.year, p.month - 1, p.day) / 86400000; };
+            const firstKey = slots.length ? slots[0].key : -Infinity;
+            const gapRowByKey = new Map();
+            rows.forEach((r, i) => { if (!r.session) gapRowByKey.set(r.key, i); });
+            const sessionRowIdx = [];
+            rows.forEach((r, i) => { if (r.session) sessionRowIdx.push(i); });
             naps.forEach(nap => {
                 const napEnd = typeof nap.end === 'number' && !isNaN(nap.end)
                     ? nap.end : nap.start + (nap.durationMin || 0) * 60000;
                 if (!(napEnd > nap.start)) return;
-                for (let i = 0; i < recentSessions.length; i++) {
-                    const windowEnd = recentSessions[i].start;
-                    const prevEndTs = i > 0 ? getSleepSessionEndTs(recentSessions[i - 1]) : null;
+                const nk = napDayKey(nap.start);
+                if (nk < firstKey) return; // nap trước cửa sổ ngày đang xem thì không vẽ
+                // Nap rơi vào ngày chưa log đêm → hiện ngay ở hàng trống của ngày đó
+                if (gapRowByKey.has(nk)) { napsByRow[gapRowByKey.get(nk)].push([nap.start, napEnd]); return; }
+                for (let j = 0; j < sessionRowIdx.length; j++) {
+                    const i = sessionRowIdx[j];
+                    const windowEnd = rowSessions[i].start;
+                    const prevEndTs = j > 0 ? getSleepSessionEndTs(rowSessions[sessionRowIdx[j - 1]]) : null;
                     const windowStart = prevEndTs !== null ? prevEndTs : -Infinity;
                     if (nap.start >= windowStart && nap.start < windowEnd) {
                         napsByRow[i].push([nap.start, napEnd]);
@@ -79237,7 +79621,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Trục X cố định 12:00 trưa → 12:00 trưa hôm sau (12–36), vừa đủ chứa mọi khung
             // giờ ngủ thường gặp mà vẫn giữ tỉ lệ nhất quán giữa các lần vẽ lại.
             let axisMin = 12, axisMax = 36;
-            ranges.forEach(([s, e]) => {
+            ranges.forEach(rg => {
+                if (!rg) return;
+                const [s, e] = rg;
                 if (s < axisMin) axisMin = Math.floor(s / 3) * 3;
                 if (e > axisMax) axisMax = Math.ceil(e / 3) * 3;
             });
@@ -79247,12 +79633,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (r[1] > axisMax) axisMax = Math.ceil(r[1] / 3) * 3;
             }));
 
+            // Chiều cao khung theo số hàng (mỗi đêm ~34px) để 14d/30d không bị dồn nát
+            const tlWrap = document.getElementById('sleepTimelineWrap');
+            if (tlWrap) tlWrap.style.height = Math.max(200, labels.length * 34 + 70) + 'px';
+
+            updateSleepTimelineA11y(rows, ranges, napsByRow, labels, goal, qualityLabels);
+
+            // Chữ "not logged" ở giữa các hàng trống (bỏ qua hàng đã có nap để không đè lên thanh nap)
+            const sleepGapPlugin = {
+                id: 'sleepGapRows',
+                afterDatasetsDraw(chart) {
+                    const y = chart.scales && chart.scales.y;
+                    if (!y) return;
+                    const c = chart.ctx, area = chart.chartArea;
+                    const dark = document.body.classList.contains('dark-mode');
+                    c.save();
+                    c.font = 'italic 11px sans-serif';
+                    c.textAlign = 'center';
+                    c.textBaseline = 'middle';
+                    c.fillStyle = dark ? 'rgba(200,149,168,0.8)' : 'rgba(163,128,143,0.85)';
+                    const cx = (area.left + area.right) / 2;
+                    rowSessions.forEach((se, i) => {
+                        if (se || napsByRow[i].length) return;
+                        c.fillText('not logged', cx, y.getPixelForValue(i));
+                    });
+                    c.restore();
+                }
+            };
+
             if (sleepTimelineChart) {
                 sleepTimelineChart.destroy();
             }
 
             sleepTimelineChart = new Chart(ctx, {
                 type: 'bar',
+                plugins: [sleepGapPlugin],
                 data: {
                     labels: labels,
                     datasets: [{
@@ -79269,6 +79684,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 options: {
                     indexAxis: 'y',
                     responsive: true,
+                    maintainAspectRatio: false,
                     // Click-to-edit (#8): cùng cơ chế với Hours chart — bấm vào bất kỳ
                     // đâu dọc theo hàng (đêm) đó, không cần trúng chính xác thanh, đều mở
                     // modal sửa đêm đó. Nap chỉ hiển thị để đọc, không mở modal riêng (nap có
@@ -79282,7 +79698,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     },
                     onHover: (evt, elements, chart) => {
                         const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
-                        const overBar = els.some(el => el.datasetIndex === 0);
+                        const overBar = els.some(el => el.datasetIndex === 0 && recentSessions[el.index]);
                         if (evt.native && evt.native.target) evt.native.target.style.cursor = overBar ? 'pointer' : 'default';
                     },
                     plugins: {
@@ -79302,6 +79718,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         return `Nap: ${nStart} → ${nEnd} · ${mins}m`;
                                     }
                                     const session = recentSessions[context.dataIndex];
+                                    if (!session) return 'No sleep logged';
                                     const bedtime = axisHourToClockLabel(ranges[context.dataIndex][0]);
                                     const wake = axisHourToClockLabel(ranges[context.dataIndex][1]);
                                     const q = session.quality || 0;
@@ -79352,7 +79769,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // (quality, nếu có) — không phải chỉ số giờ đơn thuần, vì 10h ngủ (dư quá nhiều)
         // không nên đậm hơn 8h ngủ đúng mục tiêu.
         const SLEEP_HEATMAP_DAYS = 365; // 12 tháng ≈ 1 năm gần nhất
-        const SLEEP_HEATMAP_ROWS = ['CN','T2','T3','T4','T5','T6','T7']; // Sun→Sat, đồng bộ thứ tự dùng ở nơi khác trong app
+        const SLEEP_HEATMAP_ROWS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; // Sun→Sat, đồng bộ thứ tự dùng ở nơi khác trong app
 
         function vnDateStrFromTs(ts) {
             const p = getVNDateTimeParts(ts);
@@ -79937,6 +80354,18 @@ document.addEventListener('DOMContentLoaded', function() {
             body.style.display = willCollapse ? 'none' : 'block';
             if (chevron) chevron.style.transform = willCollapse ? 'rotate(-90deg)' : 'rotate(0deg)';
             localStorage.setItem('sleepInsightsCollapsed', willCollapse ? 'true' : 'false');
+            if (!willCollapse) resizeSleepChartsAfterShow();
+        }
+
+        // Chart.js đo kích thước khung lúc vẽ; nếu section bị ẩn (display:none) thì chart có thể được
+        // tạo/giữ ở kích thước 0 hoặc cũ. Mở lại section → đợi trình duyệt layout xong rồi ép chart đo lại.
+        function resizeSleepChartsAfterShow() {
+            const run = () => {
+                [sleepChart, sleepTimelineChart, solTrendChart, sleepDebtChart].forEach(c => {
+                    try { if (c) { c.resize(); c.update('none'); } } catch (e) {}
+                });
+            };
+            requestAnimationFrame(() => { run(); setTimeout(run, 120); }); // lần 2 phòng khi layout/transition chưa xong
         }
 
         function applySleepSectionCollapseState() {
@@ -99060,7 +99489,7 @@ return {
         for (let i = 1; i <= weeks*7; i++) {
           const d = new Date(baseDate + 'T00:00:00');
           d.setDate(d.getDate() + i);
-          if (weekdaySet.has(d.getDay())) { count++; lastIso = d.toISOString().split('T')[0]; }
+          if (weekdaySet.has(d.getDay())) { count++; lastIso = toLocalDateStr(d); } // ngày VN (toISOString sẽ lùi 1 ngày)
         }
         const endD = new Date(lastIso + 'T00:00:00');
         preview.textContent = `→ ${count + 1} buổi, đến ${endD.toLocaleDateString('vi-VN',{day:'numeric',month:'long'})}`;
@@ -101383,7 +101812,7 @@ function unit(g){try{return getGoalUnitLabel(g.type,g.customUnit)}catch(e){retur
 function fmt(n){return n>=10?Math.round(n):Math.round(n*10)/10}
 function weeklyCapacity(){ // avg study hours/week over last 28 days
   var d=window.dailyStudyData||{},s=0,t=new Date(now());
-  for(var i=0;i<28;i++){var k=new Date(t-i*DAY).toISOString().slice(0,10);s+=parseFloat(d[k])||0}
+  for(var i=0;i<28;i++){var k=new Date(t-i*DAY+7*3600e3).toISOString().slice(0,10);s+=parseFloat(d[k])||0}
   return s/4;
 }
 function active(){return G().filter(function(g){return g.career===currentCareer&&!done(g)})}
@@ -101569,7 +101998,7 @@ function chips(host,items,cb,label){
   items.forEach(function(it){var b=document.createElement('button');b.type='button';b.className='gm-chip';b.textContent=it[0];b.onclick=function(){cb(it[1])};w.appendChild(b)});
   host.appendChild(w);return w;
 }
-function iso(d){return d.toISOString().slice(0,10)}
+function iso(d){return new Date(d.getTime()+7*3600e3).toISOString().slice(0,10)} // ngày theo giờ VN
 var tHost=null,SUG={
  pe:['Build a full LBO model','Master deal sourcing & screening','Write an investment committee memo','Ace PE case-study interviews','Learn value-creation levers'],
  ib:['Master M&A and DCF valuation','Ace IB technical interviews','Build comps and precedent models','Learn pitchbook formatting','Complete 100 interview questions'],
@@ -101587,7 +102016,7 @@ function build(){
     var up=function(){c.textContent=t.value.length+'/80'};t.addEventListener('input',up);t.addEventListener('gm',up);up()}
   tHost=t.parentNode;refreshTitles();
   var dl=$('#goalDeadline');
-  chips(dl.parentNode,[['+2 wks',14],['+1 mo',30],['+3 mo',91],['+6 mo',182]],function(n){setVal(dl,iso(new Date(Date.now()+7*3600e3+n*DAY)))},'Deadline shortcuts');
+  chips(dl.parentNode,[['+2 wks',14],['+1 mo',30],['+3 mo',91],['+6 mo',182]],function(n){setVal(dl,iso(new Date(Date.now()+n*DAY)))},'Deadline shortcuts');
   var tg=$('#goalTarget');
   chips(tg.parentNode,[['10',10],['25',25],['50',50],['100',100]],function(n){setVal(tg,n)},'Target shortcuts');
   var hint=$('#goalPaceHint'),plan=document.createElement('div');plan.id='gmPlan';plan.style.display='none';plan.setAttribute('role','status');hint.parentNode.insertBefore(plan,hint);
