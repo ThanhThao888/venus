@@ -38,6 +38,7 @@ h2{font-size:1.05rem;margin:32px 0 10px}
 .bar{height:8px;border-radius:99px;background:var(--accent-soft);overflow:hidden;margin-top:6px}
 .bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .4s}
 .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+.btn{margin-left:8px;border:1px solid var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:99px;padding:3px 12px;font:inherit;font-size:.85rem;cursor:pointer}
 .tip{font-size:.85rem;color:var(--muted);margin-top:12px}
 </style>
 </head>
@@ -94,9 +95,18 @@ async function health(){
   let persisted = null;
   try{ if(navigator.storage && navigator.storage.persisted) persisted = await navigator.storage.persisted(); }catch(e){}
   const ptxt = persisted===null ? "trình duyệt không hỗ trợ" : persisted ? "Đã bật ✓" : "Chưa bật";
-  rows.push(`<div class="row"><span>Chống trình duyệt tự xóa dữ liệu</span><span class="${persisted?'ok':'warn'}">${ptxt}</span></div>`);
+  const btn = (persisted===false) ? ` <button id="persistBtn" class="btn">Bật bảo vệ</button>` : "";
+  rows.push(`<div class="row"><span>Chống trình duyệt tự xóa dữ liệu</span><span class="${persisted?'ok':'warn'}">${ptxt}${btn}</span></div>`);
 
   $("health").innerHTML = rows.join("");
+  const pb = $("persistBtn");
+  if(pb) pb.onclick = async () => {
+    try{
+      const g = await navigator.storage.persist();
+      alert(g ? "Đã bật bảo vệ dữ liệu ✓" : "Trình duyệt chưa đồng ý lần này. Hãy bookmark trang này rồi bấm lại sau.");
+    }catch(e){ alert("Không bật được trên trình duyệt này."); }
+    health();
+  };
 }
 health();
 </script>
