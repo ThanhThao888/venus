@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -45,21 +45,21 @@ h2{font-size:1.05rem;margin:32px 0 10px}
 <body>
 <div class="wrap">
   <h1>Venus Hub</h1>
-  <p class="sub">Chọn một app để mở. Tất cả dùng chung một kho dữ liệu.</p>
+  <p class="sub">Pick an app to open. All apps share the same data store.</p>
 
-  <!-- Thêm app mới: copy 1 dòng trong danh sách APPS bên dưới -->
+  <!-- To add a new app: copy one line in the APPS list below -->
   <div class="grid" id="apps"></div>
 
-  <h2>Sức khỏe dữ liệu</h2>
-  <div class="panel" id="health">Đang kiểm tra…</div>
-  <p class="tip">Backup đầy đủ: mở Tracker → Data Management → Full Backup. Một file đó chứa cả Loan Ledger.</p>
+  <h2>Data health</h2>
+  <div class="panel" id="health">Checking…</div>
+  <p class="tip">Full backup: open Tracker → Data Management → Full Backup. That single file includes Loan Ledger too.</p>
 </div>
 
 <script>
-/* ===== DANH SÁCH APP — chỉ cần sửa chỗ này ===== */
+/* ===== APP LIST — edit only this part ===== */
 const APPS = [
-  { name:"Finance Career Tracker", icon:"📈", desc:"Tracker chính: học, thói quen, notes…", url:"./index.html" },
-  { name:"Loan Ledger",            icon:"💸", desc:"Sổ theo dõi khoản vay",                url:"../Loan-Ledger/" },
+  { name:"Finance Career Tracker", icon:"📈", desc:"Main tracker: study, habits, notes…", url:"./index.html" },
+  { name:"Loan Ledger",            icon:"💸", desc:"Loan tracking ledger",                url:"../Loan-Ledger/" },
   { name:"Finance Valuation Tools",icon:"🧮", desc:"WACC, CAPM, Black-Scholes…",           url:"../finance-valuation-tools/" }
 ];
 
@@ -70,41 +70,41 @@ $("apps").innerHTML = APPS.map(a =>
 
 function ls(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function ago(ts){
-  if(!ts) return {t:"chưa có ghi nhận", c:"warn"};
+  if(!ts) return {t:"no record yet", c:"warn"};
   const d = Math.floor((Date.now()-ts)/864e5);
-  const t = d===0 ? "hôm nay" : d+" ngày trước";
+  const t = d===0 ? "today" : d+(d===1?" day ago":" days ago");
   return {t, c: d<=7 ? "ok" : d<=14 ? "warn" : "bad"};
 }
 
 async function health(){
   const rows = [];
-  // Dung lượng localStorage (ước lượng, ~5MB)
+  // localStorage usage estimate (~5MB limit)
   let bytes = 0;
   try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); bytes += (k.length+(localStorage.getItem(k)||"").length)*2; } }catch(e){}
   const mb = bytes/1048576, pct = Math.min(100, mb/5*100);
   const cls = pct>85 ? "bad" : pct>65 ? "warn" : "ok";
-  rows.push(`<div><div class="row"><span>Dung lượng localStorage (tối đa ~5MB)</span><span class="${cls}">${mb.toFixed(2)} MB (${pct.toFixed(0)}%)</span></div>
+  rows.push(`<div><div class="row"><span>localStorage usage (limit ~5MB)</span><span class="${cls}">${mb.toFixed(2)} MB (${pct.toFixed(0)}%)</span></div>
     <div class="bar"><i style="width:${pct}%;background:var(--${cls==='ok'?'ok':cls==='warn'?'warn':'bad'})"></i></div></div>`);
 
-  // Backup gần nhất của từng phần
+  // Last backup of each part
   const nv = ago(+ls("nvLastBackup")||0), ll = ago(+ls("loanLedger.lastExport")||0);
-  rows.push(`<div class="row"><span>Backup Notes gần nhất</span><span class="${nv.c}">${nv.t}</span></div>`);
-  rows.push(`<div class="row"><span>Export Loan Ledger gần nhất</span><span class="${ll.c}">${ll.t}</span></div>`);
+  rows.push(`<div class="row"><span>Last Notes backup</span><span class="${nv.c}">${nv.t}</span></div>`);
+  rows.push(`<div class="row"><span>Last Loan Ledger export</span><span class="${ll.c}">${ll.t}</span></div>`);
 
-  // Lưu trữ bền vững
+  // Persistent storage
   let persisted = null;
   try{ if(navigator.storage && navigator.storage.persisted) persisted = await navigator.storage.persisted(); }catch(e){}
-  const ptxt = persisted===null ? "trình duyệt không hỗ trợ" : persisted ? "Đã bật ✓" : "Chưa bật";
-  const btn = (persisted===false) ? ` <button id="persistBtn" class="btn">Bật bảo vệ</button>` : "";
-  rows.push(`<div class="row"><span>Chống trình duyệt tự xóa dữ liệu</span><span class="${persisted?'ok':'warn'}">${ptxt}${btn}</span></div>`);
+  const ptxt = persisted===null ? "not supported by this browser" : persisted ? "Enabled ✓" : "Not enabled";
+  const btn = (persisted===false) ? ` <button id="persistBtn" class="btn">Enable protection</button>` : "";
+  rows.push(`<div class="row"><span>Protection from browser auto-cleanup</span><span class="${persisted?'ok':'warn'}">${ptxt}${btn}</span></div>`);
 
   $("health").innerHTML = rows.join("");
   const pb = $("persistBtn");
   if(pb) pb.onclick = async () => {
     try{
       const g = await navigator.storage.persist();
-      alert(g ? "Đã bật bảo vệ dữ liệu ✓" : "Trình duyệt chưa đồng ý lần này. Hãy bookmark trang này rồi bấm lại sau.");
-    }catch(e){ alert("Không bật được trên trình duyệt này."); }
+      alert(g ? "Data protection enabled ✓" : "The browser did not grant it this time. Bookmark this page and try again later.");
+    }catch(e){ alert("Could not enable it in this browser."); }
     health();
   };
 }
