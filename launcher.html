@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Venus Hub</title>
+<style>
+:root{
+  --bg:#faf6f8; --card:#ffffff; --ink:#3b2f3a; --muted:#8a7a88; --line:#eadfe6;
+  --accent:#b5679a; --accent-soft:#f3e3ee; --ok:#4f8a6b; --warn:#c0762f; --bad:#b94a5a;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#17121a; --card:#221a26; --ink:#f1e6ee; --muted:#a998a6; --line:#382c3d;
+    --accent:#d48bbb; --accent-soft:#33233a; --ok:#7fc3a0; --warn:#e0a05f; --bad:#e58898; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+.wrap{max-width:880px;margin:0 auto;padding:28px 16px 48px}
+h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:.2px}
+.sub{color:var(--muted);margin:0 0 24px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+a.app{display:block;text-decoration:none;color:inherit;background:var(--card);
+  border:1px solid var(--line);border-radius:16px;padding:18px;
+  transition:transform .15s,border-color .15s,box-shadow .15s}
+a.app:hover,a.app:focus-visible{transform:translateY(-2px);border-color:var(--accent);
+  box-shadow:0 6px 18px rgba(181,103,154,.15);outline:none}
+.ico{width:44px;height:44px;border-radius:12px;background:var(--accent-soft);
+  display:grid;place-items:center;font-size:24px;margin-bottom:10px}
+.name{font-weight:650}
+.desc{color:var(--muted);font-size:.9rem;margin-top:2px}
+.meta{font-size:.8rem;color:var(--muted);margin-top:10px}
+h2{font-size:1.05rem;margin:32px 0 10px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed var(--line)}
+.row:last-child{border-bottom:0}
+.row span:first-child{color:var(--muted)}
+.bar{height:8px;border-radius:99px;background:var(--accent-soft);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .4s}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+.tip{font-size:.85rem;color:var(--muted);margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Venus Hub</h1>
+  <p class="sub">Chọn một app để mở. Tất cả dùng chung một kho dữ liệu.</p>
+
+  <!-- Thêm app mới: copy 1 dòng trong danh sách APPS bên dưới -->
+  <div class="grid" id="apps"></div>
+
+  <h2>Sức khỏe dữ liệu</h2>
+  <div class="panel" id="health">Đang kiểm tra…</div>
+  <p class="tip">Backup đầy đủ: mở Tracker → Data Management → Full Backup. Một file đó chứa cả Loan Ledger.</p>
+</div>
+
+<script>
+/* ===== DANH SÁCH APP — chỉ cần sửa chỗ này ===== */
+const APPS = [
+  { name:"Finance Career Tracker", icon:"📈", desc:"Tracker chính: học, thói quen, notes…", url:"./index.html" },
+  { name:"Loan Ledger",            icon:"💸", desc:"Sổ theo dõi khoản vay",                url:"../Loan-Ledger/" },
+  { name:"Finance Valuation Tools",icon:"🧮", desc:"WACC, CAPM, Black-Scholes…",           url:"../finance-valuation-tools/" }
+];
+
+const $ = id => document.getElementById(id);
+$("apps").innerHTML = APPS.map(a =>
+  `<a class="app" href="${a.url}"><div class="ico">${a.icon}</div>
+   <div class="name">${a.name}</div><div class="desc">${a.desc}</div></a>`).join("");
+
+function ls(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function ago(ts){
+  if(!ts) return {t:"chưa có ghi nhận", c:"warn"};
+  const d = Math.floor((Date.now()-ts)/864e5);
+  const t = d===0 ? "hôm nay" : d+" ngày trước";
+  return {t, c: d<=7 ? "ok" : d<=14 ? "warn" : "bad"};
+}
+
+async function health(){
+  const rows = [];
+  // Dung lượng localStorage (ước lượng, ~5MB)
+  let bytes = 0;
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); bytes += (k.length+(localStorage.getItem(k)||"").length)*2; } }catch(e){}
+  const mb = bytes/1048576, pct = Math.min(100, mb/5*100);
+  const cls = pct>85 ? "bad" : pct>65 ? "warn" : "ok";
+  rows.push(`<div><div class="row"><span>Dung lượng localStorage (tối đa ~5MB)</span><span class="${cls}">${mb.toFixed(2)} MB (${pct.toFixed(0)}%)</span></div>
+    <div class="bar"><i style="width:${pct}%;background:var(--${cls==='ok'?'ok':cls==='warn'?'warn':'bad'})"></i></div></div>`);
+
+  // Backup gần nhất của từng phần
+  const nv = ago(+ls("nvLastBackup")||0), ll = ago(+ls("loanLedger.lastExport")||0);
+  rows.push(`<div class="row"><span>Backup Notes gần nhất</span><span class="${nv.c}">${nv.t}</span></div>`);
+  rows.push(`<div class="row"><span>Export Loan Ledger gần nhất</span><span class="${ll.c}">${ll.t}</span></div>`);
+
+  // Lưu trữ bền vững
+  let persisted = null;
+  try{ if(navigator.storage && navigator.storage.persisted) persisted = await navigator.storage.persisted(); }catch(e){}
+  const ptxt = persisted===null ? "trình duyệt không hỗ trợ" : persisted ? "Đã bật ✓" : "Chưa bật";
+  rows.push(`<div class="row"><span>Chống trình duyệt tự xóa dữ liệu</span><span class="${persisted?'ok':'warn'}">${ptxt}</span></div>`);
+
+  $("health").innerHTML = rows.join("");
+}
+health();
+</script>
+</body>
+</html>
