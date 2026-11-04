@@ -77946,17 +77946,29 @@ window.fcRenderTagChips = fcRenderTagChips;
                     }
 
                     const noteCount = (isFullBackup && parsed.notesVault && Array.isArray(parsed.notesVault.notes)) ? parsed.notesVault.notes.length : 0;
+                    // Đếm số book trong file để biết ngay có đúng file mới nhất không
+                    let fileBookCount = null;
+                    try {
+                        const rl = entries.readingList;
+                        const arr = typeof rl === 'string' ? JSON.parse(rl) : rl;
+                        if (Array.isArray(arr)) fileBookCount = arr.length;
+                    } catch (_) {}
+                    let curBookCount = 0;
+                    try { curBookCount = JSON.parse(localStorage.getItem('readingList') || '[]').length; } catch (_) {}
+                    let fileDateStr = '';
+                    try { if (isFullBackup && parsed.__meta.exportDate) fileDateStr = new Date(parsed.__meta.exportDate).toLocaleString('vi-VN'); } catch (_) {}
                     const ok = await skConfirm(
                         `Sắp khôi phục ${keys.length} mục dữ liệu` + (noteCount ? ` + ${noteCount} note (Notes Vault)` : '') + ` từ file backup.\n` +
+                        (fileDateStr ? `File xuất lúc: ${fileDateStr}\n` : '') +
+                        (fileBookCount !== null ? `Book trong file: ${fileBookCount} (hiện tại trên máy này: ${curBookCount})\n` : '') +
                         `Dữ liệu hiện tại trong app sẽ bị GHI ĐÈ bởi dữ liệu trong file.\n` +
-                        `Một bản backup an toàn của dữ liệu HIỆN TẠI sẽ tự động tải về trước khi ghi đè.\n` +
                         `Tiếp tục?`,
                         {title: 'Khôi phục dữ liệu', danger: true, okText: 'Tiếp tục'}
                     );
                     if (!ok) { event.target.value = ''; return; }
 
-                    // ✅ FIX 1: auto-backup dữ liệu hiện tại trước khi ghi đè bất cứ gì.
-                    await downloadPreImportSafetyBackup();
+                    // Import chỉ ghi đè — không tự tải file backup dữ liệu cũ nữa
+                    // (dữ liệu cũ đã có sẵn trong file export trước đó trên Drive).
 
                     let restored = 0;
                     const failed = [];
@@ -77979,7 +77991,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         showNotification(
                             `⚠️ Restore được ${restored}/${keys.length} mục — ${failed.length} mục lỗi (có thể do hết dung lượng): ` +
                             `${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}. ` +
-                            `File backup an toàn của dữ liệu cũ vừa tải về, có thể import lại nếu cần khôi phục.`,
+                            `Hãy giải phóng dung lượng rồi import lại.`,
                             'error'
                         );
                         event.target.value = '';
@@ -78000,7 +78012,9 @@ window.fcRenderTagChips = fcRenderTagChips;
                         }
                     }
 
-                    showNotification(`✅ Đã khôi phục ${restored} mục${noteMsg}. Đang tải lại trang...`, 'success');
+                    let bookMsg = '';
+                    try { bookMsg = `, ${JSON.parse(localStorage.getItem('readingList') || '[]').length} book`; } catch (_) {}
+                    showNotification(`✅ Đã khôi phục ${restored} mục${bookMsg}${noteMsg}. Đang tải lại trang...`, 'success');
 
                     // Reload để mọi phần của app đọc lại dữ liệu mới từ localStorage —
                     // an toàn hơn nhiều so với việc tự tay đồng bộ từng biến JS trong bộ nhớ.
@@ -78011,8 +78025,12 @@ window.fcRenderTagChips = fcRenderTagChips;
                     showNotification('❌ Import failed: ' + err.message, 'error');
                 }
             };
+            reader.onerror = function() {
+                showNotification('❌ Không đọc được file (thường do file Drive chưa tải xong về máy). Hãy tải file về máy rồi chọn lại.', 'error');
+            };
+            const _inputEl = event.target;
+            reader.onloadend = function() { try { _inputEl.value = ''; } catch (_) {} };
             reader.readAsText(file);
-            event.target.value = '';
         }
 
 
