@@ -77408,7 +77408,7 @@ window.fcRenderTagChips = fcRenderTagChips;
 
 
         // --- DATA MANAGEMENT (EXPORT/IMPORT) ---
-        const FULLBACKUP_EXCLUDE_KEYS = [];
+        const FULLBACKUP_EXCLUDE_KEYS = ['lastFullBackupAt'];   // device-local bookkeeping, not user data
 
         // ✅ Ước lượng dung lượng localStorage hiện tại (xấp xỉ UTF-16, 2 byte/ký tự).
         // excludeKeys: các key sẽ KHÔNG được tính (vd vì sắp bị ghi đè bởi key khác cùng tên).
@@ -77482,6 +77482,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 // Đồng thời gom cả note trong Notes Vault (IndexedDB riêng) vào cùng 1 file.
                 const backup = await buildFullBackupObject();
                 downloadBackupObject(backup, 'finance-skills-tracker-FULLBACKUP');
+                try { const _t = String(Date.now()); localStorage.setItem('lastFullBackupAt', _t); localStorage.setItem('nvLastBackup', _t); } catch (e) { /* storage blocked: skip */ }
                 const revCount = backup.__meta.notesVaultRevisionsCount || 0;
                 const noteMsg = backup.__meta.notesVaultCount
                     ? `, ${backup.__meta.notesVaultCount} note (Notes Vault)${revCount ? ` + ${revCount} version lịch sử` : ''}`
@@ -85737,4 +85738,21 @@ body #course-section .course-stat-item:hover { transform: translateY(-2px); box-
     #addFlashcardModal .fcv-paste-head { flex-wrap: wrap; }
 }
 </style>
+<script>
+/* Launcher shortcut: index.html?backup=1 asks for confirmation, then runs the normal Full Backup. */
+(function () {
+    try {
+        var u = new URL(location.href);
+        if (u.searchParams.get('backup') !== '1') return;
+        history.replaceState(null, '', location.pathname);          // so a refresh doesn't ask again
+        var go = function () {
+            if (typeof window.skConfirm !== 'function' || typeof window.exportProgress !== 'function') return;
+            window.skConfirm('Download a full backup now? It includes all Tracker data, Notes Vault and the other apps.',
+                { title: 'Full backup', danger: false, okText: 'Download', cancelText: 'Cancel' })
+                .then(function (ok) { if (ok) window.exportProgress(); });
+        };
+        if (document.readyState !== 'loading') setTimeout(go, 1500); else document.addEventListener('DOMContentLoaded', function () { setTimeout(go, 1500); });
+    } catch (e) { /* ignore */ }
+})();
+</script>
 </body>

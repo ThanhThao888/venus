@@ -39,6 +39,8 @@ h2{font-size:1.05rem;margin:32px 0 10px}
 .bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .4s}
 .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 .btn{margin-left:8px;border:1px solid var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:99px;padding:3px 12px;font:inherit;font-size:.85rem;cursor:pointer}
+a.btn{text-decoration:none;display:inline-block}
+.row.sub{font-size:.85rem;opacity:.8}
 .tip{font-size:.85rem;color:var(--muted);margin-top:12px}
 </style>
 </head>
@@ -52,7 +54,7 @@ h2{font-size:1.05rem;margin:32px 0 10px}
 
   <h2>Data health</h2>
   <div class="panel" id="health">Checking…</div>
-  <p class="tip">Full backup: open Tracker → Data Management → Full Backup. That single file includes Loan Ledger too.</p>
+  <p class="tip">"Back up now" opens the Tracker and asks you to confirm, then downloads one file with everything (Tracker, Notes, Loan Ledger). Keep a copy on Google Drive or another device.</p>
 </div>
 
 <script>
@@ -70,7 +72,7 @@ $("apps").innerHTML = APPS.map(a =>
 
 function ls(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function ago(ts){
-  if(!ts) return {t:"no record yet", c:"warn"};
+  if(!ts) return {t:"no record yet", c:"warn", none:true};
   const d = Math.floor((Date.now()-ts)/864e5);
   const t = d===0 ? "today" : d+(d===1?" day ago":" days ago");
   return {t, c: d<=7 ? "ok" : d<=14 ? "warn" : "bad"};
@@ -86,10 +88,14 @@ async function health(){
   rows.push(`<div><div class="row"><span>localStorage usage (limit ~5MB)</span><span class="${cls}">${mb.toFixed(2)} MB (${pct.toFixed(0)}%)</span></div>
     <div class="bar"><i style="width:${pct}%;background:var(--${cls==='ok'?'ok':cls==='warn'?'warn':'bad'})"></i></div></div>`);
 
-  // Last backup of each part
+  // Full backup (the one that matters: Tracker + Notes + Loan Ledger + everything else in this data store)
+  const fb = ago(+ls("lastFullBackupAt")||0);
+  const fbMsg = fb.none ? "no backup recorded yet" : fb.t;
+  rows.push(`<div class="row"><span><b>Last full backup</b></span><span class="${fb.none ? 'bad' : fb.c}">${fbMsg} <a class="btn" href="./index.html?backup=1">Back up now</a></span></div>`);
+  // Optional separate exports (already included in a full backup, so shown muted)
   const nv = ago(+ls("nvLastBackup")||0), ll = ago(+ls("loanLedger.lastExport")||0);
-  rows.push(`<div class="row"><span>Last Notes backup</span><span class="${nv.c}">${nv.t}</span></div>`);
-  rows.push(`<div class="row"><span>Last Loan Ledger export</span><span class="${ll.c}">${ll.t}</span></div>`);
+  rows.push(`<div class="row sub"><span>Notes export (also in full backup)</span><span>${nv.t}</span></div>`);
+  rows.push(`<div class="row sub"><span>Loan Ledger export (also in full backup)</span><span>${ll.t}</span></div>`);
 
   // Persistent storage
   let persisted = null;
