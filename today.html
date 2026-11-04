@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today</title>
+<style>
+:root{
+  --bg:#faf6f8; --card:#ffffff; --ink:#3b2f3a; --muted:#8a7a88; --line:#eadfe6;
+  --accent:#b5679a; --accent-soft:#f3e3ee; --ok:#4f8a6b; --warn:#c0762f; --bad:#b94a5a;
+  --bad-soft:#fbe9ec; --warn-soft:#fdf1e3; --ok-soft:#e8f4ee;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#17121a; --card:#221a26; --ink:#f1e6ee; --muted:#a998a6; --line:#382c3d;
+    --accent:#d48bbb; --accent-soft:#33233a; --ok:#7fc3a0; --warn:#e0a05f; --bad:#e58898;
+    --bad-soft:#3a1f27; --warn-soft:#3a2d1c; --ok-soft:#1d3329; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:24px 16px 56px}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:1.6rem;margin:0}
+.date{color:var(--muted)}
+.back{color:var(--accent);text-decoration:none;font-size:.9rem}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.chip{border-radius:99px;padding:3px 12px;font-size:.85rem;background:var(--accent-soft)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.ok{background:var(--ok-soft);color:var(--ok)}
+.start{background:var(--card);border:1px solid var(--accent);border-radius:16px;padding:14px 16px;margin:16px 0}
+.start small{display:block;color:var(--accent);font-weight:650;letter-spacing:.3px;text-transform:uppercase;font-size:.72rem;margin-bottom:2px}
+.start .t{font-size:1.1rem;font-weight:650}
+h2{font-size:1.02rem;margin:26px 0 8px;display:flex;align-items:center;gap:8px}
+h2 .n{font-size:.78rem;font-weight:600;color:var(--muted);background:var(--accent-soft);border-radius:99px;padding:0 9px}
+h2.bad{color:var(--bad)}
+.day{color:var(--muted);font-size:.8rem;font-weight:650;margin:14px 2px 4px;text-transform:uppercase;letter-spacing:.4px}
+a.item{display:flex;gap:12px;align-items:flex-start;text-decoration:none;color:inherit;background:var(--card);
+  border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+a.item:hover,a.item:focus-visible{border-color:var(--accent);outline:none}
+a.item.bad{border-left-color:var(--bad)} a.item.warn{border-left-color:var(--warn)} a.item.ok{border-left-color:var(--ok)}
+.ic{font-size:1.15rem;line-height:1.5}
+.body{flex:1;min-width:0}
+.ttl{font-weight:600;overflow-wrap:anywhere}
+.meta{color:var(--muted);font-size:.85rem}
+.tag{white-space:nowrap;font-size:.78rem;border-radius:99px;padding:1px 9px;align-self:center;background:var(--accent-soft)}
+.tag.bad{background:var(--bad-soft);color:var(--bad)} .tag.warn{background:var(--warn-soft);color:var(--warn)}
+.empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:18px;text-align:center;color:var(--muted)}
+.foot{color:var(--muted);font-size:.82rem;margin-top:28px}
+.foot a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Today</h1><div class="date" id="date"></div></div>
+    <a class="back" href="./launcher.html">← Venus Hub</a>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div id="start"></div>
+  <div id="out"></div>
+  <p class="foot">Read-only view of what's due. Tap anything to open the Tracker and edit it there. Data comes from this browser only.</p>
+</div>
+
+<script>
+/* ================== helpers ================== */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function lsJSON(k, fb){ try{ const v = JSON.parse(localStorage.getItem(k)); return v == null ? fb : v; }catch(e){ return fb; } }
+function arr(k){ const v = lsJSON(k, []); return Array.isArray(v) ? v : []; }
+function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dayNum(s){ const [y,m,d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m-1, d) / 864e5); }
+function diff(a, b){ return dayNum(b) - dayNum(a); }   // days from a to b
+const TRACKER = './index.html';
+const PR = { high: 0, medium: 1, low: 2 };
+const normPrio = p => { const s = String(p || '').toLowerCase(); return s === 'high' ? 'high' : s === 'low' ? 'low' : 'medium'; };
+function hhmm(h){ const m = Math.round(h * 60); return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+const validDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}/.test(s);
+
+/* ================== collect ================== */
+async function notesReminders(){
+  // Notes live in IndexedDB. Only read it if it already exists (never create it from here).
+  try{
+    if(!indexedDB.databases) return [];
+    const dbs = await indexedDB.databases();
+    if(!dbs.some(d => d.name === 'FinanceTrackerVaultDB')) return [];
+    const db = await new Promise((res, rej) => { const r = indexedDB.open('FinanceTrackerVaultDB'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error('blocked')); });
+    try{
+      if(!db.objectStoreNames.contains('notes')) return [];
+      const all = await new Promise((res, rej) => { const q = db.transaction('notes', 'readonly').objectStore('notes').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+      return all.filter(n => n && !n.deletedAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(n.remindAt || ''));
+    } finally { db.close(); }
+  }catch(e){ return []; }
+}
+
+async function collect(){
+  const today = iso(new Date());
+  const items = [];
+  const add = o => items.push(Object.assign({ prio: 'medium', time: '', meta: '' }, o));
+
+  /* Deadlines: manual list (includes deadlines set on notes) + auto-scan, same rules as the Tracker's Deadline view */
+  const done = new Set(arr('dltDoneIds'));
+  const snooze = lsJSON('dltSnoozeMap', {}) || {};
+  const live = id => !done.has(id) && !(snooze[id] && today < snooze[id]);
+  const seen = new Set();
+  const pushDl = (id, name, date, prio, meta, time) => {
+    if(!validDate(date) || seen.has(id) || !live(id)) return;
+    seen.add(id);
+    const tm = /^(\d{1,2}):(\d{2})/.exec(time || '');
+    add({ kind: 'deadline', title: name || 'Deadline', date: date.slice(0, 10), prio: normPrio(prio), meta, time: time || '', sort: tm ? Number(tm[1]) + Number(tm[2]) / 60 : undefined });
+  };
+  arr('courses').forEach(c => {
+    const fin = Number(c.estimatedHours) > 0 && Number(c.hoursStudied) >= Number(c.estimatedHours);
+    if(c.deadline && !fin) pushDl('c_' + c.id, c.title, c.deadline, c.priority, 'Course');
+  });
+  arr('goals').forEach(g => { if(g.deadline && (g.currentProgress || 0) < (g.target || 1)) pushDl('g_' + g.id, g.title, g.deadline, g.priority, 'Goal'); });
+  // deals / analyses carry a plain date: only show them from today onwards (past ones are history, not overdue)
+  arr('dealDiary').forEach(d => { if(validDate(d.date) && d.date.slice(0,10) >= today) pushDl('d_' + d.id, d.dealName || 'Deal', d.date, 'medium', 'Deal'); });
+  arr('investmentAnalyses').forEach(a => { if(validDate(a.date) && a.date.slice(0,10) >= today) pushDl('a_' + a.id, a.title || 'Analysis', a.date, 'medium', 'Analysis'); });
+  arr('deadlines').forEach(m => pushDl(m.id, m.name, m.date, m.priority, m.sourceNoteId ? 'From a note' : (m.note ? String(m.note).slice(0, 60) : ''), m.time));
+
+  /* To-dos */
+  arr('todoTasks').forEach(t => {
+    if(!t || t.done || !t.text) return;
+    const p = t.priority === 'A' ? 'high' : t.priority === 'C' ? 'low' : 'medium';
+    const open = Array.isArray(t.subtasks) ? t.subtasks.filter(s => s && !s.done).length : 0;
+    const meta = (open ? open + ' subtask' + (open === 1 ? '' : 's') + ' left' : '');
+    if(validDate(t.due)) add({ kind: 'todo', title: t.text, date: t.due.slice(0, 10), prio: p, meta });
+    else if(t.priority === 'A') add({ kind: 'todo', title: t.text, date: '', prio: 'high', meta: (meta ? meta + ' · ' : '') + 'no date', undated: true });
+  });
+
+  /* Calendar events (planner) */
+  arr('calEvents').forEach(e => {
+    if(!e || !validDate(e.date)) return;
+    const start = Number(e.startH), dur = Number(e.dur);
+    const time = isFinite(start) ? hhmm(start) + (isFinite(dur) && dur > 0 ? '–' + hhmm(start + dur) : '') : '';
+    add({ kind: 'event', title: e.title || 'Event', date: e.date.slice(0, 10), time, sort: isFinite(start) ? start : 99, meta: e.category || '' });
+  });
+
+  /* Reminders set on notes */
+  (await notesReminders()).forEach(n => {
+    const date = n.remindAt.slice(0, 10), time = n.remindAt.slice(11, 16);
+    add({ kind: 'reminder', title: n.title || 'Untitled note', date, time, sort: Number(time.slice(0,2)) + Number(time.slice(3)) / 60, fired: n.remindState === 'fired', meta: 'Note reminder' });
+  });
+  return { today, items };
+}
+
+/* ================== render ================== */
+const ICON = { deadline: '⏰', todo: '✅', event: '📅', reminder: '🔔' };
+const cmp = (a, b) => (a.date || '9').localeCompare(b.date || '9') || (a.sort ?? 50) - (b.sort ?? 50) || PR[a.prio] - PR[b.prio] || a.title.localeCompare(b.title);
+
+function row(it, today){
+  let cls = '', tag = '', when = '';
+  const dd = it.date ? diff(today, it.date) : 0;
+  if(it.kind === 'reminder' && it.fired){ cls = 'warn'; tag = '<span class="tag warn">waiting</span>'; }
+  else if(it.date && dd < 0){ cls = 'bad'; tag = '<span class="tag bad">' + (-dd) + 'd overdue</span>'; }
+  else if(it.prio === 'high'){ cls = 'warn'; }
+  if(it.time) when = it.time;
+  const meta = [when, it.meta].filter(Boolean).join(' · ');
+  return '<a class="item ' + cls + '" href="' + TRACKER + '"><span class="ic">' + ICON[it.kind] + '</span><span class="body"><div class="ttl">' + esc(it.title) + '</div>' +
+    (meta ? '<div class="meta">' + esc(meta) + '</div>' : '') + '</span>' + tag + '</a>';
+}
+function section(title, list, today, cls){
+  if(!list.length) return '';
+  return '<h2 class="' + (cls || '') + '">' + title + ' <span class="n">' + list.length + '</span></h2>' + list.map(i => row(i, today)).join('');
+}
+const wd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }); };
+
+async function render(){
+  const { today, items } = await collect();
+  const [y, m, d] = today.split('-').map(Number);
+  document.getElementById('date').textContent = new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  const dated = items.filter(i => i.date);
+  const overdue = dated.filter(i => i.date < today && i.kind !== 'event' && !(i.kind === 'reminder' && i.fired)).sort(cmp);
+  const waiting = dated.filter(i => i.kind === 'reminder' && i.fired).sort(cmp);
+  const attention = overdue.concat(waiting);
+  const todayItems = dated.filter(i => i.date === today && !(i.kind === 'reminder' && i.fired)).sort(cmp);
+  const undated = items.filter(i => i.undated).sort(cmp).slice(0, 5);
+  const upcoming = dated.filter(i => i.date > today && diff(today, i.date) <= 7).sort(cmp);
+
+  const chips = [];
+  if(attention.length) chips.push('<span class="chip bad">' + attention.length + ' need attention</span>');
+  chips.push('<span class="chip">' + todayItems.length + ' today</span>');
+  chips.push('<span class="chip">' + upcoming.length + ' in the next 7 days</span>');
+  document.getElementById('chips').innerHTML = chips.join('');
+
+  // "Start here": the single most pressing thing, so there is one obvious first move
+  const pool = attention.length ? attention : todayItems.filter(i => i.kind !== 'event').concat(undated);
+  const pick = pool.slice().sort((a, b) => PR[a.prio] - PR[b.prio] || cmp(a, b))[0];
+  document.getElementById('start').innerHTML = pick
+    ? '<div class="start"><small>Start here</small><div class="t">' + ICON[pick.kind] + ' ' + esc(pick.title) + '</div><div class="meta">' + esc([pick.time, pick.meta, pick.date && pick.date < today ? 'overdue' : (pick.date === today ? 'due today' : '')].filter(Boolean).join(' · ')) + '</div></div>'
+    : '';
+
+  let html = '';
+  html += section('Needs attention', attention, today, 'bad');
+  html += section('Today', todayItems, today);
+  html += section('Top to-dos (no date)', undated, today);
+  if(upcoming.length){
+    html += '<h2>Next 7 days <span class="n">' + upcoming.length + '</span></h2>';
+    let last = '';
+    upcoming.forEach(i => { if(i.date !== last){ last = i.date; html += '<div class="day">' + wd(i.date) + '</div>'; } html += row(i, today); });
+  }
+  if(!attention.length && !todayItems.length && !undated.length && !upcoming.length)
+    html += '<div class="empty">Nothing due. Enjoy the space ✨<br><span class="meta">Deadlines, to-dos, calendar events and note reminders will show up here.</span></div>';
+  document.getElementById('out').innerHTML = html;
+}
+render();
+window.addEventListener('storage', render);                                   // data changed in another tab
+document.addEventListener('visibilitychange', () => { if(!document.hidden) render(); });
+</script>
+</body>
+</html>
