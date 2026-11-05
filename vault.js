@@ -5745,7 +5745,7 @@
             #nvPrintRoot img { max-width: 100% !important; height: auto !important; }
             #nvPrintRoot .nv-tablewrap { overflow: visible !important; }
             #nvPrintRoot table { border-collapse: collapse; max-width: 100%; }
-            #nvPrintRoot a { color: #9d2867; text-decoration: underline; }
+            #nvPrintRoot a { color: var(--primary-dark, #9d2867); text-decoration: underline; }
             #nvPrintRoot .nv-pdf-embed-frame, #nvPrintRoot .nv-pdf-embed-more { display: none !important; }
             #nvPrintRoot figure.nv-fig { break-inside: avoid; page-break-inside: avoid; }
             #nvPrintRoot .nv-code-copy, #nvPrintRoot .nv-code-toggle, #nvPrintRoot .nv-code-lang { display: none !important; }
@@ -5799,6 +5799,37 @@
             q('nvPoGo').focus();
         });
     }
+    /* PDF accent colours follow the vault theme that is active right now (Lavender Haze, Eucalyptus, ...).
+       #nvPrintRoot lives on <body>, outside #nvOverlay where each theme declares its variables, so it used to
+       fall back to a hard-coded magenta (#9d2867) + the site's Sakura values. Here we read the active theme's
+       accent from #nvOverlay and set it inline on the print root. The page itself stays white with dark text
+       (print-friendly): only accents (links, bullets, code chips, headings' colour accents) take the theme hue.
+       Colours are darkened if needed so they stay legible on white paper, also when the site is in dark mode. */
+    function applyPrintTheme(root) {
+        try {
+            const src = (typeof el !== 'undefined' && el && el.overlay) || document.getElementById('nvOverlay');
+            if (!src) return;
+            const cs = getComputedStyle(src);
+            const toRGB = (v) => {
+                v = (v || '').trim(); if (!v) return null;
+                const t = document.createElement('span'); t.style.color = v; document.body.appendChild(t);
+                const m = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/.exec(getComputedStyle(t).color); t.remove();
+                return m ? [+m[1], +m[2], +m[3]] : null;
+            };
+            const lum = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+            const fit = (c, max) => { let k = 1; while (k > 0.2 && lum(c.map((x) => x * k)) > max) k -= 0.05; return c.map((x) => Math.round(x * k)); };
+            const hex = (c) => '#' + c.map((x) => x.toString(16).padStart(2, '0')).join('');
+            const pr = toRGB(cs.getPropertyValue('--primary'));
+            if (!pr) return;
+            const pd = toRGB(cs.getPropertyValue('--primary-dark')) || pr;
+            const accent = fit(pr, 0.55), link = fit(pd, 0.38);
+            const tint = accent.map((x) => Math.round(x + (255 - x) * 0.88));
+            root.style.setProperty('--primary', hex(accent));
+            root.style.setProperty('--primary-dark', hex(link));
+            root.style.setProperty('--primary-light', hex(tint));
+            root.style.setProperty('--primary-rgb', accent.join(', '));
+        } catch (e) { console.warn('Notes Vault: could not apply theme to PDF', e); }
+    }
     async function exportNotePdf(n) {
         const opts = await askPdfOptions();
         if (!opts) return;
@@ -5817,6 +5848,7 @@
         root.className = 'nv-prose';
         root.style.setProperty('--nv-pm-x', pm[0]);
         root.style.setProperty('--nv-pm-y', pm[1]);
+        applyPrintTheme(root);
         const h = document.createElement('h1'); h.className = 'nv-print-title'; h.textContent = n.title || 'Untitled note';
         const body = document.createElement('div');
         // Only the note itself is exported: title + content. No folder/date line, no app link, no URL.
