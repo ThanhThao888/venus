@@ -2856,6 +2856,7 @@
         tpl.innerHTML = html;
         linkifyWikilinks(tpl.content);
         mmMarkBlocks(tpl.content);   // ```mermaid fences → diagram placeholders (drawn once they're in the page)
+        vizMarkBlocks(tpl.content);  // ```visual fences → pasted charts (drawn once they're in the page)
         tpl.content.querySelectorAll('table').forEach((tb) => {
             const w = document.createElement('div');
             w.className = 'nv-tablewrap';
@@ -2891,6 +2892,7 @@
         applyImageSizes(tpl.content);
         target.replaceChildren(tpl.content);
         mmRenderPending(target);
+        vizRenderPending(target);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
         return resolveAttachments(target, attachOpts);
     }
@@ -8370,6 +8372,156 @@
         });
         return true;
     }
+    /* ── Visual blocks: charts / bar graphs / SVG copied from Gemini, ChatGPT, Claude, web pages … ──
+       Markdown has no way to say "a bar 70% wide in blue", so a normal rich paste keeps the words of a chart
+       and loses the chart. When the clipboard HTML contains a chart (a cluster of empty coloured boxes = bars,
+       or a real inline <svg> graphic) that part is kept as a ```visual fenced block holding cleaned-up HTML
+       (inline styles only: no scripts, no classes, no links, no external images). The reading view draws it
+       inside a Shadow DOM so the note's own CSS can't disturb it and it can't disturb the note. Everything
+       around the chart is still converted to normal Markdown.
+       You can also write one by hand: a ```visual fence containing HTML with inline styles. */
+    const VIZ_MAX = 600000;                                        // characters of cleaned HTML per block
+    const VIZ_DROP = 'script,style,link,meta,title,base,iframe,frame,object,embed,form,input,button,select,textarea,audio,video,canvas,noscript,template,foreignObject,animate,animateTransform,animateMotion,set,use,image';
+    const VIZ_INHERITED = /^(color|font|font-[a-z-]+|line-height|letter-spacing|word-spacing|text-align|text-transform|text-indent|white-space|visibility|direction|list-style|list-style-[a-z-]+|-webkit-text-fill-color)$/;
+    const VIZ_BAD_PROP = /^(z-index|cursor|pointer-events|behavior|-moz-binding|will-change|content|resize|user-select|-webkit-user-drag|-webkit-tap-highlight-color|animation|animation-[a-z-]+|transition|transition-[a-z-]+)$/;
+    const VIZ_BAD_ATTR = /^(on.*|data-.*|class|name|for|href|src|srcset|xlink:href|tabindex|contenteditable|draggable|target|rel|download|formaction|action|poster|ping|autofocus)$/;
+    function vizCleanDecls(css, parentEff, eff) {
+        const out = [];
+        String(css || '').split(';').forEach((d) => {
+            const i = d.indexOf(':');
+            if (i < 1) return;
+            const k = d.slice(0, i).trim().toLowerCase(), v = d.slice(i + 1).trim().replace(/\s*!important\s*$/i, '');
+            if (!k || !v || VIZ_BAD_PROP.test(k)) return;
+            if (/url\s*\(|expression\s*\(|javascript:|@import|\\|[<>]/i.test(v)) return;
+            if (k === 'position' && /^(fixed|sticky)$/i.test(v)) return;
+            if (VIZ_INHERITED.test(k)) {                          // same as what's already inherited from the parent: no need to repeat it
+                eff[k] = v;
+                if (parentEff[k] === v) return;
+            }
+            out.push(k + ':' + v);
+        });
+        return out.join(';');
+    }
+    function vizSanitize(html) {
+        html = String(html || '');
+        if (!html.trim() || html.length > VIZ_MAX * 4) return '';
+        let doc;
+        try { doc = new DOMParser().parseFromString('<!doctype html><body>' + html, 'text/html'); } catch (e) { return ''; }
+        const body = doc.body;
+        if (!body) return '';
+        body.querySelectorAll(VIZ_DROP).forEach((n) => n.remove());
+        body.querySelectorAll('a').forEach((a) => a.replaceWith(...Array.from(a.childNodes)));   // keep the words, lose the link
+        const cw = doc.createTreeWalker(body, 128 /* SHOW_COMMENT */), comments = [];
+        while (cw.nextNode()) comments.push(cw.currentNode);
+        comments.forEach((c) => c.remove());
+        const effOf = new Map();
+        body.querySelectorAll('*').forEach((n) => {               // document order: a parent is always handled before its children
+            const parentEff = (n.parentElement && effOf.get(n.parentElement)) || {};
+            const eff = Object.assign({}, parentEff);
+            effOf.set(n, eff);
+            const inSvg = !!n.closest('svg');
+            Array.from(n.attributes).forEach((a) => {
+                const k = a.name.toLowerCase(), v = a.value;
+                if (k === 'style') return;
+                if (VIZ_BAD_ATTR.test(k) || (k === 'id' && !inSvg)) { n.removeAttribute(a.name); return; }
+                if (/javascript:|data:text\/html|expression\s*\(/i.test(v)) { n.removeAttribute(a.name); return; }
+                if (/url\s*\(/i.test(v) && !/^\s*url\(\s*#[\w.:-]+\s*\)\s*$/.test(v)) n.removeAttribute(a.name);   // only gradient / clip references inside the same graphic
+            });
+            const css = vizCleanDecls(n.getAttribute('style'), parentEff, eff);
+            if (css) n.setAttribute('style', css); else n.removeAttribute('style');
+        });
+        let out = body.innerHTML.replace(/\s*\n\s*/g, ' ').trim();
+        try {
+            if (window.DOMPurify) out = DOMPurify.sanitize(out, { FORBID_TAGS: ['style', 'script'], FORBID_ATTR: ['class'] });
+        } catch (e) { return ''; }
+        return out.length > VIZ_MAX ? '' : out;
+    }
+    /* A "bar" = an element with no children and no text that has a real fill colour (the coloured part of a bar,
+       a legend swatch…). Chrome writes the computed fill into style="" when text is copied. */
+    function vizIsBar(n) {
+        if (n.nodeType !== 1 || n.children.length || /\S/.test(n.textContent || '')) return false;
+        if (!/^(DIV|SPAN|I|B|P)$/.test(n.tagName)) return false;
+        const raw = n.getAttribute('style') || '';
+        if (!raw) return false;
+        const clear = /^(transparent|none|initial|inherit|unset|rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0(?:\.0+)?\s*\))/i;
+        let m; const re = /(?:^|;)\s*background(?:-color)?\s*:\s*([^;]+)/gi;
+        while ((m = re.exec(raw))) if (!clear.test(m[1].trim())) return true;
+        return /(?:^|;)\s*background-image\s*:[^;]*gradient/i.test(raw);
+    }
+    function vizIsSvgChart(n) {
+        if (!n || n.nodeType !== 1 || String(n.tagName).toLowerCase() !== 'svg') return false;
+        const w = parseFloat(n.getAttribute('width')), h = parseFloat(n.getAttribute('height'));
+        if ((w && w <= 32) || (h && h <= 32)) return false;       // an icon
+        return n.querySelectorAll('rect,path,circle,line,polyline,polygon,ellipse').length >= 4;
+    }
+    function vizFindRoots(body) {
+        const score = new Map(), roots = [];
+        const bump = (n, by) => { for (let p = n.parentElement; p; p = p.parentElement) score.set(p, (score.get(p) || 0) + by); };
+        body.querySelectorAll('*').forEach((n) => { if (vizIsBar(n)) bump(n, 1); else if (vizIsSvgChart(n)) bump(n, 3); });
+        const hasProse = (n) => n.tagName === 'BLOCKQUOTE' || n.tagName === 'PRE' || !!n.querySelector('blockquote,pre,h1,h2,h3,h4,h5,h6,table')
+            || Array.from(n.querySelectorAll('p')).some((p) => p.textContent.trim().length > 80) || (n.textContent || '').length > 3000;
+        const visit = (n) => {
+            const own = vizIsSvgChart(n) ? 3 : 0;
+            if ((score.get(n) || 0) + own < 3) return;
+            if (n !== body && !hasProse(n)) { roots.push(n); return; }   // the highest element that is "all chart" (no long paragraphs inside)
+            Array.from(n.children).forEach(visit);
+        };
+        visit(body);
+        return roots;
+    }
+    function vizFence(h) {
+        let f = '```';
+        while (h.indexOf(f) !== -1) f += '`';
+        return f + 'visual\n' + h + '\n' + f;
+    }
+
+    /* ── drawing a ```visual block (Read view, print / PDF) ── */
+    const VIZ_CSS = ':host{display:block}.v{box-sizing:border-box;position:relative;overflow:auto;padding:14px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#1f2328;text-align:left;white-space:normal}.v svg{max-width:100%}';
+    function vizMarkBlocks(root) {
+        root.querySelectorAll('pre > code').forEach((code) => {
+            if (!/(^|\s)language-visual(\s|$)/.test(code.className || '')) return;
+            const box = document.createElement('div');
+            box.className = 'nv-visual';
+            box.setAttribute('data-viz-src', code.textContent || '');
+            code.parentElement.replaceWith(box);
+        });
+    }
+    function vizLuma(c) {
+        let m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(c || '');
+        if (!m) { const h = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c || ''); if (!h) return null; const x = h[1].length === 3 ? h[1].replace(/./g, '$&$&') : h[1]; m = [0, parseInt(x.slice(0, 2), 16), parseInt(x.slice(2, 4), 16), parseInt(x.slice(4), 16)]; }
+        return 0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3];
+    }
+    function vizRenderPending(target) {
+        target.querySelectorAll('.nv-visual[data-viz-src]').forEach((box) => {
+            const src = box.getAttribute('data-viz-src') || '';
+            box.removeAttribute('data-viz-src');
+            const html = vizSanitize(src);
+            if (!html) { box.className = 'nv-visual nv-visual-err'; box.textContent = 'This visual block is empty, or too large to draw.'; return; }
+            const wrap = document.createElement('div');
+            wrap.className = 'v';
+            wrap.innerHTML = html;
+            // Text copied from a dark page is light-coloured: give it a dark backdrop (and the reverse), whatever theme the vault is in.
+            let light = 0, dark = 0;
+            wrap.querySelectorAll('*').forEach((n) => {
+                if (!Array.from(n.childNodes).some((t) => t.nodeType === 3 && /\S/.test(t.nodeValue))) return;
+                let c = '';
+                for (let p = n; p && p !== wrap; p = p.parentElement) if (p.style && p.style.color) { c = p.style.color; break; }
+                const l = c ? vizLuma(c) : null;
+                if (l == null) dark++; else if (l > 150) light++; else dark++;
+            });
+            wrap.style.background = light > dark ? '#17181c' : '#ffffff';
+            box.setAttribute('role', 'group');
+            box.setAttribute('aria-label', 'Chart or visual pasted into this note');
+            let host = null;
+            try { host = box.attachShadow ? box.attachShadow({ mode: 'open' }) : null; } catch (e) { host = null; }
+            if (host) {
+                const st = document.createElement('style');
+                st.textContent = VIZ_CSS;
+                host.append(st, wrap);
+            } else box.appendChild(wrap);
+        });
+    }
+
     /* ── Paste formatted text (Word / Google Docs / web pages / ChatGPT / Claude …) → Markdown ──
        Reads text/html from the clipboard and rebuilds the formatting as Markdown: bold, italic,
        strikethrough, headings, bullet / numbered / task lists (nested too), links, images, quotes,
@@ -8385,6 +8537,19 @@
         try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return null; }
         const body = doc.body;
         if (!body) return null;
+        // Charts (coloured bars / inline SVG graphics) can't be expressed in Markdown: lift each one out as a ```visual block.
+        const vizBlocks = [];
+        try {
+            body.querySelectorAll('script,style,button').forEach((n) => n.remove());
+            vizFindRoots(body).forEach((r) => {
+                const h = vizSanitize(r.outerHTML);
+                if (!h) return;
+                const p = doc.createElement('p');
+                p.textContent = 'NVVIZ' + vizBlocks.length + 'END';
+                vizBlocks.push(vizFence(h));
+                r.replaceWith(p);
+            });
+        } catch (e) { console.warn('Notes Vault: chart detection failed', e); }
         body.querySelectorAll('script,style,meta,link,title,noscript,template,button,svg,canvas,iframe,video,audio,select,textarea,.sr-only,.visually-hidden,[hidden]').forEach((n) => n.remove());
         const kids0 = Array.from(body.children);
         if (kids0.length === 1 && kids0[0].tagName === 'PRE') return null;   // a code snippet: paste it as it is
@@ -8635,6 +8800,7 @@
         const total = body.textContent.replace(/\s+/g, '').length;
         if (!total) return null;                                             // only images: the image-attachment path handles those
         const rich = () => {
+            if (vizBlocks.length) return true;
             for (const e of Array.from(body.querySelectorAll('*'))) {
                 const tag = e.tagName;
                 if (/^(H[1-6]|UL|OL|BLOCKQUOTE|TABLE|HR)$/.test(tag) || mathOf(e)) return true;
@@ -8654,6 +8820,7 @@
         let md = joinBlocks(blocks(body, {})).replace(/\n{3,}/g, '\n\n').trim();
         md = md.replace(/(\S)\*\*\*\*(?=\S)/g, '$1').replace(/(\S)\*\* \*\*(?=\S)/g, '$1 ')
             .replace(/(\S)~~~~(?=\S)/g, '$1').replace(/(\S)~~ ~~(?=\S)/g, '$1 ');   // adjacent runs with the same format → one run
+        if (vizBlocks.length) md = md.replace(/NVVIZ(\d+)END/g, (m, i) => '\n\n' + (vizBlocks[+i] || '') + '\n\n').replace(/\n{3,}/g, '\n\n').trim();
         return md || null;
     }
     function richPasteMarkdown(cd, value, pos) {
@@ -13697,7 +13864,7 @@
         el.read.addEventListener('click', (e) => {
             if (!READ_CLICK_EDIT || S.mode !== 'read' || S.split || S.viewRev || blkSess || !S.note) return;   // Read = view/copy only; press the pen to edit
             const t = e.target;
-            if (!t || !t.closest || t.closest('a, button, input, textarea, img, svg, .nv-mermaid, .nv-tbl-editing, [contenteditable="true"], [contenteditable="plaintext-only"]')) return;
+            if (!t || !t.closest || t.closest('a, button, input, textarea, img, svg, .nv-mermaid, .nv-visual, .nv-tbl-editing, [contenteditable="true"], [contenteditable="plaintext-only"]')) return;
             const sel = window.getSelection && window.getSelection();
             if (sel && sel.toString().length) return;   // selecting text to copy: leave it alone
             const block = Array.from(el.read.children).find((c) => c.contains(t));
