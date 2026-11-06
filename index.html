@@ -23138,6 +23138,19 @@ body.dark-mode .dlt-horizon-sel option { color: #e5e7eb; background: #1f2937; }
   font-family: monospace; margin-top: 3px;
 }
 
+/* ── Live seconds clock (opt-in, toggle in Deadlines header) ── */
+.dlt-countdown.cd-live {
+  font-size: 1.02rem; font-weight: 800; letter-spacing: .5px; margin-top: 5px;
+  font-variant-numeric: tabular-nums; color: #d97706; display: flex; align-items: center; gap: 6px;
+}
+.dlt-countdown.cd-live .cd-tag { font-size: .62rem; letter-spacing: .6px; text-transform: uppercase; opacity: .85; }
+.dlt-countdown.cd-live.cd-red  { color: #ef4444; }
+.dlt-countdown.cd-live.cd-crit { color: #ef4444; animation: dltCdPulse 1s ease-in-out infinite; }
+.dlt-countdown.cd-live.cd-late { color: #b94a5a; }
+@keyframes dltCdPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .dlt-countdown.cd-live.cd-crit { animation: none; } }
+.nextup-card .dlt-countdown.cd-live { font-size: .9rem; margin-top: 4px; }
+.dlt-btn.dlt-sec-btn.active { background: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,.25); }
 /* ── Quick Reschedule ── */
 .dlt-date-click {
   cursor: pointer; border-bottom: 1px dotted var(--text-muted);
@@ -24101,6 +24114,7 @@ body.dark-mode .dlt-fg textarea {
       <button class="dlt-btn dlt-select-toggle-btn" id="dltSelectToggleBtn" onclick="DLT.toggleSelectionMode()"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-square-check"/></svg> <span>Select</span></button>
       <button class="dlt-btn" onclick="DLT.openDigest()" title="Compact summary of what's due this week"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-newspaper"/></svg> <span>Digest</span></button>
       <button class="dlt-btn" onclick="DLT.copyContextForAI()" title="Copy full deadlines snapshot + AI prompt — ready to paste to an AI advisor"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-clipboard-list"/></svg> <span>Copy</span></button>
+      <button class="dlt-btn dlt-sec-btn" id="dltSecBtn" onclick="DLT.toggleSecClock()" title="Show a live countdown to the second on every deadline"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-timer"/></svg> <span>Live clock</span></button>
       <button class="dlt-btn" onclick="DLT.openModal()">＋ Add</button>
     </div>
   </div>
@@ -24432,6 +24446,18 @@ body.dark-mode .dlt-fg textarea {
     return '';
   }
 
+  /* Live clock: opt-in, ticks every second. Setting key shared with the Today page. */
+  function secClockOn() { try { return localStorage.getItem('dltSecClock') === '1'; } catch (e) { return false; } }
+  function secClockParts(dateStr, timeStr) {
+    const tm = /^(\d{1,2}):(\d{2})/.exec(timeStr || '');
+    const end = tm ? new Date(`${dateStr}T${tm[1].padStart(2, '0')}:${tm[2]}:00`) : new Date(`${dateStr}T23:59:59`);
+    let ms = end - new Date();
+    if (isNaN(ms)) return null;
+    const late = ms < 0; ms = Math.abs(ms);
+    const t = Math.floor(ms / 1000), d = Math.floor(t / 86400);
+    const p = n => String(n).padStart(2, '0');
+    return { late, secs: late ? Infinity : t, text: (d ? d + 'd ' : '') + p(Math.floor(t % 86400 / 3600)) + ':' + p(Math.floor(t % 3600 / 60)) + ':' + p(t % 60) };
+  }
   function countdown(dateStr) {
     const ms = new Date(dateStr + 'T23:59:59') - new Date();
     if (ms <= 0 || ms > 72 * 3600000) return '';
@@ -24883,8 +24909,8 @@ body.dark-mode .dlt-fg textarea {
       const cls  = cardCls(days, done, snoozed);
       const dNum = done ? `<svg class="dlt-icon" aria-hidden="true"><use href="#icon-check"/></svg>` : (days < 0 ? Math.abs(days) : days);
       const dUnit = done ? '' : (days === 0 ? 'today' : days < 0 ? 'late' : Math.abs(days)===1 ? 'day' : 'days');
-      const cdHtml = (!done && !snoozed && days >= 0 && days <= 3)
-        ? `<div class="dlt-countdown" data-date="${d.date}"></div>` : '';
+      const cdHtml = (!done && !snoozed && (secClockOn() || (days >= 0 && days <= 3)))
+        ? `<div class="dlt-countdown" data-date="${d.date}" data-time="${d.time || ''}"></div>` : '';
       const srcBadge = d.source
         ? `<span class="dlt-badge src">${d.source}</span>` : '';
       const statusLabel = snoozed ? '' : statusTxt(days, done);
@@ -25226,6 +25252,7 @@ body.dark-mode .dlt-fg textarea {
       const cls  = nextUpCls(days);
       return `<div class="nextup-card ${cls}" title="${d_escapeHtml(d.name)}">
         <div class="nextup-card-days">${nextUpDaysLabel(days)}</div>
+        ${secClockOn() ? `<div class="dlt-countdown" data-date="${d.date}" data-time="${d.time || ''}"></div>` : ''}
         <div class="nextup-card-name">${d_escapeHtml(d.name)}</div>
         <div class="nextup-card-meta">${d.category ? d.category + ' · ' : ''}${fmtDate(d.date)}</div>
       </div>`;
@@ -25311,8 +25338,18 @@ body.dark-mode .dlt-fg textarea {
   }
 
   function tickCountdowns() {
+    const live = secClockOn();
     document.querySelectorAll('.dlt-countdown[data-date]').forEach(el => {
-      el.innerHTML = countdown(el.dataset.date);
+      if (!live) {
+        if (el.classList.contains('cd-live')) el.className = 'dlt-countdown';
+        el.innerHTML = countdown(el.dataset.date);
+        return;
+      }
+      const c = secClockParts(el.dataset.date, el.dataset.time);
+      if (!c) { el.textContent = ''; return; }
+      const cls = 'dlt-countdown cd-live ' + (c.late ? 'cd-late' : c.secs < 3600 ? 'cd-crit' : c.secs < 86400 ? 'cd-red' : '');
+      if (el.className !== cls.trim()) el.className = cls.trim();
+      el.innerHTML = `<svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-timer"/></svg><span class="cd-tag">${c.late ? 'overdue' : 'left'}</span><span>${c.late ? '+' : ''}${c.text}</span>`;
     });
   }
 
@@ -26222,6 +26259,11 @@ body.dark-mode .dlt-fg textarea {
       render();
     },
 
+    toggleSecClock() {
+      try { localStorage.setItem('dltSecClock', secClockOn() ? '0' : '1'); } catch (e) { /* storage blocked */ }
+      syncSecBtn(); render(); tickCountdowns();
+    },
+
     /* ─── Bulk actions ─── */
     toggleSelectionMode() {
       selectionMode = !selectionMode;
@@ -26715,7 +26757,9 @@ body.dark-mode .dlt-fg textarea {
     syncCardMenuOpen();
   });
 
-  function init() { backfillDoneMeta(); cleanupSnoozes(); render(); checkPopup(); setInterval(() => { tickCountdowns(); render(); }, 60000); }
+  function syncSecBtn() { const b = document.getElementById('dltSecBtn'); if (b) { b.classList.toggle('active', secClockOn()); b.setAttribute('aria-pressed', secClockOn() ? 'true' : 'false'); } }
+  window.addEventListener('storage', e => { if (e.key === 'dltSecClock') { syncSecBtn(); render(); tickCountdowns(); } });
+  function init() { backfillDoneMeta(); cleanupSnoozes(); render(); syncSecBtn(); tickCountdowns(); checkPopup(); setInterval(() => { tickCountdowns(); render(); }, 60000); setInterval(() => { if (!document.hidden) tickCountdowns(); }, 1000); }
   document.readyState === 'loading'
     ? document.addEventListener('DOMContentLoaded', init)
     : init();
