@@ -47471,7 +47471,8 @@ const EnglishDaily = (function () {
                     book.title.toLowerCase().includes(searchQuery) ||
                     book.author.toLowerCase().includes(searchQuery) ||
                     (book.genre && book.genre.toLowerCase().includes(searchQuery)) ||
-                    (book.review && book.review.toLowerCase().includes(searchQuery));
+                    (book.review && book.review.toLowerCase().includes(searchQuery)) ||
+                    (book.takeaways && ((book.takeaways.learned || '') + ' ' + (book.takeaways.apply || '')).toLowerCase().includes(searchQuery));
                 return matchesGenre && matchesSearch;
             });
 
@@ -48084,6 +48085,322 @@ const EnglishDaily = (function () {
                 showNotification('Could not copy automatically. Please try again.', 'error');
             }
         }
+
+        // ===== READING LIST+ : Up next pin, Pick-my-next-book, pace/ETA + stalled nudge, paste a plain title list =====
+        (function () {
+            const st = document.createElement('style');
+            st.textContent = `
+            .rl-pace{margin-top:6px;font-size:.76rem;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+            .rl-pace b{color:var(--text-dark);font-weight:650}
+            .rl-stalled{padding:1px 8px;border-radius:99px;background:rgba(217,119,6,.14);color:#b45309;font-weight:600}
+            .dark-mode .rl-stalled{background:rgba(251,191,36,.16);color:#fbbf24}
+            .rl-upnext{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:99px;background:linear-gradient(135deg,#db2777,#9d2867);color:#fff;font-size:.68rem;font-weight:650;vertical-align:middle}
+            .book-action-btn.is-pinned{color:#db2777;border-color:#db2777}
+            .rl-pickbar{display:flex;margin:0 0 10px}
+            .rl-pickbtn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px 12px;border-radius:12px;border:1.5px dashed rgba(219,113,175,.55);background:transparent;color:#9d2867;font:inherit;font-size:.88rem;font-weight:600;cursor:pointer}
+            .dark-mode .rl-pickbtn{color:#f9a8d4;border-color:rgba(244,114,182,.4)}
+            .rl-pickbtn:hover{background:rgba(219,113,175,.1)}
+            .rl-pick-body{padding:22px 22px 6px;text-align:center}
+            .rl-pick-body h3{margin:0 0 4px;font-size:1.1rem;color:var(--text-dark)}
+            .rl-pick-sub{color:var(--text-muted);font-size:.85rem;margin-bottom:10px}
+            .rl-pick-rev{font-size:.82rem;color:var(--text-muted);line-height:1.5}
+            .rl-pick-foot{display:flex;gap:8px;padding:14px 18px 18px;flex-wrap:wrap;justify-content:center}`;
+            document.head.appendChild(st);
+
+            const DAY = 864e5, save = () => localStorage.setItem('readingList', JSON.stringify(readingList));
+            const stamps = () => { try { return JSON.parse(localStorage.getItem('rlProgressStamp') || '{}'); } catch (e) { return {}; } };
+            const dayMs = iso => new Date((iso || todayISO()) + 'T00:00:00').getTime();
+
+            function rlEnhance() {
+                const box = document.getElementById('readingListContainer');
+                if (!box || box.querySelector('.rl-empty')) return;
+                const now = Date.now(), S = stamps(); let dirty = false;
+                // Remember WHEN the page last changed (no extra field needed in the save code)
+                readingList.forEach(b => {
+                    if (b.status !== 'reading') { if (S[b.id]) { delete S[b.id]; dirty = true; } return; }
+                    const cp = b.currentPage || 0;
+                    if (!S[b.id]) { S[b.id] = { p: cp, t: b.startedAt ? dayMs(b.startedAt) : now }; dirty = true; }
+                    else if (S[b.id].p !== cp) { S[b.id] = { p: cp, t: now }; dirty = true; }
+                });
+                if (dirty) localStorage.setItem('rlProgressStamp', JSON.stringify(S));
+
+                const wants = [];
+                box.querySelectorAll('.book-item').forEach(el => {
+                    const b = readingList.find(x => x.id === +el.dataset.id); if (!b) return;
+                    if (b.status === 'reading') {
+                        const days = Math.max(1, Math.round((now - dayMs(b.startedAt)) / DAY)), cp = b.currentPage || 0, bits = [];
+                        if (cp > 0 && days >= 2) {
+                            const pace = cp / days;
+                            bits.push(`<b>${pace < 10 ? pace.toFixed(1) : Math.round(pace)}</b> pp/day`);
+                            if (b.pages && b.pages > cp) bits.push('done ≈ <b>' + new Date(now + Math.ceil((b.pages - cp) / pace) * DAY).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '</b>');
+                        }
+                        const idle = Math.floor((now - ((S[b.id] || {}).t || now)) / DAY);
+                        if (idle >= 7) bits.push(`<span class="rl-stalled">No progress for ${idle} days</span>`);
+                        if (bits.length) el.querySelector('.book-details').insertAdjacentHTML('beforeend', `<div class="rl-pace">${bits.join('<span>·</span>')}</div>`);
+                    } else if (b.status === 'want') {
+                        wants.push(el);
+                        if (b.upNext) el.querySelector('.book-title').insertAdjacentHTML('beforeend', '<span class="rl-upnext">Up next</span>');
+                        const sp = el.querySelector('.book-actions-spacer');
+                        if (sp) sp.insertAdjacentHTML('beforebegin', `<button class="book-action-btn${b.upNext ? ' is-pinned' : ''}" onclick="rlTogglePin(${b.id}); event.stopPropagation();" title="${b.upNext ? 'Remove from Up next' : 'Pin as Up next'}" aria-label="Pin as Up next"><svg class="icon-svg" aria-hidden="true"><use href="#icon-pin"></use></svg></button>`);
+                    }
+                });
+                const pinned = wants.find(el => readingList.find(x => x.id === +el.dataset.id && x.upNext));
+                if (pinned && wants[0] !== pinned) wants[0].before(pinned);   // pinned book leads the Want group
+                if (wants.length && (rlStatusFilter === 'all' || rlStatusFilter === 'want'))
+                    box.insertAdjacentHTML('afterbegin', `<div class="rl-pickbar"><button type="button" class="rl-pickbtn" title="Can't decide? Pick my next book" onclick="rlPickNext()"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-shuffle"></use></svg> Pick next</button></div>`);
+            }
+
+            window.rlTogglePin = function (id) {
+                const b = readingList.find(x => x.id === +id); if (!b) return;
+                const on = !b.upNext; readingList.forEach(x => { delete x.upNext; });
+                if (on) b.upNext = true;
+                save(); renderReadingList();
+                showNotification(on ? '“' + b.title + '” is now Up next.' : 'Removed from Up next.', 'success');
+            };
+            window.rlClosePick = () => document.getElementById('rlPickModal')?.remove();
+            window.rlPickNext = function (skipId) {
+                const pool = readingList.filter(b => b.status === 'want' && b.id !== skipId);
+                if (!pool.length) { showNotification('No other book in Want to Read.', 'info'); return; }
+                const b = pool.find(x => x.upNext) || pool[Math.floor(Math.random() * pool.length)];
+                rlClosePick();
+                const meta = [b.author, b.genre, b.pages ? b.pages + ' pages' : ''].filter(Boolean).map(escapeHtml).join(' · ');
+                const m = document.createElement('div'); m.id = 'rlPickModal'; m.className = 'rl-mini-modal';
+                m.onclick = e => { if (e.target === m) rlClosePick(); };
+                m.innerHTML = `<div class="rl-imp-card" role="dialog" aria-modal="true" aria-label="Your next book" style="max-width:420px">
+                    <div class="rl-pick-body"><div class="rl-pick-sub">${b.upNext ? 'Your Up next book' : 'How about this one?'}</div><h3>${escapeHtml(b.title)}</h3>
+                    <div class="rl-pick-sub">${meta}</div>${b.review ? `<div class="rl-pick-rev">${escapeHtml(b.review.length > 200 ? b.review.slice(0, 200) + '…' : b.review)}</div>` : ''}</div>
+                    <div class="rl-pick-foot">
+                        <button type="button" class="add-time-btn" onclick="rlStartBook(${b.id})">Start reading</button>
+                        ${pool.length > 1 && !b.upNext ? `<button type="button" class="add-time-btn btn-secondary" onclick="rlPickNext(${b.id})">Another</button>` : ''}
+                        ${b.upNext ? '' : `<button type="button" class="add-time-btn btn-secondary" onclick="rlTogglePin(${b.id}); rlClosePick()">Set as Up next</button>`}
+                        <button type="button" class="add-time-btn btn-secondary" onclick="rlClosePick()">Close</button></div></div>`;
+                document.body.appendChild(m);
+            };
+            window.rlStartBook = function (id) {
+                const b = readingList.find(x => x.id === +id); if (!b) return;
+                b.status = 'reading'; delete b.upNext; applyBookDates(b); save();
+                rlClosePick(); renderReadingList(); updateReadingCounts();
+                showNotification('Started “' + b.title + '”. Enjoy!', 'success');
+            };
+
+            const _render = renderReadingList;
+            renderReadingList = function () { _render.apply(this, arguments); try { rlEnhance(); } catch (e) { console.error('rlEnhance', e); } };
+
+            // ---- Paste a plain list of titles (one per line, optional "Title by Author") -> Review screen ----
+            function rlTitlesFromText(raw) {
+                return String(raw).split(/\r?\n/)
+                    .map(l => l.replace(/\*\*|__|`/g, '').replace(/^\s*(?:[-*•>]+|\d+[.)])\s+/, '').trim())
+                    .filter(l => l && l.length <= 110 && l.split(/\s+/).length <= 14)
+                    .map(l => { const m = l.match(/^(.+?)\s+(?:by|[–—])\s+(.+)$/i); return m ? { bookTitle: m[1].trim(), bookAuthor: m[2].trim() } : { bookTitle: l }; });
+            }
+            window.rlCopyTitlesPrompt = async function (btn) {
+                const lines = buildBookAiPrompt().split('\n'); lines.pop();
+                const text = lines.concat(['', 'Look up these books now and reply in the format above:'], _bookImportItems.map(i => '- ' + i.title + (i.author ? ' by ' + i.author : ''))).join('\n');
+                let ok = false;
+                try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; } } catch (e) {}
+                if (!ok) { try { const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;top:-9999px;opacity:0'; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (e) {} }
+                if (btn) { const k = btn._k || (btn._k = btn.textContent); btn.textContent = ok ? 'Copied' : 'Failed'; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = k; }, 1400); } else showNotification(ok ? 'Copied' : 'Could not copy', ok ? 'success' : 'error');
+            };
+            const _fill = fillBookFromPaste;
+            fillBookFromPaste = function () {
+                const box = document.getElementById('bookPasteBox');
+                if (box && box._pasted) {
+                    box._pasted = false;
+                    if (!parseBookPaste(box.value).books.length) {
+                        const titles = rlTitlesFromText(box.value);
+                        if (titles.length >= 2) {
+                            const { items, unreadable } = buildBookImportItems(titles);
+                            if (items.length) {
+                                const status = document.getElementById('bookPasteStatus');
+                                if (status) { status.className = 'book-paste-status ok'; status.innerHTML = 'Found ' + items.length + ' titles. <button type="button" class="rl-imp-link" onclick="reopenBookImportReview()">Open review</button>'; }
+                                openBookImportReview(items, unreadable);
+                                document.querySelector('#rlImpModal .rl-imp-sum')?.insertAdjacentHTML('beforeend', '<br><button type="button" class="rl-imp-link" title="Copy an AI prompt with these titles to get author, genre, pages and more, then paste the reply back here" onclick="rlCopyTitlesPrompt(this)">Copy</button>');
+                                return;
+                            }
+                        }
+                    }
+                }
+                _fill();
+            };
+            const pb = document.getElementById('bookPasteBox');
+            if (pb) pb.addEventListener('paste', () => { pb._pasted = true; });
+            try { renderReadingList(); } catch (e) {}
+        })();
+
+        // ===== READING LIST+ : Takeaways / "How I'll apply this" (book.takeaways = {learned, apply, updatedAt}) =====
+        (function () {
+            const st = document.createElement('style');
+            st.textContent = `
+            .rl-tk-line{margin-top:6px;font-size:.78rem;color:var(--text-dark);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;padding-left:8px;border-left:2px solid #db2777}
+            .rl-tk-line b{color:#9d2867}.dark-mode .rl-tk-line b{color:#f9a8d4}
+            .rl-tk-nudge{margin-top:6px;align-self:flex-start;border:1px dashed rgba(219,113,175,.55);background:transparent;color:#9d2867;border-radius:99px;padding:2px 10px;font:inherit;font-size:.74rem;font-weight:600;cursor:pointer}
+            .dark-mode .rl-tk-nudge{color:#f9a8d4;border-color:rgba(244,114,182,.4)}
+            .book-action-btn.has-tk{color:#db2777;border-color:#db2777}
+            .rl-tk-form{padding:6px 20px 4px;display:flex;flex-direction:column;gap:12px}
+            .rl-tk-form label{font-size:.82rem;font-weight:600;color:var(--text-dark);display:flex;flex-direction:column;gap:5px}
+            .rl-tk-form textarea{font:inherit;font-weight:400;font-size:.92rem;line-height:1.5;padding:9px 11px;border-radius:10px;border:1px solid rgba(219,113,175,.35);background:var(--bg-light);color:var(--text-dark);resize:vertical}
+            .rl-tk-form textarea:focus{outline:none;border-color:#db2777;box-shadow:0 0 0 3px rgba(219,39,119,.14)}
+            #bookDetailsTakeaways{margin-top:12px;padding:12px 14px;border-radius:12px;border:1px solid rgba(219,113,175,.28);background:rgba(219,113,175,.07);font-size:.88rem;line-height:1.55;color:var(--text-dark)}
+            #bookDetailsTakeaways h4{margin:0 0 6px;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;color:#9d2867}
+            .dark-mode #bookDetailsTakeaways h4{color:#f9a8d4}
+            #bookDetailsTakeaways .tk-txt{white-space:pre-wrap;margin-bottom:8px}`;
+            document.head.appendChild(st);
+            const save = () => localStorage.setItem('readingList', JSON.stringify(readingList));
+            const get = id => readingList.find(x => x.id === +id);
+
+            window.rlCloseTk = () => document.getElementById('rlTkModal')?.remove();
+            window.rlOpenTakeaways = function (id) {
+                const b = get(id); if (!b) return;
+                rlCloseTk();
+                const t = b.takeaways || {};
+                const td0 = t.todoId ? getTodos().find(x => x.id === t.todoId) : null;
+                const d3 = new Date(); d3.setDate(d3.getDate() + 3);
+                const due0 = (td0 && td0.due) || toLocalDateStr(d3);
+                const m = document.createElement('div'); m.id = 'rlTkModal'; m.className = 'rl-mini-modal';
+                m.onmousedown = e => { m._bd = (e.target === m); };
+                m.onclick = e => { if (e.target === m && m._bd) rlCloseTk(); };
+                m.innerHTML = `<div class="rl-imp-card" role="dialog" aria-modal="true" aria-label="Takeaways" style="max-width:520px">
+                    <div class="rl-imp-head" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><h3>Takeaways</h3><div class="rl-imp-sum">${escapeHtml(b.title)}</div></div><button type="button" class="book-action-btn" title="Copy AI prompt for this book" aria-label="Copy AI prompt" onclick="rlCopyTkPrompt(${b.id}, this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg></button></div>
+                    <div class="rl-tk-form">
+                        <textarea id="rlTkPaste" rows="1" placeholder="Paste AI reply" title="Paste the AI reply here and both boxes fill themselves in" oninput="rlTkPasteSoon()"></textarea>
+                        <label title="Up to 3 ideas, one per line">What stuck with me<textarea id="rlTkLearned" rows="4"></textarea></label>
+                        <label title="One concrete action: where and when">How I’ll apply this<textarea id="rlTkApply" rows="3"></textarea></label>
+                        <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end"><input type="date" id="rlTkDue" value="${due0}" title="Due date" style="font:inherit;font-size:.85rem;padding:6px 8px;border-radius:8px;border:1px solid rgba(219,113,175,.35);background:var(--bg-light);color:var(--text-dark)"><button type="button" class="book-action-btn${td0 && !td0.done ? ' has-tk' : ''}" title="${td0 ? 'Update the to-do' : 'Add to to-dos'}" aria-label="Add to to-dos" onclick="rlTkToTodo(${b.id}, this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-square-check"></use></svg></button></div>
+                    </div>
+                    <div class="rl-imp-foot"><button type="button" class="add-time-btn btn-secondary" onclick="rlCloseTk()">Cancel</button><button type="button" class="add-time-btn" onclick="rlSaveTk(${b.id})">Save</button></div></div>`;
+                document.body.appendChild(m);
+                const L = document.getElementById('rlTkLearned'), A = document.getElementById('rlTkApply');
+                L.value = t.learned || ''; A.value = t.apply || '';
+                m.addEventListener('keydown', e => {
+                    if (e.key === 'Escape') rlCloseTk();
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) rlSaveTk(b.id);
+                });
+                L.focus();
+            };
+            // ---- AI helper: icon-only copy button + paste box that fills both fields ----
+            function rlCopyText(text, btn) {
+                return (async () => {
+                    let ok = false;
+                    try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; } } catch (e) {}
+                    if (!ok) { try { const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;top:-9999px;opacity:0'; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (e) {} }
+                    if (btn) { const keep = btn._keep || (btn._keep = btn.innerHTML); btn.textContent = ok ? 'Copied' : 'Failed'; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.innerHTML = keep; }, 1400); }
+                    else showNotification(ok ? 'Copied' : 'Could not copy', ok ? 'success' : 'error');
+                    return ok;
+                })();
+            }
+            window.rlCopyText = rlCopyText;
+            window.rlCopyTkPrompt = function (id, btn) {
+                const b = get(id); if (!b) return;
+                rlCopyText([
+                    'Help me fill in the "takeaways" for my reading journal.',
+                    'Book: ' + b.title + (b.author ? ' by ' + b.author : '') + (b.review ? '\nMy notes/review: ' + b.review : ''),
+                    '',
+                    'Reply in EXACTLY this plain-text format (no markdown, no extra commentary):',
+                    'Takeaways:',
+                    '- <idea 1: the most useful idea, one short sentence>',
+                    '- <idea 2>',
+                    '- <idea 3>',
+                    'Apply: <ONE concrete action I can do within a week, say where and when. My context: building a career in finance, investing and economics.>',
+                    '',
+                    'If you are not sure what the book says, write N/A instead of guessing.'
+                ].join('\n'), btn);
+            };
+            function rlParseTk(raw) {
+                const L = []; let A = '', cur = null;
+                for (const line of String(raw).split(/\r?\n/)) {
+                    const l = line.replace(/\*\*|__|`/g, '').trim(); if (!l) continue;
+                    let m = l.match(/^(?:key\s*)?takeaways?\s*[:：]\s*(.*)$/i) || l.match(/^what stuck with me\s*[:：]\s*(.*)$/i);
+                    if (m) { cur = 'l'; if (m[1]) L.push(m[1]); continue; }
+                    m = l.match(/^(?:apply|action|how i['’]ll apply(?: this)?)\s*[:：]\s*(.*)$/i);
+                    if (m) { cur = 'a'; if (m[1]) A = m[1]; continue; }
+                    if (cur === 'l') L.push(l.replace(/^(?:[-*•]+|\d+[.)])\s*/, ''));
+                    else if (cur === 'a') A += (A ? ' ' : '') + l;
+                }
+                const bad = s => /^(n\/?a|none|unknown)$/i.test(String(s).trim());
+                return { learned: L.filter(s => !bad(s)).slice(0, 3).join('\n'), apply: bad(A) ? '' : A.trim() };
+            }
+            let _tkT = null;
+            window.rlTkPasteSoon = function () {
+                clearTimeout(_tkT);
+                _tkT = setTimeout(() => {
+                    const p = document.getElementById('rlTkPaste'); if (!p || !p.value.trim()) return;
+                    const r = rlParseTk(p.value);
+                    if (!r.learned && !r.apply) return;
+                    if (r.learned) document.getElementById('rlTkLearned').value = r.learned;
+                    if (r.apply) document.getElementById('rlTkApply').value = r.apply;
+                    p.value = ''; showNotification('Filled', 'success');
+                }, 150);
+            };
+
+            // ---- Turn the "Apply" action into a real to-do (shows up on Today by its due date) ----
+            window.rlTkToTodo = function (id, btn) {
+                const b = get(id); if (!b) return;
+                const learned = (document.getElementById('rlTkLearned').value || '').trim();
+                const apply = (document.getElementById('rlTkApply').value || '').trim();
+                const due = (document.getElementById('rlTkDue').value || '').trim() || null;
+                if (!apply) { showNotification('Write the action first.', 'info'); document.getElementById('rlTkApply').focus(); return; }
+                const list = getTodos();
+                let td = b.takeaways && b.takeaways.todoId ? list.find(x => x.id === b.takeaways.todoId) : null;
+                if (td) { td.text = apply; td.due = due; td.done = false; }
+                else {
+                    td = { id: 't' + Date.now() + Math.random().toString(36).slice(2, 6), text: apply, priority: 'B', due, tags: ['reading'], done: false, subtasks: [], order: nextTodoOrder(list, 'B'), createdAt: Date.now() };
+                    list.push(td);
+                }
+                saveTodos(list);
+                b.takeaways = { learned, apply, updatedAt: todayISO(), todoId: td.id };
+                save(); rlCloseTk(); renderReadingList();
+                try { if (typeof PLANEXT !== 'undefined' && document.getElementById('todoNewText')) PLANEXT.openTodoView(); } catch (e) {}
+                const dm = document.getElementById('bookDetailsModal');
+                if (dm && getComputedStyle(dm).display !== 'none') showBookDetails(b.id);
+                showNotification('Added to to-dos' + (due ? ' · due ' + due : ''), 'success');
+            };
+            window.rlSaveTk = function (id) {
+                const b = get(id); if (!b) return;
+                const learned = (document.getElementById('rlTkLearned').value || '').trim();
+                const apply = (document.getElementById('rlTkApply').value || '').trim();
+                if (learned || apply) b.takeaways = { learned, apply, updatedAt: todayISO(), todoId: (b.takeaways || {}).todoId }; else delete b.takeaways;
+                save(); rlCloseTk(); renderReadingList();
+                const dm = document.getElementById('bookDetailsModal');
+                if (dm && getComputedStyle(dm).display !== 'none') showBookDetails(b.id);
+                showNotification(b.takeaways ? 'Takeaways saved.' : 'Takeaways cleared.', 'success');
+            };
+
+            function rlRenderDetailsTk(b) {
+                const rev = document.getElementById('bookDetailsReview'); if (!rev) return;
+                let host = document.getElementById('bookDetailsTakeaways');
+                if (!host) { host = document.createElement('div'); host.id = 'bookDetailsTakeaways'; rev.insertAdjacentElement('afterend', host); }
+                const t = b.takeaways;
+                const btn = label => `<button type="button" class="rl-tk-nudge" title="Takeaways" style="margin-top:0" onclick="closeBookDetailsModal(); rlOpenTakeaways(${b.id})">${label}</button>`;
+                if (!t) { host.innerHTML = `<h4>Takeaways</h4>${btn('+ Add')}`; return; }
+                host.innerHTML = `<h4>Takeaways</h4>${t.learned ? `<div class="tk-txt">${escapeHtml(t.learned)}</div>` : ''}${t.apply ? `<h4>How I’ll apply this</h4><div class="tk-txt">${escapeHtml(t.apply)}</div>` : ''}${btn('Edit')}`;
+            }
+            const _sd = showBookDetails;
+            showBookDetails = function (id) { _sd.apply(this, arguments); const b = get(id); if (b) try { rlRenderDetailsTk(b); } catch (e) { console.error(e); } };
+
+            const _r = renderReadingList;
+            renderReadingList = function () {
+                _r.apply(this, arguments);
+                try {
+                    document.querySelectorAll('#readingListContainer .book-item').forEach(el => {
+                        const b = get(el.dataset.id); if (!b) return;
+                        const t = b.takeaways, d = el.querySelector('.book-details');
+                        const sp = el.querySelector('.book-actions-spacer');
+                        if (sp) sp.insertAdjacentHTML('beforebegin', `<button class="book-action-btn${t ? ' has-tk' : ''}" onclick="rlOpenTakeaways(${b.id}); event.stopPropagation();" title="${t ? 'Edit takeaways' : 'Add takeaways'}" aria-label="Takeaways"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sparkles"></use></svg></button>`);
+                        if (t && t.apply) d.insertAdjacentHTML('beforeend', `<div class="rl-tk-line"><b>Apply:</b> ${escapeHtml(t.apply)}</div>`);
+                        else if (t && t.learned) d.insertAdjacentHTML('beforeend', `<div class="rl-tk-line">${escapeHtml(t.learned.split('\n')[0])}</div>`);
+                        else if (b.status === 'finished') d.insertAdjacentHTML('beforeend', `<button type="button" class="rl-tk-nudge" title="Add takeaways" onclick="rlOpenTakeaways(${b.id}); event.stopPropagation();">+ Takeaways</button>`);
+                    });
+                } catch (e) { console.error('rl takeaways', e); }
+            };
+            // Finishing a book via the status badge opens the takeaways prompt (skippable)
+            const _tb = toggleBookStatus;
+            toggleBookStatus = function (id) {
+                _tb.apply(this, arguments);
+                const b = get(id);
+                if (b && b.status === 'finished' && !b.takeaways) setTimeout(() => rlOpenTakeaways(b.id), 350);
+            };
+            try { renderReadingList(); } catch (e) {}
+        })();
 
         function openAddBookModal() {
             document.getElementById('addBookModal').style.display = 'flex';
@@ -57455,7 +57772,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (b.pages) meta.push(`${b.pages}pp`);
                 if (b.firstPublished) meta.push(String(b.firstPublished));
                 if (b.currentEdition) meta.push(`Ed.${b.currentEdition}`);
-                return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]`;
+                const tk = b.takeaways ? (b.takeaways.learned ? '\n      Takeaways: ' + b.takeaways.learned.replace(/\n+/g, ' | ') : '') + (b.takeaways.apply ? '\n      Applying: ' + b.takeaways.apply : '') : '';
+                return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]${tk}`;
             };
 
             const pushBookFull = b => {
