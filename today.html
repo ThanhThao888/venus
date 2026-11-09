@@ -348,6 +348,36 @@ function readingRows(today){
   if(nxt) rows.push({ title: nxt.title, meta: [nxt.author, nxt.pages ? nxt.pages + ' pages' : ''].filter(Boolean).join(' · '), pct: -1, tag: 'up next' });
   return rows;
 }
+/* Strategic Roadmap status: the Tracker saves a small snapshot per track (rdmSnapshots) each time the roadmap draws.
+   Today shows the pinned tracks (max 2), or the most recently opened one when nothing is pinned. */
+function roadmapRows(today){
+  const snaps = lsJSON('rdmSnapshots', {}) || {};
+  let keys = arr('roadmapPinnedTracks').filter(k => snaps[k]);
+  if(!keys.length) keys = Object.keys(snaps).sort((a, b) => (snaps[b].ts || 0) - (snaps[a].ts || 0)).slice(0, 1);
+  return keys.slice(0, 2).map(k => Object.assign({ key: k }, snaps[k]));
+}
+function roadmapRow(r){
+  const n = x => { x = Number(x) || 0; return x >= 10 ? String(Math.round(x)) : String(Math.round(x * 10) / 10); };
+  const age = r.ts ? Math.floor((Date.now() - r.ts) / 864e5) : 0;
+  const bits = [];
+  if(r.focus) bits.push('Focus: ' + r.focus);
+  bits.push(n(r.hrsLeft) + 'h left');
+  if(r.target){
+    const dd = diff(today0(), r.target);
+    bits.push(dd < 0 ? 'target passed' : dd === 0 ? 'target today' : 'target in ' + dd + 'd');
+    if(r.state === 'on' || r.state === 'ahead') bits.push('needs ' + n(r.need) + 'h/wk');
+    else if(r.state === 'behind') bits.push('needs ' + n(r.need) + 'h/wk, you do ' + n(r.pace || r.hpw) + 'h/wk');
+  }
+  if(age >= 3) bits.push('as of ' + age + 'd ago (open the Tracker to refresh)');
+  const tag = r.state === 'behind' ? '<span class="tag warn">behind ~' + n(Math.abs(r.slack)) + 'wk</span>'
+    : r.state === 'overdue' ? '<span class="tag bad">overdue</span>'
+    : r.state === 'ahead' ? '<span class="tag">ahead</span>'
+    : r.state === 'on' ? '<span class="tag">on track</span>' : '';
+  const cls = r.state === 'behind' ? ' warn' : r.state === 'overdue' ? ' bad' : '';
+  return '<a class="item' + cls + '" href="' + TRACKER + '"><span class="ic">' + ico('target') + '</span><span class="body"><div class="ttl">' + esc(r.label || r.key) + ' · ' + (Number(r.pct) || 0) + '%</div>' +
+    '<div class="meta">' + esc(bits.join(' · ')) + '</div><div class="bar"><i style="width:' + Math.max(0, Math.min(100, Number(r.pct) || 0)) + '%"></i></div></span>' + tag + '</a>';
+}
+const today0 = () => iso(new Date());
 function practiceRows(today){
   const cutoff = Date.now() - 21 * 864e5;
   const hasTodo = new Set(arr('todoTasks').filter(t => t).map(t => t.id));   // open OR ticked: either way the action already became a to-do
@@ -590,6 +620,8 @@ async function render(){
   const rd = readingRows(today), pr = practiceRows(today);
   if(rd.length) html += sec('reading', 'Reading', rd.length, rd.map(readRow).join(''));
   if(pr.length) html += sec('put-into-practice', 'Put into practice', pr.length, pr.map(practiceRow).join(''));
+  const rm = roadmapRows(today);
+  if(rm.length) html += sec('roadmap', 'Roadmap', rm.length, rm.map(roadmapRow).join(''));
   if(upcoming.length){
     let last = '', body = '';
     upcoming.forEach(i => { if(i.date !== last){ last = i.date; body += '<div class="day">' + wd(i.date) + '</div>'; } body += row(i, today); });

@@ -16196,6 +16196,29 @@
         .rdm-compare-grid { gap: 8px; }
         .rdm-focus-skill { font-size: 0.88rem; }
     }
+    /* ── Roadmap: target date, weekly review, list filter ── */
+    .rdm-target { margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--border-color); border-radius: 10px; font-size: 0.78rem; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+    .rdm-tg-label { font-weight: 700; color: var(--text-dark); }
+    .rdm-tg-hint { color: var(--text-muted); }
+    .rdm-tg-input { font: inherit; font-size: 0.78rem; padding: 2px 6px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-white); color: var(--text-dark); }
+    .rdm-tg-clear, .rdm-wk-btn { font: inherit; font-size: 0.72rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--primary); }
+    .rdm-tg-clear:hover, .rdm-wk-btn:hover { border-color: var(--primary); }
+    .rdm-tg-status { flex: 1 1 100%; font-weight: 650; line-height: 1.35; }
+    .rdm-tg-ahead, .rdm-tg-on { color: #4f8a6b; } .rdm-tg-behind { color: #c0762f; } .rdm-tg-overdue { color: #b94a5a; }
+    .dark-mode .rdm-tg-ahead, .dark-mode .rdm-tg-on { color: #7fc3a0; } .dark-mode .rdm-tg-behind { color: #e0a05f; } .dark-mode .rdm-tg-overdue { color: #e58898; }
+    .rdm-wk { margin: 8px 0; border: 1px solid var(--border-color); border-radius: 10px; font-size: 0.78rem; background: var(--bg-white); }
+    .rdm-wk summary { cursor: pointer; padding: 8px 10px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-weight: 700; color: var(--text-dark); }
+    .rdm-wk-sum { font-weight: 600; color: var(--text-muted); }
+    .rdm-wk-body { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+    .rdm-wk-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; color: var(--text-muted); }
+    .rdm-wk-row strong { color: var(--text-dark); }
+    .rdm-wk-tip { padding: 6px 8px; border-radius: 8px; background: rgba(219,113,175,0.10); color: var(--text-dark); line-height: 1.4; }
+    .rdm-lf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 6px; }
+    .rdm-lf-input { flex: 1 1 140px; min-width: 0; font: inherit; font-size: 0.8rem; padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-white); color: var(--text-dark); }
+    .rdm-lf-input:focus { outline: none; border-color: var(--primary); }
+    .rdm-lf-chk { font-size: 0.76rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
+    .rdm-lf-count { flex: 1 1 100%; font-size: 0.72rem; color: var(--text-muted); }
+    .rdm-lf-count:empty { display: none; }
     /* ── End Roadmap Module ─────────────────────────────────── */
 
     
@@ -26039,6 +26062,18 @@ body.dark-mode .dlt-fg textarea {
     // Notes Vault → Daily Planner link: called whenever a note's Deadline field changes.
     // Upserts (by sourceNoteId, never duplicates) a lightweight reminder item so a deadline
     // set on a note actually shows up in the planner; clearing the date removes it again.
+    /* Strategic Roadmap -> Deadlines: a track's "Target finish" date lives here as one manual item per track
+       (id rdmt-<track>), so Today shows it. Clearing the date removes it; a new date brings a ticked/snoozed one back. */
+    syncRoadmapTarget({ track, label, date }) {
+      const id = 'rdmt-' + track, idx = manualList.findIndex(m => m.id === id);
+      if (!date) { if (idx !== -1) { manualList.splice(idx, 1); persist(); render(); } return; }
+      const base = { name: '🎯 ' + label + ' target', date, time: '', category: '📌 Manual', priority: 'medium', note: 'Roadmap target date · ' + label, link: '',
+        roadmapTrack: track, roadmapSkillId: '', repeatType: 'none', repeatCustomDays: null, noteId: '', noteTitle: '', checklist: [] };
+      if (idx === -1 || manualList[idx].date !== date) { doneIds = doneIds.filter(x => x !== id); delete doneMeta[id]; delete snoozeMap[id]; }
+      if (idx !== -1) manualList[idx] = Object.assign({}, manualList[idx], base, { id });
+      else manualList.push(Object.assign({ id }, base));
+      persist(); render();
+    },
     syncNoteDeadline({ noteId, title, date, skillName, careerTitle }) {
         const idx = manualList.findIndex(m => m.sourceNoteId === noteId);
         let seen = {}; try { seen = JSON.parse(localStorage.getItem('dltNoteSeen') || '{}') || {}; } catch (e) {}
@@ -37350,7 +37385,7 @@ const EnglishDaily = (function () {
                         <label for="rdmHoursPerWeek"
                             style="font-size:0.78rem;color:var(--text-muted);white-space:nowrap;">Hrs/week:</label>
                         <input type="range" id="rdmHoursPerWeek" min="5" max="30" step="5" value="10"
-                            oninput="document.getElementById('rdmHpwVal').textContent=this.value; StrategicRoadmap.generate()"
+                            oninput="document.getElementById('rdmHpwVal').textContent=this.value; StrategicRoadmap.saveHpw(this.value); StrategicRoadmap.generate()"
                             style="flex:1; accent-color: var(--primary);">
                         <span id="rdmHpwVal"
                             style="font-size:0.82rem;font-weight:700;color:var(--primary);min-width:24px;text-align:right;">10</span>
@@ -79747,6 +79782,144 @@ window.fcRenderTagChips = fcRenderTagChips;
                 setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 7000);
             }
 
+            // ── Target date, pace status, weekly review, list filter (added) ──
+            const TARGET_KEY = 'rdmTargetDates';           // { track: 'YYYY-MM-DD' }
+            const DONE_LOG_KEY = 'rdmDoneLog';             // { track: [{ id, ts }] } skills ticked as done
+            const SNAP_KEY = 'rdmSnapshots';               // per-track status the Today page reads
+            const HPW_KEY = 'rdmHpw';
+            const UNLOCKED_KEY = 'rdmUnlockedOnly';
+            let rdmListQuery = '';                          // search text (kept across re-renders, not saved)
+            let rdmWkOpen = false;                          // is the Weekly review panel open
+            const DAY_MS = 864e5;
+            const readJSON = (k, fb) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? fb : v; } catch (e) { return fb; } };
+            const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+            const getHpw = () => parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
+            const r1 = n => Math.round(n * 10) / 10;
+            const fmtN = n => (n >= 10 ? String(Math.round(n)) : String(r1(n)));
+            const dayNumOf = s => { const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / DAY_MS); };
+            function getTargetDate(track) { const d = (readJSON(TARGET_KEY, {}) || {})[track]; return /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : ''; }
+            function saveTargetDate(track, date) { const m = readJSON(TARGET_KEY, {}) || {}; if (date) m[track] = date; else delete m[track]; return writeJSON(TARGET_KEY, m); }
+            function logSkillDone(track, id) {
+                const all = readJSON(DONE_LOG_KEY, {}) || {}, cutoff = Date.now() - 90 * DAY_MS;
+                const list = (all[track] || []).filter(e => e && e.ts >= cutoff && e.id !== id);
+                list.push({ id, ts: Date.now() }); all[track] = list; writeJSON(DONE_LOG_KEY, all);
+            }
+            function unlogSkillDone(track, id) {
+                const all = readJSON(DONE_LOG_KEY, {}) || {};
+                if (all[track]) { all[track] = all[track].filter(e => e && e.id !== id); writeJSON(DONE_LOG_KEY, all); }
+            }
+            function skillsDoneSince(track, days) {
+                const cut = Date.now() - days * DAY_MS, now = new Set(getCompleted(track));
+                return ((readJSON(DONE_LOG_KEY, {}) || {})[track] || []).filter(e => e && e.ts >= cut && now.has(e.id)).length;
+            }
+
+            // One place that answers "where am I on this track?" (used by the list view, Add to Today and the Today page)
+            function computeStatus(track, hpw) {
+                const cur = getCurriculum(track); if (!cur) return null;
+                const completedSet = new Set(getCompleted(track));
+                const skippedSet = getSkippedSet(track, cur);
+                const satisfied = new Set([...completedSet, ...skippedSet]);
+                const active = cur.filter(s => !completedSet.has(s.id) && !skippedSet.has(s.id));
+                const sorted = topologicalSort(active, cur);
+                const total = cur.length - skippedSet.size, done = completedSet.size;
+                const hrsLeft = sorted.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
+                const focus = sorted.filter(s => !isLocked(s, satisfied))[0] || sorted[0] || null;
+                const pace = getActualWeeklyPace(track, 4);
+                const target = getTargetDate(track);
+                const meta = TRACK_META[track] || {};
+                const st = { track, label: meta.label || track, icon: meta.icon || '', total, done, pct: total > 0 ? Math.round(done / total * 100) : 0, hrsLeft, focus, pace, hpw, target, plan: null };
+                if (target && hrsLeft > 0) {
+                    const days = dayNumOf(target) - dayNumOf(todayStr());
+                    const usingActual = !!(pace && pace > 0.05), eff = usingActual ? pace : hpw;
+                    const weeksAvail = days / 7, wksAtPace = hrsLeft / eff;
+                    const slack = weeksAvail - wksAtPace;
+                    const proj = new Date(); proj.setDate(proj.getDate() + Math.ceil(wksAtPace * 7));
+                    st.plan = {
+                        days, eff, usingActual, slack, proj,
+                        need: days > 0 ? hrsLeft / weeksAvail : Infinity,
+                        state: days <= 0 ? 'overdue' : slack >= 0.5 ? 'ahead' : slack > -0.5 ? 'on' : 'behind'
+                    };
+                }
+                return st;
+            }
+            function saveSnapshot(track, st) {
+                const all = readJSON(SNAP_KEY, {}) || {};
+                const snap = {
+                    label: st.label, pct: st.pct, done: st.done, total: st.total, hrsLeft: r1(st.hrsLeft),
+                    focus: st.focus ? st.focus.name.split(' (')[0] : '', pace: st.pace ? r1(st.pace) : 0,
+                    target: st.target || '', state: st.plan ? st.plan.state : '',
+                    slack: st.plan ? r1(st.plan.slack) : 0, need: st.plan && isFinite(st.plan.need) ? r1(st.plan.need) : 0, hpw: st.hpw
+                };
+                const prev = all[track];
+                if (prev && JSON.stringify(Object.assign({}, prev, { ts: 0 })) === JSON.stringify(Object.assign({}, snap, { ts: 0 })) && Date.now() - (prev.ts || 0) < 6 * 36e5) return;
+                all[track] = Object.assign(snap, { ts: Date.now() });
+                writeJSON(SNAP_KEY, all);
+            }
+
+            function targetRowHtml(track, hpw) {
+                const st = computeStatus(track, hpw); if (!st) return '';
+                const min = todayStr();
+                const input = (v) => `<input type="date" class="rdm-tg-input" min="${min}" ${v ? `value="${v}"` : ''} aria-label="Target finish date" onchange="StrategicRoadmap.setTarget('${track}', this.value)">`;
+                if (!st.target) {
+                    return `<div class="rdm-target"><span class="rdm-tg-label">🎯 Target finish</span>${input('')}<span class="rdm-tg-hint">Pick a date to see if you are on pace</span></div>`;
+                }
+                const p = st.plan; let msg = '';
+                if (!p) msg = '🏁 Nothing left to do before the target date.';
+                else {
+                    const basis = p.usingActual ? 'your logged pace' : 'target pace, nothing logged yet';
+                    const weeks = Math.abs(p.slack);
+                    if (p.state === 'overdue') msg = p.days === 0 ? `⚠️ Target is today · ${fmtN(st.hrsLeft)}h still left` : `⚠️ Target passed ${-p.days}d ago · ${fmtN(st.hrsLeft)}h still left`;
+                    else if (p.state === 'ahead') msg = `✅ Ahead by ~${fmtN(weeks)} wk · at ${fmtN(p.eff)}h/wk (${basis}) you finish ${fmtDate(p.proj)}`;
+                    else if (p.state === 'on') msg = `✅ On track · needs ${fmtN(p.need)}h/wk, you do ${fmtN(p.eff)}h/wk (${basis})`;
+                    else msg = `⚠️ Behind by ~${fmtN(weeks)} wk · needs ${fmtN(p.need)}h/wk, you do ${fmtN(p.eff)}h/wk (${basis})`;
+                }
+                return `<div class="rdm-target"><span class="rdm-tg-label">🎯 Target finish</span>${input(st.target)}<button type="button" class="rdm-tg-clear" onclick="StrategicRoadmap.setTarget('${track}', '')" title="Remove the target date">Clear</button><div class="rdm-tg-status rdm-tg-${p ? p.state : 'on'}">${msg}</div></div>`;
+            }
+
+            function weeklyReviewHtml(track, hpw) {
+                const st = computeStatus(track, hpw); if (!st) return '';
+                const b = getWeeklyHoursBuckets(track, 4), thisW = b[3], lastW = b[2], prev = b.slice(0, 3);
+                const avg3 = prev.reduce((s, v) => s + v, 0) / 3, idle = daysSinceActivity(track), done7 = skillsDoneSince(track, 7);
+                const tips = [];
+                if (prev.filter(v => v > 0).length >= 2) {
+                    const lower = Math.max(5, Math.ceil(avg3 / 5) * 5), higher = Math.min(30, Math.floor(avg3 / 5) * 5);
+                    if (avg3 < hpw * 0.6 && lower < hpw) tips.push(`You averaged ${fmtN(avg3)}h/wk over the last 3 weeks against a ${hpw}h target. ${lower}h/wk is more realistic. <button type="button" class="rdm-wk-btn" onclick="StrategicRoadmap.setHpw(${lower})">Set ${lower}h/wk</button>`);
+                    else if (avg3 > hpw * 1.2 && higher > hpw) tips.push(`You averaged ${fmtN(avg3)}h/wk, above your ${hpw}h target. You could aim for ${higher}h/wk. <button type="button" class="rdm-wk-btn" onclick="StrategicRoadmap.setHpw(${higher})">Set ${higher}h/wk</button>`);
+                    else tips.push('Your recent pace matches your target. Keep it going.');
+                } else tips.push('Log study hours for a couple more weeks and this panel will suggest a realistic weekly target.');
+                if (st.focus && idle !== null && idle >= 7) tips.push(`No activity on this track for ${idle} days. Try a short session on “${escapeHtml(st.focus.name.split(' (')[0])}”. <button type="button" class="rdm-wk-btn" onclick="StrategicRoadmap.addFocusToToday('${track}')">Add to Today</button>`);
+                const sum = `${fmtN(thisW)}h / ${hpw}h this week · ${fmtN(lastW)}h last week`;
+                return `<details class="rdm-wk"${rdmWkOpen ? ' open' : ''} ontoggle="StrategicRoadmap.wkToggle(this.open)"><summary><span>Weekly review</span><span class="rdm-wk-sum">${sum}</span></summary>
+                    <div class="rdm-wk-body">
+                        <div class="rdm-wk-row"><span>Last 4 weeks (oldest → this week)</span>${buildWeeklySparklineSvg(b, hpw)}</div>
+                        <div class="rdm-wk-row"><span>Skills ticked off in the last 7 days</span><strong>${done7}</strong></div>
+                        <div class="rdm-wk-row"><span>Days since last activity</span><strong>${idle === null ? '—' : idle}</strong></div>
+                        ${tips.map(t => `<div class="rdm-wk-tip">${t}</div>`).join('')}
+                    </div></details>`;
+            }
+
+            function listFilterHtml() {
+                const unlockedOnly = localStorage.getItem(UNLOCKED_KEY) === '1';
+                return `<div class="rdm-lf"><input type="search" class="rdm-lf-input" id="rdmListSearch" placeholder="Find a skill…" value="${escapeHtml(rdmListQuery)}" oninput="StrategicRoadmap.filterList(this.value)" aria-label="Find a skill" autocomplete="off">
+                    <label class="rdm-lf-chk"><input type="checkbox" id="rdmUnlockedOnly" ${unlockedOnly ? 'checked' : ''} onchange="StrategicRoadmap.setUnlockedOnly(this.checked)"> Unlocked only</label>
+                    <span class="rdm-lf-count" id="rdmListCount" aria-live="polite"></span></div>`;
+            }
+            function applyListFilter() {
+                const out = document.getElementById('rdmOutput'); if (!out) return;
+                const nodes = out.querySelectorAll('.rdm-skill-node[data-q]'); if (!nodes.length) return;
+                const q = rdmListQuery.trim().toLowerCase(), unlockedOnly = localStorage.getItem(UNLOCKED_KEY) === '1';
+                let shown = 0;
+                nodes.forEach(n => {
+                    const ok = (!q || n.dataset.q.includes(q)) && !(unlockedOnly && n.dataset.locked === '1');
+                    n.style.display = ok ? '' : 'none'; if (ok) shown++;
+                });
+                out.querySelectorAll('.rdm-phase-block').forEach(bk => {
+                    bk.style.display = Array.from(bk.querySelectorAll('.rdm-skill-node')).some(n => n.style.display !== 'none') ? '' : 'none';
+                });
+                const c = document.getElementById('rdmListCount');
+                if (c) c.textContent = (q || unlockedOnly) ? `${shown} of ${nodes.length} skills` : '';
+            }
+
             function renderHtml(track, opts) {
                 // opts: { hpw }
                 const curriculum = getCurriculum(track);
@@ -79822,6 +79995,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>
                         ${streakHtml}
                     </div>`;
+                html += targetRowHtml(track, hpw) + weeklyReviewHtml(track, hpw);
 
                 // ── Focus Now card ──
                 if (focusSkill) {
@@ -79865,6 +80039,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                             <div class="rdm-focus-actions">
                                 <button class="rdm-focus-check" onclick="StrategicRoadmap.markDone('${track}','${focusSkill.id}')">${fTrackable ? '<svg class="icon-svg" aria-hidden="true"><use href="#icon-clock"></use></svg>Update hours studied' : '<svg class="icon-svg" aria-hidden="true"><use href="#icon-circle-check"></use></svg>Confirm complete'}</button>
                                 ${fTrackable ? `<button class="rdm-focus-goal-btn" onclick="StrategicRoadmap.createGoalFromFocus('${track}')" title="Auto-create a Goal tracking this skill">Create Goal</button>` : ''}
+                                <button class="rdm-focus-goal-btn" onclick="StrategicRoadmap.addFocusToToday('${track}')" title="Add a to-do for this skill, due today">Add to Today</button>
                             </div>
                         </div>
                         ${focusFrameClose}`;
@@ -79873,6 +80048,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     }
                 }
 
+                html += listFilterHtml();
                 // ── Phase blocks ──
                 const phaseList = getPhaseList(track, curriculum);
                 let globalOrder = 1;
@@ -79957,7 +80133,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         }
 
                         html += `
-                            <div class="rdm-skill-node ${stateClass}${focusClass}" id="rdm-node-${skill.id}">
+                            <div class="rdm-skill-node ${stateClass}${focusClass}" id="rdm-node-${skill.id}" data-q="${escapeHtml(skill.name.toLowerCase())}" data-locked="${locked ? 1 : 0}">
                                 <div class="rdm-skill-left">
                                     <button class="${checkBtnClass}"
                                         onclick="StrategicRoadmap.markDone('${track}','${skill.id}')"
@@ -80734,6 +80910,11 @@ Here is my current progress summary:
                 if (!output) return;
                 const hpw = parseInt(document.getElementById('rdmHoursPerWeek')?.value || 10);
 
+                // Keep a small status snapshot (current + pinned tracks) for the Today page
+                try {
+                    [track, ...loadPinned()].filter((t, i, a) => t && a.indexOf(t) === i).forEach(t => { const sn = computeStatus(t, hpw); if (sn) saveSnapshot(t, sn); });
+                } catch (e) { /* snapshot is optional */ }
+
                 const mode = getViewMode();
 
                 if (mode === 'overview') {
@@ -80759,6 +80940,7 @@ Here is my current progress summary:
                     return;
                 }
                 output.innerHTML = html;
+                applyListFilter();
             }
 
             // ── PUBLIC API ───────────────────────────────────────────────────
@@ -80921,6 +81103,38 @@ Here is my current progress summary:
             }
 
             return {
+                // ── Target date: saved per track and mirrored into the Deadline list (so Today shows it) ──
+                setTarget(track, date) {
+                    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+                    if (!saveTargetDate(track, date)) { if (typeof showNotification === 'function') showNotification('Could not save the target date (browser storage is full or blocked).', 'error'); return; }
+                    const meta = TRACK_META[track] || {};
+                    try { if (typeof DLT !== 'undefined' && DLT.syncRoadmapTarget) DLT.syncRoadmapTarget({ track, label: meta.label || track, date }); } catch (e) {}
+                    render(track);
+                    if (typeof showNotification === 'function') showNotification(date ? 'Target date set. It also appears in your Deadlines.' : 'Target date removed.', 'success');
+                },
+                // ── Focus skill → a to-do due today (shows on the Today page) ──
+                addFocusToToday(track) {
+                    const st = computeStatus(track, getHpw());
+                    if (!st || !st.focus) return;
+                    if (typeof getTodos !== 'function' || typeof saveTodos !== 'function') { if (typeof showNotification === 'function') showNotification('To-do list not found in this app.', 'error'); return; }
+                    const f = st.focus, name = f.name.split(' (')[0], list = getTodos();
+                    if (list.some(t => t && !t.done && t.rdmTrack === track && t.rdmSkillId === f.id)) { if (typeof showNotification === 'function') showNotification('This skill is already on your to-do list.', 'info'); return; }
+                    list.push({ id: 't' + Date.now() + Math.random().toString(36).slice(2, 6), text: 'Study: ' + name, priority: 'B', due: todayStr(), tags: ['roadmap', track],
+                        done: false, subtasks: [], order: typeof nextTodoOrder === 'function' ? nextTodoOrder(list, 'B') : 0, createdAt: Date.now(), rdmTrack: track, rdmSkillId: f.id });
+                    saveTodos(list);
+                    try { if (document.getElementById('todoNewText') && typeof renderTodoList === 'function') renderTodoList(); } catch (e) {}
+                    if (typeof showNotification === 'function') showNotification('Added to Today: ' + name, 'success');
+                },
+                saveHpw(v) { try { localStorage.setItem(HPW_KEY, String(v)); } catch (e) {} },
+                setHpw(n) {
+                    const sl = document.getElementById('rdmHoursPerWeek'), lb = document.getElementById('rdmHpwVal');
+                    if (!sl) return;
+                    sl.value = String(n); if (lb) lb.textContent = sl.value;
+                    this.saveHpw(sl.value); this.generate();
+                },
+                wkToggle(open) { rdmWkOpen = !!open; },
+                filterList(q) { rdmListQuery = q || ''; applyListFilter(); },
+                setUnlockedOnly(on) { try { localStorage.setItem(UNLOCKED_KEY, on ? '1' : '0'); } catch (e) {} applyListFilter(); },
                 generate() {
                     const track = document.getElementById('rdmTrackSelect')?.value;
                     if (track) render(track);
@@ -81130,6 +81344,7 @@ Here is my current progress summary:
                                 render(track);
                                 flashBadge();
                                 bumpStreak();
+                                logSkillDone(track, skillId);
                                 if (typeof showNotification === 'function')
                                     showNotification('✅ Skill marked complete — roadmap updated!', 'success');
                                 checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
@@ -81159,6 +81374,7 @@ Here is my current progress summary:
                         if (hrs >= threshold) {
                             flashBadge();
                             bumpStreak();
+                            logSkillDone(track, skillId);
                             if (typeof showNotification === 'function')
                                 showNotification(`🎉 Reached ${hrs}h (≥${threshold}h) — "${skill.name}" is now complete!`, 'achievement');
                             checkPhaseCelebration(track, curriculum, skill, wasPhaseDone);
@@ -81191,6 +81407,7 @@ Here is my current progress summary:
                         `Unmark completion for:\n"${skill.name}"?`,
                         () => {
                             toggleManual(track, skillId);
+                            unlogSkillDone(track, skillId);
                             touchActivity(track);
                             render(track);
                             if (typeof showNotification === 'function')
@@ -81357,6 +81574,10 @@ Here is my current progress summary:
                 // "Data Management" (see exportProgress()/importProgress()).
                 // Sync track selector with the main app's currentCareer value
                 syncCareer() {
+                    try {
+                        const sv = parseInt(localStorage.getItem(HPW_KEY) || '', 10), sl = document.getElementById('rdmHoursPerWeek'), lb = document.getElementById('rdmHpwVal');
+                        if (sl && sv >= 5 && sv <= 30) { sl.value = String(sv); if (lb) lb.textContent = sl.value; }
+                    } catch (e) {}
                     const cc = typeof currentCareer !== 'undefined' ? currentCareer : null;
                     const sel = document.getElementById('rdmTrackSelect');
                     if (cc && sel && getCurriculum(cc)) {
