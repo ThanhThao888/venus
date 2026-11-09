@@ -38088,6 +38088,7 @@ const EnglishDaily = (function () {
                             <input type="number" id="editBookCurrentEdition" min="1" placeholder="e.g. 3" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
                         </div>
                     </div>
+                    <div class="modal-actions">
                         <button type="button" class="add-time-btn btn-secondary" onclick="closeEditBookModal()">Cancel</button>
                         <button type="submit" class="add-time-btn"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-save"></use></svg> Save Changes</button>
                     </div>
@@ -48746,33 +48747,40 @@ const EnglishDaily = (function () {
 
         // Two-column layout + date fields for the Add/Edit Book forms
         function enhanceBookForms() {
+            // Re-lays out the Add / Edit book forms: essentials first, details next, links + review last.
+            const ORDER = ['Title', 'Author', 'Genre', 'Status', 'Rating', 'Pages', 'CurrentPage', 'FirstPublished', 'CurrentEdition', '__dates', 'CoverUrl', 'DriveLink', 'AudioLink', 'Review'];
+            const SPAN = { Genre: 'c3', Status: 'c3', Rating: 'c2', Pages: 'c2', CurrentPage: 'c2', FirstPublished: 'c3', CurrentEdition: 'c3', DriveLink: 'c3', AudioLink: 'c3' };
             [['addBookForm', 'bookStartDate', 'bookEndDate'], ['editBookForm', 'editBookStartDate', 'editBookEndDate']].forEach(([formId, startId, endId]) => {
                 const form = document.getElementById(formId);
                 if (!form || form.dataset.enhanced) return;
                 form.dataset.enhanced = '1';
                 const actions = form.querySelector('.modal-actions');
+                // a flex row holding two fields (First published / Edition) becomes two normal fields
+                Array.from(form.children).forEach(el => {
+                    const kids = Array.from(el.children).filter(k => k.tagName === 'DIV');
+                    if (el.tagName === 'DIV' && el.style.display === 'flex' && kids.length > 1) { kids.forEach(k => form.insertBefore(k, el)); el.remove(); }
+                });
+                // old fields carried inline styles: drop them so every field looks the same
+                Array.from(form.children).forEach(el => {
+                    if (el.tagName !== 'DIV' || el === actions || el.classList.contains('form-group')) return;
+                    el.removeAttribute('style'); el.classList.add('form-group');
+                    el.querySelectorAll('label,input,select,textarea').forEach(c => c.removeAttribute('style'));
+                });
                 const row = document.createElement('div');
                 row.className = 'form-group bk-datesrow';
-                row.innerHTML = `<div><label for="${startId}">Started (Optional)</label><input type="date" id="${startId}"></div><div><label for="${endId}">Finished (Optional)</label><input type="date" id="${endId}"></div>`;
-                if (actions) form.insertBefore(row, actions); else form.appendChild(row);
-                // Move the Review box below the dates so Rating can pair with Pages
-                const reviewCtl = form.querySelector('textarea[id$="Review"]');
-                const reviewGroup = reviewCtl && reviewCtl.closest('form > div');
-                if (reviewGroup) form.insertBefore(reviewGroup, actions || null);
-                const halfIds = /(Genre|Status|Rating|Pages|CurrentPage)$/;
-                let pending = null;
-                Array.from(form.children).forEach(el => {
-                    if (el.tagName !== 'DIV') return;
-                    const ctl = el.querySelector('input:not([type=hidden]),select,textarea');
-                    const isHalf = ctl && halfIds.test(ctl.id) && el.querySelectorAll('input,select,textarea').length === 1;
-                    if (isHalf) {
-                        el.classList.add('bk-half');
-                        if (pending) pending = null; else pending = el;
-                    } else {
-                        if (pending) { pending.classList.remove('bk-half'); pending = null; }
-                    }
-                });
-                if (pending) pending.classList.remove('bk-half');
+                row.innerHTML = `<div><label for="${startId}">Started</label><input type="date" id="${startId}"></div><div><label for="${endId}">Finished</label><input type="date" id="${endId}"></div>`;
+                form.insertBefore(row, actions || null);
+                const keyOf = el => {
+                    if (el.classList.contains('bk-datesrow')) return '__dates';
+                    const c = el.querySelector('input:not([type=hidden]),select,textarea');
+                    if (!c) return null;
+                    const m = c.id.replace(/^(edit)?[Bb]ook/, '');
+                    return ORDER.includes(m) ? m : null;
+                };
+                Array.from(form.children).filter(el => el.tagName === 'DIV' && el !== actions)
+                    .map((el, i) => ({ el, i, k: keyOf(el) }))
+                    .sort((a, b) => (a.k ? ORDER.indexOf(a.k) : -1) - (b.k ? ORDER.indexOf(b.k) : -1) || a.i - b.i)
+                    .forEach(({ el, k }) => { form.insertBefore(el, actions || null); if (k && SPAN[k]) el.classList.add('bk-' + SPAN[k]); });
             });
         }
 
@@ -86385,6 +86393,20 @@ body #course-section .course-stat-item:hover { transform: translateY(-2px); box-
     #addBookForm > .bk-half, #editBookForm > .bk-half { grid-column: 1 / -1; }
     .bk-datesrow { grid-template-columns: 1fr; gap: 10px; }
 }
+
+/* ── Book forms polish: 6-column grid, tidy labels, softer background ── */
+#addBookModal .modal-content, #editBookModal .modal-content { background-image: linear-gradient(180deg, #fffafc 0%, #fdf3f8 100%), linear-gradient(90deg, #f9a8d4, #db2777 45%, #f9a8d4) !important; }
+.dark-mode #addBookModal .modal-content, .dark-mode #editBookModal .modal-content { background-image: linear-gradient(180deg, #261a25 0%, #211621 100%), linear-gradient(90deg, #f472b6, #f9a8d4 45%, #f472b6) !important; }
+#addBookForm, #editBookForm { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0 12px; }
+#addBookForm > .bk-c3, #editBookForm > .bk-c3 { grid-column: span 3; }
+#addBookForm > .bk-c2, #editBookForm > .bk-c2 { grid-column: span 2; }
+#addBookForm .form-group, #editBookForm .form-group { margin-bottom: 14px; }
+#addBookForm label, #editBookForm label { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; color: var(--text-muted); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+#addBookForm input:not([type=hidden]), #addBookForm select, #addBookForm textarea,
+#editBookForm input:not([type=hidden]), #editBookForm select, #editBookForm textarea { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark); font: inherit; font-size: .92rem; }
+#addBookForm textarea, #editBookForm textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+.bk-datesrow { grid-column: 1 / -1; }
+@media (max-width: 520px) { #addBookForm > .bk-c3, #editBookForm > .bk-c3 { grid-column: 1 / -1; } }
 
 .rl-insight { display: flex; flex-direction: column; gap: 8px; align-items: stretch; text-align: center; }
 .rl-insight-line { font-size: .78rem; color: var(--text-muted); }
