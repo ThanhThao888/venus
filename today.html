@@ -190,6 +190,24 @@ a.item.leaving{opacity:0;transform:translateX(10px);transition:opacity .18s,tran
 :root.dark-mode .qa .add{color:#1a1019}
 .qa .add:disabled{opacity:.45;cursor:default}
 .qa .add:active:not(:disabled){transform:scale(.96)}
+.stale{margin:16px 0 4px;padding:12px 14px;border-radius:16px;border:1px solid var(--warn);background:linear-gradient(135deg,var(--warn-soft),var(--card) 80%);box-shadow:var(--shadow)}
+.stale-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.stale-top b{display:block;font-size:.95rem}
+.stale-top small{color:var(--muted);font-size:.8rem}
+.stale-go{border:1px solid var(--warn);background:var(--card);color:var(--ink);border-radius:99px;font:inherit;font-size:.82rem;font-weight:700;padding:5px 14px;cursor:pointer}
+.stale-list{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.st-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+.st-t{flex:1 1 180px;min-width:0;font-weight:600;color:inherit;text-decoration:none;overflow-wrap:anywhere}
+.st-t:hover{text-decoration:underline}
+.st-m{font-size:.76rem;color:var(--bad);font-weight:650;white-space:nowrap}
+.st-b{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+.stb{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;font:inherit;font-size:.76rem;font-weight:700;padding:3px 11px;cursor:pointer}
+.stb:hover,.stb:focus-visible{border-color:var(--accent);background:var(--accent-soft)}
+.stb.bad{color:var(--bad)}
+.rv{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:.78rem;color:var(--muted)}
+@media (max-width:480px){.rv>span{width:100%}}
+.rvb{border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:99px;font:inherit;font-size:.76rem;font-weight:700;padding:2px 10px;cursor:pointer;transition:border-color .15s,background .15s}
+.rvb:hover,.rvb:focus-visible{border-color:var(--accent);background:var(--accent-soft)}
 </style>
 </head>
 <body>
@@ -363,9 +381,86 @@ function act(src, id, kind){
     });
   }
 }
+/* "Review again in N days" for a note's deadline: new date, brings it back if ticked/snoozed, and keeps the note's own Deadline field in step */
+function noteDeadlineIDB(nid, date){
+  return new Promise(res => {
+    try{
+      const r = indexedDB.open('FinanceTrackerVaultDB');
+      r.onerror = () => res(null); r.onblocked = () => res(null);
+      r.onsuccess = () => {
+        const db = r.result;
+        try{
+          if(!db.objectStoreNames.contains('notes')){ db.close(); return res(null); }
+          const tx = db.transaction('notes', 'readwrite'), st = tx.objectStore('notes'), g = st.get(nid);
+          let prev = null;
+          g.onsuccess = () => { const n = g.result; if(n){ prev = n.deadline || ''; n.deadline = date; st.put(n); } };
+          tx.oncomplete = () => { db.close(); res(prev); };
+          tx.onerror = tx.onabort = () => { db.close(); res(null); };
+        }catch(e){ try{ db.close(); }catch(_){} res(null); }
+      };
+    }catch(e){ res(null); }
+  });
+}
+async function reviewAgain(id, nid, n){
+  const t = new Date(); t.setDate(t.getDate() + n); const date = iso(t);
+  const list = arr('deadlines'), it = list.find(m => m && m.id === id); if(!it) return;
+  const done = arr('dltDoneIds'), meta = lsJSON('dltDoneMeta', {}) || {}, snz = lsJSON('dltSnoozeMap', {}) || {};
+  const prev = { date: it.date, done: done.includes(id), meta: meta[id], snz: snz[id] };
+  it.date = date;
+  const d2 = done.filter(x => x !== id); delete meta[id]; delete snz[id];
+  if(!(wr('deadlines', list) && wr('dltDoneIds', d2) && wr('dltDoneMeta', meta) && wr('dltSnoozeMap', snz))) return toast('Could not save (browser storage is full or blocked).');
+  const prevNote = it.sourceNoteId ? await noteDeadlineIDB(it.sourceNoteId, date) : null;
+  toast('Review again on ' + new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), async () => {
+    const l = arr('deadlines'), x = l.find(m => m && m.id === id); if(x){ x.date = prev.date; wr('deadlines', l); }
+    const dn = arr('dltDoneIds'), mt = lsJSON('dltDoneMeta', {}) || {}, sz = lsJSON('dltSnoozeMap', {}) || {};
+    if(prev.done && !dn.includes(id)) dn.push(id); if(prev.meta) mt[id] = prev.meta; if(prev.snz) sz[id] = prev.snz;
+    wr('dltDoneIds', dn); wr('dltDoneMeta', mt); wr('dltSnoozeMap', sz);
+    if(it.sourceNoteId && prevNote !== null) await noteDeadlineIDB(it.sourceNoteId, prevNote);
+  });
+}
+/* ---- note deadlines overdue by more than 2 weeks: keep / move / drop, decided once ---- */
+const STALE_DAYS = 14; let staleOpen = false;
+const keptMap = () => { const v = lsJSON('todayStaleKept', {}); return v && typeof v === 'object' ? v : {}; };
+function staleKeep(id, date){
+  const m = keptMap(), prev = m[id]; m[id] = date;
+  if(!wr('todayStaleKept', m)) return toast('Could not save (browser storage is full or blocked).');
+  toast('Kept. Not asking again for this date.', () => { const k = keptMap(); if(prev) k[id] = prev; else delete k[id]; wr('todayStaleKept', k); });
+}
+async function staleDrop(id){
+  const list = arr('deadlines'), it = list.find(m => m && m.id === id); if(!it) return;
+  if(!wr('deadlines', list.filter(m => !(m && m.id === id)))) return toast('Could not save (browser storage is full or blocked).');
+  const prev = it.sourceNoteId ? await noteDeadlineIDB(it.sourceNoteId, '') : null;
+  toast('Deadline dropped (the note itself is untouched)', async () => {
+    const l = arr('deadlines'); l.push(it); wr('deadlines', l);
+    if(it.sourceNoteId && prev !== null) await noteDeadlineIDB(it.sourceNoteId, prev);
+  });
+}
+function staleBanner(list, today){
+  if(!list.length) return '';
+  const rows = list.map(i => '<div class="st-row"><a class="st-t" href="' + esc(TRACKER + '?note=' + encodeURIComponent(i.nid)) + '">' + esc(i.title) + '</a><span class="st-m">' + diff(i.date, today) + 'd overdue</span><span class="st-b">' +
+    '<button type="button" class="stb" data-a="keep" data-id="' + esc(i.id) + '" data-date="' + esc(i.date) + '">Keep</button>' +
+    '<button type="button" class="stb" data-a="move" data-n="7" data-id="' + esc(i.id) + '" data-nid="' + esc(i.nid) + '">Review in 7d</button>' +
+    '<button type="button" class="stb" data-a="move" data-n="30" data-id="' + esc(i.id) + '" data-nid="' + esc(i.nid) + '">in 30d</button>' +
+    '<button type="button" class="stb bad" data-a="drop" data-id="' + esc(i.id) + '">Drop</button></span></div>').join('');
+  return '<div class="stale"><div class="stale-top"><div><b>' + list.length + ' note deadline' + (list.length === 1 ? ' is' : 's are') + ' over ' + STALE_DAYS + ' days late</b><small>Decide once: keep, move to a new date, or let it go.</small></div>' +
+    '<button type="button" class="stale-go" id="staleToggle" aria-expanded="' + staleOpen + '">' + (staleOpen ? 'Hide' : 'Sort them out') + '</button></div>' +
+    (staleOpen ? '<div class="stale-list">' + rows + '</div>' : '') + '</div>';
+}
 document.addEventListener('click', e => {
+  if(e.target.closest('#staleToggle')){ staleOpen = !staleOpen; render(); return; }
+  const sb = e.target.closest('.stb');
+  if(sb){
+    e.preventDefault();
+    const a = sb.dataset.a, id = sb.dataset.id;
+    if(a === 'keep') staleKeep(id, sb.dataset.date);
+    else if(a === 'drop') staleDrop(id);
+    else if(a === 'move') reviewAgain(id, sb.dataset.nid, Number(sb.dataset.n));
+    setTimeout(render, 250); return;
+  }
   const u = e.target.closest('#undoBtn');
   if(u){ if(undoFn) undoFn(); undoFn = null; document.getElementById('toast').classList.remove('show'); render(); return; }
+  const rb = e.target.closest('.rvb');
+  if(rb){ e.preventDefault(); e.stopPropagation(); const row = rb.closest('a.item'); if(row) row.classList.add('leaving'); reviewAgain(rb.dataset.id, rb.dataset.nid, Number(rb.dataset.n)); setTimeout(render, 200); return; }
   const b = e.target.closest('.chk, .snz'); if(!b) return;
   e.preventDefault(); e.stopPropagation();
   const row = b.closest('a.item'); if(row) row.classList.add('leaving');
@@ -411,9 +506,10 @@ function row(it, today){
   const chk = can ? '<button type="button" class="chk"' + da + ' data-a="done" title="Mark done" aria-label="Mark done"></button>' : '';
   const snz = can && (!it.date || it.date <= today) ? '<button type="button" class="snz"' + da + ' data-a="snooze" title="Move to tomorrow" aria-label="Move to tomorrow">+1d</button>' : '';
   const meta = [when, it.meta].filter(Boolean).join(' · ');
+  const rv = (it.nid && it.kind === 'deadline' && it.id != null) ? '<div class="rv"><span>Review again:</span>' + [3, 7, 30].map(n => '<button type="button" class="rvb"' + da + ' data-nid="' + esc(it.nid) + '" data-n="' + n + '">' + n + 'd</button>').join('') + '</div>' : '';
   const href = it.nid ? TRACKER + '?note=' + encodeURIComponent(it.nid) : TRACKER;
   return '<a class="item ' + cls + '" href="' + esc(href) + '">' + chk + '<span class="ic">' + ICON[it.kind] + '</span><span class="body"><div class="ttl">' + esc(it.title) + '</div>' +
-    (meta ? '<div class="meta">' + esc(meta) + '</div>' : '') + cdHolder(it) + '</span>' + snz + tag + '</a>';
+    (meta ? '<div class="meta">' + esc(meta) + '</div>' : '') + cdHolder(it) + rv + '</span>' + snz + tag + '</a>';
 }
 /* collapsible sections: the open/closed state is remembered in this browser */
 const COLL_KEY = 'todayCollapsed';
@@ -444,15 +540,21 @@ async function render(){
   document.getElementById('date').textContent = new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const dated = items.filter(i => i.date);
-  const overdue = dated.filter(i => i.date < today && i.kind !== 'event' && !(i.kind === 'reminder' && i.fired)).sort(cmp);
+  const isRv = i => i.kind === 'deadline' && i.nid;                             // a deadline that belongs to (or links to) a Notes Vault note
+  const kept = keptMap();
+  const allRv = dated.filter(i => isRv(i) && i.date <= today).sort(cmp);
+  const stale = allRv.filter(i => diff(i.date, today) > STALE_DAYS && kept[i.id] !== i.date);
+  const reviewDue = allRv.filter(i => !stale.includes(i));
+  const overdue = dated.filter(i => i.date < today && i.kind !== 'event' && !isRv(i) && !(i.kind === 'reminder' && i.fired)).sort(cmp);
   const waiting = dated.filter(i => i.kind === 'reminder' && i.fired).sort(cmp);
   const attention = overdue.concat(waiting);
-  const todayItems = dated.filter(i => i.date === today && !(i.kind === 'reminder' && i.fired)).sort(cmp);
+  const todayItems = dated.filter(i => i.date === today && !isRv(i) && !(i.kind === 'reminder' && i.fired)).sort(cmp);
   const undated = items.filter(i => i.undated).sort(cmp).slice(0, 5);
   const upcoming = dated.filter(i => i.date > today && diff(today, i.date) <= 7).sort(cmp);
 
   const chips = [];
   if(attention.length) chips.push('<span class="chip bad">' + attention.length + ' need attention</span>');
+  if(reviewDue.length) chips.push('<span class="chip">' + reviewDue.length + ' note' + (reviewDue.length === 1 ? '' : 's') + ' to review</span>');
   chips.push('<span class="chip">' + todayItems.length + ' today</span>');
   chips.push('<span class="chip">' + upcoming.length + ' in the next 7 days</span>');
   document.getElementById('chips').innerHTML = chips.join('');
@@ -465,8 +567,10 @@ async function render(){
     : '';
 
   let html = '';
+  html += staleBanner(stale, today);
   html += section('Needs attention', attention, today, 'bad');
   html += section('Today', todayItems, today);
+  html += section('Notes to review', reviewDue, today);
   html += section('Top to-dos (no date)', undated, today);
   const rd = readingRows(today), pr = practiceRows(today);
   if(rd.length) html += sec('reading', 'Reading', rd.length, rd.map(readRow).join(''));
@@ -476,7 +580,7 @@ async function render(){
     upcoming.forEach(i => { if(i.date !== last){ last = i.date; body += '<div class="day">' + wd(i.date) + '</div>'; } body += row(i, today); });
     html += sec('next-7-days', 'Next 7 days', upcoming.length, body);
   }
-  if(!attention.length && !todayItems.length && !undated.length && !upcoming.length && !rd.length && !pr.length)
+  if(!attention.length && !todayItems.length && !reviewDue.length && !stale.length && !undated.length && !upcoming.length && !rd.length && !pr.length)
     html += '<div class="empty">Nothing due. Enjoy the space '+ico("sparkles")+'<br><span class="meta">Deadlines, to-dos, calendar events and note reminders will show up here.</span></div>';
   document.getElementById('out').innerHTML = html;
   tickCd();

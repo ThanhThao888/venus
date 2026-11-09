@@ -14092,6 +14092,14 @@
         getAnalysisLinkCounts, openForAnalysis,
         getDealLinkCounts, openForDeal,
         getVaultStorageStats, getStorageHealth,
-        searchNotesLite
+        searchNotesLite,
+        // Used by the planner's "Review again": change a note's deadline (saved + mirrored to the planner).
+        setDeadline: async (id, date) => {
+            const n = await remGetNote(id);
+            if (!n) return false;
+            await remApply(n, { deadline: /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : '' });
+            if (S.open) { try { renderSide(); renderLibrary(); } catch (e) { /* ignore */ } }
+            return true;
+        }
     };
 })();

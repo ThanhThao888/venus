@@ -115,7 +115,7 @@
    (hoặc ngay khi bấm nút Notes, tùy cái nào đến trước). Dữ liệu vẫn nằm đúng chỗ cũ (IndexedDB), không đổi gì.
    Nếu cập nhật vault.* thì đổi V để trình duyệt lấy bản mới. */
 (function () {
-    var V = '20261107a';
+    var V = '20261110a';
     var FONTS = ["https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap", "https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"];
     var loaded = false, loading = null;
 
@@ -24972,7 +24972,7 @@ body.dark-mode .dlt-fg textarea {
       // Linked Notes Vault note — one click opens it
       const nlId = canDel ? (d.noteId || d.sourceNoteId) : '';
       const noteLinkHtml = nlId
-        ? `<button type="button" class="dlt-link-chip dlt-notechip" data-nid="${d_escapeHtml(nlId)}" onclick="event.stopPropagation(); DLT.openLinkedNote(this.dataset.nid)" title="Open this note in Notes Vault"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-sticky-note"/></svg> Open note</button>`
+        ? `<button type="button" class="dlt-link-chip dlt-notechip" data-nid="${d_escapeHtml(nlId)}" onclick="event.stopPropagation(); DLT.openLinkedNote(this.dataset.nid)" title="Open this note in Notes Vault"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-sticky-note"/></svg> Open note</button>${!done ? `<span class="dlt-rv" onclick="event.stopPropagation()"><span>Review again:</span>${[3, 7, 30].map(n => `<button type="button" data-id="${d_escapeHtml(d.id)}" data-n="${n}" onclick="event.stopPropagation(); DLT.reviewAgain(this.dataset.id, +this.dataset.n)">${n}d</button>`).join('')}</span>` : ''}`
         : '';
 
       // Linked Roadmap milestone — live status pulled straight from StrategicRoadmap
@@ -26125,6 +26125,25 @@ body.dark-mode .dlt-fg textarea {
     },
     pickNoteLink(id, title) { pickedNote = { id, title }; DLT.renderNoteLink(); },
     clearNoteLink() { pickedNote = null; DLT.renderNoteLink(); setTimeout(() => document.getElementById('dltNlSearch')?.focus(), 30); },
+    /* "Review again in N days" on a note-linked deadline: moves the date, brings the card back if it was ticked/snoozed */
+    async reviewAgain(id, days) {
+        const item = manualList.find(m => m.id === id); if (!item) return;
+        const t = new Date(); t.setDate(t.getDate() + (Number(days) || 7));
+        const date = localISODate(t);
+        if (item.sourceNoteId) {
+            try {
+                if (window.__ensureNotesVault) await window.__ensureNotesVault();
+                if (window.NotesVault && window.NotesVault.setDeadline && await window.NotesVault.setDeadline(item.sourceNoteId, date)) {
+                    if (typeof showNotification === 'function') showNotification('Review again on ' + date + '.', 'success');
+                    return;
+                }
+            } catch (e) { console.error('reviewAgain', e); }
+        }
+        item.date = date;
+        doneIds = doneIds.filter(x => x !== id); delete doneMeta[id]; delete snoozeMap[id];
+        persist(); render();
+        if (typeof showNotification === 'function') showNotification('Review again on ' + date + '.', 'success');
+    },
     async openLinkedNote(id) {
         if (!id || !window.NotesVault) return;
         try { await window.NotesVault.open(); await window.NotesVault.openNote(id); }
@@ -37466,6 +37485,9 @@ const EnglishDaily = (function () {
                         </button>
                         <button class="book-context-btn" onclick="copyBookContextForAI()" title="Copy Book Context for AI" aria-label="Copy Book Context for AI">
                             <i class="fa-solid fa-clipboard-list"></i>
+                        </button>
+                        <button class="book-context-btn" onclick="exportReadingListCSV()" title="Export Reading List as CSV (opens in Excel / Google Sheets)" aria-label="Export Reading List as CSV">
+                            <i class="fa-solid fa-file-csv"></i>
                         </button>
                     </div>
                 </div>
@@ -57836,6 +57858,38 @@ document.addEventListener('DOMContentLoaded', function() {
         // noise. Designed to scale from hundreds to thousands of books:
         // grouped by status first, then by genre, so the list stays
         // scannable even as it grows.
+
+        // ===== Reading List → CSV (UTF-8 with BOM so Excel reads Vietnamese correctly) =====
+        function exportReadingListCSV() {
+            let list = [];
+            try { list = JSON.parse(localStorage.getItem('readingList') || '[]'); } catch (e) { list = []; }
+            list = (Array.isArray(list) ? list : []).filter(b => b && b.title);
+            if (!list.length) { showNotification('Your reading list is empty.', 'info'); return; }
+            const cell = v => {
+                let t = v == null ? '' : String(v);
+                if (/^[=+\-@\t\r]/.test(t) && isNaN(Number(t))) t = "'" + t;      // stop spreadsheet formula injection
+                return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+            };
+            const status = { reading: 'Reading', want: 'Want to read', finished: 'Finished' };
+            const head = ['Title', 'Author', 'Genre', 'Status', 'Up next', 'Rating', 'Pages', 'Current page', 'Progress %', 'Started', 'Finished',
+                          'First published', 'Edition', 'What stuck with me', 'How I will apply this', 'Review', 'Reading link', 'Audio link'];
+            const rows = list.map(b => {
+                const pg = Number(b.pages) || 0, cp = Number(b.currentPage) || 0, t = b.takeaways || {};
+                const prog = b.status === 'finished' ? 100 : (pg ? Math.min(100, Math.round(cp / pg * 100)) : '');
+                return [b.title, b.author, b.genre, status[b.status] || b.status, b.upNext ? 'Yes' : '',
+                        (b.rating === null || b.rating === undefined || isNaN(b.rating)) ? '' : b.rating,
+                        pg || '', cp || '', prog, b.startedAt || '', b.finishedAt || '', b.firstPublished || '', b.currentEdition || '',
+                        t.learned || '', t.apply || '', b.review || '', b.driveLink || '', b.audioLink || ''].map(cell).join(',');
+            });
+            const csv = '\ufeff' + [head.map(cell).join(',')].concat(rows).join('\r\n') + '\r\n';
+            const d = new Date(), p = n => String(n).padStart(2, '0');
+            const name = 'reading-list-' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '.csv';
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+            const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            showNotification('Exported ' + list.length + ' book' + (list.length === 1 ? '' : 's') + ' to ' + name, 'success');
+        }
+
         function copyBookContextForAI() {
             const lines = [];
             const SEP = '═'.repeat(52);
@@ -86737,6 +86791,9 @@ document.addEventListener('keydown', function (e) {
 .dlt-nl-item:hover, .dlt-nl-item:focus-visible { border-color: var(--primary); background: rgba(var(--primary-rgb, 209,123,150), .1); outline: none; }
 .dlt-nl-item b { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlt-nl-item small { color: var(--text-muted); flex: none; }
+.dlt-rv { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0 8px; font-size: .75rem; color: var(--text-muted); }
+.dlt-rv button { border: 1px solid var(--border-color); background: transparent; color: var(--primary); border-radius: 999px; padding: 1px 9px; font: inherit; font-size: .75rem; font-weight: 700; cursor: pointer; }
+.dlt-rv button:hover { background: rgba(var(--primary-rgb, 209,123,150), .12); border-color: var(--primary); }
 .dlt-nl-empty { color: var(--text-muted); font-size: .85rem; padding: 4px 2px; }
 </style>
 <script>
