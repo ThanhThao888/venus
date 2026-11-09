@@ -24995,7 +24995,7 @@ body.dark-mode .dlt-fg textarea {
       // Linked Notes Vault note — one click opens it
       const nlId = canDel ? (d.noteId || d.sourceNoteId) : '';
       const noteLinkHtml = nlId
-        ? `<button type="button" class="dlt-link-chip dlt-notechip" data-nid="${d_escapeHtml(nlId)}" onclick="event.stopPropagation(); DLT.openLinkedNote(this.dataset.nid)" title="Open this note in Notes Vault"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-sticky-note"/></svg> Open note</button>${!done ? `<span class="dlt-rv" onclick="event.stopPropagation()"><span>Review again:</span>${[3, 7, 30].map(n => `<button type="button" data-id="${d_escapeHtml(d.id)}" data-n="${n}" onclick="event.stopPropagation(); DLT.reviewAgain(this.dataset.id, +this.dataset.n)">${n}d</button>`).join('')}</span>` : ''}`
+        ? `<button type="button" class="dlt-link-chip dlt-notechip" data-nid="${d_escapeHtml(nlId)}" onclick="event.stopPropagation(); DLT.openLinkedNote(this.dataset.nid)" title="Open this note in Notes Vault"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-sticky-note"/></svg><span>Open note</span></button>${!done ? `<span class="dlt-rv" onclick="event.stopPropagation()" role="group" aria-label="Review again in"><span class="dlt-rv-label">Review again</span><span class="dlt-rv-seg">${[3, 7, 30].map(n => `<button type="button" data-id="${d_escapeHtml(d.id)}" data-n="${n}" title="Review again in ${n} days" onclick="event.stopPropagation(); DLT.reviewAgain(this.dataset.id, +this.dataset.n)">${n}d</button>`).join('')}</span></span>` : ''}`
         : '';
 
       // Linked Roadmap milestone — live status pulled straight from StrategicRoadmap
@@ -25109,8 +25109,7 @@ body.dark-mode .dlt-fg textarea {
           ${cdHtml}
           ${gaugeHtml}
           ${noteHtml}
-          ${linkHtml}
-          ${noteLinkHtml}
+          ${(linkHtml || noteLinkHtml) ? `<div class="dlt-nrow">${linkHtml}${noteLinkHtml}</div>` : ''}
           ${roadmapLinkHtml}
           ${checklistHtml}
         </div>
@@ -87014,7 +87013,6 @@ document.addEventListener('keydown', function (e) {
 });
 </script>
 <style id="dlt-nl">
-.dlt-notechip { font: inherit; cursor: pointer; border: 1px solid var(--border-color); background: transparent; }
 .dlt-nl-chosen { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(var(--primary-rgb, 209,123,150), .4); background: rgba(var(--primary-rgb, 209,123,150), .1); color: var(--text-dark); font-size: .9rem; }
 .dlt-nl-chosen span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlt-nl-chosen button { border: 0; background: transparent; color: var(--text-muted); font-size: 1.2rem; line-height: 1; cursor: pointer; }
@@ -87023,10 +87021,41 @@ document.addEventListener('keydown', function (e) {
 .dlt-nl-item:hover, .dlt-nl-item:focus-visible { border-color: var(--primary); background: rgba(var(--primary-rgb, 209,123,150), .1); outline: none; }
 .dlt-nl-item b { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlt-nl-item small { color: var(--text-muted); flex: none; }
-.dlt-rv { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0 8px; font-size: .75rem; color: var(--text-muted); }
-.dlt-rv button { border: 1px solid var(--border-color); background: transparent; color: var(--primary); border-radius: 999px; padding: 1px 9px; font: inherit; font-size: .75rem; font-weight: 700; cursor: pointer; }
-.dlt-rv button:hover { background: rgba(var(--primary-rgb, 209,123,150), .12); border-color: var(--primary); }
 .dlt-nl-empty { color: var(--text-muted); font-size: .85rem; padding: 4px 2px; }
+
+/* ── Deadline card: link / note actions (one row, one chip size, theme colours only) ── */
+.dlt-nrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; }
+.dlt-info .dlt-link-chip {
+  margin: 0; height: 30px; padding: 0 12px; gap: 6px; box-sizing: border-box;
+  font-family: inherit; font-size: .78rem; font-weight: 600; line-height: 1; border-radius: 999px; white-space: nowrap;
+  background: transparent; color: var(--text-dark); border: 1px solid var(--border-color);
+}
+.dlt-info .dlt-link-chip:hover, .dlt-info .dlt-link-chip:focus-visible {
+  background: rgba(var(--primary-rgb, 209,123,150), .12); color: var(--primary-dark);
+  border-color: var(--primary); outline: none;
+}
+.dlt-info .dlt-link-chip.dlt-notechip {
+  background: rgba(var(--primary-rgb, 209,123,150), .14); color: var(--primary-dark);
+  border-color: rgba(var(--primary-rgb, 209,123,150), .38);
+}
+.dlt-info .dlt-link-chip.dlt-notechip:hover, .dlt-info .dlt-link-chip.dlt-notechip:focus-visible {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+}
+.dark-mode .dlt-info .dlt-link-chip.dlt-notechip:hover { color: #2a1822; }
+.dlt-info .dlt-link-chip:focus-visible, .dlt-rv-seg button:focus-visible { box-shadow: 0 0 0 3px rgba(var(--primary-rgb, 209,123,150), .3); }
+
+.dlt-rv { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.dlt-rv-label { font-size: .74rem; color: var(--text-muted); white-space: nowrap; }
+.dlt-rv-seg { display: inline-flex; height: 30px; border: 1px solid var(--border-color); border-radius: 999px; overflow: hidden; }
+.dlt-rv-seg button {
+  border: 0; border-left: 1px solid var(--border-color); background: transparent; color: var(--primary-dark);
+  padding: 0 11px; min-width: 38px; font-family: inherit; font-size: .76rem; font-weight: 700; line-height: 1; cursor: pointer;
+  font-variant-numeric: tabular-nums; transition: background .15s, color .15s;
+}
+.dlt-rv-seg button:first-child { border-left: 0; }
+.dlt-rv-seg button:hover { background: var(--primary); color: #fff; }
+.dark-mode .dlt-rv-seg button:hover { color: #2a1822; }
+@media (prefers-reduced-motion: reduce) { .dlt-rv-seg button { transition: none; } }
 </style>
 <script>
 /* Note deadlines: add any that never reached the planner, and ?note=ID (from Today) opens that note */
