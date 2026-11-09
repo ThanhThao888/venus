@@ -24214,6 +24214,12 @@ body.dark-mode .dlt-fg textarea {
       <label>Notes <span style="font-weight:400;color:var(--text-muted);font-size:0.78rem;">(optional — requirements, anything to remember)</span></label>
       <textarea id="dltNote" class="dlt-note-input" placeholder="e.g. Register before 23:59 UK time, need bank transfer confirmation..." maxlength="500" rows="3"></textarea>
     </div>
+    <div class="dlt-fg" id="dltNoteLinkFg">
+      <label>Link to a Note <span style="font-weight:400;color:var(--text-muted);font-size:0.78rem;">(optional — a note from Notes Vault, opens in one click)</span></label>
+      <div id="dltNlChosen" class="dlt-nl-chosen" style="display:none;"><span id="dltNlName"></span><button type="button" onclick="DLT.clearNoteLink()" aria-label="Remove linked note">&times;</button></div>
+      <input type="text" id="dltNlSearch" placeholder="Search your notes by title or content…" autocomplete="off" oninput="DLT.searchNoteLink(this.value)" />
+      <div id="dltNlResults" class="dlt-nl-results"></div>
+    </div>
     <div class="dlt-fg" id="dltRoadmapLinkFg">
       <label>Link to Roadmap Milestone <span style="font-weight:400;color:var(--text-muted);font-size:0.78rem;">(optional)</span></label>
       <div style="display:flex;gap:8px;">
@@ -24327,6 +24333,8 @@ body.dark-mode .dlt-fg textarea {
   const HORIZON_OPTS = [['all','All time'],['30','Next 1 month'],['90','Next 3 months'],['180','Next 6 months'],['365','Next 1 year'],['730','Next 2 years']];
   let noteModalId = null; // id của deadline đang mở trong popup ghi chú
   let editingId  = null; // id of the manual deadline currently being edited, or null when adding new
+  let pickedNote = null; // { id, title } note chosen in the deadline modal (Notes Vault link), or null
+  let nlTimer = null;
   let cmChart    = null; // Chart.js instance for the completed-analytics modal
   let trendChart = null; // Chart.js instance for the monthly-trend chart
   let expandedChecklists = new Set(); // ids whose checklist panel is currently open (session only)
@@ -24961,6 +24969,12 @@ body.dark-mode .dlt-fg textarea {
         ? `<a class="dlt-link-chip" href="${d_escapeHtml(d.link)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${d_escapeHtml(d.link)}"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-link"/></svg> <span>Open link</span></a>`
         : '';
 
+      // Linked Notes Vault note — one click opens it
+      const nlId = canDel ? (d.noteId || d.sourceNoteId) : '';
+      const noteLinkHtml = nlId
+        ? `<button type="button" class="dlt-link-chip dlt-notechip" data-nid="${d_escapeHtml(nlId)}" onclick="event.stopPropagation(); DLT.openLinkedNote(this.dataset.nid)" title="Open this note in Notes Vault"><svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-sticky-note"/></svg> Open note</button>`
+        : '';
+
       // Linked Roadmap milestone — live status pulled straight from StrategicRoadmap
       let roadmapLinkHtml = '';
       if (canDel && d.roadmapTrack && d.roadmapSkillId && typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.getMilestoneStatus) {
@@ -25073,6 +25087,7 @@ body.dark-mode .dlt-fg textarea {
           ${gaugeHtml}
           ${noteHtml}
           ${linkHtml}
+          ${noteLinkHtml}
           ${roadmapLinkHtml}
           ${checklistHtml}
         </div>
@@ -26026,7 +26041,10 @@ body.dark-mode .dlt-fg textarea {
     // set on a note actually shows up in the planner; clearing the date removes it again.
     syncNoteDeadline({ noteId, title, date, skillName, careerTitle }) {
         const idx = manualList.findIndex(m => m.sourceNoteId === noteId);
+        let seen = {}; try { seen = JSON.parse(localStorage.getItem('dltNoteSeen') || '{}') || {}; } catch (e) {}
+        const saveSeen = () => { try { localStorage.setItem('dltNoteSeen', JSON.stringify(seen)); } catch (e) {} };
         if (!date) {
+            delete seen[noteId]; saveSeen();
             if (idx !== -1) { manualList.splice(idx, 1); persist(); render(); }
             return;
         }
@@ -26038,12 +26056,79 @@ body.dark-mode .dlt-fg textarea {
             date, time: '', category: '📝 Note', priority: 'medium',
             note: noteLine, link: '', roadmapTrack: '', roadmapSkillId: '',
             repeatType: 'none', repeatCustomDays: null, checklist: [],
-            sourceNoteId: noteId
+            sourceNoteId: noteId, noteId, noteTitle: title || ''
         };
+        const itemId = idx !== -1 ? manualList[idx].id : 'nv-' + noteId;
+        // A NEW date on a note whose old reminder was already ticked off / snoozed must bring it back,
+        // otherwise the new deadline is silently hidden (the "note disappears into the past" problem).
+        if (idx === -1 || manualList[idx].date !== date) {
+            doneIds = doneIds.filter(x => x !== itemId);
+            delete doneMeta[itemId]; delete snoozeMap[itemId];
+        }
         if (idx !== -1) manualList[idx] = Object.assign({}, manualList[idx], base, { id: manualList[idx].id });
         else manualList.push(Object.assign({ id: 'nv-' + noteId }, base));
+        seen[noteId] = date; saveSeen();
         persist();
         render();
+    },
+
+    /* Notes that already carry a deadline but never reached the planner (set before the sync existed,
+       imported, restored from a backup…) get their reminder created once. Deleting that card afterwards
+       is respected: the note+date pair is remembered in dltNoteSeen. */
+    async backfillNoteDeadlines() {
+        try {
+            if (!indexedDB.databases) return;
+            const dbs = await indexedDB.databases();
+            if (!dbs.some(d => d.name === 'FinanceTrackerVaultDB')) return;
+            const db = await new Promise((res, rej) => { const r = indexedDB.open('FinanceTrackerVaultDB'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error('blocked')); });
+            let all = [];
+            try {
+                if (!db.objectStoreNames.contains('notes')) return;
+                all = await new Promise((res, rej) => { const q = db.transaction('notes', 'readonly').objectStore('notes').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+            } finally { db.close(); }
+            let seen = {}; try { seen = JSON.parse(localStorage.getItem('dltNoteSeen') || '{}') || {}; } catch (e) {}
+            let added = 0;
+            all.forEach(n => {
+                if (!n || n.deletedAt || !n.id || !/^\d{4}-\d{2}-\d{2}/.test(n.deadline || '')) return;
+                const date = n.deadline.slice(0, 10);
+                if (manualList.some(m => m.sourceNoteId === n.id) || seen[n.id] === date) return;
+                DLT.syncNoteDeadline({ noteId: n.id, title: (n.title || '').trim(), date, skillName: n.linkedSkill || '', careerTitle: '' });
+                added++;
+            });
+            if (added && typeof showNotification === 'function') showNotification(added + ' note deadline' + (added === 1 ? '' : 's') + ' added to Deadlines.', 'info');
+        } catch (e) { /* optional */ }
+    },
+
+    /* ─── Link a Notes Vault note to a deadline ─── */
+    renderNoteLink() {
+        const chosen = document.getElementById('dltNlChosen'), nm = document.getElementById('dltNlName'), inp = document.getElementById('dltNlSearch');
+        if (!chosen) return;
+        chosen.style.display = pickedNote ? 'flex' : 'none';
+        if (nm) nm.textContent = pickedNote ? '📝 ' + (pickedNote.title || 'Linked note') : '';
+        if (inp) { inp.style.display = pickedNote ? 'none' : ''; inp.value = ''; }
+        const r = document.getElementById('dltNlResults'); if (r) r.innerHTML = '';
+    },
+    searchNoteLink(q) {
+        clearTimeout(nlTimer);
+        const box = document.getElementById('dltNlResults'); if (!box) return;
+        q = (q || '').trim();
+        if (!q) { box.innerHTML = ''; return; }
+        nlTimer = setTimeout(async () => {
+            try {
+                if (window.__ensureNotesVault) await window.__ensureNotesVault();
+                const res = (window.NotesVault && window.NotesVault.searchNotesLite) ? await window.NotesVault.searchNotesLite(q, 6) : [];
+                box.innerHTML = res.length
+                    ? res.map(r => `<button type="button" class="dlt-nl-item" data-id="${d_escapeHtml(r.id)}" data-t="${d_escapeHtml(r.title)}" onclick="DLT.pickNoteLink(this.dataset.id, this.dataset.t)"><b>${d_escapeHtml(r.title)}</b><small>${d_escapeHtml(r.type || '')}</small></button>`).join('')
+                    : '<div class="dlt-nl-empty">No note found.</div>';
+            } catch (e) { box.innerHTML = '<div class="dlt-nl-empty">Could not search notes.</div>'; }
+        }, 220);
+    },
+    pickNoteLink(id, title) { pickedNote = { id, title }; DLT.renderNoteLink(); },
+    clearNoteLink() { pickedNote = null; DLT.renderNoteLink(); setTimeout(() => document.getElementById('dltNlSearch')?.focus(), 30); },
+    async openLinkedNote(id) {
+        if (!id || !window.NotesVault) return;
+        try { await window.NotesVault.open(); await window.NotesVault.openNote(id); }
+        catch (e) { console.error('open linked note', e); }
     },
     openModal() {
       editingId = null;
@@ -26061,6 +26146,7 @@ body.dark-mode .dlt-fg textarea {
       document.getElementById('dltRepeatCustomDays').value = 14;
       populateRoadmapTrackSelect('');
       populateRoadmapMilestoneSelect('', '');
+      pickedNote = null; DLT.renderNoteLink();
       document.getElementById('dltModal').classList.add('open');
       setTimeout(() => document.getElementById('dltName').focus(), 100);
     },
@@ -26137,6 +26223,7 @@ body.dark-mode .dlt-fg textarea {
       document.getElementById('dltRepeatCustomDays').value = item.repeatCustomDays || 14;
       populateRoadmapTrackSelect(item.roadmapTrack || '');
       populateRoadmapMilestoneSelect(item.roadmapTrack || '', item.roadmapSkillId || '');
+      { const nid = item.noteId || item.sourceNoteId; pickedNote = nid ? { id: nid, title: item.noteTitle || '' } : null; DLT.renderNoteLink(); }
       document.getElementById('dltModal').classList.add('open');
       setTimeout(() => document.getElementById('dltName').focus(), 100);
     },
@@ -26173,10 +26260,12 @@ body.dark-mode .dlt-fg textarea {
           item.roadmapSkillId = rdmSkill;
           item.repeatType = repeatType;
           item.repeatCustomDays = repeatCustomDays;
+          item.noteId = pickedNote ? pickedNote.id : (item.sourceNoteId || '');
+          item.noteTitle = pickedNote ? pickedNote.title : '';
         }
         editingId = null;
       } else {
-        manualList.push({ id: Date.now().toString(), name, date, time: time || '', category: cat || '📌 Manual', priority: prio, note, link, roadmapTrack: rdmTrack, roadmapSkillId: rdmSkill, repeatType, repeatCustomDays, checklist: [] });
+        manualList.push({ id: Date.now().toString(), name, date, time: time || '', category: cat || '📌 Manual', priority: prio, note, link, roadmapTrack: rdmTrack, roadmapSkillId: rdmSkill, repeatType, repeatCustomDays, noteId: pickedNote ? pickedNote.id : '', noteTitle: pickedNote ? pickedNote.title : '', checklist: [] });
       }
       persist();
       DLT.closeModal();
@@ -86637,5 +86726,32 @@ document.addEventListener('keydown', function (e) {
     if (f && f.style.display === 'flex' && typeof closeFullReviewModal === 'function') { closeFullReviewModal(); return; }
     if (d && d.style.display === 'flex' && typeof closeBookDetailsModal === 'function') closeBookDetailsModal();
 });
+</script>
+<style id="dlt-nl">
+.dlt-notechip { font: inherit; cursor: pointer; border: 1px solid var(--border-color); background: transparent; }
+.dlt-nl-chosen { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(var(--primary-rgb, 209,123,150), .4); background: rgba(var(--primary-rgb, 209,123,150), .1); color: var(--text-dark); font-size: .9rem; }
+.dlt-nl-chosen span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlt-nl-chosen button { border: 0; background: transparent; color: var(--text-muted); font-size: 1.2rem; line-height: 1; cursor: pointer; }
+.dlt-nl-results { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.dlt-nl-item { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; text-align: left; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark); font: inherit; font-size: .88rem; cursor: pointer; }
+.dlt-nl-item:hover, .dlt-nl-item:focus-visible { border-color: var(--primary); background: rgba(var(--primary-rgb, 209,123,150), .1); outline: none; }
+.dlt-nl-item b { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlt-nl-item small { color: var(--text-muted); flex: none; }
+.dlt-nl-empty { color: var(--text-muted); font-size: .85rem; padding: 4px 2px; }
+</style>
+<script>
+/* Note deadlines: add any that never reached the planner, and ?note=ID (from Today) opens that note */
+(function () {
+    function boot() {
+        setTimeout(function () { try { if (window.DLT && DLT.backfillNoteDeadlines) DLT.backfillNoteDeadlines(); } catch (e) {} }, 3500);
+        try {
+            var u = new URL(location.href), id = u.searchParams.get('note');
+            if (!id) return;
+            history.replaceState(null, '', location.pathname);
+            setTimeout(function () { if (window.DLT && DLT.openLinkedNote) DLT.openLinkedNote(id); }, 1800);
+        } catch (e) {}
+    }
+    if (document.readyState !== 'loading') boot(); else document.addEventListener('DOMContentLoaded', boot);
+})();
 </script>
 </body>
