@@ -11646,6 +11646,21 @@
             renderDocMeta();
             markDirty();
         });
+        // "Review in 3 / 7 / 30 days": one tap sets the Due date, so the note lands in Today's "Notes to review"
+        // (the normal save path mirrors the deadline to the planner and brings back a ticked/snoozed reminder).
+        { const rc = document.getElementById('nvReviewChips');
+          if (rc) rc.addEventListener('click', (e) => {
+              const b = e.target.closest('[data-rv]');
+              if (!b || !S.note) return;
+              const k = b.getAttribute('data-rv');
+              if (k === 'clr') { S.note.deadline = ''; }
+              else { const d = new Date(); d.setDate(d.getDate() + (parseInt(k, 10) || 0)); S.note.deadline = remDay(d.getTime()); }
+              if (el.deadline) el.deadline.value = S.note.deadline;
+              renderDocMeta();
+              markDirty();
+              if (k === 'clr') toast('Review date cleared.');
+              else toast('Review on ' + new Date(S.note.deadline + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + '. It will show up in Today.');
+          }); }
         if (el.remind) {
             el.remind.addEventListener('change', () => {
                 if (!S.note) return;

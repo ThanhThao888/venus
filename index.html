@@ -115,7 +115,7 @@
    (hoặc ngay khi bấm nút Notes, tùy cái nào đến trước). Dữ liệu vẫn nằm đúng chỗ cũ (IndexedDB), không đổi gì.
    Nếu cập nhật vault.* thì đổi V để trình duyệt lấy bản mới. */
 (function () {
-    var V = '20261110a';
+    var V = '20261110b';
     var FONTS = ["https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap", "https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"];
     var loaded = false, loading = null;
 
@@ -37437,11 +37437,12 @@ const EnglishDaily = (function () {
                     <button type="button" class="rl-tab" role="tab" aria-selected="false" data-status="reading"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-book-open"></use></svg> Reading <span class="rl-tab-count" id="rlCnt-reading">0</span></button>
                     <button type="button" class="rl-tab" role="tab" aria-selected="false" data-status="want"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Want <span class="rl-tab-count" id="rlCnt-want">0</span></button>
                     <button type="button" class="rl-tab" role="tab" aria-selected="false" data-status="finished"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Done <span class="rl-tab-count" id="rlCnt-finished">0</span></button>
+                    <button type="button" class="rl-tab" role="tab" aria-selected="false" data-status="apply" title="Finished books whose “How I’ll apply this” to-do is not ticked yet">To apply <span class="rl-tab-count" id="rlCnt-apply">0</span></button>
                 </div>
                 <div class="reading-controls">
                     <div class="rl-search-wrap">
                         <svg class="icon-svg icon-sm rl-search-wrap-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
-                        <input type="search" id="searchInput" placeholder="Search title, author, review…" aria-label="Search books" autocomplete="off">
+                        <input type="search" id="searchInput" placeholder="Search title, author, review, takeaways…" aria-label="Search books" autocomplete="off">
                     </div>
                     <div class="rl-controls-row">
                         <select id="genreFilter" title="Filter by Genre">
@@ -40991,7 +40992,7 @@ const EnglishDaily = (function () {
             </details>
             <section class="nv-sec" aria-label="Deadline">
             <h3 class="nv-sec-h">Deadline</h3>
-            <div class="nv-field nv-stack"><label class="nv-lbl" for="nvDeadline">Due date</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div></div>
+            <div class="nv-field nv-stack"><label class="nv-lbl" for="nvDeadline">Due date</label><div><input type="date" id="nvDeadline" aria-label="Deadline"></div><div class="nv-remind-chips" id="nvReviewChips" role="group" aria-label="Review this note again"><button type="button" data-rv="3">Review in 3 days</button><button type="button" data-rv="7">7 days</button><button type="button" data-rv="30">30 days</button><button type="button" data-rv="clr">Clear</button></div></div>
             <div class="nv-field nv-stack"><label class="nv-lbl" for="nvRemind">Remind me at</label><div><input type="datetime-local" id="nvRemind" aria-label="Reminder time"></div>
             <div class="nv-remind-chips" id="nvRemindChips"><button type="button" data-rem="due8">Due day 08:00</button><button type="button" data-rem="eve">Day before 18:00</button><button type="button" data-rem="h1">In 1 hour</button><button type="button" data-rem="tom">Tomorrow 08:00</button><button type="button" data-rem="clr">Clear</button></div>
             <p class="nv-lk-hint" id="nvRemindHint"></p></div>
@@ -47569,6 +47570,13 @@ const EnglishDaily = (function () {
             const book = readingList.find(b => b.id === parseInt(bookId));
             if (book && book.review) showFullReview(book.review, book.title);
         }
+        // A finished book still owes you something when its "How I'll apply this" to-do is missing or not ticked.
+        function rlApplyPending(b, byId) {
+            const t = b && b.takeaways;
+            if (!t || b.status !== 'finished' || !String(t.apply || '').trim()) return false;
+            const td = t.todoId ? byId.get(t.todoId) : null;
+            return !td || !td.done;
+        }
         function setReadingStatusFilter(status) {
             rlStatusFilter = status || 'all';
             renderReadingList();
@@ -47592,8 +47600,10 @@ const EnglishDaily = (function () {
             });
 
             // Tab counts reflect the genre/search filters but not the status tab itself
-            const counts = { all: baseBooks.length, want: 0, reading: 0, finished: 0 };
-            baseBooks.forEach(b => { if (counts[b.status] !== undefined) counts[b.status]++; });
+            const counts = { all: baseBooks.length, want: 0, reading: 0, finished: 0, apply: 0 };
+            let rlTodoById = new Map();
+            try { rlTodoById = new Map(getTodos().filter(Boolean).map(t => [t.id, t])); } catch (e) { /* to-dos unreadable: treat as none */ }
+            baseBooks.forEach(b => { if (counts[b.status] !== undefined) counts[b.status]++; if (rlApplyPending(b, rlTodoById)) counts.apply++; });
             Object.keys(counts).forEach(k => {
                 const el = document.getElementById('rlCnt-' + k);
                 if (el) el.textContent = counts[k];
@@ -47625,7 +47635,7 @@ const EnglishDaily = (function () {
                 insightEl.style.display = '';
             }
 
-            let filteredBooks = baseBooks.filter(b => rlStatusFilter === 'all' || b.status === rlStatusFilter);
+            let filteredBooks = baseBooks.filter(b => rlStatusFilter === 'all' || (rlStatusFilter === 'apply' ? rlApplyPending(b, rlTodoById) : b.status === rlStatusFilter));
 
             filteredBooks.sort((a, b) => {
                 const statusOrder = { reading: 3, want: 2, finished: 1 };
@@ -47669,6 +47679,7 @@ const EnglishDaily = (function () {
                 let title, sub;
                 if (searchQuery) { title = 'No matches'; sub = `Nothing found for "${escapeHtml(searchQuery)}".`; }
                 else if (readingList.length === 0) { title = 'Your shelf is empty'; sub = 'Add your first book to start tracking.'; }
+                else if (rlStatusFilter === 'apply') { title = 'Nothing left to apply'; sub = 'Every finished book with an action already has its to-do ticked.'; }
                 else { title = 'Nothing here yet'; sub = 'No books match the current filters.'; }
                 container.innerHTML = `<div class="empty-state rl-empty"><div class="rl-empty-icon"><svg class="icon-svg" aria-hidden="true"><use href="#icon-library"></use></svg></div><div class="rl-empty-title">${title}</div><div class="rl-empty-sub">${sub}</div>${readingList.length === 0 ? '<button type="button" class="rl-empty-cta" onclick="openAddBookModal()">+ Add a book</button>' : ''}</div>`;
                 return;
@@ -82043,6 +82054,9 @@ function renderMonth(year, month) {
 function escTodo(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+async function todoOpenNote(id) {
+  try { if (window.NotesVault) { await window.NotesVault.open(); await window.NotesVault.openNote(id); } } catch (e) { console.error('todoOpenNote', e); }
+}
 function getTodos() {
   try { return JSON.parse(localStorage.getItem('todoTasks') || '[]'); } catch { return []; }
 }
@@ -82295,6 +82309,7 @@ function renderTodoList() {
               <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
                 ${t.due ? todoDueBadge(t.due) : ''}
                 ${todoTagPills(t.tags, {clickable:true})}
+                ${t.noteId ? `<button type="button" data-nid="${escTodo(t.noteId)}" onclick="todoOpenNote(this.dataset.nid)" title="Open the linked note" style="font:inherit;font-size:.72rem;font-weight:600;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-muted);border-radius:99px;padding:1px 8px;cursor:pointer;"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i> ${escTodo(t.noteTitle || 'Note')}</button>` : ''}
                 ${todoSubtaskToggleHtml(t)}
               </div>
               ${_todoExpandedSubtasks.has(t.id) ? todoSubtaskPanelHtml(t) : ''}
