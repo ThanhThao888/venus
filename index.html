@@ -11627,6 +11627,22 @@
             border-top: 1px solid rgba(232, 170, 190, 0.12);
         }
 
+
+        /* Resource card: the primary button is the real link (Listen / Watch / Read) */
+        .rc-actions .resource-status-btn.rc-go { display: inline-flex; align-items: center; text-decoration: none; white-space: nowrap; }
+        .resource-card.is-reading { box-shadow: 0 0 0 1px var(--rc-accent, var(--primary)), 0 6px 18px rgba(var(--primary-rgb), .12); }
+        .rc-actions-primary { flex-wrap: wrap; }
+
+        /* Resource Library banner (theme colours, no hard-coded orange-on-orange) */
+        .rl-banner { align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 12px 10px 14px;
+            background: rgba(var(--primary-rgb), .07); border: 1px solid var(--border-color); border-left: 3px solid var(--dlt-icon-amber, #f59e0b);
+            border-radius: 12px; font-size: .82rem; color: var(--text-dark); }
+        .rl-banner-text { min-width: 0; line-height: 1.45; }
+        .rl-banner-text .icon-svg { color: var(--dlt-icon-amber, #f59e0b); }
+        .rl-banner-sub { display: block; color: var(--text-muted); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rl-banner-x { flex: 0 0 auto; height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border-color); background: transparent;
+            color: var(--text-muted); font: inherit; font-size: .76rem; cursor: pointer; }
+        .rl-banner-x:hover { color: var(--primary-dark); border-color: var(--primary); }
         .rc-actions-primary {
             display: flex;
             align-items: center;
@@ -31911,7 +31927,7 @@ window.DBP={
                 </button>
             </div>
             <div id="queueHint" style="display:none; font-size: 0.78rem; color: var(--text-muted); margin: -4px 0 10px; text-align:center;">
-                To-read Audio/Video/Podcast, sorted by your order · drag ⠿ to reorder
+                Listening queue: to-listen and in-progress Audio / Video / Podcast, in your order · drag ⠿ to reorder
             </div>
 
             <!-- Filters Panel — collapsed by default, holds tags/type/domain/purpose/etc. -->
@@ -32066,7 +32082,7 @@ window.DBP={
             </div>
 
             <!-- Forgotten Resources Reminder -->
-            <div id="forgottenResourceBanner" style="display:none; margin-bottom: 12px; padding: 10px 12px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 0.82rem; color: #f59e0b;">
+            <div id="forgottenResourceBanner" class="rl-banner" style="display:none;">
                 <!-- Filled by renderForgottenResourceBanner() -->
             </div>
 
@@ -76012,12 +76028,14 @@ window.fcRenderTagChips = fcRenderTagChips;
         // Shows To-Read Audio/Video/Podcast resources, sorted by manual queueOrder,
         // with drag-and-drop (or ▲▼ buttons) to reorder — perfect for "what to listen to next".
         let listeningQueueMode = false;
+        const rcStickyIds = new Set();   // cards you just started stay visible until the Status filter changes
+        let rcLastStatusFilter = null;
         let draggedResourceId = null;
         const QUEUE_TYPES = ['audio', 'video', 'podcast'];
 
         function getQueueSorted() {
             return resourceLibrary
-                .filter(r => QUEUE_TYPES.includes(r.type) && r.status === 'to-read')
+                .filter(r => QUEUE_TYPES.includes(r.type) && (r.status === 'to-read' || r.status === 'reading'))
                 .sort((a, b) => {
                     const ao = a.queueOrder ?? Number.MAX_SAFE_INTEGER;
                     const bo = b.queueOrder ?? Number.MAX_SAFE_INTEGER;
@@ -76204,9 +76222,15 @@ window.fcRenderTagChips = fcRenderTagChips;
                 low: '<svg class="icon-svg icon-sm" aria-hidden="true" style="color:#22c55e;"><use href="#crs-icon-chevron-down"></use></svg>'
             };
             
+            const isListen = resource.type === 'audio' || resource.type === 'podcast';
+            const isWatch = resource.type === 'video';
+            const verb = isListen ? { go: 'Listen', again: 'Continue', todo: 'To Listen', doing: 'Listening', icon: 'headphones' }
+                       : isWatch  ? { go: 'Watch',  again: 'Continue', todo: 'To Watch',  doing: 'Watching',  icon: 'clapperboard' }
+                       : (resource.type === 'tool' || resource.type === 'other') ? { go: 'Open', again: 'Open', todo: 'To Open', doing: 'In use', icon: 'link' }
+                       : { go: 'Read', again: 'Continue', todo: 'To Read', doing: 'Reading', icon: 'book-open' };
             const statusBadges = {
-                'to-read': '<span class="tag" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> To Read</span>',
-                'reading': '<span class="tag" style="background: rgba(232, 170, 190, 0.2); color: #c97d96;"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-book-open"></use></svg> Reading</span>',
+                'to-read': '<span class="tag" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-' + verb.icon + '"></use></svg> ' + verb.todo + '</span>',
+                'reading': '<span class="tag" style="background: rgba(232, 170, 190, 0.2); color: #c97d96;"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-' + verb.icon + '"></use></svg> ' + verb.doing + '</span>',
                 'completed': '<span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-circle-check"></use></svg> Completed</span>'
             };
             
@@ -76319,30 +76343,35 @@ window.fcRenderTagChips = fcRenderTagChips;
             }
             
             // ===== STATUS BUTTONS =====
+            const hasLink = !!(resource.url && String(resource.url).trim());
+            const goLink = (label) => `
+                    <a href="${resource.url}" target="_blank" rel="noopener" class="resource-status-btn primary-action rc-go" title="${label} (opens the link)"
+                        onclick="autoMarkReading('${resource.id}')">
+                        <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-${verb.icon}"></use></svg></span><span class="btn-label">${label}</span>
+                    </a>`;
             let statusButtons = '';
             if (resource.status === 'to-read') {
-                statusButtons = `
-                    <button onclick="startReadingResource('${resource.id}')" class="resource-status-btn primary-action" title="Start Reading">
-                        <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-book-open"></use></svg></span><span class="btn-label">Start</span>
-                    </button>
-                `;
+                statusButtons = hasLink ? goLink(verb.go) : `
+                    <button onclick="startReadingResource('${resource.id}')" class="resource-status-btn primary-action" title="Mark as ${verb.doing.toLowerCase()}">
+                        <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-${verb.icon}"></use></svg></span><span class="btn-label">${verb.go}</span>
+                    </button>`;
             } else if (resource.status === 'reading') {
                 statusButtons = `
-                    <button onclick="completeResource('${resource.id}')" class="resource-status-btn primary-action" title="Mark Complete">
-                        <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-circle-check"></use></svg></span><span class="btn-label">Complete</span>
+                    ${hasLink ? goLink(verb.again) : ''}
+                    <button onclick="completeResource('${resource.id}')" class="resource-status-btn rc-icon-btn" title="Mark as finished">
+                        <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-circle-check"></use></svg></span><span class="btn-label">Done</span>
                     </button>
                     <button onclick="updateResourceProgress('${resource.id}')" class="resource-status-btn rc-icon-btn" title="Update Progress">
                         <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-sticky-note"></use></svg></span><span class="btn-label">Progress</span>
-                    </button>
-                `;
+                    </button>`;
             } else {
                 statusButtons = `
                     <button onclick="reopenResource('${resource.id}')" class="resource-status-btn primary-action" title="Re-open">
                         <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-refresh-cw"></use></svg></span><span class="btn-label">Re-open</span>
-                    </button>
-                `;
+                    </button>`;
             }
-            
+            const showOpenIcon = hasLink && resource.status === 'completed';
+
             const langDurationHTML = (resource.language || durationText) ? `
                             <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
                                 ${resource.language ? `<span class="tag" style="background: rgba(154, 118, 134,0.12); color: var(--text-muted);">${languageLabels[resource.language] || resource.language}</span>` : ''}
@@ -76406,7 +76435,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             ].filter(Boolean).join('');
 
             return `
-                <div class="finance-card resource-card" data-id="${resource.id}" style="border-left: 4px solid ${cardColor}; ${isQueue ? 'display:flex; align-items:stretch; gap:8px;' : ''}" ${dragAttrs}>
+                <div class="finance-card resource-card is-${resource.status}" data-id="${resource.id}" style="--rc-accent: ${cardColor}; border-left: 4px solid ${cardColor}; ${isQueue ? 'display:flex; align-items:stretch; gap:8px;' : ''}" ${dragAttrs}>
                     ${queueControlsHTML}
                     ${bulkCheckboxHTML}
                     <div style="flex:1; min-width:0;">
@@ -76436,11 +76465,11 @@ window.fcRenderTagChips = fcRenderTagChips;
                             ${statusButtons}
                         </div>
                         <div class="rc-icon-group">
-                            <a href="${resource.url}" target="_blank" class="resource-status-btn open-link rc-icon-btn" title="Open Resource"
+                            ${showOpenIcon ? `                            <a href="${resource.url}" target="_blank" class="resource-status-btn open-link rc-icon-btn" title="Open Resource"
                                 onclick="autoMarkReading('${resource.id}')">
                                 <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-link"></use></svg></span><span class="btn-label">Open</span>
                             </a>
-                            <span class="rc-icon-divider"></span>
+                            <span class="rc-icon-divider"></span>` : ''}
                             <button onclick="editResource('${resource.id}')" class="resource-status-btn edit rc-icon-btn" title="Edit">
                                 <span class="btn-icon"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-pencil"></use></svg></span><span class="btn-label">Edit</span>
                             </button>
@@ -76458,6 +76487,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             const resource = resourceLibrary.find(r => r.id == id);
             if (resource) {
                 resource.status = 'reading';
+                rcStickyIds.add(String(resource.id));
                 resource.lastViewed = new Date().toISOString();
                 resource.startedDate = resource.startedDate || new Date().toISOString();
                 saveResources();
@@ -76470,6 +76500,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             const resource = resourceLibrary.find(r => r.id == id);
             if (resource && resource.status === 'to-read') {
                 resource.status = 'reading';
+                rcStickyIds.add(String(resource.id));
                 resource.startedDate = resource.startedDate || new Date().toISOString();
                 resource.lastViewed = new Date().toISOString();
                 saveResources();
@@ -76939,15 +76970,20 @@ window.fcRenderTagChips = fcRenderTagChips;
                 return days >= THRESHOLD_DAYS;
             });
 
-            if (forgotten.length === 0) {
+            if (forgotten.length === 0 || localStorage.getItem('rlForgottenHiddenDay') === new Date().toDateString()) {
                 banner.style.display = 'none';
                 return;
             }
 
             const topTitles = forgotten.slice(0, 3).map(r => r.title).join(', ');
             const more = forgotten.length > 3 ? ` +${forgotten.length - 3} more` : '';
-            banner.innerHTML = `<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-moon"></use></svg> <strong>${forgotten.length}</strong> resource${forgotten.length > 1 ? 's' : ''} sitting in "To Read" for 30+ days: ${topTitles}${more}`;
-            banner.style.display = 'block';
+            banner.innerHTML = `<span class="rl-banner-text"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-moon"></use></svg> <strong>${forgotten.length}</strong> resource${forgotten.length > 1 ? 's' : ''} still in "To Read" after 30+ days<span class="rl-banner-sub">${topTitles}${more}</span></span><button type="button" class="rl-banner-x" onclick="hideForgottenResourceBanner()">Hide today</button>`;
+            banner.style.display = 'flex';
+        }
+
+        function hideForgottenResourceBanner() {
+            try { localStorage.setItem('rlForgottenHiddenDay', new Date().toDateString()); } catch (e) {}
+            const b = document.getElementById('forgottenResourceBanner'); if (b) b.style.display = 'none';
         }
 
         // ===== GROUP 4: BULK ACTIONS (item 16) =====
@@ -77571,8 +77607,9 @@ window.fcRenderTagChips = fcRenderTagChips;
             }
 
             // Filter by status
+            if (rcLastStatusFilter !== filterStatus) { rcStickyIds.clear(); rcLastStatusFilter = filterStatus; }
             if (filterStatus !== 'all') {
-                filtered = filtered.filter(r => r.status === filterStatus);
+                filtered = filtered.filter(r => r.status === filterStatus || rcStickyIds.has(String(r.id)));
             }
             
             // Filter by search query
