@@ -8537,6 +8537,63 @@
         try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return null; }
         const body = doc.body;
         if (!body) return null;
+        // Boxed blocks (ChatGPT "Writing" cards + code blocks, Claude / Gemini code blocks): rebuild each as a fenced block,
+        // so the pasted result is a box with a Copy button (like the original) instead of loose headings and lists.
+        const boxBlocks = [];
+        try {
+            const COPY_RE = /^(copy|sao chép|copied|đã sao chép)/i;
+            const isCopyBtn = (b) => COPY_RE.test((b.getAttribute('aria-label') || b.getAttribute('title') || '').trim()) || COPY_RE.test((b.textContent || '').trim());
+            const txtLen = (n) => { const c = n.cloneNode(true); c.querySelectorAll('button,svg,script,style').forEach((x) => x.remove()); return (c.textContent || '').replace(/\s+/g, ' ').trim().length; };
+            const BLK = 'p,div,h1,h2,h3,h4,h5,h6,ul,ol,li,blockquote,pre,tr,hr,section,article';
+            const flat = (n) => { n.querySelectorAll('br').forEach((b) => b.replaceWith('\n')); n.querySelectorAll(BLK).forEach((b) => b.append('\n')); return (n.textContent || '').replace(/\n{3,}/g, '\n\n').trim(); };
+            const langOf = (e) => { const m = String((e && e.className) || '').match(/language-([\w+#-]+)/); return m ? m[1].toLowerCase() : ''; };
+            const copyBtns = Array.from(body.querySelectorAll('button')).filter(isCopyBtn);
+            const boxes = [];
+            const addBox = (b) => {
+                if (!b || boxes.some((x) => x === b || x.contains(b))) return;
+                for (let i = boxes.length - 1; i >= 0; i--) if (b.contains(boxes[i])) boxes.splice(i, 1);
+                boxes.push(b);
+            };
+            const lone = body.children.length === 1 && body.children[0].tagName === 'PRE' && !copyBtns.length;   // a lone <pre> keeps pasting as plain text
+            if (!lone) body.querySelectorAll('pre').forEach(addBox);
+            copyBtns.forEach((btn) => {
+                if (btn.closest('pre')) return;
+                let a = btn.parentElement;
+                while (a && a !== body && txtLen(a) < 60) a = a.parentElement;
+                if (!a || a === body || a.tagName === 'BODY') return;
+                if (Array.from(a.querySelectorAll('button')).filter(isCopyBtn).length > 1) return;   // too high up: it holds several boxes
+                addBox(a);
+            });
+            boxes.forEach((box) => {
+                const c = box.cloneNode(true);
+                c.querySelectorAll('button').forEach((b) => {   // drop the header strip: language / "Viết" label + Copy / Expand buttons
+                    let h = b;
+                    while (h.parentElement && h.parentElement !== c && txtLen(h.parentElement) < 30) h = h.parentElement;
+                    h.remove();
+                });
+                if (!txtLen(c)) return;
+                const code = c.querySelector('code');
+                let lang = '', text = '';
+                if (code && (c.tagName === 'PRE' || code.textContent.replace(/\s/g, '').length >= txtLen(c) * 0.8)) {
+                    lang = langOf(code) || langOf(c);
+                    text = code.textContent.replace(/\r\n/g, '\n').replace(/\n+$/, '');
+                } else if (c.tagName === 'PRE') {
+                    text = c.textContent.replace(/\r\n/g, '\n').replace(/\n+$/, '');
+                } else {
+                    let md = null;
+                    try { md = htmlToMarkdown(c.innerHTML); } catch (e) { md = null; }
+                    text = md || flat(c); lang = 'markdown';
+                }
+                if (lang === 'text' || lang === 'plaintext') lang = '';
+                if (!text.trim()) return;
+                let f = '```';
+                while (text.indexOf(f) !== -1) f += '`';
+                const p = doc.createElement('p');
+                p.textContent = 'NVBOX' + boxBlocks.length + 'END';
+                boxBlocks.push(f + lang + '\n' + text + '\n' + f);
+                box.replaceWith(p);
+            });
+        } catch (e) { console.warn('Notes Vault: code-box detection failed', e); }
         // Charts (coloured bars / inline SVG graphics) can't be expressed in Markdown: lift each one out as a ```visual block.
         const vizBlocks = [];
         try {
@@ -8815,11 +8872,12 @@
             const pre = body.querySelector('pre');
             return !!(pre && pre.textContent.replace(/\s+/g, '').length < total);
         };
-        if (!rich()) return null;
+        if (!rich() && !boxBlocks.length) return null;
 
         let md = joinBlocks(blocks(body, {})).replace(/\n{3,}/g, '\n\n').trim();
         md = md.replace(/(\S)\*\*\*\*(?=\S)/g, '$1').replace(/(\S)\*\* \*\*(?=\S)/g, '$1 ')
             .replace(/(\S)~~~~(?=\S)/g, '$1').replace(/(\S)~~ ~~(?=\S)/g, '$1 ');   // adjacent runs with the same format → one run
+        if (boxBlocks.length) md = md.replace(/NVBOX(\d+)END/g, (m, i) => '\n\n' + (boxBlocks[+i] || '') + '\n\n').replace(/\n{3,}/g, '\n\n').trim();
         if (vizBlocks.length) md = md.replace(/NVVIZ(\d+)END/g, (m, i) => '\n\n' + (vizBlocks[+i] || '') + '\n\n').replace(/\n{3,}/g, '\n\n').trim();
         return md || null;
     }
