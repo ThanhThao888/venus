@@ -63735,7 +63735,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const insightsBody = document.getElementById('sleepInsightsBody');
             const insightsChevron = document.getElementById('sleepInsightsChevron');
-            const insightsCollapsed = localStorage.getItem('sleepInsightsCollapsed') === 'true'; // default: expanded
+            const insightsCollapsed = localStorage.getItem('sleepInsightsCollapsed') !== 'false'; // default: collapsed (user choice is remembered)
             if (insightsBody) insightsBody.style.display = insightsCollapsed ? 'none' : 'block';
             if (insightsChevron) insightsChevron.style.transform = insightsCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
         }
@@ -87262,5 +87262,238 @@ document.addEventListener('keydown', function (e) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
 })();
 </script>
+
+
+<!-- ===== SAKURA WORKSPACE - STEP 3: MICRO-UX / PROGRESSIVE DISCLOSURE ===== -->
+<style id="sakura-step3-css">
+  /* 1. Glance row: Coming Up + 2-Minute Launchpad side by side (Today & Focus only) */
+  #swTopGlanceGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;margin-bottom:22px;align-items:stretch}
+  #swTopGlanceGrid > #nextUpWidget,
+  #swTopGlanceGrid > #adhdLaunchpad{margin-bottom:0 !important;height:100%}
+  #swTopGlanceGrid #adhdLaunchpad .launchpad-grid{max-height:190px;overflow-y:auto;padding-right:4px}
+  body[data-sw-view]:not([data-sw-view="focus"]):not([data-sw-view="all"]) #swTopGlanceGrid{display:none !important}
+  @media (max-width:960px){#swTopGlanceGrid{grid-template-columns:minmax(0,1fr)}}
+
+  /* 2. Flashcard sized for the dashboard (fullscreen mode keeps the big size) */
+  #flashcardManagerSection #flashcardDisplay{min-height:210px !important;padding:26px 22px 44px !important;margin-bottom:14px !important;border-radius:14px !important;border-width:1px !important}
+  #flashcardManagerSection #flashcardQuestion{font-size:1.18rem !important;line-height:1.6 !important}
+  #flashcardManagerSection #flashcardAnswer{font-size:1.02rem !important;max-height:240px !important}
+  #flashcardManagerSection .flashcard-btn{padding:9px 14px !important;font-size:.86rem !important;border-width:1px !important;border-radius:10px !important}
+  #flashcardManagerSection .flashcard-stats{padding:10px 14px !important;border-width:1px !important;margin-bottom:12px !important;font-size:.85rem !important}
+
+  /* 3. Collapsible drawer (Session Notes history) */
+  .sw-drawer{margin-top:12px;border:1px solid var(--border-color,#f0d7de);border-radius:12px;background:rgba(209,123,150,.04);overflow:hidden}
+  body.dark-mode .sw-drawer{background:rgba(255,255,255,.03)}
+  .sw-drawer > summary{list-style:none;cursor:pointer;user-select:none;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;
+    font:700 .82rem/1.2 'Nunito','Inter',system-ui,sans-serif;color:var(--primary-dark,#a85870);transition:background .15s}
+  body.dark-mode .sw-drawer > summary{color:var(--primary,#f0a8c4)}
+  .sw-drawer > summary::-webkit-details-marker{display:none}
+  .sw-drawer > summary:hover{background:rgba(209,123,150,.09)}
+  .sw-drawer > summary:focus-visible{outline:2px solid #d17b96;outline-offset:-2px}
+  .sw-drawer > summary .sw-drawer-label{display:inline-flex;align-items:center;gap:7px}
+  .sw-drawer > summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin:-3px 4px 0 0;transition:transform .2s}
+  .sw-drawer[open] > summary::after{transform:rotate(-135deg);margin-top:3px}
+  .sw-drawer[open] > summary{border-bottom:1px dashed var(--border-color,#f0d7de)}
+  .sw-drawer-body{padding:12px}
+  .sw-drawer-body .sn-search-wrap{margin-bottom:8px}
+  .sw-drawer-body select{max-width:100%;margin-bottom:8px}
+
+  /* 4. Sleep Insights toggle reads as a button */
+  #sleepTrackerCard .sleep-section-header[onclick*="toggleSleepInsights"]{padding:10px 12px !important;margin-top:8px !important;border:1px solid var(--border-color,#f0d7de) !important;border-radius:10px !important;background:rgba(209,123,150,.05);transition:background .15s,border-color .15s}
+  #sleepTrackerCard .sleep-section-header[onclick*="toggleSleepInsights"]:hover{background:rgba(209,123,150,.12);border-color:var(--primary,#d17b96) !important}
+
+  /* 5. One scroll height + thin Sakura scrollbar for list cards */
+  #coursesContainer,#resourceCardsContainer,#readingListContainer,#analysisCardsContainer,#dealCardsContainer{
+    max-height:480px !important;overflow-y:auto !important;padding-right:4px !important;scrollbar-width:thin;scrollbar-color:rgba(209,123,150,.38) transparent}
+  #coursesContainer::-webkit-scrollbar,#resourceCardsContainer::-webkit-scrollbar,#readingListContainer::-webkit-scrollbar,
+  #analysisCardsContainer::-webkit-scrollbar,#dealCardsContainer::-webkit-scrollbar{width:6px}
+  #coursesContainer::-webkit-scrollbar-thumb,#resourceCardsContainer::-webkit-scrollbar-thumb,#readingListContainer::-webkit-scrollbar-thumb,
+  #analysisCardsContainer::-webkit-scrollbar-thumb,#dealCardsContainer::-webkit-scrollbar-thumb{background:rgba(209,123,150,.38);border-radius:999px}
+</style>
+
+<script id="sakura-step3-js">
+(function () {
+  'use strict';
+  if (window.__sakuraStep3Init) return;
+  window.__sakuraStep3Init = true;
+
+  function init() {
+    /* 1. Glance row. Moving nodes keeps their event listeners and ids intact. */
+    var nextUp = document.getElementById('nextUpWidget');
+    var launchpad = document.getElementById('adhdLaunchpad');
+    if (nextUp && launchpad && !document.getElementById('swTopGlanceGrid')) {
+      var grid = document.createElement('div');
+      grid.id = 'swTopGlanceGrid';
+      nextUp.parentNode.insertBefore(grid, nextUp);
+      grid.appendChild(nextUp);
+      grid.appendChild(launchpad);
+    }
+
+    /* Sleep Insights: collapsed by default unless the user expanded it before.
+       (Also done here so it still applies if the page's own init stops early.) */
+    try {
+      var si = document.getElementById('sleepInsightsBody'), sc = document.getElementById('sleepInsightsChevron');
+      if (si && localStorage.getItem('sleepInsightsCollapsed') !== 'false') {
+        si.style.display = 'none';
+        if (sc) sc.style.transform = 'rotate(-90deg)';
+      }
+      /* In the original markup the charts, timeline, heatmap and history sit AFTER the closing tag of
+         #sleepInsightsBody, so collapsing it hid almost nothing. Move them inside (the alert banner stays outside). */
+      if (si && !si.hasAttribute('data-sw-merged')) {
+        si.setAttribute('data-sw-merged', '1');
+        var banner = document.getElementById('sleepInsightBanner');
+        var n = si.nextElementSibling;
+        while (n) {
+          var nx = n.nextElementSibling;
+          if (n !== banner) si.appendChild(n);
+          n = nx;
+        }
+        var hdr = si.previousElementSibling;
+        var lbl = hdr && hdr.querySelector('span');
+        if (lbl && /Insights\s*&amp;\s*Analysis|Insights\s*&\s*Analysis/.test(lbl.innerHTML)) {
+          lbl.innerHTML = lbl.innerHTML.replace(/Insights\s*(&amp;|&)\s*Analysis/, 'Insights &amp; History');
+        }
+      }
+    } catch (e) {}
+
+    /* 2. Session Notes: search + career filter + history list go into a closed drawer.
+          The input form and the "Today" mini stats stay on the front. */
+    var logs = document.getElementById('sessionLogsContainer');
+    var body = document.getElementById('sessionNotesBody');
+    if (logs && body && !document.getElementById('swSessionHistoryDrawer')) {
+      var search = document.getElementById('sessionSearch');
+      var searchWrap = search ? search.closest('.sn-search-wrap') : null;
+      var filter = document.getElementById('sessionCareerFilter');
+
+      var d = document.createElement('details');
+      d.id = 'swSessionHistoryDrawer';
+      d.className = 'sw-drawer';
+      d.innerHTML = '<summary><span class="sw-drawer-label"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-scroll-text"></use></svg>History &amp; Search</span></summary><div class="sw-drawer-body"></div>';
+      var inner = d.querySelector('.sw-drawer-body');
+      if (searchWrap) inner.appendChild(searchWrap);
+      if (filter) inner.appendChild(filter);
+      inner.appendChild(logs);
+      body.appendChild(d);
+
+      d.addEventListener('toggle', function () {
+        if (d.open) { try { if (typeof renderSessionLogs === 'function') renderSessionLogs(); } catch (e) {} }
+      });
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     🌸 SAKURA MIST — STEP 4: NÚT BẤM · INPUT · TYPOGRAPHY (đồng bộ với today.html + vault.css)
+     - 1 font chung (--ui-font, cùng stack với today.html / launcher.html)
+     - 3 bậc bo góc: 10px (nút/input thường), 8px (nút/ô nhỏ), 999px (tab/chip/pill)
+     - Nút chính: nền đặc phẳng như .nv-btn-primary; nút phụ: viền hồng + nền sáng
+     - Input: phẳng như ô tìm kiếm của Vault (bỏ kính mờ, bỏ glow nhấp nháy), focus ring 3px
+     - Không đụng vào Notes Vault (#nvOverlay) — Vault đã có hệ riêng
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<style id="sakura-step4-css">
+  :root{
+    --ui-font: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; /* đổi 1 dòng này để đổi font toàn app */
+    --ui-r: 10px;      /* nút + input thường (= .nv-btn / .nv-search input) */
+    --ui-r-sm: 8px;    /* nút/ô nhỏ gọn */
+    --ui-pill: 999px;  /* tab, chip, ô tìm kiếm */
+    --ui-ring: 0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18);
+  }
+
+  /* ── 1. TYPOGRAPHY: một font cho cả app (độ ưu tiên 0 → class/ID cụ thể vẫn thắng; icon font không bị ảnh hưởng) ── */
+  :where(*:not(#nvOverlay *)){ font-family: var(--ui-font); }
+  /* Các chỗ trước đây dùng Nunito → cùng font chung */
+  .sidebar-card:not([id^="nv"]):not(#yourProgressCard):not(#goalsSection) > .sidebar-title,
+  .sidebar-card:not([id^="nv"]):not(#yourProgressCard):not(#goalsSection) > .sidebar-title .sidebar-title-text,
+  .sidebar-card.focus-timer-card .ft-header > .sidebar-title,
+  #sleepTrackerCard > div:first-child > .sidebar-title,
+  #yourProgressCard > .sidebar-title, #goalsSection > .sidebar-title,
+  #dlTracker .dlt-header h3, #adhdLaunchpad .launchpad-header h3,
+  .dbp-title, .correlation-title, .progress-title,
+  .sw-tab, .sw-qbtn, .sw-drawer > summary, .sw-collapsible-drawer > summary{ font-family: var(--ui-font); }
+  .sidebar-card:not([id^="nv"]) .sidebar-title span, .progress-title span, .dlt-header h3 span,
+  .launchpad-header h3 span, .dbp-title span, .correlation-title span{ font-family: inherit; }
+  /* Số liệu thẳng hàng như today.html */
+  body :where(.chip,.tag,.stat-value,.timer-display,[class*="-count"],[class*="-time"]):where(:not(#nvOverlay *)){ font-variant-numeric: tabular-nums; }
+
+  /* ── 2. NÚT: HÌNH DẠNG (3 bậc bo góc) ── */
+  /* 2a. Nút thường → 10px */
+  body :is(.book-action-btn,.sw-qbtn,.ft-energy-chip,.rl-tool-btn,.flashcard-btn,.add-analysis-btn,.add-deal-btn,.add-book-btn,
+           .export-btn,.import-btn,.pattern-refresh-btn,.rl-pickbtn,.goal-context-btn,.book-context-btn,.rdm-compare-btn,
+           .bdr-toggle-btn,.sleep-btn-outline,.sleep-btn-start,.sleep-btn-stop,.goal-add-btn){ border-radius: var(--ui-r); }
+  body :is(.goal-context-btn,.book-context-btn,.add-book-btn,.rl-goal){ border-radius: var(--ui-r) !important; }
+  /* 2b. Nút nhỏ gọn → 8px */
+  body :is(.add-time-btn,.wln-tab-btn,.wln-mood-btn,.quote-popup-mini-btn,.rdm-phase-skip-btn,.rdm-view-btn,.corr-filter-btn,
+           .ft-preset,.ft-break-preset,.rdm-reset-btn,.rdm-focus-goal-btn,.yprog-goal-edit,.ft-history-btn,
+           .flashcard-expand-btn,.bd-expand-btn,.bd-clear-all){ border-radius: var(--ui-r-sm); }
+  /* 2c. Tab / chip / pill → 999px */
+  body :is(.sw-tab,.ft-range-tab,.dlt-tab,.bd-filter-tab,.bd-cat-chip,.launch-refresh-btn,.ft-btn,.rl-tk-nudge){ border-radius: var(--ui-pill); }
+  /* Chiều cao tối thiểu 34px cho nút hành động chính (dễ bấm, bằng today.html) */
+  body :is(.sw-qbtn,.flashcard-btn,.add-analysis-btn,.add-deal-btn,.add-book-btn,.export-btn,.import-btn,.pattern-refresh-btn,
+           .rl-tool-btn,.book-action-btn){ min-height: 34px; }
+  body :is(.sw-qbtn,.flashcard-btn,.add-analysis-btn,.add-deal-btn,.add-book-btn,.export-btn,.import-btn,.pattern-refresh-btn,
+           .launch-refresh-btn,.goal-add-btn,.rl-tool-btn){ font-weight: 600; font-size: .85rem; }
+
+  /* ── 3. NÚT: MÀU (chính = đặc phẳng · phụ = viền hồng nền sáng) ── */
+  /* Nút chính — như .nv-btn-primary */
+  body :is(.btn-primary,.launch-refresh-btn,.add-book-btn,.export-btn,.goal-add-btn,button[type="submit"]:not(.add-time-btn)){
+    background: var(--primary-dark) !important; background-image: none !important;
+    color: #fff !important; border: 1px solid transparent !important; box-shadow: none !important; text-shadow: none;
+  }
+  body.dark-mode :is(.btn-primary,.launch-refresh-btn,.add-book-btn,.export-btn,.goal-add-btn,button[type="submit"]:not(.add-time-btn)){
+    background: var(--primary) !important; color: #2a1420 !important;
+  }
+  body :is(.btn-primary,.launch-refresh-btn,.add-book-btn,.export-btn,.goal-add-btn,button[type="submit"]:not(.add-time-btn))::before{ display:none !important; }
+  body :is(.btn-primary,.launch-refresh-btn,.add-book-btn,.export-btn,.goal-add-btn,button[type="submit"]:not(.add-time-btn)):hover{
+    filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(var(--primary-rgb),.25) !important;
+  }
+  /* Nút phụ — như today.html .livebtn / Vault .nv-btn:hover */
+  body :is(.add-analysis-btn,.add-deal-btn,.pattern-refresh-btn,.import-btn){
+    background: var(--bg-white) !important; color: var(--primary-dark) !important;
+    border: 1px solid var(--primary) !important; box-shadow: none !important;
+  }
+  body :is(.add-analysis-btn,.add-deal-btn,.pattern-refresh-btn,.import-btn):hover{
+    background: var(--primary-light) !important; color: var(--primary-dark) !important;
+    transform: translateY(-1px); box-shadow: none !important;
+  }
+
+  /* ── 4. NÚT: chuyển động nhẹ + trạng thái ── */
+  .add-time-btn:hover, .pattern-refresh-btn:hover{ transform: translateY(-1px); }
+  .add-time-btn:active, button[type="submit"]:active, .btn-primary:active{ transform: scale(.97); }
+  body :where(button, .btn):disabled, body :where(button, .btn)[aria-disabled="true"]{ opacity:.5; cursor:not-allowed; }
+
+  /* ── 5. INPUT / SELECT / TEXTAREA: phẳng như ô tìm kiếm của Vault ── */
+  body :is(input,select,textarea):where(:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=hidden],[type=button],[type=submit],[type=reset],[type=image])):where(:not(#nvOverlay *)){
+    background-color: var(--bg-white) !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+    box-shadow: none !important; transform: none !important; animation: none !important;
+    border-radius: var(--ui-r) !important;
+    border-width: 1px;
+    color: var(--text-dark);
+    transition: border-color .15s ease, box-shadow .15s ease !important;
+  }
+  body :is(input,select,textarea):where(:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=hidden],[type=button],[type=submit],[type=reset],[type=image])):where(:not(#nvOverlay *)):hover{
+    border-color: var(--primary) !important; background-color: var(--bg-white) !important; box-shadow: none !important; transform: none !important;
+  }
+  body :is(input,select,textarea):where(:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=hidden],[type=button],[type=submit],[type=reset],[type=image])):where(:not(#nvOverlay *)):focus{
+    outline: none !important; border-color: var(--primary) !important; background-color: var(--bg-white) !important;
+    box-shadow: var(--ui-ring) !important; transform: none !important; animation: none !important;
+  }
+  body :is(input,select,textarea)::placeholder{ font-style: normal !important; color: var(--text-muted) !important; opacity: .75; }
+  body :is(input,select,textarea):focus::placeholder{ opacity: .45; }
+  body :is(input,select,textarea):disabled{ opacity:.6; cursor:not-allowed; }
+  /* Ô nhỏ (giờ/phút, số) → 8px */
+  body :is(input.time-input,input[type=number]):where(:not(#nvOverlay *)){ border-radius: var(--ui-r-sm) !important; }
+  /* Ô tìm kiếm + lọc dạng pill */
+  body :is([class*="search-wrap"] input,.course-controls select,.rdm-lf-input,.ft-custom-input):where(:not(#nvOverlay *)){ border-radius: var(--ui-pill) !important; }
+  /* Ô thanh trượt không bị đụng; checkbox/radio dùng màu chủ đạo */
+  input[type=checkbox], input[type=radio], input[type=range]{ accent-color: var(--primary); }
+
+  /* ── 6. Tiêu đề phụ trong thẻ: ghi chú nhỏ, số, nhãn đồng nhất với today.html ── */
+  .subtitle{ color: var(--text-muted); }
+</style>
 
 </body>
