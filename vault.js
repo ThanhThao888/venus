@@ -3739,6 +3739,13 @@
         NF.matches = []; NF.cur = -1;
         if (window.CSS && CSS.highlights) { CSS.highlights.delete('nv-find'); CSS.highlights.delete('nv-find-cur'); }
     }
+    // Hand the current search over to the Find & Replace modal: same text, same Aa / accent options, scope = this note.
+    function noteFindToReplace() {
+        const q = NF.input ? NF.input.value : '', cs = NF.caseS, ac = NF.accS;
+        noteFindClose();
+        S.fr.find = q; S.fr.scope = 'note'; S.fr.caseI = !cs; S.fr.accents = ac;
+        Promise.resolve(openFrModal()).then(() => { if (q && el.frRepl && S.fr.open) el.frRepl.focus(); });
+    }
     function noteFindCan() {
         return !!(S.open && S.note && S.mode === 'read' && el.read && el.read.offsetParent && !document.querySelector('.nv-lightbox, .nv-pdfopt-scrim'));
     }
@@ -3753,12 +3760,14 @@
                 + '<button type="button" data-f="next" title="Next (Enter)" aria-label="Next match"><i class="fa-solid fa-chevron-down"></i></button>'
                 + '<button type="button" data-f="case" title="Match case">Aa</button>'
                 + '<button type="button" data-f="acc" title="Match accents (á ≠ a)">á</button>'
+                + '<button type="button" data-f="repl" title="Find &amp; Replace in this note (Ctrl+H)"><i class="fa-solid fa-right-left"></i> Replace</button>'
                 + '<button type="button" data-f="close" title="Close (Esc)" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>';
             document.body.appendChild(bar);
             NF.bar = bar; NF.input = bar.querySelector('input'); NF.count = bar.querySelector('.nv-find-count');
             let t = 0;
             NF.input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => noteFindRun(false), 80); });
             NF.input.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); e.stopPropagation(); noteFindToReplace(); return; }
                 if (e.key === 'Enter') { e.preventDefault(); noteFindStep(e.shiftKey ? -1 : 1); }
                 else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteFindClose(); }
                 e.stopPropagation();       // keep vault shortcuts from firing while typing
@@ -3769,6 +3778,7 @@
                 if (f === 'next') noteFindStep(1);
                 else if (f === 'prev') noteFindStep(-1);
                 else if (f === 'close') noteFindClose();
+                else if (f === 'repl') noteFindToReplace();
                 else if (f === 'case') { NF.caseS = !NF.caseS; b.classList.toggle('nv-on', NF.caseS); noteFindRun(false); }
                 else if (f === 'acc') { NF.accS = !NF.accS; b.classList.toggle('nv-on', NF.accS); noteFindRun(false); }
             });
@@ -10313,7 +10323,8 @@
         for (const m of text.matchAll(/\P{M}\p{M}*|\p{M}+/gu)) {
             const a = m.index, b = a + m[0].length;
             const f = m[0].normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase().replace(/đ/g, 'd');
-            parts.push(f); for (let k = 0; k < f.length; k++) { st.push(a); en.push(b); }
+            const g = (m[0] !== '\n' && /^\s$/u.test(m[0])) ? ' ' : f;      // NBSP & friends fold to a plain space (1:1, offsets stay valid)
+            parts.push(g); for (let k = 0; k < g.length; k++) { st.push(a); en.push(b); }
         }
         return { h: parts.join(''), st, en };
     }
@@ -10322,17 +10333,34 @@
         if (!spec.find || !text) return [];
         const isMark = (ch) => !!ch && /\p{M}/u.test(ch), isW = (ch) => !!ch && /[\p{L}\p{M}\p{N}_]/u.test(ch);
         let next;
+        // Tolerant matching: Vietnamese pasted from Zalo / Word / PDF often differs from the note only by invisible things —
+        // composed vs decomposed accents (NFC/NFD), non-breaking or double spaces, a line wrap in the middle. Those must match.
+        const WS = '(?:[^\\S\\n]|\\n(?![^\\S\\n]*\\n))+';          // any run of spaces/NBSP/tabs, or one line break (never a blank line)
+        const esc = (s) => s.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
+        const build = (s, uni) => {
+            let o = '', ws = false;
+            for (const c of Array.from(s)) {
+                if (/\s/u.test(c)) { if (!ws) o += WS; ws = true; continue; }
+                ws = false;
+                const d = uni ? c.normalize('NFD') : c;
+                o += (uni && d !== c) ? '(?:' + esc(c) + '|' + esc(d) + ')' : esc(c);
+            }
+            return o;
+        };
         if (spec.accents) {
             const fm = frFoldMap(text), needle = frFoldMap(spec.find).h;
-            if (!needle) return [];
+            if (!needle.trim()) return [];
+            let rx;
+            try { rx = new RegExp(build(needle, false), 'g'); } catch (e) { return []; }
             next = (from) => {
-                const i = fm.h.indexOf(needle, from); if (i < 0) return null;
-                const j = i + needle.length - 1;
-                return { s: fm.st ? fm.st[i] : i, e: fm.en ? fm.en[j] : j + 1, fs: i, fe: i + needle.length };
+                rx.lastIndex = from; const m = rx.exec(fm.h); if (!m) return null;
+                const i = m.index, j = i + m[0].length - 1;
+                return { s: fm.st ? fm.st[i] : i, e: fm.en ? fm.en[j] : j + 1, fs: i, fe: i + m[0].length };
             };
         } else {
+            if (!spec.find.trim()) return [];
             let re;
-            try { re = new RegExp(spec.find.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'), spec.caseI ? 'giu' : 'g'); } catch (e) { return []; }
+            try { re = new RegExp(build(spec.find.normalize('NFC'), true), spec.caseI ? 'giu' : 'gu'); } catch (e) { return []; }
             next = (from) => { re.lastIndex = from; const m = re.exec(text); return m ? { s: m.index, e: m.index + m[0].length, fs: m.index, fe: m.index + m[0].length } : null; };
         }
         const endsInMark = isMark(spec.find.slice(-1));
@@ -10473,6 +10501,15 @@
         el.fr.hidden = true; el.frScrim.hidden = true;
         const p = f.prevFocus; f.prevFocus = null; refocus(p);
     }
+    // After Replace / Undo changed the note that is open: refresh the editor fields AND the rendered Read view + outline,
+    // otherwise the old text stays on screen until the note is closed and reopened.
+    function frRepaintOpen() {
+        try { fillDoc(); } catch (e) { console.warn('Notes Vault: couldn’t refresh the open note', e); }
+        try {
+            if (S.note && (S.mode !== 'edit' || S.split)) renderInto(el.read, S.note.markdown);
+            renderOutline();
+        } catch (e) { console.warn('Notes Vault: couldn’t redraw the open note', e); }
+    }
     // Applies [{ n, ms }] to the live notes: History snapshot → write → refresh. Returns { notes, count, failed, items }.
     async function frCommit(items, mode) {
         const repl = S.fr.repl, batch = [], res = { notes: 0, count: 0, failed: 0 };
@@ -10490,11 +10527,11 @@
             catch (e) { n.markdown = text; n.updatedAt = prevAt; res.failed++; console.error('Notes Vault: replace failed for', n.id, e); continue; }
             foldCache.delete(n.id);
             await syncAttachmentRefs(n.id, after).catch(() => {});
-            if (S.note && S.note.id === n.id) refreshOpen = true;
+            if (S.note && S.note.id === n.id) { refreshOpen = true; if (S.note !== n) { S.note.markdown = n.markdown; S.note.updatedAt = n.updatedAt; } }
             batch.push({ id: n.id, before: text, afterAt: n.updatedAt, afterLen: after.length, count: it.ms.length });
             res.notes++; res.count += it.ms.length;
         }
-        if (refreshOpen) { try { fillDoc(); } catch (e) { console.warn('Notes Vault: couldn’t refresh the open note', e); } }
+        if (refreshOpen) frRepaintOpen();
         if (batch.length) S.fr.undo = { items: batch, count: res.count };
         renderAll();
         res.items = batch;
@@ -10572,10 +10609,10 @@
                 catch (e) { n.markdown = prevMd; n.updatedAt = prevAt; skipped++; continue; }
                 foldCache.delete(n.id);
                 await syncAttachmentRefs(n.id, n.markdown).catch(() => {});
-                if (S.note && S.note.id === n.id) refreshOpen = true;
+                if (S.note && S.note.id === n.id) { refreshOpen = true; if (S.note !== n) { S.note.markdown = n.markdown; S.note.updatedAt = n.updatedAt; } }
                 ok++;
             }
-            if (refreshOpen) { try { fillDoc(); } catch (e) { /* ignore */ } }
+            if (refreshOpen) frRepaintOpen();
             f.undo = null; f.cur = null; f.snapped = new Set();
             renderAll();
             toast('Restored ' + plural(ok, 'note') + (skipped ? ' · skipped ' + skipped + ' edited or removed since' : ''));
