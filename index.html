@@ -3401,6 +3401,16 @@
         }
         /* --- END GOAL MANAGEMENT --- */
 
+        /* Goal link: "Open" button + inline editor */
+        a.goal-action-btn { text-decoration: none; }
+        .goal-action-btn.link-open { color: var(--theme-accent-deep, #a85870); border-color: var(--theme-accent, #d17b96); }
+        .goal-action-btn.link-icon { padding: 7px 10px; }
+        .goal-link-editor { display: none; margin-top: 10px; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .goal-link-editor.show { display: flex; }
+        .goal-link-editor input { flex: 1; min-width: 180px; padding: 8px 10px; border-radius: 8px; font-size: 0.85rem; border: 1px solid var(--border-color); background: var(--bg-white); color: var(--text-dark); }
+        .dark-mode .goal-link-editor input { background: #3a2530; border-color: #9a7686; color: #faf3f6; }
+
+
         /* =====================================================
            GOAL CARD — small additions on top of the existing
            .goal-item design system above (renderGoalCard now
@@ -6016,24 +6026,7 @@
         .dark-mode .goal-priority-badge.priority-medium .goal-priority-dot { background: #fbbf24; }
         .dark-mode .goal-priority-badge.priority-low .goal-priority-dot { background: #34d399; }
 
-        /* Suggestion Button Hover Effects */
-        .suggestion-btn:hover {
-            background: var(--primary) !important;
-            color: white !important;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(var(--primary-rgb), 0.25);
-        }
-
-        .dark-mode .suggestion-btn {
-            background: var(--bg-white) !important;
-            color: var(--primary) !important;
-            border-color: var(--primary) !important;
-        }
-
-        .dark-mode .suggestion-btn:hover {
-            background: var(--primary) !important;
-            color: white !important;
-        }
+        /* Suggestion buttons, cards and the Suggestions modal are styled in <style id="suggestionsCSS"> (end of file). */
 
         /* Goal Card Hover Effect */
         .goal-item:hover {
@@ -6052,41 +6045,7 @@
         }
 
 
-        /* Suggestion Card Hover Effect */
-        .suggestion-card:not([style*="cursor: default"]):hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15) !important;
-            border-width: 3px !important;
-        }
-
-        .dark-mode .suggestion-card:not([style*="cursor: default"]):hover {
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
-        }
-
-        /* Close button hover */
-        #smartSuggestionsModal button:hover {
-            background: var(--bg-light) !important;
-            transform: rotate(90deg);
-        }
-
-        /* My Templates — delete button lives inside #smartSuggestionsModal, whose
-           generic button:hover rule (meant for the × close button) would otherwise
-           rotate it and swap its background. */
-        #smartSuggestionsModal .gt-delete-btn:hover {
-            transform: none;
-            background: rgba(239, 68, 68, 0.10) !important;
-            color: #ef4444 !important;
-            border-color: #ef4444 !important;
-        }
-        #smartSuggestionsModal .gt-delete-btn.armed,
-        #smartSuggestionsModal .gt-delete-btn.armed:hover {
-            transform: none;
-            background: #ef4444 !important;
-            color: #ffffff !important;
-            border-color: #ef4444 !important;
-        }
-
-        /* Smart Suggestions Modal Animation */
+        /* Shared fade-in keyframes */
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -6098,9 +6057,6 @@
             }
         }
 
-        #smartSuggestionsModal > div {
-            animation: fadeIn 0.3s ease;
-        }
 
 
 
@@ -24015,6 +23971,7 @@ body.dark-mode .dlt-fg textarea {
   <div class="dlt-timeline-wrap">
     <div class="dlt-timeline-title"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-chart-column"/></svg> Deadline Density <span class="dlt-timeline-sub">— next 8 weeks</span></div>
     <div class="dlt-timeline" id="dltTimeline"></div>
+    <div class="dlt-crunch" id="dltCrunch" style="margin-top:14px;"></div>
   </div>
   <div class="dlt-toolbar-row">
     <div class="dlt-search-wrap">
@@ -25242,6 +25199,101 @@ body.dark-mode .dlt-fg textarea {
         <div class="dlt-tl-label">${b.short}</div>
       </div>`;
     }).join('');
+    try { renderCrunchMap(); } catch (e) { console.warn('Deadlines: crunch map failed', e); }
+  }
+
+  /* ─── Day-by-day crunch map (next 30 days) ───
+     Complements the weekly "Deadline Density" bars above: one cell per day, shaded by workload where a high-priority item
+     weighs 3, medium 2, low 1 (done items are skipped; snoozed ones still count — it is about real load, not reminders).
+     Click a day to list what is due. Colours reuse the Sleep/Study heatmap palette. */
+  let crunchSel = null;
+  function renderCrunchMap() {
+    const el = document.getElementById('dltCrunch');
+    if (!el) return;
+    const E = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const dark = document.body.classList.contains('dark-mode');
+    const col = (l) => (typeof heatmapLevelColor === 'function') ? heatmapLevelColor(l, dark) : (['#f3e3ea', '#f9c9da', '#f0a0be', '#d9638d', '#b53a68'][l]);
+    const W = { high: 3, medium: 2, low: 1 };
+    const DAYS = 30, today = new Date(); today.setHours(0, 0, 0, 0);
+    const iso = (off) => { const d = new Date(today); d.setDate(d.getDate() + off); return localISODate(d); };
+    const dayKeys = Array.from({ length: DAYS }, (_, i) => iso(i));
+    const idx = {}; dayKeys.forEach((k, i) => { idx[k] = i; });
+    const per = dayKeys.map(() => ({ score: 0, items: [] }));
+    const todayISO = dayKeys[0];
+    let overdue = 0;
+    allItems().filter(d => !doneIds.includes(d.id) && d.date).forEach(d => {
+      const k = String(d.date).slice(0, 10);
+      if (k < todayISO) { overdue++; return; }
+      if (k in idx) { const c = per[idx[k]]; c.score += W[d.priority] || 2; c.items.push(d); }
+    });
+    const level = (s) => s >= 8 ? 4 : s >= 5 ? 3 : s >= 3 ? 2 : s >= 1 ? 1 : 0;
+    const total = per.reduce((s, c) => s + c.items.length, 0);
+    const free = per.filter(c => !c.items.length).length;
+    let bi = 0; per.forEach((c, i) => { if (c.score > per[bi].score) bi = i; });
+    let hs = 0, hscore = -1;
+    for (let s = 0; s + 7 <= DAYS; s++) { let sc = 0; for (let k = s; k < s + 7; k++) sc += per[k].score; if (sc > hscore) { hscore = sc; hs = s; } }
+    const wk = (i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; };
+    const dm = (d) => d.getDate() + '/' + (d.getMonth() + 1);
+    const dayName = (d) => d.toLocaleDateString('en-US', { weekday: 'short' });
+
+    let summary;
+    if (!total) summary = `Nothing due in the next ${DAYS} days.`;
+    else {
+      const bd = per[bi];
+      summary = `${total} due in ${DAYS} days · Busiest day: ${dayName(wk(bi))} ${dm(wk(bi))} (${bd.items.length}) · ${free} free day${free === 1 ? '' : 's'}`;
+      if (hscore >= 8) summary += ` · Heavy stretch: ${dm(wk(hs))}–${dm(wk(hs + 6))} (${per.slice(hs, hs + 7).reduce((s, c) => s + c.items.length, 0)} deadlines) — worth starting early`;
+    }
+
+    // calendar grid: weeks start on Monday, from the week that contains today to the week that contains day 30
+    const lead = (today.getDay() + 6) % 7;
+    const cells = [];
+    for (let i = -lead; i < DAYS; i++) cells.push(i);
+    while (cells.length % 7) cells.push(cells.length - lead);
+    const head = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(n => `<div style="font-size:0.62rem; color:var(--text-muted); text-align:center;">${n}</div>`).join('');
+    const grid = cells.map(i => {
+      if (i < 0 || i >= DAYS) return '<div style="min-height:36px;"></div>';
+      const c = per[i], d = wk(i), L = level(c.score);
+      const sel = dayKeys[i] === crunchSel;
+      const label = `${dayName(d)} ${dm(d)}: ${c.items.length ? c.items.length + ' deadline' + (c.items.length === 1 ? '' : 's') : 'nothing due'}`;
+      return `<button type="button" class="dlt-crunch-cell" data-date="${dayKeys[i]}" aria-label="${E(label)}" title="${E(label)}" style="position:relative; min-height:36px; border:0; border-radius:8px; padding:0; cursor:pointer; background:${col(L)}; color:${L >= 3 ? '#fff' : 'var(--text-dark)'}; ${i === 0 ? 'outline:2px solid var(--primary); outline-offset:1px;' : ''} ${sel ? 'box-shadow:0 0 0 2px var(--text-dark);' : ''}">
+        <span style="position:absolute; top:3px; left:5px; font-size:0.62rem; opacity:0.75;">${d.getDate()}</span>
+        <span style="position:absolute; bottom:3px; right:6px; font-size:0.78rem; font-weight:700;">${c.items.length || ''}</span>
+      </button>`;
+    }).join('');
+    const legend = [0, 1, 2, 3, 4].map(l => `<span style="width:10px; height:10px; border-radius:2px; display:inline-block; background:${col(l)};"></span>`).join('');
+
+    let detail = '';
+    if (crunchSel && crunchSel in idx) {
+      const c = per[idx[crunchSel]];
+      const items = c.items.slice().sort((a, b) => String(a.time || '99').localeCompare(String(b.time || '99')) || (W[b.priority] || 2) - (W[a.priority] || 2));
+      const dot = { high: '#d9534f', medium: '#e0a05f', low: '#4f8a6b' };
+      detail = `<div style="margin-top:8px; padding:8px 10px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-light);">
+        <div style="font-size:0.78rem; font-weight:600; margin-bottom:4px;">${E(fmtDate(crunchSel))} · ${items.length ? items.length + ' due' : 'nothing due'}</div>
+        ${items.map(it => `<div class="dlt-crunch-item" data-id="${E(it.id)}" style="display:flex; align-items:center; gap:8px; padding:3px 0; font-size:0.82rem; cursor:pointer;">
+          <span style="width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:${dot[it.priority] || dot.medium};" title="${E(it.priority || 'medium')} priority"></span>
+          <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${E(it.name)}</span>
+          <span style="color:var(--text-muted); font-size:0.72rem;">${E(it.time || '')}</span></div>`).join('')}
+      </div>`;
+    }
+
+    el.innerHTML = `
+      <div class="dlt-timeline-title" style="margin-bottom:6px;"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-calendar"/></svg> Day by day <span class="dlt-timeline-sub">— next ${DAYS} days${overdue ? ` · <b>${overdue} overdue</b> not shown` : ''}</span></div>
+      <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px;">${head}${grid}</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <span style="font-size:0.74rem; color:var(--text-muted);">${E(summary)}</span>
+        <span style="display:flex; align-items:center; gap:4px; font-size:0.7rem; color:var(--text-muted);">Light <span style="display:flex; gap:3px;">${legend}</span> Heavy</span>
+      </div>${detail}`;
+
+    if (!el.dataset.bound) {
+      el.addEventListener('click', (e) => {
+        const it = e.target.closest('.dlt-crunch-item');
+        if (it) { try { navigateToItem(it.dataset.id); } catch (err) { /* item may be filtered out of the list */ } return; }
+        const cell = e.target.closest('.dlt-crunch-cell'); if (!cell) return;
+        crunchSel = (crunchSel === cell.dataset.date) ? null : cell.dataset.date;   // click again to close
+        renderCrunchMap();
+      });
+      el.dataset.bound = '1';
+    }
   }
 
   function tickCountdowns() {
@@ -25929,6 +25981,7 @@ body.dark-mode .dlt-fg textarea {
     filter(c){ curFilter = c; render(); },
     search(v){ curSearch = v || ''; render(); },
     navigate: navigateToItem,
+    renderCrunch() { renderCrunchMap(); },
     // Notes Vault → Daily Planner link: called whenever a note's Deadline field changes.
     // Upserts (by sourceNoteId, never duplicates) a lightweight reminder item so a deadline
     // set on a note actually shows up in the planner; clearing the date removes it again.
@@ -30981,6 +31034,12 @@ window.DBP={
                         </div>
                         <p class="yprog-chart-hint" id="yprogChartHint" hidden>No hours in the last 7 days yet. The bars fill in as you log sessions.</p>
 
+                        <div class="yprog-section-label">Weekly goal · last 12 weeks</div>
+                        <div class="chart-container" style="height: 190px; margin: 4px 0 6px;">
+                            <canvas id="weeklyGoalChart" role="img" aria-label="Weekly study hours versus goal, last 12 weeks"></canvas>
+                        </div>
+                        <p id="weeklyGoalHistorySummary" style="margin:0 0 16px; font-size:0.74rem; color:var(--text-muted);"></p>
+
                         <div class="yprog-section-label">Study Heatmap</div>
                         <div style="margin:0 0 16px; padding:14px 14px 10px; overflow-x:auto; background:var(--bg-light); border-radius:var(--radius-md); border:1px solid var(--border-color);" id="studyHeatmapWrap">
                             <div id="studyHeatmapGrid" role="img" aria-label="Study heatmap, last 12 months" style="display:inline-block; min-width:100%;"></div>
@@ -31081,8 +31140,8 @@ window.DBP={
                                 <i class="fas fa-plus"></i> Add
                             </button>
 
-                            <button class="goal-context-btn" onclick="showSmartSuggestions()" title="My templates &amp; suggestions" aria-label="My templates and suggestions">
-                                <i class="fa-regular fa-star"></i>
+                            <button class="goal-context-btn" onclick="showSuggestions()" title="Suggestions" aria-label="Suggestions">
+                                <i class="fa-regular fa-lightbulb"></i>
                             </button>
 
                             <button class="goal-context-btn" onclick="copyGoalsContextForAI()" title="Copy Goals Context for AI" aria-label="Copy Goals Context for AI">
@@ -31111,10 +31170,11 @@ window.DBP={
                                 </div>
                             </div>
 
-                            <div class="goal-ring-legend" id="goalRingLegend"></div>
-
-                            <div class="goal-progress-text" id="goalProgressSummary">
-                                0/0 goals completed
+                            <div class="goal-summary-side">
+                                <div class="goal-progress-text" id="goalProgressSummary">
+                                    0/0 goals completed
+                                </div>
+                                <div class="goal-ring-legend" id="goalRingLegend"></div>
                             </div>
                         </div>
 
@@ -37016,7 +37076,7 @@ const EnglishDaily = (function () {
         gamification.level = levelFromPoints(gamification.points);
         persistApp();
         try { if (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.recordExternalHours) StrategicRoadmap.recordExternalHours(CAREER, add); } catch (e) {}
-        try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(add); } catch (e) {}
+        try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(add, CAREER, skillName); } catch (e) {}
         refreshApp(true);
         try { if (typeof checkAchievements === 'function') checkAchievements(CAREER, skillName, studyHours[CAREER][skillName]); } catch (e) {}
         return { hrs: add, xp: xp };
@@ -37032,7 +37092,7 @@ const EnglishDaily = (function () {
         gamification.points = Math.max(0, gamification.points - (xp || 0));
         gamification.level = levelFromPoints(gamification.points);
         persistApp();
-        try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(-sub); } catch (e) {}
+        try { if (typeof updateDailyStudyData === 'function') updateDailyStudyData(-sub, CAREER, skillName); } catch (e) {}
         refreshApp(false);
     }
 
@@ -37635,7 +37695,7 @@ const EnglishDaily = (function () {
                             <button type="button" class="rdm-view-btn" id="rdmViewBtnGraph" onclick="StrategicRoadmap.setView('graph')"><svg class="icon-svg" aria-hidden="true"><use href="#icon-git-branch"></use></svg> Graph</button>
                             <button type="button" class="rdm-view-btn" id="rdmViewBtnOverview" onclick="StrategicRoadmap.setView('overview')"><svg class="icon-svg" aria-hidden="true"><use href="#icon-layers"></use></svg> Overview</button>
                         </div>
-                        <button type="button" class="rdm-compare-btn" id="rdmCompareBtn" onclick="StrategicRoadmap.toggleCompare()">🆚 Compare</button>
+                        <button type="button" class="rdm-compare-btn" id="rdmCompareBtn" onclick="StrategicRoadmap.toggleCompare()"><svg class="icon-svg" aria-hidden="true"><use href="#icon-scale"></use></svg> Compare</button>
                     </div>
                     <div class="rdm-compare-select-row" id="rdmCompareRow">
                         <select id="rdmCompareTrackSelect" class="rdm-track-select" onchange="StrategicRoadmap.setCompareTrack(this.value)">
@@ -40760,6 +40820,16 @@ const EnglishDaily = (function () {
 
                     <div style="margin: 10px 0 20px; font-size: 0.78rem; color: var(--theme-text-muted);">
                         <i class="fa-solid fa-clock"></i> Deadline dates are evaluated using Vietnam time (GMT+7).
+                    </div>
+
+                    <!-- Link — course / video / document to open straight from the goal card -->
+                    <div style="margin-bottom: 20px;">
+                        <label for="goalLink" style="display: block; margin-bottom: 8px; font-weight: 600;">
+                            <i class="fa-solid fa-link" style="color: var(--theme-accent-deep);"></i> Link <span style="font-weight:400; color: var(--theme-text-muted); font-size: 0.78rem;">(optional — course, video, doc…)</span>
+                        </label>
+                        <input type="text" id="goalLink" maxlength="500" inputmode="url" autocomplete="off"
+                            placeholder="Paste a URL, e.g. https://youtube.com/watch?v=…"
+                            style="width:100%; padding:10px; border-radius:8px; font-size: 0.9rem;">
                     </div>
 
                     <!-- "Why" note — optional one-liner to remind yourself why this
@@ -46190,7 +46260,7 @@ const EnglishDaily = (function () {
             updateChart();
             updateDailyStreak();
             updateGoals(); 
-            updateDailyStudyData(hours);
+            updateDailyStudyData(hours, career, skillName);
             checkAchievements(career, skillName, studyHours[career][skillName]);
             getRandomQuote();
             triggerBackup();
@@ -47000,6 +47070,8 @@ const EnglishDaily = (function () {
                 sleepTimelineChart.update();
             }
             if (typeof renderSleepHeatmap === 'function') renderSleepHeatmap();
+            if (window.DLT && typeof DLT.renderCrunch === 'function') DLT.renderCrunch();
+            if (typeof renderWeeklyGoalHistory === 'function') renderWeeklyGoalHistory();
             if (typeof renderStudyHeatmap === 'function') renderStudyHeatmap();
             if (solTrendChart) {
                 const textColor = isDark ? '#b8919f' : '#b8919f';
@@ -53064,6 +53136,9 @@ const EnglishDaily = (function () {
 
         // --- DAILY STUDY TRACKING ---
         let dailyStudyData = JSON.parse(localStorage.getItem('dailyStudyData')) || {};
+        // Chi tiết theo ngày: { 'YYYY-MM-DD': { 'career|tên skill/khóa': giờ } } — chỉ ghi từ khi có tính năng này trở đi
+        var dailyStudyBreakdown = {};
+        try { dailyStudyBreakdown = JSON.parse(localStorage.getItem('dailyStudyBreakdown') || '{}') || {}; } catch (e) { dailyStudyBreakdown = {}; }
         let dailyStudyChart = null;
 
         // Hàm cập nhật dữ liệu học tập hàng ngày
@@ -53086,13 +53161,25 @@ const EnglishDaily = (function () {
             }
         }
 
-        function updateDailyStudyData(hours) {
+        function updateDailyStudyData(hours, career, name) {
             const today = new Date().toDateString();
             if (!dailyStudyData[today]) {
                 dailyStudyData[today] = 0;
             }
             dailyStudyData[today] += hours;
             safeSetLocalStorage('dailyStudyData', JSON.stringify(dailyStudyData));
+            // Ghi thêm "học môn nào bao nhiêu giờ" cho ngày hôm nay (hiện trong bảng chi tiết của Study Heatmap)
+            if (name) {
+                try {
+                    const dk = toLocalDateStr(new Date());
+                    const day = dailyStudyBreakdown[dk] || (dailyStudyBreakdown[dk] = {});
+                    const key = (career || '') + '|' + name;
+                    const v = Math.round(((day[key] || 0) + hours) * 10000) / 10000;
+                    if (v > 0.00005) day[key] = v; else delete day[key];
+                    if (!Object.keys(day).length) delete dailyStudyBreakdown[dk];
+                    safeSetLocalStorage('dailyStudyBreakdown', JSON.stringify(dailyStudyBreakdown));
+                } catch (e) { /* breakdown is a bonus — never block logging hours */ }
+            }
         }
 
         // dailyStudyData is keyed by Date.toDateString() (e.g. "Sat Aug 15 2026"), but
@@ -53271,6 +53358,7 @@ const EnglishDaily = (function () {
             updateWeeklyTrendSummary();
             updateWeeklyGoalUI();
             renderDailyStudyChart();
+            if (typeof renderWeeklyGoalHistory === 'function') renderWeeklyGoalHistory();
             if (typeof renderStudyHeatmap === 'function') renderStudyHeatmap();
         }
 
@@ -53332,6 +53420,88 @@ const EnglishDaily = (function () {
                 ctx.restore();
             }
         };
+
+        // ===== Weekly goal · 12 tuần gần nhất =====
+        // Mỗi cột = tổng giờ học của một cửa sổ 7 ngày liên tiếp, tính lùi từ hôm nay — đúng cách thanh "Weekly goal" ở trên đang tính
+        // (cột cuối = 7 ngày gần nhất, nên khớp số "x / 10h" của thanh đó). Đậm = đạt mục tiêu, vừa = 60-99%, nhạt = dưới 60%.
+        var weeklyGoalHistoryChart = null;
+        function getWeeklyGoalHistory(n) {
+            const out = [], now = new Date();
+            for (let w = n - 1; w >= 0; w--) {                    // w = 0 là 7 ngày gần nhất
+                let sum = 0;
+                for (let i = w * 7; i < w * 7 + 7; i++) {
+                    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+                    sum += dailyStudyData[d.toDateString()] || 0;
+                }
+                const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - w * 7);
+                const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - w * 7 - 6);
+                const f = (x) => x.getDate() + '/' + (x.getMonth() + 1);
+                out.push({ hours: sum, label: w === 0 ? 'Now' : f(end), range: f(start) + ' – ' + f(end) });
+            }
+            return out;
+        }
+        function renderWeeklyGoalHistory() {
+            const canvas = document.getElementById('weeklyGoalChart');
+            if (!canvas || typeof Chart === 'undefined') return;
+            const weeks = getWeeklyGoalHistory(12);
+            const goal = getWeeklyGoalHours();
+            const dark = document.body.classList.contains('dark-mode');
+            const data = weeks.map(w => Math.round(w.hours * 100) / 100);
+            const colors = data.map(v => v >= goal ? '#db2777' : v >= goal * 0.6 ? '#f472b6' : '#f9a8d4');
+            const tick = dark ? '#e6a8c9' : '#b1568a';
+            const yMax = Math.max(goal, ...data) * 1.15;
+
+            const hits = data.filter(v => v >= goal).length, best = Math.max(...data);
+            let run = 0, k = data.length - 1;
+            if (!(data[k] >= goal)) k--;                          // 7 ngày gần nhất chưa đạt thì chưa tính là đứt chuỗi (giống streak ngày)
+            while (k >= 0 && data[k] >= goal) { run++; k--; }
+            const summary = data.every(v => v === 0)
+                ? 'No hours logged in the last 12 weeks yet.'
+                : `Goal (${goal}h) reached in ${hits} of the last 12 weeks · Best week: ${best.toFixed(1)}h · Weeks in a row: ${run}`;
+            const sumEl = document.getElementById('weeklyGoalHistorySummary');
+            if (sumEl) sumEl.textContent = summary;
+            canvas.setAttribute('aria-label', 'Weekly study hours versus goal, last 12 weeks. ' + summary);
+
+            const goalLine = { type: 'line', label: 'Goal', data: data.map(() => goal), borderColor: dark ? '#f5c2dd' : '#9d2867', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, fill: false, order: 0 };
+            if (weeklyGoalHistoryChart) {
+                const c = weeklyGoalHistoryChart;
+                c.data.labels = weeks.map(w => w.label);
+                c.data.datasets[0].data = data; c.data.datasets[0].backgroundColor = colors;
+                c.data.datasets[1].data = goalLine.data; c.data.datasets[1].borderColor = goalLine.borderColor;
+                c.$weeks = weeks; c.$goal = goal;
+                c.options.scales.y.suggestedMax = yMax;
+                c.options.scales.y.ticks.color = tick; c.options.scales.x.ticks.color = tick;
+                c.options.scales.y.grid.color = dark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)';
+                c.update();
+                return;
+            }
+            weeklyGoalHistoryChart = new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: { labels: weeks.map(w => w.label), datasets: [
+                    { label: 'Hours', data, backgroundColor: colors, borderWidth: 0, borderRadius: 5, borderSkipped: false, barPercentage: 0.75, categoryPercentage: 0.8, order: 1 },
+                    goalLine
+                ] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            filter: (item) => item.datasetIndex === 0,
+                            callbacks: {
+                                title: (items) => { const c = items[0].chart; return (c.$weeks && c.$weeks[items[0].dataIndex].range) || ''; },
+                                label: (ctx) => { const g = ctx.chart.$goal || 1; return `${ctx.parsed.y.toFixed(1)}h · ${Math.round(ctx.parsed.y / g * 100)}% of goal`; }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, suggestedMax: yMax, ticks: { color: tick, font: { size: 11 }, precision: 0 }, grid: { color: dark ? 'rgba(236,72,153,0.12)' : 'rgba(219,113,175,0.15)' } },
+                        x: { ticks: { color: tick, maxRotation: 0, minRotation: 0, autoSkip: true, font: { size: 10 } }, grid: { display: false } }
+                    },
+                    animation: (typeof yprogReducedMotion === 'function' && yprogReducedMotion()) ? false : { duration: 700, easing: 'easeOutQuart' }
+                }
+            });
+            weeklyGoalHistoryChart.$weeks = weeks; weeklyGoalHistoryChart.$goal = goal;
+        }
 
         // ===== Study Heatmap — "GitHub contribution" style, 12 tháng gần nhất (cùng kiểu & bảng màu với Sleep Heatmap) =====
         // Màu theo % mục tiêu học mỗi ngày (= mục tiêu tuần / 7): 0 = chưa học (ô xám hồng nhạt, không trắng trơn),
@@ -53477,6 +53647,29 @@ const EnglishDaily = (function () {
             const dayLogs = logs.filter(l => sameDay(l.id)).sort((a, b) => a.id - b.id);
             const quality = (l) => (!l.energy && !l.focus && !l.stress) ? null : Math.round((((l.energy || 3) + (l.focus || 3) - (l.stress || 3) + 3) / 9) * 100);
             let html = '';
+            // Per skill / course (recorded from the day this feature was added)
+            const bkAll = (typeof dailyStudyBreakdown !== 'undefined' && dailyStudyBreakdown) || {};
+            const bk = bkAll[dateStr];
+            if (bk && Object.keys(bk).length) {
+                const rows = Object.entries(bk).map(([k, v]) => { const i = k.indexOf('|'); return { career: k.slice(0, i), name: k.slice(i + 1), h: v }; }).sort((a, b) => b.h - a.h);
+                const sum = rows.reduce((s, r) => s + r.h, 0), top = rows[0].h || 1;
+                html += '<div style="font-size:0.74rem; font-weight:600; color:var(--text-muted);">By skill / course</div>';
+                rows.forEach(r => {
+                    html += `<div>
+                        <div style="display:flex; align-items:center; gap:8px; font-size:0.82rem;">
+                            ${r.career ? `<span class="sn-badge snb-career">${E(r.career.toUpperCase())}</span>` : ''}
+                            <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${E(r.name)}</span>
+                            <span style="color:var(--text-muted);">${fmtStudyDuration(r.h)}</span>
+                        </div>
+                        <div style="height:4px; border-radius:99px; background:var(--border-color); margin:3px 0 2px;"><div style="width:${Math.max(4, Math.round(r.h / top * 100))}%; height:100%; border-radius:99px; background:var(--primary);"></div></div>
+                    </div>`;
+                });
+                if (hours - sum > 0.02) html += `<div style="font-size:0.74rem; color:var(--text-muted);">Not attributed to a skill: ${fmtStudyDuration(hours - sum)}</div>`;
+            } else if (hours > 0) {
+                const first = Object.keys(bkAll).sort()[0];
+                if (!first) html += '<div style="font-size:0.74rem; color:var(--text-muted);">Per-skill breakdown will be recorded from your next logged hours.</div>';
+                else if (dateStr < first) html += `<div style="font-size:0.74rem; color:var(--text-muted);">Per-skill breakdown is only recorded from ${E(first.split('-').reverse().join('/'))} onwards.</div>`;
+            }
             if (dayLogs.length) {
                 html += `<div style="font-size:0.74rem; font-weight:600; color:var(--text-muted);">Session notes · ${dayLogs.length}</div>`;
                 dayLogs.forEach(l => {
@@ -54541,7 +54734,7 @@ const EnglishDaily = (function () {
                 updateDailyStreak();
                 showNotification(`Added ${hours} hours to "${course.title}"! Earned ${pointsEarned} XP`, 'success');
                 getRandomQuote();
-                updateDailyStudyData(hours);
+                updateDailyStudyData(hours, course.career, '📚 ' + course.title);
             }
         }
 
@@ -54642,13 +54835,12 @@ const EnglishDaily = (function () {
         function renderGoalStreakBadge(goal) {
             const streak = goal.streak;
             if (!streak || (!streak.count && !streak.best)) return '';
+            // Only a real streak is worth a badge; "1-day streak" on a brand-new goal is noise
+            if (streak.count > 0 && streak.count < 3) return '';
             if (streak.count > 0) {
                 return `<span class="goal-streak-badge"><i class="fa-solid fa-fire"></i> ${streak.count}-day streak</span>`;
             }
             // No active streak right now, but there's a personal best worth showing
-            if (streak.best > 1) {
-                return `<span class="goal-streak-badge cold"><i class="fa-solid fa-fire"></i> Best: ${streak.best} days</span>`;
-            }
             return '';
         }
 
@@ -54809,6 +55001,12 @@ const EnglishDaily = (function () {
                     document.getElementById('goalTarget').focus();
                     return false;
                 }
+                const linkRawV = document.getElementById('goalLink').value.trim();
+                if (linkRawV && !goalNormalizeLink(linkRawV)) {
+                    showGoalFormError('That link does not look valid. Use a web address like https://example.com');
+                    document.getElementById('goalLink').focus();
+                    return false;
+                }
                 const deadline = document.getElementById('goalDeadline').value || undefined;
                 const editId = document.getElementById('editGoalId').value;
                 if (deadline && getVietnamDeadlineEnd(deadline) < getVietnamNow() && deadline !== (goals.find(g => g.id === editId)?.deadline)) {
@@ -54861,6 +55059,7 @@ const EnglishDaily = (function () {
                 <div class="goal-review-row"><span class="goal-review-label">Target</span><span class="goal-review-value">${escapeHtml(String(targetVal))} ${escapeHtml(unit)}</span></div>
                 <div class="goal-review-row"><span class="goal-review-label">Deadline</span><span class="goal-review-value">${deadline ? formatDate(deadline) : 'No deadline'}</span></div>
                 <div class="goal-review-row"><span class="goal-review-label">Priority</span><span class="goal-review-value">${priorityLabels[priority]}</span></div>
+                ${goalNormalizeLink(document.getElementById('goalLink').value) ? `<div class="goal-review-row"><span class="goal-review-label">Link</span><span class="goal-review-value"><i class="fa-solid fa-link"></i> ${escapeHtml(goalNormalizeLink(document.getElementById('goalLink').value).slice(0, 60))}</span></div>` : ''}
                 ${chainFromGoal ? `<div class="goal-review-row"><span class="goal-review-label">Continues From</span><span class="goal-review-value"><i class="fa-solid fa-link"></i> ${escapeHtml(chainFromGoal.title)}</span></div>` : ''}
                 ${why ? `<div class="goal-review-why">💭 ${escapeHtml(why)}</div>` : ''}
             `;
@@ -54937,6 +55136,7 @@ const EnglishDaily = (function () {
             document.getElementById('goalTarget').value = goal.target;
             selectGoalPriority(goal.priority || 'medium');
             document.getElementById('goalWhy').value = goal.why || '';
+            document.getElementById('goalLink').value = goal.link || '';
             const deadlineInput = document.getElementById('goalDeadline');
             if (deadlineInput) {
                 // Don't block re-saving a goal whose deadline is already in the past
@@ -55263,22 +55463,17 @@ const EnglishDaily = (function () {
                                     </div>
                                 </div>
                                 
-                                <!-- Smart Suggestions -->
-                                <div style="background: rgba(59, 130, 246, 0.08); padding: 12px; border-radius: 8px; margin-top: 12px;">
-                                    <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dark); font-size: 0.9rem;">
-                                        💡 Quick Presets:
-                                    </div>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                <!-- Quick presets -->
+                                <div class="sg-presets">
+                                    <div class="sg-presets-title">Quick presets</div>
+                                    <div class="sg-presets-row">
                                         ${getStudyHoursSuggestions().map(suggestion => `
-                                            <button type="button" class="suggestion-btn" onclick="applyStudyHoursSuggestion(${suggestion.hours}, '${suggestion.label}')"
-                                                style="padding: 6px 12px; background: white; border: 1px solid #3b82f6; border-radius: 20px; cursor: pointer; font-size: 0.85rem; color: #3b82f6; transition: all 0.2s;">
+                                            <button type="button" class="suggestion-btn" onclick="applyStudyHoursSuggestion(${suggestion.hours}, '${suggestion.label}')">
                                                 ${suggestion.label} (${suggestion.hours}h)
                                             </button>
                                         `).join('')}
                                     </div>
-                                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">
-                                        💡 Tip: 300h = Advanced, 1000h = Technical Mastery, 5000h+ = Expertise
-                                    </div>
+                                    <div class="sg-presets-tip">Tip: 300h = Advanced, 1000h = Technical Mastery, 5000h+ = Expertise</div>
                                 </div>
                             </div>
                         </div>
@@ -55919,9 +56114,8 @@ const EnglishDaily = (function () {
                         <p style="margin: 0 0 20px 0; font-size: 0.95rem;">
                             Set your first goal to start tracking progress in ${careerData ? careerData.title : currentCareer}.
                         </p>
-                        <button onclick="showSmartSuggestions()" 
-                            style="padding: 10px 20px; background: linear-gradient(135deg, #db2777, #f6ad55); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                            <i class="fa-solid fa-lightbulb"></i> Show Smart Suggestions
+                        <button type="button" class="sg-btn" onclick="showSuggestions()">
+                            <i class="fa-regular fa-lightbulb" aria-hidden="true"></i> Suggestions
                         </button>
                     </div>
                 `;
@@ -55929,7 +56123,7 @@ const EnglishDaily = (function () {
                 return;
             }
             
-            let html = focusStripHtml;
+            let html = '';
             
             // ✅ ACTIVE GOALS SECTION (Always Expanded)
             if (activeGoals.length > 0) {
@@ -55957,6 +56151,9 @@ const EnglishDaily = (function () {
                 `;
             }
             
+            // Today's Focus now sits below the main list (the list is what you opened this for)
+            html += focusStripHtml;
+
             // ✅ COMPLETED GOALS SECTION (Collapsible — collapsed by default)
             if (completedGoals.length > 0) {
                 const isExpanded = goalView.status === 'completed' || localStorage.getItem('completedGoalsExpanded') === 'true';
@@ -56453,10 +56650,8 @@ const EnglishDaily = (function () {
                     <!-- Header -->
                     <div class="goal-header">
                         <div style="flex: 1; min-width: 200px;">
-                            <div class="goal-title"><span class="goal-title-icon">${typeIcons[goal.type]}</span> ${escapeHtml(goal.title)}</div>
-                            <div class="goal-type" style="margin-top: 6px;" title="${escapeHtml(typeLabelPlain)}">
-                                ${getGoalTypeLabel(goal)}${goal.skillName ? ` • ${escapeHtml(goal.skillName)}` : ''}
-                            </div>
+                            <div class="goal-title" title="${escapeHtml(typeLabelPlain)}"><span class="goal-title-icon">${typeIcons[goal.type]}</span> ${escapeHtml(goal.title)}</div>
+                            ${goal.skillName ? `<div class="goal-type" style="margin-top: 6px;" title="${escapeHtml(typeLabelPlain)}">${escapeHtml(goal.skillName)}</div>` : ''}
                             <div class="goal-priority-badge priority-${priority}" title="Priority: ${priorityLabels[priority]}">
                                 <span class="goal-priority-dot"></span> ${priorityLabels[priority]}
                             </div>
@@ -56472,7 +56667,7 @@ const EnglishDaily = (function () {
                                 </span>
                             ` : ''}
                         </div>
-                        <span class="goal-status-badge ${status}">${config.badge}</span>
+                        ${status === 'active' ? '' : `<span class="goal-status-badge ${status}">${config.badge}</span>`}
                     </div>
                     
                     <!-- Progress Bar -->
@@ -56483,7 +56678,7 @@ const EnglishDaily = (function () {
                     <div class="goal-progress-container" role="progressbar" aria-label="${escapeHtml(goal.title)} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.round(progressPercent))}">
                         <div class="goal-progress-fill ${status === 'completed' ? 'completed' : ''}" style="width: ${Math.min(100, progressPercent)}%;"></div>
                     </div>
-                    ${renderGoalMilestoneTrack(goal, progressPercent)}
+                    ${renderGoalQuickAdd(goal)}
 
                     <!-- Chain stage pace — only for goals with a valid "Continues
 
@@ -56532,8 +56727,72 @@ const EnglishDaily = (function () {
                     <div class="goal-actions">
                         ${renderGoalActionButtons(goal, status)}
                     </div>
+                    ${renderGoalLinkEditor(goal)}
                 </div>
             `;
+        }
+
+        /* ── Goal link: open a course / video straight from the card ── */
+        // Accepts "example.com" or "https://example.com"; only http(s) is
+        // allowed so a pasted "javascript:" string can never be opened.
+        function goalNormalizeLink(raw) {
+            raw = String(raw || '').trim();
+            if (!raw) return '';
+            if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:\/\//i.test(raw)) return '';
+            const url = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+            try {
+                const u = new URL(url);
+                if ((u.protocol !== 'http:' && u.protocol !== 'https:') || !u.hostname.includes('.')) return '';
+                return u.href;
+            } catch (e) { return ''; }
+        }
+
+        function renderGoalLinkEditor(goal) {
+            const v = goal.link ? goal.link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') : '';
+            return `
+                <div class="goal-link-editor" id="goal-link-editor-${goal.id}" onclick="event.stopPropagation()">
+                    <input type="text" id="goal-link-input-${goal.id}" value="${v}" inputmode="url" autocomplete="off"
+                        placeholder="Paste course / video link…"
+                        onkeydown="if(event.key==='Enter'){event.preventDefault();saveGoalLinkInline('${goal.id}');}else if(event.key==='Escape'){toggleGoalLinkEditor('${goal.id}');}">
+                    <button type="button" class="goal-action-btn primary" onclick="saveGoalLinkInline('${goal.id}')"><i class="fa-solid fa-check"></i> Save</button>
+                    ${goal.link ? `<button type="button" class="goal-action-btn delete" onclick="removeGoalLinkInline('${goal.id}')"><i class="fa-solid fa-link-slash"></i> Remove</button>` : ''}
+                </div>`;
+        }
+
+        function toggleGoalLinkEditor(goalId) {
+            const box = document.getElementById('goal-link-editor-' + goalId);
+            if (!box) return;
+            box.classList.toggle('show');
+            if (box.classList.contains('show')) {
+                const inp = document.getElementById('goal-link-input-' + goalId);
+                if (inp) { inp.focus(); inp.select(); }
+            }
+        }
+
+        function saveGoalLinkInline(goalId) {
+            const goal = goals.find(g => g.id === goalId);
+            const inp = document.getElementById('goal-link-input-' + goalId);
+            if (!goal || !inp) return;
+            const raw = inp.value.trim();
+            const link = goalNormalizeLink(raw);
+            if (raw && !link) {
+                showNotification('That link does not look valid. Use a web address like https://example.com', 'error');
+                inp.focus();
+                return;
+            }
+            goal.link = link || undefined;
+            saveGoals();
+            renderGoals();
+            showNotification(link ? 'Link saved' : 'Link removed', 'success');
+        }
+
+        function removeGoalLinkInline(goalId) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal) return;
+            goal.link = undefined;
+            saveGoals();
+            renderGoals();
+            showNotification('Link removed', 'success');
         }
 
         // Helper: Get Goal Type Label — plain text only. The card's own
@@ -56548,79 +56807,180 @@ const EnglishDaily = (function () {
             return labels[goal.type] || goal.type;
         }
 
+        function goalAttr(v) {
+            return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        }
+
+        // Primary row = what you do every day: Open · (Update) · Edit.
+        // Everything occasional (link, pin, pause, template, delete) lives in the ⋯ menu.
         function renderGoalActionButtons(goal, status) {
             let buttons = '';
+            const gid = goal.id;
 
-            // ⏩ Push deadline — only for overdue goals. Lets you move the
-            // due date forward (or lock in a real one) in a single tap
-            // instead of always having to open the full Edit modal.
+            // 🔗 Open link (course / video / doc)
+            if (goal.link) {
+                buttons += `
+                    <a href="${goalAttr(goal.link)}" target="_blank" rel="noopener noreferrer"
+                       onclick="event.stopPropagation()" class="goal-action-btn link-open" title="${goalAttr(goal.link)}">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                    </a>
+                `;
+            }
+
+            // ⏩ Push deadline — only for overdue goals
             if (status === 'overdue') {
                 buttons += `
                     <div class="goal-push-wrap">
-                        <button type="button" onclick="event.stopPropagation(); toggleGoalPushMenu('${goal.id}')" class="goal-action-btn push" title="Push this goal's deadline forward">
+                        <button type="button" onclick="event.stopPropagation(); toggleGoalPushMenu('${gid}')" class="goal-action-btn push" title="Push this goal's deadline forward">
                             <i class="fa-solid fa-forward"></i> Push deadline
                         </button>
-                        <div class="goal-push-menu" id="goal-push-menu-${goal.id}" onclick="event.stopPropagation()">
-                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 1)"><i class="fa-solid fa-forward"></i> +1 day</button>
-                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 3)"><i class="fa-solid fa-forward"></i> +3 days</button>
-                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 7)"><i class="fa-solid fa-forward"></i> +1 week</button>
-                            <button type="button" onclick="pushGoalDeadline('${goal.id}', 30)"><i class="fa-solid fa-forward"></i> +1 month</button>
+                        <div class="goal-push-menu" id="goal-push-menu-${gid}" onclick="event.stopPropagation()">
+                            <button type="button" onclick="pushGoalDeadline('${gid}', 1)"><i class="fa-solid fa-forward"></i> +1 day</button>
+                            <button type="button" onclick="pushGoalDeadline('${gid}', 3)"><i class="fa-solid fa-forward"></i> +3 days</button>
+                            <button type="button" onclick="pushGoalDeadline('${gid}', 7)"><i class="fa-solid fa-forward"></i> +1 week</button>
+                            <button type="button" onclick="pushGoalDeadline('${gid}', 30)"><i class="fa-solid fa-forward"></i> +1 month</button>
                             <div class="goal-push-custom">
                                 <label>Custom date</label>
-                                <input type="date" min="${getVietnamDateStr()}" onchange="pushGoalDeadlineTo('${goal.id}', this.value)" />
+                                <input type="date" min="${getVietnamDateStr()}" onchange="pushGoalDeadlineTo('${gid}', this.value)" />
                             </div>
                         </div>
                     </div>
                 `;
             }
 
-            // ✅ Update Progress (ONLY for custom goals, and only while
-            // progress isn't being auto-derived from Steps — otherwise a
-            // manual edit here would just get overwritten on next render)
+            // ✅ Update (custom goals whose % isn't derived from Steps)
             if (goal.type === 'custom' && !goal.trackFromSteps) {
                 buttons += `
-                    <button onclick="openUpdateCustomGoalModal('${goal.id}')" class="goal-action-btn primary">
-                        <i class="fa-solid fa-pen"></i> Update Progress
+                    <button onclick="openUpdateCustomGoalModal('${gid}')" class="goal-action-btn primary" title="Set progress to an exact value">
+                        <i class="fa-solid fa-pen"></i> Update
                     </button>
                 `;
             }
 
-            // ✅ Resume Auto-sync — only shows once a study_hours/skill_mastery
-            // goal has been manually overridden, which otherwise silently stops
-            // it from ever picking up new study hours again.
+            // 🔄 Resume Auto-sync — after a manual override of an auto-synced goal
             if ((goal.type === 'study_hours' || goal.type === 'skill_mastery') && goal.manuallyUpdated) {
                 buttons += `
-                    <button onclick="resetManualUpdateFlag('${goal.id}')" class="goal-action-btn primary" title="This goal was manually overridden, so it stopped auto-updating from your study hours. Click to resume auto-sync.">
+                    <button onclick="resetManualUpdateFlag('${gid}')" class="goal-action-btn primary" title="This goal was manually overridden, so it stopped auto-updating from your study hours. Click to resume auto-sync.">
                         <i class="fa-solid fa-rotate"></i> Resume Auto-sync
                     </button>
                 `;
             }
-            
-            // ✅ Edit Goal
+
             buttons += `
-                <button onclick="openEditGoalModal('${goal.id}')" class="goal-action-btn edit">
+                <button onclick="openEditGoalModal('${gid}')" class="goal-action-btn edit">
                     <i class="fa-solid fa-pen-to-square"></i> Edit
                 </button>
             `;
-            
-            // ⭐ Save as template — keeps this goal's setup (target, skill scope,
-            // deadline length, checklist) so it can be reused later, in any career.
+
+            // ⋯ More
             const savedAsTemplate = isGoalSavedAsTemplate(goal);
+            const canPause = status !== 'completed';
             buttons += `
-                <button onclick="saveGoalAsTemplate('${goal.id}')" class="goal-action-btn edit"
-                    title="${savedAsTemplate ? 'Already saved as a template. Click to update it with the current settings of this goal.' : 'Save target, skill scope, deadline length and checklist as a reusable template.'}">
-                    <i class="${savedAsTemplate ? 'fa-solid' : 'fa-regular'} fa-star"></i> ${savedAsTemplate ? 'Template saved' : 'Save as template'}
-                </button>
+                <div class="goal-more-wrap">
+                    <button type="button" class="goal-action-btn link-icon" aria-haspopup="menu" aria-expanded="false" aria-label="More actions" title="More"
+                        onclick="event.stopPropagation(); toggleGoalMoreMenu('${gid}', this)">
+                        <i class="fa-solid fa-ellipsis"></i>
+                    </button>
+                    <div class="goal-more-menu" id="goal-more-menu-${gid}" role="menu" onclick="event.stopPropagation()">
+                        <button type="button" role="menuitem" onclick="closeGoalMoreMenus(); toggleGoalLinkEditor('${gid}')">
+                            <i class="fa-solid fa-link"></i> ${goal.link ? 'Edit link' : 'Add link'}
+                        </button>
+                        <button type="button" role="menuitem" onclick="closeGoalMoreMenus(); gpTogglePin('${gid}')">
+                            <i class="fa-solid fa-thumbtack"></i> ${goal.pinned ? 'Unpin from top' : 'Pin to top'}
+                        </button>
+                        ${canPause ? `<button type="button" role="menuitem" title="${goal.pausedAt ? 'Resume and move the deadline forward' : 'Pause and freeze the deadline'}" onclick="closeGoalMoreMenus(); gpTogglePause('${gid}')">
+                            <i class="fa-solid ${goal.pausedAt ? 'fa-play' : 'fa-pause'}"></i> ${goal.pausedAt ? 'Resume' : 'Pause'}
+                        </button>` : ''}
+                        <button type="button" role="menuitem" onclick="closeGoalMoreMenus(); saveGoalAsTemplate('${gid}')"
+                            title="${savedAsTemplate ? 'Already saved as a template. Click to update it with the current settings of this goal.' : 'Save target, skill scope, deadline length and checklist as a reusable template.'}">
+                            <i class="${savedAsTemplate ? 'fa-solid' : 'fa-regular'} fa-star"></i> ${savedAsTemplate ? 'Update template' : 'Save as template'}
+                        </button>
+                        <div class="goal-more-sep"></div>
+                        <button type="button" role="menuitem" class="danger" onclick="closeGoalMoreMenus(); deleteGoal('${gid}')">
+                            <i class="fa-solid fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
             `;
 
-            // ✅ DELETE BUTTON (v9: no archive, just delete — same for active/completed)
-            buttons += `
-                <button onclick="deleteGoal('${goal.id}')" class="goal-action-btn delete">
-                    <i class="fa-solid fa-trash"></i> Delete
-                </button>
-            `;
-            
             return buttons;
+        }
+
+        function toggleGoalMoreMenu(id, btn) {
+            const m = document.getElementById('goal-more-menu-' + id);
+            if (!m) return;
+            const open = !m.classList.contains('show');
+            closeGoalMoreMenus();
+            if (open) { m.classList.add('show'); if (btn) btn.setAttribute('aria-expanded', 'true'); }
+        }
+        function closeGoalMoreMenus() {
+            document.querySelectorAll('.goal-more-menu.show').forEach(m => {
+                m.classList.remove('show');
+                const b = m.previousElementSibling;
+                if (b) b.setAttribute('aria-expanded', 'false');
+            });
+        }
+        document.addEventListener('click', e => { if (!e.target.closest('.goal-more-wrap')) closeGoalMoreMenus(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeGoalMoreMenus(); });
+
+        /* ── Quick add: log progress with one tap (custom goals) ── */
+        function goalQuickAddOptions(goal) {
+            if (goal.type !== 'custom' || goal.trackFromSteps) return null;
+            if (goal.currentProgress >= goal.target) return null;
+            const u = String(goal.customUnit || 'items').trim().toLowerCase();
+            if (/^(h|hr|hrs|hour|hours|giờ|gio|tiếng|tieng)$/.test(u))
+                return [{ l: '+30m', d: 0.5 }, { l: '+1h', d: 1 }, { l: '+2h', d: 2 }];
+            if (/^(min|mins|minute|minutes|phút|phut)$/.test(u))
+                return [{ l: '+15m', d: 15 }, { l: '+30m', d: 30 }, { l: '+60m', d: 60 }];
+            const opts = [{ l: '+1', d: 1 }];
+            if (goal.target >= 20) opts.push({ l: '+5', d: 5 });
+            if (goal.target >= 100) opts.push({ l: '+10', d: 10 });
+            return opts;
+        }
+
+        function renderGoalQuickAdd(goal) {
+            const opts = goalQuickAddOptions(goal);
+            if (!opts) return '';
+            const last = goal.lastQuickAdd;
+            const canUndo = last && last.amount > 0 && (Date.now() - last.at) < 10 * 60 * 1000;
+            return `
+                <div class="goal-quick-row" onclick="event.stopPropagation()" role="group" aria-label="Quick add progress">
+                    ${opts.map(o => `<button type="button" class="goal-quick-chip" onclick="quickAddGoalProgress('${goal.id}', ${o.d})">${o.l}</button>`).join('')}
+                    ${canUndo ? `<button type="button" class="goal-quick-chip undo" onclick="undoQuickAddGoalProgress('${goal.id}')" title="Undo the last quick add"><i class="fa-solid fa-rotate-left"></i> Undo</button>` : ''}
+                </div>`;
+        }
+
+        function quickAddGoalProgress(goalId, delta) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal || goal.type !== 'custom' || goal.trackFromSteps) return;
+            const before = Number(goal.currentProgress) || 0;
+            const after = Math.min(goal.target, Math.round((before + Number(delta)) * 100) / 100);
+            const applied = Math.round((after - before) * 100) / 100;
+            if (applied <= 0) return;
+            goal.currentProgress = after;
+            const justCompleted = before < goal.target && after >= goal.target;
+            goal.lastQuickAdd = justCompleted ? undefined : { amount: applied, at: Date.now() };
+            saveGoals();
+            renderGoals();
+            updateGoalProgressChart();
+            if (justCompleted) {
+                gamification.points += 50;
+                gamification.level = levelFromPoints(gamification.points);
+                localStorage.setItem('gamification', JSON.stringify(gamification));
+                updateGamificationStats();
+                showNotification(`🎉 Goal "${goal.title}" completed! Earned 50 XP!`, 'achievement');
+            }
+        }
+
+        function undoQuickAddGoalProgress(goalId) {
+            const goal = goals.find(g => g.id === goalId);
+            if (!goal || !goal.lastQuickAdd) return;
+            goal.currentProgress = Math.max(0, Math.round(((Number(goal.currentProgress) || 0) - goal.lastQuickAdd.amount) * 100) / 100);
+            goal.lastQuickAdd = undefined;
+            saveGoals();
+            renderGoals();
+            updateGoalProgressChart();
+            showNotification('Last quick add undone', 'success');
         }
 
         /* ── Push Deadline (overdue goals) ──────────────────────────
@@ -56784,245 +57144,583 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
 
-        function showSmartSuggestions() {
-            const suggestions = suggestGoalsForCareer(currentCareer);
-            
-            // Even a career with no built-in suggestions can have the user's own
-            // templates, so the modal always opens (it explains what's missing).
-            closeSmartSuggestions(); // never stack two of these modals
-            const modal = document.createElement('div');
-            modal.id = 'smartSuggestionsModal';
-            modal.style.cssText = `
-                position: fixed;
-                inset: 0;
-                background: rgba(0, 0, 0, 0.5);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 10000;
-                padding: 20px;
-                backdrop-filter: blur(4px);
-                transform: translateZ(0); 
-            `;
-            
-            modal.innerHTML = `
-                <div style="background: var(--bg-white); border-radius: 16px; max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
-                    <!-- Header -->
-                    <div style="padding: 24px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg-white); z-index: 1;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h2 style="margin: 0 0 8px 0; font-size: 1.5rem; color: var(--text-dark);">
-                                    💡 Templates &amp; Suggestions
-                                </h2>
-                                <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">
-                                    Your saved templates, plus recommended goals for <strong>${skillsData[currentCareer]?.title || currentCareer}</strong>
-                                </p>
-                            </div>
-                            <button onclick="closeSmartSuggestions()" 
-                                style="background: none; border: none; font-size: 28px; cursor: pointer; color: var(--text-muted); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; transition: all 0.2s;">
-                                ×
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Body -->
-                    <div style="padding: 20px;">
-                        ${renderMyTemplatesSection()}
-                        ${suggestions.length ? `
-                            <div style="font-size: 1.05rem; font-weight: 700; color: var(--text-dark); margin: 0 0 14px 0;">💡 Suggested for this career</div>
-                            ${renderSuggestionsByTier(suggestions)}
-                        ` : `
-                            <p style="text-align: center; color: var(--text-muted); padding: 20px 0;">No suggestions available for this career yet.</p>
-                        `}
-                    </div>
-                    
-                    <!-- Footer -->
-                    <div style="padding: 16px 24px; border-top: 1px solid var(--border-color); background: var(--bg-light); text-align: center;">
-                        <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">
-                            💡 Click any template or suggestion to add it as a goal
-                        </p>
-                    </div>
-                </div>
-            `;
-            
-            document.body.appendChild(modal);
-            
-            // Add event listener for backdrop click
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    closeSmartSuggestions();
-                }
-            });
+        // ═══════════════════════════════════════════════════════════
+        //  💡 SUGGESTIONS
+        //  One modal, three tabs:
+        //    For you   — built from YOUR data: overdue / at-risk goals,
+        //                skills you started but never gave a goal, the next
+        //                stage after a goal you're about to finish, whole
+        //                categories worth a single goal, and important
+        //                skills you haven't touched yet.
+        //    Roadmap   — the curated ladder for this track, but aware of
+        //                your hours: reached steps drop out, steps you
+        //                already have a goal for are marked, and every
+        //                deadline is sized to your recent pace.
+        //    Templates — goals you saved yourself.
+        //  Nothing here saves anything: a card only pre-fills the Add Goal
+        //  form (or opens Edit Goal), so you always confirm before it counts.
+        // ═══════════════════════════════════════════════════════════
+        const SG_TIERS = {
+            foundation:   { title: 'Foundation',   hint: 'Start here',        icon: 'fa-seedling' },
+            intermediate: { title: 'Intermediate', hint: 'Build your skills', icon: 'fa-book-open' },
+            advanced:     { title: 'Advanced',     hint: 'Level up',          icon: 'fa-rocket' },
+            expert:       { title: 'Expert',       hint: 'Reach mastery',     icon: 'fa-trophy' }
+        };
+        const SG_LADDER = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 3000, 5000, 7500, 10000];
+        const SG_WIP_LIMIT = 4;     // this many active goals in a track → stop proposing new ones, finish first
+        const SG_PACE_DAYS = 14;    // window used to measure "your pace"
+        const SG_MAX_PICKS = 6;
+        let _sgTab = 'foryou';
+        let _sgData = null;
+        let _sgPrevFocus = null;
+
+        function _sgFmt(n) {
+            n = Number(n) || 0;
+            return Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1);
         }
 
-        // Close Smart Suggestions Modal
-        function closeSmartSuggestions() {
-            const modal = document.getElementById('smartSuggestionsModal');
-            if (modal) {
-                modal.remove();
+        function _sgDuration(days) {
+            if (days < 14) return days + ' days';
+            if (days < 70) return Math.round(days / 7) + ' weeks';
+            return Math.round(days / 30) + ' months';
+        }
+
+        // Deadline length (days) for `remainingHours` at the user's pace, with
+        // a 25% buffer, rounded up to whole weeks and kept within 1 week – 1 year.
+        function _sgPlanDays(remainingHours, pace) {
+            if (!(remainingHours > 0)) return 7;
+            const raw = Math.ceil((remainingHours / Math.max(pace.perDay, 0.25)) * 1.25);
+            return Math.min(365, Math.max(7, Math.ceil(raw / 7) * 7));
+        }
+
+        // Hours per day over the last SG_PACE_DAYS: this track first (from the
+        // per-day breakdown), then all tracks, else a neutral 1 h/day default.
+        function _sgRecentPace() {
+            let careerSum = 0, allSum = 0;
+            const now = Date.now();
+            for (let i = 0; i < SG_PACE_DAYS; i++) {
+                const d = new Date(now - i * 86400000);
+                try {
+                    const day = dailyStudyBreakdown && dailyStudyBreakdown[toLocalDateStr(d)];
+                    if (day) Object.keys(day).forEach(k => {
+                        if (k.indexOf(currentCareer + '|') === 0) careerSum += Number(day[k]) || 0;
+                    });
+                    allSum += Number(dailyStudyData && dailyStudyData[d.toDateString()]) || 0;
+                } catch (e) { /* missing data just means "no pace info" */ }
             }
+            if (careerSum >= 1) return { perDay: careerSum / SG_PACE_DAYS, source: 'career' };
+            if (allSum >= 1)    return { perDay: allSum / SG_PACE_DAYS, source: 'all' };
+            return { perDay: 1, source: 'default' };
         }
 
-        // Render Suggestions by Tier
-        function renderSuggestionsByTier(suggestions) {
-            // Group suggestions by their explicit `tier` field (set once, per
-            // suggestion, in suggestGoalsForCareer). This is a straight bucket
-            // assignment — each suggestion lands in exactly one tier, so a
-            // suggestion can never render twice across sections. Anything
-            // missing a tier (shouldn't happen, but defensive) falls back to
-            // 'intermediate' rather than silently vanishing.
-            const tiers = { foundation: [], intermediate: [], advanced: [], expert: [] };
-            suggestions.forEach(s => {
-                const key = tiers[s.tier] ? s.tier : 'intermediate';
-                tiers[key].push(s);
+        function _sgGoalPct(g) {
+            try { return Number(getGoalProgressPercent(g)) || 0; } catch (e) { return 0; }
+        }
+
+        function _sgCareerData() {
+            return (typeof skillsData !== 'undefined' && skillsData[currentCareer]) || null;
+        }
+
+        function _sgSkillList() {
+            const cd = _sgCareerData();
+            const out = [];
+            if (!cd || !cd.categories) return out;
+            Object.entries(cd.categories).forEach(([cat, c], ci) => {
+                (c.skills || []).forEach((s, si) => {
+                    out.push({
+                        name: s.name, category: cat, catIndex: ci, index: si,
+                        importance: Number(s.importance) || 3,
+                        target: Number(s.targetHours) || 10,
+                        hours: getSkillHours(currentCareer, s.name)
+                    });
+                });
             });
-            
-            const tierConfig = {
-                foundation: {
-                    title: '🌱 Foundation Level',
-                    description: 'Start your journey here',
-                    color: '#10b981',
-                    bgColor: 'rgba(16, 185, 129, 0.1)'
-                },
-                intermediate: {
-                    title: '📚 Intermediate Level',
-                    description: 'Build your skills',
-                    color: '#3b82f6',
-                    bgColor: 'rgba(59, 130, 246, 0.1)'
-                },
-                advanced: {
-                    title: '🚀 Advanced Level',
-                    description: 'Level up your expertise',
-                    color: '#b892c9',
-                    bgColor: 'rgba(184, 146, 201, 0.1)'
-                },
-                expert: {
-                    title: '🏆 Expert Level',
-                    description: 'Reach mastery',
-                    color: '#f59e0b',
-                    bgColor: 'rgba(245, 158, 11, 0.1)'
+            return out;
+        }
+
+        // The active goal (if any) that already covers what `s` proposes.
+        function _sgCovering(s, active) {
+            const key = String(s.title).trim().toLowerCase();
+            return active.find(g => {
+                if (String(g.title).trim().toLowerCase() === key) return true;
+                if (g.type !== s.type) return false;
+                if (s.type === 'skill_mastery') return !!s.skillName && g.skillName === s.skillName;
+                if (s.type === 'study_hours') {
+                    const gs = _goalTrackedScope(g);
+                    if (!gs) return false;
+                    const names = Array.isArray(s.skillNames) ? s.skillNames : [];
+                    if (!names.length) return gs.all && Number(g.target) === Number(s.target);
+                    return !gs.all && gs.skills.size === names.length && names.every(n => gs.skills.has(n));
                 }
-            };
-            
-            let html = '';
-            
-            Object.entries(tiers).forEach(([tier, goals]) => {
-                if (goals.length === 0) return;
-                
-                const config = tierConfig[tier];
-                
-                html += `
-                    <div style="margin-bottom: 30px;">
-                        <!-- Tier Header -->
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid ${config.color};">
-                            <div style="font-size: 1.3rem; font-weight: 700; color: ${config.color};">
-                                ${config.title}
-                            </div>
-                            <div style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">
-                                ${config.description}
-                            </div>
-                        </div>
-                        
-                        <!-- Goal Cards -->
-                        <div style="display: grid; gap: 12px;">
-                            ${goals.map(suggestion => renderSuggestionCard(suggestion, config)).join('')}
-                        </div>
-                    </div>
-                `;
+                return false;
+            }) || null;
+        }
+
+        function _sgBuild() {
+            const skills = _sgSkillList();
+            const skillMap = new Map(skills.map(s => [s.name, s]));
+            const hoursObj = (typeof studyHours !== 'undefined' && studyHours[currentCareer]) || {};
+            const careerTotal = Object.values(hoursObj).reduce((a, h) => a + (Number(h) || 0), 0);
+            const active = goals.filter(g => g.career === currentCareer && _sgGoalPct(g) < 100);
+            const pace = _sgRecentPace();
+            const today = getVietnamDateStr();
+            const chained = new Set(goals.map(g => g.chainsFrom).filter(Boolean));
+            const crowded = active.length >= SG_WIP_LIMIT;
+
+            const plan = remaining => _sgPlanDays(remaining, pace);
+            const atPace = rem => _sgDuration(Math.max(1, Math.ceil(rem / Math.max(pace.perDay, 0.25))));
+            const paceWords = pace.source === 'default' ? 'at 1 h/day' : 'at your recent pace';
+            const skillTitle = n => 'Master ' + String(n).split(' (')[0].trim();
+            const catLabel = n => String(n).replace(/^[A-Z]\.\s*/, '');
+            const prio = imp => imp >= 5 ? 'high' : imp >= 3 ? 'medium' : 'low';
+            const skillHasGoal = name => active.some(g =>
+                (g.type === 'skill_mastery' && g.skillName === name) ||
+                (g.type === 'study_hours' && Array.isArray(g.skillNames) && g.skillNames.includes(name)));
+            const clockChip = days => ({ i: 'fa-regular fa-clock', t: 'Deadline in ~' + _sgDuration(days) });
+
+            // ── Roadmap: the curated ladder, checked against real hours ──
+            const catalog = suggestGoalsForCareer(currentCareer)
+                .filter(c => c.type !== 'skill_mastery' || skillMap.has(c.skillName))
+                .map((c, i) => {
+                    const item = Object.assign({}, c, { id: 'r' + i });
+                    if (item.type === 'skill_mastery') item.target = skillMap.get(item.skillName).target;
+                    const done = item.type === 'skill_mastery' ? skillMap.get(item.skillName).hours : careerTotal;
+                    item.progress = { done, total: item.target };
+                    item.state = done >= item.target ? 'done' : (_sgCovering(item, active) ? 'covered' : 'open');
+                    if (item.state === 'open') item.durationDays = plan(item.target - done);
+                    return item;
+                });
+
+            // ── For you: personalised picks ──
+            const picks = [];
+
+            // 1) Goals that are overdue or can't be met at the current pace
+            active.forEach(g => {
+                if (!g.deadline || !/^[\w-]+$/.test(String(g.id))) return;
+                const left = daysBetweenDateKeys(today, g.deadline);
+                if (isNaN(left)) return;
+                const stepGoal = g.type === 'custom' && g.trackFromSteps;
+                const hourBased = g.type === 'study_hours' || g.type === 'skill_mastery';
+                const unit = stepGoal ? 'steps' : (g.type === 'custom' ? (g.customUnit || 'items') : 'h');
+                const remaining = stepGoal
+                    ? (Array.isArray(g.subtasks) ? g.subtasks.filter(s => !s.done).length : 0)
+                    : Math.max(0, (Number(g.target) || 0) - (Number(g.currentProgress) || 0));
+                const due = { i: 'fa-regular fa-calendar', t: 'Due ' + formatDate(g.deadline) };
+                const progress = { done: Number(g.currentProgress) || 0, total: Number(g.target) || 0 };
+                if (left < 0) {
+                    picks.push({
+                        group: 'rescue', kind: 'overdue', score: 200 + Math.min(-left, 30),
+                        title: 'Re-plan “' + g.title + '”', goalId: g.id, progress, chips: [due],
+                        reason: 'Overdue by ' + (-left) + ' day' + (-left === 1 ? '' : 's') + ' with ' + _sgFmt(remaining) + ' ' + unit +
+                                ' left. Move the deadline to something you can really hit, or shrink the goal.'
+                    });
+                } else if (hourBased && left <= 90 && remaining > 0) {
+                    const need = remaining / Math.max(left, 1);
+                    const limit = pace.source === 'default' ? 2 : Math.max(pace.perDay * 1.5, 0.5);
+                    if (need > limit) {
+                        picks.push({
+                            group: 'rescue', kind: 'risk', score: 150 + Math.min(need, 20),
+                            title: 'Rescue “' + g.title + '”', goalId: g.id, progress, chips: [due],
+                            reason: 'Needs about ' + need.toFixed(1) + ' h/day to finish on time' +
+                                    (pace.source === 'default' ? '.' : ', but you have averaged ' + pace.perDay.toFixed(1) + ' h/day lately.') +
+                                    ' Adjust the deadline or the target before it slips.'
+                        });
+                    }
+                }
             });
-            
-            return html || '<p style="text-align: center; color: var(--text-muted); padding: 40px;">No suggestions available.</p>';
-        }
 
+            // 1b) The Strategic Roadmap's "Focus Now" skill has no goal behind it yet
+            try {
+                const f = (typeof StrategicRoadmap !== 'undefined' && StrategicRoadmap.getFocus) ? StrategicRoadmap.getFocus(currentCareer) : null;
+                const fs = f && f.trackable ? skillMap.get(f.skillKey) : null;
+                if (fs && fs.hours < fs.target && !skillHasGoal(fs.name)) {
+                    const rem = fs.target - fs.hours;
+                    picks.push({
+                        group: 'roadmap', kind: 'roadmap', score: 130,
+                        title: skillTitle(fs.name), type: 'skill_mastery', target: fs.target, skillName: fs.name,
+                        priority: prio(fs.importance), durationDays: plan(rem),
+                        progress: { done: fs.hours, total: fs.target },
+                        reason: 'Your Strategic Roadmap puts this skill first (Focus Now), but no goal tracks it yet. ' +
+                                _sgFmt(rem) + ' h to go, about ' + atPace(rem) + ' ' + paceWords + '.',
+                        chips: [{ i: 'fa-solid fa-route', t: 'Roadmap focus' }, { i: 'fa-regular fa-star', t: 'Importance ' + fs.importance + '/5' }, clockChip(plan(rem))]
+                    });
+                }
+            } catch (e) { /* roadmap not loaded: just skip this idea */ }
 
+            // 2) Skills already in progress that have no goal → finish them
+            skills.filter(s => s.hours > 0 && s.hours < s.target && s.hours / s.target >= 0.2 && !skillHasGoal(s.name))
+                .forEach(s => {
+                    const ratio = s.hours / s.target, rem = s.target - s.hours;
+                    picks.push({
+                        group: 'finish', kind: 'finish', score: 60 + s.importance * 4 + ratio * 20,
+                        title: skillTitle(s.name), type: 'skill_mastery', target: s.target, skillName: s.name,
+                        priority: prio(s.importance), durationDays: plan(rem),
+                        progress: { done: s.hours, total: s.target },
+                        reason: 'You have put in ' + _sgFmt(s.hours) + ' of ' + _sgFmt(s.target) + ' h (' + Math.round(ratio * 100) + '%) with no goal behind it. ' +
+                                _sgFmt(rem) + ' h more finishes it, about ' + atPace(rem) + ' ' + paceWords + '.',
+                        chips: [{ i: 'fa-solid fa-layer-group', t: catLabel(s.category) }, { i: 'fa-regular fa-star', t: 'Importance ' + s.importance + '/5' }, clockChip(plan(rem))]
+                    });
+                });
 
-        function renderSuggestionCard(suggestion, config) {
-            if (!suggestion || !config) return '';    
-            const typeIcons = {
-                study_hours: '<i class="fa-solid fa-book"></i>',
-                skill_mastery: '<i class="fa-solid fa-medal"></i>',
-                custom: '<i class="fa-solid fa-square-check"></i>'
-            };
-            const icon = typeIcons[suggestion.type] || '📌';
-            const existingGoal = goals.find(g => 
-                g.title === suggestion.title && 
-                g.career === currentCareer
-            );
-            
-            return `
-                <div class="suggestion-card" 
-                    onclick="${existingGoal ? '' : `applySuggestionToGoal(${JSON.stringify(suggestion).replace(/"/g, '&quot;')})`}"
-                    style="
-                        padding: 16px;
-                        background: ${existingGoal ? 'var(--bg-light)' : config.bgColor};
-                        border: 2px solid ${existingGoal ? 'var(--border-color)' : config.color};
-                        border-radius: 12px;
-                        cursor: ${existingGoal ? 'default' : 'pointer'};
-                        transition: all 0.3s ease;
-                        opacity: ${existingGoal ? '0.6' : '1'};
-                        ${existingGoal ? '' : 'box-shadow: 0 2px 8px rgba(0,0,0,0.05);'}
-                    ">
-                    <div style="display: flex; gap: 12px; align-items: start;">
-                        <div style="font-size: 2rem; flex-shrink: 0;">${icon}</div>
-                        <div style="flex: 1; min-width: 0;">
-                            <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; font-size: 1rem; line-height: 1.3;">
-                                ${suggestion.title}
-                                ${existingGoal ? '<span style="margin-left: 8px; font-size: 0.75rem; color: #10b981;">✓ Added</span>' : ''}
-                            </div>
-                            ${suggestion.description ? `
-                                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; line-height: 1.4;">
-                                    ${suggestion.description}
-                                </div>
-                            ` : ''}
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
-                                <span style="padding: 4px 10px; background: white; border-radius: 12px; font-weight: 500;">
-                                    🏁 ${suggestion.target} ${suggestion.type === 'custom' ? 'items' : 'hours'}
-                                </span>
-                                ${suggestion.skillName ? `
-                                    <span style="padding: 4px 10px; background: white; border-radius: 12px; font-weight: 500;">
-                                        📖 ${suggestion.skillName}
-                                    </span>
-                                ` : ''}
-                                ${!existingGoal ? `
-                                    <span style="color: ${config.color}; font-weight: 600; margin-left: auto;">
-                                        Click to add →
-                                    </span>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Apply Suggestion to Goal Form
-        function applySuggestionToGoal(suggestion) {
-            closeSmartSuggestions();
-            openAddGoalModal();
-            
-            // Wait for modal to render
-            setTimeout(() => {
-                // Fill in the form
-                document.getElementById('goalTitle').value = suggestion.title;
-                document.getElementById('goalTarget').value = suggestion.target;
-                
-                // Select goal type
-                selectGoalType(suggestion.type);
-                
-                // Set skill if applicable
-                if (suggestion.type === 'skill_mastery' && suggestion.skillName) {
-                    setTimeout(() => {
-                        const skillSelect = document.getElementById('goalSkillSelect');
-                        if (skillSelect) {
-                            skillSelect.value = suggestion.skillName;
-                            skillSelect.dispatchEvent(new Event('change'));
-                            updateGoalOverlapWarning();
+            if (!crowded) {
+                // 3) The goal you're about to finish has nothing queued after it
+                goals.filter(g => g.career === currentCareer && !g.courseId && !chained.has(g.id) &&
+                                  (g.type === 'study_hours' || g.type === 'skill_mastery') && _sgGoalPct(g) >= 80)
+                    .sort((a, b) => _sgGoalPct(b) - _sgGoalPct(a))
+                    .forEach(g => {
+                        const pct = Math.round(_sgGoalPct(g));
+                        const lead = pct >= 100 ? 'You finished “' + g.title + '”.' : '“' + g.title + '” is ' + pct + '% done.';
+                        if (g.type === 'skill_mastery' && g.skillName) {
+                            const cur = skillMap.get(g.skillName);
+                            if (!cur) return;
+                            const cand = skills
+                                .filter(s => s.name !== cur.name && s.hours < s.target && !skillHasGoal(s.name))
+                                .sort((a, b) => (a.category === cur.category ? 0 : 1) - (b.category === cur.category ? 0 : 1) ||
+                                                b.importance - a.importance || a.catIndex - b.catIndex || a.index - b.index)[0];
+                            if (!cand) return;
+                            const rem = cand.target - cand.hours;
+                            picks.push({
+                                group: 'next', kind: 'next', score: 120 + pct / 10,
+                                title: skillTitle(cand.name), type: 'skill_mastery', target: cand.target, skillName: cand.name,
+                                priority: prio(cand.importance), durationDays: plan(rem), chainsFrom: g.id,
+                                progress: { done: cand.hours, total: cand.target },
+                                reason: lead + ' Nothing is lined up after it. Chain ' +
+                                        (cand.category === cur.category ? 'the next skill in ' + catLabel(cand.category) : 'the next skill worth your time') +
+                                        ' so the momentum carries over.',
+                                chips: [{ i: 'fa-solid fa-link', t: 'Continues from “' + g.title + '”' }, clockChip(plan(rem))]
+                            });
+                        } else if (g.type === 'study_hours' && !(Array.isArray(g.skillNames) && g.skillNames.length)) {
+                            const base = Math.max(Number(g.target) || 0, careerTotal);
+                            const fromCatalog = catalog
+                                .filter(c => c.type === 'study_hours' && !(c.skillNames && c.skillNames.length) && c.target > base && c.state !== 'covered')
+                                .sort((a, b) => a.target - b.target)[0];
+                            const nextTarget = fromCatalog ? fromCatalog.target : SG_LADDER.find(n => n > base);
+                            if (!nextTarget) return;
+                            const rem = nextTarget - careerTotal;
+                            picks.push({
+                                group: 'next', kind: 'next', score: 120 + pct / 10,
+                                title: fromCatalog ? fromCatalog.title : 'Reach ' + nextTarget + ' study hours',
+                                type: 'study_hours', target: nextTarget, durationDays: plan(rem), chainsFrom: g.id,
+                                progress: { done: careerTotal, total: nextTarget },
+                                reason: lead + ' Nothing is lined up after it. ' + _sgFmt(rem) + ' h to the next milestone, about ' + atPace(rem) + ' ' + paceWords + '.',
+                                chips: [{ i: 'fa-solid fa-link', t: 'Continues from “' + g.title + '”' }, clockChip(plan(rem))]
+                            });
                         }
-                    }, 100);
+                    });
+
+                // 4) A category you're partway through: one goal for the whole block
+                const cd = _sgCareerData();
+                if (cd && cd.categories) {
+                    Object.keys(cd.categories).forEach(name => {
+                        const list = skills.filter(s => s.category === name);
+                        if (list.length < 2 || list.length > 12) return;
+                        const total = list.reduce((a, s) => a + s.target, 0);
+                        const done = list.reduce((a, s) => a + Math.min(s.hours, s.target), 0);
+                        const ratio = total ? done / total : 0;
+                        if (ratio < 0.15 || ratio >= 1) return;
+                        const probe = { title: 'Complete “' + catLabel(name) + '”', type: 'study_hours', skillNames: list.map(s => s.name), target: Math.round(total) };
+                        if (_sgCovering(probe, active)) return;
+                        const finished = list.filter(s => s.hours >= s.target).length;
+                        const rem = total - done;
+                        picks.push(Object.assign(probe, {
+                            group: 'category', kind: 'category', score: 70 + ratio * 20,
+                            priority: 'medium', durationDays: plan(rem),
+                            progress: { done, total },
+                            reason: _sgFmt(done) + ' of ' + _sgFmt(total) + ' h done across ' + list.length + ' skills' + (finished ? ' (' + finished + ' finished)' : '') + '. One goal tracks the whole block.',
+                            chips: [{ i: 'fa-solid fa-layer-group', t: list.length + ' skills' }, clockChip(plan(rem))]
+                        }));
+                    });
                 }
-                
-                showNotification(`✅ Template applied: ${suggestion.title}`, 'success');
-            }, 100);
+
+                // 5) Important skills with zero hours and no plan
+                skills.filter(s => s.hours === 0 && s.importance >= 4 && !skillHasGoal(s.name))
+                    .sort((a, b) => b.importance - a.importance || a.catIndex - b.catIndex || a.index - b.index)
+                    .forEach(s => {
+                        picks.push({
+                            group: 'start', kind: 'start', score: 40 + s.importance * 4,
+                            title: skillTitle(s.name), type: 'skill_mastery', target: s.target, skillName: s.name,
+                            priority: prio(s.importance), durationDays: plan(s.target),
+                            reason: 'Rated ' + s.importance + '/5 for this track and you have not logged a single hour on it. A goal turns it into a plan.',
+                            chips: [{ i: 'fa-solid fa-layer-group', t: catLabel(s.category) }, { i: 'fa-regular fa-star', t: 'Importance ' + s.importance + '/5' }, clockChip(plan(s.target))]
+                        });
+                    });
+            }
+
+            // Rank, then cap per kind and never show the same skill twice
+            const caps = { rescue: 2, roadmap: 1, next: 2, finish: 3, category: 1, start: 2 };
+            const used = {}, seenSkill = new Set(), final = [];
+            picks.sort((a, b) => b.score - a.score).forEach(p => {
+                if (final.length >= SG_MAX_PICKS) return;
+                if (p.skillName) { if (seenSkill.has(p.skillName)) return; }
+                if ((used[p.group] || 0) >= caps[p.group]) return;
+                used[p.group] = (used[p.group] || 0) + 1;
+                if (p.skillName) seenSkill.add(p.skillName);
+                p.id = 'p' + final.length;
+                final.push(p);
+            });
+
+            const byId = {};
+            final.concat(catalog).forEach(s => { byId[s.id] = s; });
+            return { picks: final, catalog, byId, pace, active, crowded, hasSkills: skills.length > 0 };
+        }
+
+        // ── Rendering ───────────────────────────────────────────
+        const SG_KIND = {
+            overdue:  { label: 'Overdue',        icon: 'fa-triangle-exclamation' },
+            risk:     { label: 'At risk',        icon: 'fa-triangle-exclamation' },
+            roadmap:  { label: 'Roadmap focus',  icon: 'fa-route' },
+            finish:   { label: 'Finish line',    icon: 'fa-flag-checkered' },
+            next:     { label: 'Next stage',     icon: 'fa-link' },
+            category: { label: 'Whole category', icon: 'fa-layer-group' },
+            start:    { label: 'Start here',     icon: 'fa-seedling' }
+        };
+
+        function _sgChips(list) {
+            if (!list || !list.length) return '';
+            return '<div class="sg-chips">' + list.map(c =>
+                '<span class="sg-chip">' + (c.i ? '<i class="' + c.i + '" aria-hidden="true"></i>' : '') + gtEsc(c.t) + '</span>').join('') + '</div>';
+        }
+
+        function _sgCard(o) {
+            const pct = o.progress && o.progress.total > 0 ? Math.max(0, Math.min(100, o.progress.done / o.progress.total * 100)) : 0;
+            const attrs = o.onclick
+                ? ' role="button" tabindex="0" onclick="' + o.onclick + '" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}"'
+                : '';
+            return '<div class="sg-card' + (o.mod ? ' sg-card--' + o.mod : '') + '"' + attrs + '>' +
+                '<div class="sg-ic"><i class="fa-solid ' + o.icon + '" aria-hidden="true"></i></div>' +
+                '<div class="sg-main">' +
+                    (o.kind ? '<div class="sg-kind sg-kind--' + o.kindClass + '">' + gtEsc(o.kind) + '</div>' : '') +
+                    '<div class="sg-title">' + gtEsc(o.title) + (o.badge ? '<span class="sg-badge">' + gtEsc(o.badge) + '</span>' : '') + '</div>' +
+                    (o.reason ? '<div class="sg-why">' + gtEsc(o.reason) + '</div>' : '') +
+                    (pct > 0 ? '<div class="sg-bar" aria-hidden="true"><i style="width:' + pct.toFixed(0) + '%"></i></div>' : '') +
+                    _sgChips(o.chips) +
+                '</div>' +
+                (o.cta ? '<div class="sg-cta">' + gtEsc(o.cta) + '</div>' : '') +
+            '</div>';
+        }
+
+        function _sgPickCard(p) {
+            const k = SG_KIND[p.kind];
+            const isEdit = !!p.goalId;
+            return _sgCard({
+                icon: k.icon, kind: k.label, kindClass: p.kind,
+                mod: (p.kind === 'overdue' || p.kind === 'risk') ? p.kind : '',
+                title: p.title, reason: p.reason, progress: p.progress, chips: p.chips,
+                onclick: isEdit ? "sgEditGoal('" + p.goalId + "')" : "applySuggestionToGoal('" + p.id + "')",
+                cta: isEdit ? 'Edit goal →' : 'Add goal →'
+            });
+        }
+
+        function _sgEmpty(icon, title, sub, btn) {
+            return '<div class="sg-empty"><div class="sg-empty-ic"><i class="fa-regular ' + icon + '" aria-hidden="true"></i></div>' +
+                '<p class="sg-empty-title">' + gtEsc(title) + '</p>' +
+                (sub ? '<p class="sg-sub">' + sub + '</p>' : '') + (btn || '') + '</div>';
+        }
+
+        function _sgRenderForYou(d) {
+            let html = '';
+            if (d.crowded) {
+                html += '<div class="sg-note"><i class="fa-solid fa-bullseye" aria-hidden="true"></i><div><strong>Finish before you add.</strong> ' +
+                    'You already have ' + d.active.length + ' active goals in this track, so new-goal ideas are paused. ' +
+                    'The Roadmap tab still shows everything.</div></div>';
+            }
+            if (!d.picks.length) {
+                if (!d.hasSkills && !d.active.length) {
+                    return html + _sgEmpty('fa-compass', 'Pick a specific track',
+                        'Personal suggestions need a track with skills (for example Private Equity). This view spans several tracks.', '');
+                }
+                return html + _sgEmpty('fa-circle-check', 'Nothing needs attention',
+                    'No goal is overdue, and every skill you have started already has a plan. Browse the roadmap for the next step.',
+                    '<button type="button" class="sg-btn" onclick="sgSwitchTab(\'roadmap\')"><i class="fa-solid fa-route" aria-hidden="true"></i> Open roadmap</button>');
+            }
+            return html + '<div class="sg-list">' + d.picks.map(_sgPickCard).join('') + '</div>';
+        }
+
+        function _sgRenderRoadmap(d) {
+            if (!d.catalog.length) {
+                return _sgEmpty('fa-compass', 'No roadmap here yet',
+                    'Pick a specific track to see its roadmap. This view spans several tracks.', '');
+            }
+            const byTier = {};
+            d.catalog.forEach(c => {
+                const key = SG_TIERS[c.tier] ? c.tier : 'intermediate';   // missing tier → intermediate, never dropped
+                (byTier[key] = byTier[key] || []).push(c);
+            });
+            const nextUp = d.catalog.find(c => c.state === 'open');
+            let html = '';
+            Object.keys(SG_TIERS).forEach(tier => {
+                const items = byTier[tier];
+                if (!items || !items.length) return;
+                const t = SG_TIERS[tier];
+                const reached = items.filter(c => c.state === 'done');
+                const rest = items.filter(c => c.state !== 'done');
+                html += '<section class="sg-tier"><div class="sg-tier-head">' +
+                    '<i class="fa-solid ' + t.icon + '" aria-hidden="true"></i><span class="sg-tier-name">' + t.title + '</span>' +
+                    '<span class="sg-tier-hint">' + t.hint + '</span>' +
+                    '<span class="sg-tier-count">' + reached.length + '/' + items.length + ' reached</span></div>';
+                if (rest.length) {
+                    html += '<div class="sg-list">' + rest.map(c => {
+                        const covered = c.state === 'covered';
+                        const unit = c.type === 'skill_mastery' ? 'h on this skill' : 'h total';
+                        const chips = [{ i: 'fa-solid fa-bullseye', t: _sgFmt(c.progress.done) + ' / ' + _sgFmt(c.target) + ' ' + unit }];
+                        if (c.skillName) chips.push({ i: 'fa-solid fa-layer-group', t: c.skillName.split(' (')[0] });
+                        if (!covered) chips.push({ i: 'fa-regular fa-clock', t: 'Deadline in ~' + _sgDuration(c.durationDays) });
+                        return _sgCard({
+                            icon: c.type === 'skill_mastery' ? 'fa-medal' : 'fa-book',
+                            kind: nextUp && nextUp.id === c.id ? 'Next up' : '', kindClass: 'next',
+                            mod: covered ? 'covered' : '',
+                            title: c.title, reason: c.description, progress: c.progress, chips,
+                            badge: covered ? 'In your goals' : '',
+                            onclick: covered ? '' : "applySuggestionToGoal('" + c.id + "')",
+                            cta: covered ? '' : 'Add →'
+                        });
+                    }).join('') + '</div>';
+                }
+                if (reached.length) {
+                    html += '<details class="sg-done"><summary>' + reached.length + ' already reached</summary><ul>' +
+                        reached.map(c => '<li><i class="fa-solid fa-check" aria-hidden="true"></i>' + gtEsc(c.title) + '</li>').join('') + '</ul></details>';
+                }
+                html += '</section>';
+            });
+            return html;
+        }
+
+        function _sgRenderTab() {
+            const body = document.getElementById('sgBody');
+            if (!body || !_sgData) return;
+            body.innerHTML = _sgTab === 'roadmap' ? _sgRenderRoadmap(_sgData)
+                           : _sgTab === 'templates' ? renderMyTemplatesSection()
+                           : _sgRenderForYou(_sgData);
+            body.scrollTop = 0;
+            document.querySelectorAll('#suggestionsModal .sg-tab').forEach(btn => {
+                btn.setAttribute('aria-selected', btn.dataset.tab === _sgTab ? 'true' : 'false');
+            });
+        }
+
+        function sgSwitchTab(tab) {
+            _sgTab = tab;
+            _sgRenderTab();
+        }
+
+        function _sgRefreshTplCount() {
+            const el = document.getElementById('sgTplCount');
+            if (el) el.textContent = loadGoalTemplates().length;
+        }
+
+        function _sgOnKey(e) {
+            if (e.key === 'Escape') closeSuggestions();
+        }
+
+        function showSuggestions(tab) {
+            closeSuggestions();                       // never stack two of these modals
+            _sgPrevFocus = document.activeElement;
+            const d = _sgData = _sgBuild();
+            const open = d.catalog.filter(c => c.state === 'open').length;
+            const tpl = loadGoalTemplates().length;
+            _sgTab = tab || (d.picks.length ? 'foryou' : open ? 'roadmap' : tpl ? 'templates' : 'foryou');
+
+            const careerTitle = gtEsc((_sgCareerData() && _sgCareerData().title) || currentCareer);
+            const paceText = d.pace.source === 'default'
+                ? 'No recent hours logged, so plans assume 1 h/day.'
+                : 'Recent pace: ' + d.pace.perDay.toFixed(1) + ' h/day over the last ' + SG_PACE_DAYS + ' days' +
+                  (d.pace.source === 'all' ? ' (all tracks)' : '') + '. Deadlines are sized to it.';
+            const tab_ = (id, label, count, cid) =>
+                '<button type="button" class="sg-tab" role="tab" data-tab="' + id + '" aria-selected="' + (_sgTab === id) + '" onclick="sgSwitchTab(\'' + id + '\')">' +
+                label + '<span class="sg-count"' + (cid ? ' id="' + cid + '"' : '') + '>' + count + '</span></button>';
+
+            const modal = document.createElement('div');
+            modal.id = 'suggestionsModal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+            modal.setAttribute('aria-labelledby', 'sgTitle');
+            modal.innerHTML =
+                '<div class="sg-panel" tabindex="-1">' +
+                    '<div class="sg-head"><div>' +
+                        '<h2 id="sgTitle">Suggestions</h2>' +
+                        '<p>Based on your hours, goals and deadlines in <strong>' + careerTitle + '</strong></p>' +
+                    '</div><button type="button" class="sg-close" onclick="closeSuggestions()" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>' +
+                    '<div class="sg-pace"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i>' + gtEsc(paceText) + '</div>' +
+                    '<div class="sg-tabs" role="tablist">' +
+                        tab_('foryou', 'For you', d.picks.length) + tab_('roadmap', 'Roadmap', open) + tab_('templates', 'Templates', tpl, 'sgTplCount') +
+                    '</div>' +
+                    '<div class="sg-body" id="sgBody"></div>' +
+                    '<div class="sg-foot">Pick a card to pre-fill the goal form. Nothing is saved until you confirm.</div>' +
+                '</div>';
+            document.body.appendChild(modal);
+            _sgRenderTab();
+
+            modal.addEventListener('click', (e) => { if (e.target === modal) closeSuggestions(); });
+            document.addEventListener('keydown', _sgOnKey);
+            const panel = modal.querySelector('.sg-panel');
+            if (panel) panel.focus();
+        }
+
+        function closeSuggestions() {
+            document.removeEventListener('keydown', _sgOnKey);
+            const modal = document.getElementById('suggestionsModal');
+            if (!modal) return;
+            modal.remove();
+            try { if (_sgPrevFocus && _sgPrevFocus.focus) _sgPrevFocus.focus(); } catch (e) {}
+            _sgPrevFocus = null;
+        }
+
+        function sgEditGoal(goalId) {
+            closeSuggestions();
+            openEditGoalModal(goalId);
+        }
+
+        // Pre-fill the Add Goal form from a suggestion (by id, or a plain object).
+        function applySuggestionToGoal(ref) {
+            const s = typeof ref === 'string' ? (_sgData && _sgData.byId[ref]) : ref;
+            if (!s) { showNotification('That suggestion is out of date. Reopen Suggestions.', 'error'); return; }
+
+            closeSuggestions();
+            openAddGoalModal();                       // resets the form and any pending template
+            document.getElementById('goalTitle').value = s.title;
+            selectGoalType(s.type);                   // builds the type-specific fields
+
+            const notes = [];
+            if (s.type === 'skill_mastery') {
+                // The target of a skill-mastery goal comes from the skill itself, so
+                // pick the skill first and let it set the target.
+                const select = document.getElementById('goalSkillSelect');
+                const exists = !!(select && s.skillName && Array.from(select.options).some(o => o.value === s.skillName));
+                if (exists) {
+                    select.value = s.skillName;
+                    select.dispatchEvent(new Event('change'));
+                } else {
+                    document.getElementById('goalTarget').value = s.target;
+                    if (s.skillName) notes.push('pick the skill');
+                }
+            } else {
+                document.getElementById('goalTarget').value = s.target;
+                if (s.type === 'study_hours' && Array.isArray(s.skillNames) && s.skillNames.length) {
+                    document.querySelectorAll('.goal-study-hours-skill-cb').forEach(cb => {
+                        if (s.skillNames.includes(cb.value)) cb.checked = true;
+                    });
+                }
+            }
+
+            selectGoalPriority(s.priority || 'medium');
+            if (s.why) { const why = document.getElementById('goalWhy'); if (why) why.value = s.why; }
+
+            if (s.durationDays) {
+                // today (Vietnam) + N days, computed in UTC so the browser's own
+                // timezone / DST can't shift the date by a day.
+                const dt = new Date(getVietnamDateStr() + 'T00:00:00Z');
+                dt.setUTCDate(dt.getUTCDate() + Number(s.durationDays));
+                const deadlineInput = document.getElementById('goalDeadline');
+                if (deadlineInput) deadlineInput.value = dt.toISOString().slice(0, 10);
+            }
+
+            if (s.chainsFrom) {
+                const chain = document.getElementById('goalChainFrom');
+                if (chain && Array.from(chain.options).some(o => o.value === s.chainsFrom)) chain.value = s.chainsFrom;
+            }
+
+            updateGoalPaceHint();
+            updateGoalOverlapWarning();
+            showNotification('Suggestion applied: ' + s.title + (notes.length ? ' (please ' + notes.join(', ') + ')' : ''), 'success');
         }
 
 
@@ -57184,7 +57882,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const t = loadGoalTemplates().find(x => x.id === templateId);
             if (!t) { showNotification('Template not found.', 'error'); return; }
 
-            closeSmartSuggestions();
+            closeSuggestions();
             openAddGoalModal();                       // resets the form and any pending template
             document.getElementById('goalTitle').value = t.title;
             selectGoalType(t.type);                   // builds the type-specific fields
@@ -57321,35 +58019,23 @@ document.addEventListener('DOMContentLoaded', function() {
         function refreshMyTemplatesSection() {
             const el = document.getElementById('myTemplatesSection');
             if (el) el.innerHTML = _renderMyTemplatesInner();
+            if (typeof _sgRefreshTplCount === 'function') _sgRefreshTplCount();
         }
 
         function renderMyTemplatesSection() {
-            return `<div id="myTemplatesSection" style="margin-bottom: 30px;">${_renderMyTemplatesInner()}</div>`;
+            return `<div id="myTemplatesSection">${_renderMyTemplatesInner()}</div>`;
         }
 
         function _renderMyTemplatesInner() {
             const templates = loadGoalTemplates();
-            const header = `
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #db2777;">
-                    <div style="font-size: 1.3rem; font-weight: 700; color: #db2777;">⭐ My Templates</div>
-                    <div style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">Your own goals, ready to reuse</div>
-                </div>`;
             if (!templates.length) {
-                return header + `
-                    <p style="margin: 0; padding: 14px 16px; background: var(--bg-light); border-radius: 10px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.5;">
-                        No templates yet. On any goal, click <strong>☆ Save as template</strong> to keep its target, skill scope, deadline length and checklist here for next time, in any career.
-                    </p>`;
+                return _sgEmpty('fa-bookmark', 'No templates yet',
+                    'On any goal, click <strong>☆ Save as template</strong> to keep its target, skill scope, deadline length and checklist here for next time, in any career.', '');
             }
-            return header + `<div style="display: grid; gap: 12px;">${templates.map(renderGoalTemplateCard).join('')}</div>`;
+            return '<p class="sg-intro">Goals you saved yourself. Use one in any track.</p><div class="sg-list">' + templates.map(renderGoalTemplateCard).join('') + '</div>';
         }
 
         function renderGoalTemplateCard(t) {
-            const color = '#db2777';
-            const icons = {
-                study_hours: '<i class="fa-solid fa-book"></i>',
-                skill_mastery: '<i class="fa-solid fa-medal"></i>',
-                custom: '<i class="fa-solid fa-square-check"></i>'
-            };
             const typeNames = { study_hours: 'Study hours', skill_mastery: 'Skill mastery', custom: 'Custom' };
             const unit = t.type === 'custom' ? (t.customUnit || 'items') : 'hours';
             const skill = _gtSkillStatus(t);
@@ -57357,42 +58043,36 @@ document.addEventListener('DOMContentLoaded', function() {
             const alreadyActive = goals.some(g => g.career === currentCareer && _gtSameTemplate(t, g.title, g.type)
                 && (Number(g.currentProgress) || 0) < g.target);
             const fromOtherCareer = t.sourceCareer && t.sourceCareer !== currentCareer;
-            const chip = (html) => `<span style="padding: 4px 10px; background: var(--bg-white); border: 1px solid var(--border-color); border-radius: 12px; font-weight: 500;">${html}</span>`;
 
-            let skillChip = '';
-            if (t.type === 'skill_mastery' && t.skillName) skillChip = chip(`📖 ${gtEsc(t.skillName)}`);
-            else if (t.type === 'study_hours' && skill.wanted) skillChip = chip(`📖 ${skill.wanted} skill${skill.wanted === 1 ? '' : 's'}`);
+            const chips = [{ i: 'fa-solid fa-bullseye', t: t.target + ' ' + unit }, { i: '', t: typeNames[t.type] || t.type }];
+            if (t.type === 'skill_mastery' && t.skillName) chips.push({ i: 'fa-solid fa-layer-group', t: String(t.skillName).split(' (')[0] });
+            else if (t.type === 'study_hours' && skill.wanted) chips.push({ i: 'fa-solid fa-layer-group', t: skill.wanted + ' skill' + (skill.wanted === 1 ? '' : 's') });
+            if (t.durationDays) chips.push({ i: 'fa-regular fa-clock', t: t.durationDays + ' days' });
+            if (steps) chips.push({ i: 'fa-solid fa-list-check', t: steps + ' step' + (steps === 1 ? '' : 's') });
+            if (t.timesUsed) chips.push({ i: 'fa-solid fa-rotate', t: 'used ' + t.timesUsed + '×' });
+            if (fromOtherCareer) chips.push({ i: 'fa-solid fa-shuffle', t: 'from ' + ((typeof skillsData !== 'undefined' && skillsData[t.sourceCareer] && skillsData[t.sourceCareer].title) || t.sourceCareer) });
+
+            const why = t.why ? (t.why.length > 120 ? t.why.slice(0, 117) + '…' : t.why) : '';
+            const warn = skill.missing
+                ? `<div class="sg-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${skill.missing === skill.wanted ? 'Its skill' : 'Some of its skills'} ${skill.missing === 1 ? 'is' : 'are'} not in this career. You'll be asked to pick again.</div>`
+                : '';
 
             return `
-                <div class="suggestion-card" onclick="applyGoalTemplate('${t.id}')"
-                    style="padding: 16px; background: rgba(219, 39, 119, 0.07); border: 2px solid ${color}; border-radius: 12px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-                    <div style="display: flex; gap: 12px; align-items: start;">
-                        <div style="font-size: 2rem; flex-shrink: 0;">${icons[t.type] || '📌'}</div>
-                        <div style="flex: 1; min-width: 0;">
-                            <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 4px; font-size: 1rem; line-height: 1.3;">
-                                ${gtEsc(t.title)}
-                                ${alreadyActive ? '<span style="margin-left: 8px; font-size: 0.75rem; color: #b45309; font-weight: 500;">● already in your goals</span>' : ''}
-                            </div>
-                            ${t.why ? `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; line-height: 1.4;">💭 ${gtEsc(t.why.length > 120 ? t.why.slice(0, 117) + '…' : t.why)}</div>` : ''}
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
-                                ${chip(`🏁 ${gtEsc(t.target)} ${gtEsc(unit)}`)}
-                                ${chip(gtEsc(typeNames[t.type] || t.type))}
-                                ${skillChip}
-                                ${t.durationDays ? chip(`⏱ ${gtEsc(t.durationDays)} days`) : ''}
-                                ${steps ? chip(`📋 ${steps} step${steps === 1 ? '' : 's'}`) : ''}
-                                ${t.timesUsed ? chip(`🔁 used ${gtEsc(t.timesUsed)}×`) : ''}
-                                ${fromOtherCareer ? chip(`from ${gtEsc((typeof skillsData !== 'undefined' && skillsData[t.sourceCareer] && skillsData[t.sourceCareer].title) || t.sourceCareer)}`) : ''}
-                            </div>
-                            ${skill.missing ? `<div style="margin-top: 8px; font-size: 0.78rem; color: #b45309;">⚠️ ${skill.missing === skill.wanted ? 'Its skill' : 'Some of its skills'} ${skill.missing === 1 ? 'is' : 'are'} not in this career. You'll be asked to pick again.</div>` : ''}
-                        </div>
-                        <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end; flex-shrink: 0;">
-                            <span style="color: ${color}; font-weight: 600; font-size: 0.8rem; white-space: nowrap;">Use →</span>
-                            <button type="button" class="gt-delete-btn" onclick="event.stopPropagation(); requestDeleteGoalTemplate('${t.id}', this)"
-                                title="Delete this template"
-                                style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 8px; padding: 4px 8px; font-size: 0.75rem; cursor: pointer; white-space: nowrap;">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
+                <div class="sg-card" role="button" tabindex="0" onclick="applyGoalTemplate('${t.id}')"
+                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+                    <div class="sg-ic"><i class="fa-solid ${t.type === 'skill_mastery' ? 'fa-medal' : t.type === 'custom' ? 'fa-square-check' : 'fa-book'}" aria-hidden="true"></i></div>
+                    <div class="sg-main">
+                        <div class="sg-title">${gtEsc(t.title)}${alreadyActive ? '<span class="sg-badge sg-badge--warn">Already in your goals</span>' : ''}</div>
+                        ${why ? `<div class="sg-why">${gtEsc(why)}</div>` : ''}
+                        ${_sgChips(chips)}
+                        ${warn}
+                    </div>
+                    <div class="sg-side">
+                        <span class="sg-cta">Use →</span>
+                        <button type="button" class="gt-delete-btn sg-del" onclick="event.stopPropagation(); requestDeleteGoalTemplate('${t.id}', this)"
+                            title="Delete this template" aria-label="Delete this template">
+                            <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                        </button>
                     </div>
                 </div>`;
         }
@@ -57777,7 +58457,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                 // Unmapped/aggregate careers (e.g. the "Mastery Roadmap" view, which
                 // spans multiple tracks at once and has no single skill tree of its
-                // own) intentionally return no suggestions — showSmartSuggestions()
+                // own) intentionally return no suggestions — showSuggestions()
                 // already shows a clear "No suggestions available for this career
                 // yet" message in that case. That's more honest than the old
                 // default, which silently pushed two generic 50h/150h placeholder
@@ -58300,6 +58980,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const deadline = document.getElementById('goalDeadline').value || undefined;
             const priority = document.getElementById('goalPriority').value || 'medium';
             const why = document.getElementById('goalWhy').value.trim() || undefined;
+            const linkRaw = document.getElementById('goalLink').value.trim();
+            const link = goalNormalizeLink(linkRaw) || undefined;
+            if (linkRaw && !link) {
+                goalWizardShowStep(2);
+                showGoalFormError('That link does not look valid. Use a web address like https://example.com');
+                document.getElementById('goalLink').focus();
+                return;
+            }
             const customUnit = type === 'custom' ? getGoalUnitLabel('custom') : undefined;
             const chainsFrom = document.getElementById('goalChainFrom')?.value || undefined;
 
@@ -58376,6 +59064,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         skillNames,
                         priority,
                         why,
+                        link,
                         customUnit,
                         chainsFrom,
                         manuallyUpdated: false 
@@ -58394,6 +59083,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     skillNames,
                     priority,
                     why,
+                    link,
                     customUnit,
                     chainsFrom,
                     currentProgress: 0,
@@ -74605,7 +75295,11 @@ function saveDailyStudyData() {
         window.addGoalSubtaskFromInput       = addGoalSubtaskFromInput;
         window.toggleGoalSubtask             = toggleGoalSubtask;
         window.deleteGoalSubtask             = deleteGoalSubtask;
-        window.showSmartSuggestions          = showSmartSuggestions;
+        window.showSuggestions               = showSuggestions;
+        window.showSmartSuggestions          = showSuggestions;   // old name, kept so nothing calling it breaks
+        window.closeSuggestions              = closeSuggestions;
+        window.sgSwitchTab                   = sgSwitchTab;
+        window.sgEditGoal                    = sgEditGoal;
         window.saveGoalAsTemplate            = saveGoalAsTemplate;
         window.applyGoalTemplate             = applyGoalTemplate;
         window.requestDeleteGoalTemplate     = requestDeleteGoalTemplate;
@@ -80043,16 +80737,99 @@ window.fcRenderTagChips = fcRenderTagChips;
                     </div></details>`;
             }
 
+            // ── List UI state: which phases are open, which show their locked skills ──
+            const LISTUI_KEY = 'rdmListUi';
+            function loadListUi(track) {
+                const u = ((readJSON(LISTUI_KEY, {}) || {})[track]) || {};
+                return { open: u.open || {}, locked: u.locked || {} };
+            }
+            function saveListUi(track, ui) {
+                const all = readJSON(LISTUI_KEY, {}) || {};
+                all[track] = ui; writeJSON(LISTUI_KEY, all);
+            }
+            function lockedToggleLabel(on, n) { return (on ? 'Hide ' : 'Show ') + n + ' locked skill' + (n === 1 ? '' : 's'); }
+
+            // ── Link between a roadmap skill and a Goal ──
+            function goalForSkill(track, skill) {
+                if (typeof goals === 'undefined' || !Array.isArray(goals)) return null;
+                if (!skill.studyHoursKeys || !skill.studyHoursKeys.length) return null;
+                return goals.find(g => g && g.career === track && g.type === 'skill_mastery' && skill.studyHoursKeys.includes(g.skillName)) || null;
+            }
+            function goalChipHtml(track, g) {
+                // Goal progress is always computed against the app's current career, so only show a % when that matches.
+                let pct = null;
+                try { if (typeof currentCareer !== 'undefined' && currentCareer === track && typeof getGoalProgressPercent === 'function') pct = Math.round(getGoalProgressPercent(g)); } catch (e) {}
+                return `<span class="rdm-goal-chip" title="Linked goal: ${escapeHtml(g.title)}"><svg class="icon-svg" aria-hidden="true"><use href="#icon-flag"></use></svg>Goal${pct !== null ? ' ' + pct + '%' : ''}</span>`;
+            }
+
+            // ── "This week": what to do with the hours you still owe this week ──
+            // Budget = your Hrs/week setting, or more if the Target finish date demands it.
+            // What is left of the budget is split across the next unlocked skills, each
+            // up to its completion gate (75% of its hours).
+            function weekPlanHtml(track, hpw) {
+                const cur = getCurriculum(track); if (!cur) return '';
+                const completedSet = new Set(getCompleted(track)), skipped = getSkippedSet(track, cur);
+                const satisfied = new Set([...completedSet, ...skipped]);
+                const active = cur.filter(s => !completedSet.has(s.id) && !skipped.has(s.id));
+                const unlocked = topologicalSort(active, cur).filter(s => !isLocked(s, satisfied));
+                if (!unlocked.length) return '';
+
+                const st = computeStatus(track, hpw), p = st && st.plan;
+                const thisW = getHoursThisWeek(track);
+                let budget = hpw, note = '', noteCls = '';
+                if (p && p.state === 'overdue') { note = 'Your target date has passed. Pick a new one above.'; noteCls = 'warn'; }
+                else if (p && isFinite(p.need)) {
+                    const [ty, tm, td] = st.target.split('-').map(Number), tgt = fmtDate(new Date(ty, tm - 1, td));
+                    if (p.need > hpw + 0.5) { budget = Math.min(40, Math.ceil(p.need)); note = `Finishing by ${tgt} needs ${fmtN(p.need)}h/wk, above your ${hpw}h/wk setting.`; noteCls = 'warn'; }
+                    else { note = `${fmtN(p.need)}h/wk is enough to finish by ${tgt}.`; noteCls = 'ok'; }
+                }
+                const left = Math.max(0, r1(budget - thisW));
+                const pct = budget > 0 ? Math.min(100, Math.round(thisW / budget * 100)) : 0;
+
+                let rest = left; const items = [];
+                for (const sk of unlocked) {
+                    if (items.length >= 3 || rest < 0.5) break;
+                    const trackable = !!(sk.studyHoursKeys && sk.studyHoursKeys.length);
+                    const toGate = trackable ? Math.max(0, r1(sk.hours * 0.75 - getRoadmapSkillHours(track, sk))) : sk.hours;
+                    if (trackable && toGate <= 0) { items.push({ sk, ready: true, trackable }); continue; }
+                    const hrs = Math.min(rest, toGate);
+                    items.push({ sk, hrs: Math.round(hrs * 2) / 2 || r1(hrs), trackable });
+                    rest -= hrs;
+                }
+
+                const rows = items.map(it => {
+                    const g = goalForSkill(track, it.sk);
+                    const goalHtml = g ? goalChipHtml(track, g)
+                        : (it.trackable ? `<button type="button" class="rdm-mini-btn" title="Create a Goal that tracks this skill" onclick="StrategicRoadmap.createGoalForSkill('${track}','${it.sk.id}')">Goal</button>` : '');
+                    return `<li class="rdm-week-item"><span class="rdm-week-skill">${escapeHtml(it.sk.name.split(' (')[0])}</span>
+                        <span class="rdm-week-h">${it.ready ? 'Ready to tick off' : fmtN(it.hrs) + 'h'}</span>${goalHtml}
+                        <button type="button" class="rdm-mini-btn" title="Add a to-do for this skill, due today" onclick="StrategicRoadmap.addSkillToToday('${track}','${it.sk.id}')">Today</button></li>`;
+                }).join('');
+                const more = (typeof showSuggestions === 'function' && typeof currentCareer !== 'undefined' && currentCareer === track)
+                    ? `<button type="button" class="rdm-mini-btn rdm-week-more" onclick="showSuggestions()">More ideas</button>` : '';
+                const body = left <= 0
+                    ? `<div class="rdm-week-note ok">Weekly target reached. Anything extra puts you ahead of plan.</div>`
+                    : `<ul class="rdm-week-list">${rows}</ul>`;
+                return `<div class="rdm-week">
+                    <div class="rdm-week-head"><span class="rdm-week-title">This week</span>
+                        <span class="rdm-week-sum"><strong>${fmtN(thisW)}</strong> / ${fmtN(budget)}h logged${left > 0 ? ' · ' + fmtN(left) + 'h to go' : ''}</span></div>
+                    <div class="rdm-week-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+                    ${note ? `<div class="rdm-week-note ${noteCls}">${note}</div>` : ''}
+                    ${body}${more}</div>`;
+            }
+
             function listFilterHtml() {
                 const unlockedOnly = localStorage.getItem(UNLOCKED_KEY) === '1';
                 return `<div class="rdm-lf"><input type="search" class="rdm-lf-input" id="rdmListSearch" placeholder="Find a skill…" value="${escapeHtml(rdmListQuery)}" oninput="StrategicRoadmap.filterList(this.value)" aria-label="Find a skill" autocomplete="off">
                     <label class="rdm-lf-chk"><input type="checkbox" id="rdmUnlockedOnly" ${unlockedOnly ? 'checked' : ''} onchange="StrategicRoadmap.setUnlockedOnly(this.checked)"> Unlocked only</label>
+                    <span class="rdm-lf-links"><button type="button" class="rdm-lf-link" onclick="StrategicRoadmap.setAllPhases(true)">Expand all</button><button type="button" class="rdm-lf-link" onclick="StrategicRoadmap.setAllPhases(false)">Collapse all</button></span>
                     <span class="rdm-lf-count" id="rdmListCount" aria-live="polite"></span></div>`;
             }
             function applyListFilter() {
                 const out = document.getElementById('rdmOutput'); if (!out) return;
-                const nodes = out.querySelectorAll('.rdm-skill-node[data-q]'); if (!nodes.length) return;
                 const q = rdmListQuery.trim().toLowerCase(), unlockedOnly = localStorage.getItem(UNLOCKED_KEY) === '1';
+                out.classList.toggle('rdm-searching', !!q);   // while searching, collapsed phases and hidden locked skills still show their matches
+                const nodes = out.querySelectorAll('.rdm-skill-node[data-q]'); if (!nodes.length) return;
                 let shown = 0;
                 nodes.forEach(n => {
                     const ok = (!q || n.dataset.q.includes(q)) && !(unlockedOnly && n.dataset.locked === '1');
@@ -80140,7 +80917,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>
                         ${streakHtml}
                     </div>`;
-                html += targetRowHtml(track, hpw) + weeklyReviewHtml(track, hpw);
+                html += targetRowHtml(track, hpw) + weekPlanHtml(track, hpw) + weeklyReviewHtml(track, hpw);
 
                 // ── Focus Now card ──
                 if (focusSkill) {
@@ -80149,7 +80926,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const fHrs = fTrackable ? getRoadmapSkillHours(track, focusSkill) : 0;
                     const fThreshold = Math.round(focusSkill.hours * 0.75 * 10) / 10;
                     const fPct = fTrackable ? Math.min(100, Math.round((fHrs / focusSkill.hours) * 100)) : 0;
-                    const fFillColor = fPct >= 75 ? '#fff' : 'rgba(255,255,255,0.85)';
+                    const fFillColor = 'var(--primary)';
                     // Explicit "Xh left" instead of making the reader subtract
                     // logged-from-threshold themselves — visible at a glance,
                     // no click needed. fRemain can be 0 while fHrs is still
@@ -80197,6 +80974,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                 // ── Phase blocks ──
                 const phaseList = getPhaseList(track, curriculum);
                 let globalOrder = 1;
+                const ui = loadListUi(track), defaultOpenPh = focusSkill ? focusSkill.phase : null;
                 phaseList.forEach(phInfo => {
                     const ph = phInfo.num;
                     const phSkillsActive = sortedSkills.filter(s => s.phase === ph);
@@ -80208,17 +80986,28 @@ window.fcRenderTagChips = fcRenderTagChips;
                     const phHrsLeft = phSkillsActive.reduce((s, sk) => s + hoursRemaining(track, sk), 0);
                     const phWksLeft = Math.ceil(phHrsLeft / hpw);
 
-                    html += `<div class="rdm-phase-block">
-                        <div class="rdm-phase-label" style="background:${phInfo.color}">${escapeHtml(phInfo.label)}</div>
-                        <div class="rdm-phase-reason" style="background:${phInfo.color}">${escapeHtml(phInfo.reason)}</div>
+                    const phReady = phSkillsActive.filter(s => !isLocked(s, satisfiedSet)).length;
+                    const phLocked = phSkillsActive.length - phReady;
+                    const phOpen = ui.open[ph] !== undefined ? !!ui.open[ph] : (ph === defaultOpenPh);
+                    const phShowLocked = ui.locked[ph] !== undefined ? !!ui.locked[ph] : phReady === 0;
+
+                    html += `<div class="rdm-phase-block${phOpen ? '' : ' rdm-collapsed'}${phShowLocked ? ' rdm-show-locked' : ''}" data-ph="${ph}" style="--ph:${escapeHtml(String(phInfo.color))}">
+                        <div class="rdm-phase-label" role="button" tabindex="0" aria-expanded="${phOpen}" title="Show or hide this phase"
+                            onclick="StrategicRoadmap.togglePhase('${track}',${ph})"
+                            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();StrategicRoadmap.togglePhase('${track}',${ph});}">
+                            <span class="rdm-phase-name">${escapeHtml(phInfo.label)}</span>
+                            <svg class="icon-svg rdm-phase-chev" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+                        </div>
                         <div class="rdm-phase-progress">
                             <div class="rdm-phase-progress-track">
-                                <div class="rdm-phase-progress-fill" style="width:${phPct}%;background:${phInfo.color}"></div>
+                                <div class="rdm-phase-progress-fill" style="width:${phPct}%"></div>
                             </div>
-                            <span class="rdm-phase-progress-label">${phDone}/${phSkillsAll.length} done · ~${phWksLeft}wk left</span>
+                            <span class="rdm-phase-progress-label">${phDone}/${phSkillsAll.length} done · ${phReady} ready · ~${phWksLeft}wk left</span>
                             <button class="rdm-phase-skip-btn" onclick="StrategicRoadmap.skipPhase('${track}',${ph})"
                                 title="Go through each active skill in this phase one by one and choose whether to skip it"><svg class="icon-svg" aria-hidden="true"><use href="#icon-fast-forward"></use></svg> Skip Phase</button>
-                        </div>`;
+                        </div>
+                        <div class="rdm-phase-body">
+                            <div class="rdm-phase-reason">${escapeHtml(phInfo.reason)}</div>`;
 
                     phSkillsActive.forEach(skill => {
                         const wks = Math.ceil(hoursRemaining(track, skill) / hpw);
@@ -80239,6 +81028,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                             lineageHtml = `<div class="rdm-prereq">🔗 ${escapeHtml(shown)}</div>`;
                         }
 
+                        if (!locked) { const lg = goalForSkill(track, skill); if (lg) lineageHtml += `<div class="rdm-node-goal">${goalChipHtml(track, lg)}</div>`; }
                         const autoHtml = autoIds.has(skill.id) ? `<span class="rdm-auto-label">auto ✓</span>` : '';
                         const lockIcon = locked ? `<span class="rdm-lock-badge rdm-icon-chip rdm-icon-sm rdm-icon-locked"><svg class="icon-svg" aria-hidden="true"><use href="#icon-lock"></use></svg></span>` : '';
 
@@ -80254,7 +81044,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                             const skHrs = getRoadmapSkillHours(track, skill);
                             const skThreshold = Math.round(skill.hours * 0.75 * 10) / 10;
                             const skPct = Math.min(100, Math.round((skHrs / skill.hours) * 100));
-                            const fillColor = skPct >= 75 ? '#d17b96' : skPct >= 40 ? '#f59e0b' : '#ef4444';
+                            const fillColor = skPct >= 40 ? 'var(--primary)' : 'rgba(var(--primary-rgb,209,123,150),.55)';
                             // Same explicit-remainder chip as the Focus card — every
                             // trackable node in the list shows "Xh left" directly,
                             // so scanning the whole phase tells you exactly where
@@ -80300,7 +81090,10 @@ window.fcRenderTagChips = fcRenderTagChips;
                             </div>`;
                         globalOrder++;
                     });
-                    html += `</div>`;
+                    if (phLocked > 0 && phReady > 0) {
+                        html += `<button type="button" class="rdm-locked-toggle" data-n="${phLocked}" onclick="StrategicRoadmap.toggleLocked('${track}',${ph})">${lockedToggleLabel(phShowLocked, phLocked)}</button>`;
+                    }
+                    html += `</div></div>`;   // close .rdm-phase-body and .rdm-phase-block
                 });
 
                 // ── Manually-completed skills — undoable one at a time ──
@@ -80904,7 +81697,24 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const colA = buildCompareCol(trackA, opts.hpw || 10);
                 const colB = buildCompareCol(trackB, opts.hpw || 10);
                 if (!colA || !colB) return null;
-                return `<div class="rdm-compare-grid">${colA}${colB}</div>`;
+                // Head-to-head: hours left, skills left and weeks at the current Hrs/week
+                const stat = (t) => {
+                    const cur = getCurriculum(t); if (!cur) return null;
+                    const done = new Set(getCompleted(t)), skip = getSkippedSet(t, cur);
+                    const left = cur.filter(x => !done.has(x.id) && !skip.has(x.id));
+                    const hrs = left.reduce((a, x) => a + hoursRemaining(t, x), 0);
+                    const m = (typeof TRACK_META !== 'undefined' && TRACK_META[t]) || { label: t };
+                    return { label: m.label, hrs, n: left.length, wks: Math.ceil(hrs / (opts.hpw || 10)) };
+                };
+                const sa = stat(trackA), sb = stat(trackB);
+                let vs = '';
+                if (sa && sb) {
+                    const diff = Math.abs(sa.hrs - sb.hrs), lighter = sa.hrs <= sb.hrs ? sa : sb;
+                    const wkDiff = Math.abs(sa.wks - sb.wks);
+                    vs = `<div class="rdm-cmp-vs"><strong>${escapeHtml(lighter.label)}</strong> is lighter: ${fmtN(Math.round(diff))}h less to go${wkDiff ? ` (~${wkDiff} wk sooner at ${opts.hpw || 10}h/wk)` : ''}.
+                        <span>${escapeHtml(sa.label)} ${sa.n} skills · ${fmtN(Math.round(sa.hrs))}h &nbsp;|&nbsp; ${escapeHtml(sb.label)} ${sb.n} skills · ${fmtN(Math.round(sb.hrs))}h</span></div>`;
+                }
+                return `${vs}<div class="rdm-compare-grid">${colA}${colB}</div>`;
             }
 
             // ── OVERVIEW — every track at a glance ────────────────────────────
@@ -81261,8 +82071,14 @@ Here is my current progress summary:
                 addFocusToToday(track) {
                     const st = computeStatus(track, getHpw());
                     if (!st || !st.focus) return;
+                    this.addSkillToToday(track, st.focus.id);
+                },
+                // Same to-do as "Add to Today", for any skill (used by the This week plan)
+                addSkillToToday(track, skillId) {
+                    const cur = getCurriculum(track), f = cur && cur.find(s => s.id === skillId);
+                    if (!f) return;
                     if (typeof getTodos !== 'function' || typeof saveTodos !== 'function') { if (typeof showNotification === 'function') showNotification('To-do list not found in this app.', 'error'); return; }
-                    const f = st.focus, name = f.name.split(' (')[0], list = getTodos();
+                    const name = f.name.split(' (')[0], list = getTodos();
                     if (list.some(t => t && !t.done && t.rdmTrack === track && t.rdmSkillId === f.id)) { if (typeof showNotification === 'function') showNotification('This skill is already on your to-do list.', 'info'); return; }
                     list.push({ id: 't' + Date.now() + Math.random().toString(36).slice(2, 6), text: 'Study: ' + name, priority: 'B', due: todayStr(), tags: ['roadmap', track],
                         done: false, subtasks: [], order: typeof nextTodoOrder === 'function' ? nextTodoOrder(list, 'B') : 0, createdAt: Date.now(), rdmTrack: track, rdmSkillId: f.id });
@@ -81385,13 +82201,13 @@ Here is my current progress summary:
                 // Focus Now skill, target = its full hour requirement, deadline
                 // estimated from the selected hrs/week pace.
                 async createGoalFromFocus(track) {
+                    const st = computeStatus(track, getHpw());   // same focus the card shows (skipped skills count as satisfied)
+                    if (!st || !st.focus) return;
+                    return this.createGoalForSkill(track, st.focus.id);
+                },
+                async createGoalForSkill(track, skillId) {
                     const curriculum = getCurriculum(track);
-                    if (!curriculum) return;
-                    const completedSet = new Set(getCompleted(track));
-                    const activeSkills = curriculum.filter(s => !completedSet.has(s.id));
-                    const sorted = topologicalSort(activeSkills, curriculum);
-                    const unlockedNow = sorted.filter(s => !isLocked(s, completedSet));
-                    const focusSkill = unlockedNow[0] || sorted[0];
+                    const focusSkill = curriculum && curriculum.find(s => s.id === skillId);
                     if (!focusSkill) return;
                     if (!focusSkill.studyHoursKeys || focusSkill.studyHoursKeys.length === 0) {
                         if (typeof showNotification === 'function')
@@ -81462,6 +82278,37 @@ Here is my current progress summary:
                     if (typeof updateGoalProgressChart === 'function') { try { updateGoalProgressChart(); } catch (e) {} }
                     if (typeof showNotification === 'function')
                         showNotification(`Created Goal "${focusSkill.name.split(' (')[0]}" — due ${deadline.toLocaleDateString('en-US')}`, 'success');
+                    try { render(track); } catch (e) {}   // show the new Goal chip right away
+                },
+                // What the Suggestions modal needs to know about the roadmap's current focus
+                getFocus(track) {
+                    const st = computeStatus(track, getHpw());
+                    if (!st || !st.focus) return null;
+                    const f = st.focus, trackable = !!(f.studyHoursKeys && f.studyHoursKeys.length);
+                    return { id: f.id, name: f.name, hours: f.hours, trackable, skillKey: trackable ? f.studyHoursKeys[0] : null,
+                             logged: trackable ? getRoadmapSkillHours(track, f) : 0 };
+                },
+                togglePhase(track, ph) {
+                    const bk = document.querySelector(`#rdmOutput .rdm-phase-block[data-ph="${ph}"]`); if (!bk) return;
+                    const collapsed = bk.classList.toggle('rdm-collapsed');
+                    const hd = bk.querySelector('.rdm-phase-label'); if (hd) hd.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                    const ui = loadListUi(track); ui.open[ph] = !collapsed; saveListUi(track, ui);
+                },
+                toggleLocked(track, ph) {
+                    const bk = document.querySelector(`#rdmOutput .rdm-phase-block[data-ph="${ph}"]`); if (!bk) return;
+                    const on = bk.classList.toggle('rdm-show-locked');
+                    const b = bk.querySelector('.rdm-locked-toggle'); if (b) b.textContent = lockedToggleLabel(on, Number(b.dataset.n) || 0);
+                    const ui = loadListUi(track); ui.locked[ph] = on; saveListUi(track, ui);
+                },
+                setAllPhases(open) {
+                    const track = document.getElementById('rdmTrackSelect')?.value; if (!track) return;
+                    const ui = loadListUi(track);
+                    document.querySelectorAll('#rdmOutput .rdm-phase-block').forEach(bk => {
+                        bk.classList.toggle('rdm-collapsed', !open);
+                        const hd = bk.querySelector('.rdm-phase-label'); if (hd) hd.setAttribute('aria-expanded', open ? 'true' : 'false');
+                        ui.open[bk.dataset.ph] = !!open;
+                    });
+                    saveListUi(track, ui);
                 },
                 // ✅ SMARTER COMPLETION GATE — replaces the old 1-click instant-complete.
                 //   • Skills with studyHoursKeys (trackable): clicking opens an hours-entry
@@ -86035,7 +86882,7 @@ function panel(){
   var old=$('#gpPanel'); if(old)old.remove();
   var list=active().filter(function(g){return !g.pausedAt&&g.deadline&&left(g)>0});
   var el=document.createElement('div');el.id='gpPanel';el.className='gp-panel'+(open_()?'':' gp-closed');
-  if(!list.length){el.innerHTML=shell('<div class="gp-empty">No active goals with a deadline. Add one to see your weekly load.</div>');wire(el);c.parentNode.insertBefore(el,c);return}
+  if(!list.length){el.innerHTML=shell('<div class="gp-empty">No active goals with a deadline. Add one to see your weekly load.</div>');wire(el);c.parentNode.insertBefore(el,c.nextSibling);return}
   var hrs=0,rows='';
   list.sort(function(a,b){return daysLeft(a)-daysLeft(b)}).forEach(function(g){
     var dl=daysLeft(g),perDay=left(g)/dl;
@@ -86055,7 +86902,7 @@ function panel(){
   +'<ul class="gp-list">'+rows+'</ul>'
   +'<div class="gp-row" style="border:0;padding:0"><span class="gp-sp"></span><button class="gp-btn" id="gpIcs" title="Download all deadlines as a calendar file"><i class="fa-regular fa-calendar-plus"></i> Export .ics</button></div>';
   el.innerHTML=shell(inner,fmt(hrs)+'h/wk');
-  wire(el);c.parentNode.insertBefore(el,c);
+  wire(el);c.parentNode.insertBefore(el,c.nextSibling);
   var i=$('#gpIcs');if(i)i.onclick=exportIcs;
 }
 function wire(el){
@@ -86067,19 +86914,15 @@ function decorate(){
   var c=$('#goalsContainer'); if(!c)return;
   var pinned=[];
   c.querySelectorAll('.goal-item[data-id]').forEach(function(card){
-    var g=G().find(function(x){return String(x.id)===card.getAttribute('data-id')}); if(!g||card.querySelector('.gp-row'))return;
+    var g=G().find(function(x){return String(x.id)===card.getAttribute('data-id')}); if(!g||card.dataset.gpDone)return;
     card.classList.toggle('gp-paused',!!g.pausedAt);card.classList.toggle('gp-pin',!!g.pinned);
     if(g.pinned)pinned.push(card);
-    var row=document.createElement('div');row.className='gp-row';
-    if(!done(g)&&g.deadline&&!g.pausedAt&&left(g)>0){var dl=daysLeft(g);row.innerHTML='<span class="gp-chip"><i class="fa-regular fa-clock"></i> '+fmt(left(g)/dl)+' '+esc(unit(g))+'/day \u00b7 '+dl+'d left</span>'}
-    if(g.pausedAt)row.innerHTML+='<span class="gp-chip paused"><i class="fa-solid fa-pause"></i> Paused</span>';
-    row.insertAdjacentHTML('beforeend','<span class="gp-sp"></span>');
-    var b1=document.createElement('button');b1.className='gp-btn';b1.setAttribute('aria-pressed',!!g.pinned);b1.title=g.pinned?'Unpin goal':'Pin goal to top';
-    b1.innerHTML='<i class="fa-solid fa-thumbtack"></i> '+(g.pinned?'Pinned':'Pin');b1.onclick=function(e){e.stopPropagation();g.pinned=!g.pinned;save();rerender()};
-    row.appendChild(b1);
-    if(!done(g)){var b2=document.createElement('button');b2.className='gp-btn';b2.title=g.pausedAt?'Resume and shift deadline':'Pause and freeze deadline';
-      b2.innerHTML=g.pausedAt?'<i class="fa-solid fa-play"></i> Resume':'<i class="fa-solid fa-pause"></i> Pause';b2.onclick=function(e){e.stopPropagation();toggleP(g)};row.appendChild(b2)}
-    card.appendChild(row);
+    card.dataset.gpDone='1';
+    var chips='';
+    if(!done(g)&&g.deadline&&!g.pausedAt&&left(g)>0){var dl=daysLeft(g);chips+='<span class="gp-chip" title="Pace needed to finish by the deadline"><i class="fa-regular fa-clock"></i> '+fmt(left(g)/dl)+' '+esc(unit(g))+'/day</span>'}
+    if(g.pausedAt)chips+='<span class="gp-chip paused"><i class="fa-solid fa-pause"></i> Paused</span>';
+    if(chips){var holder=document.createElement('span');holder.className='gp-metachips';holder.innerHTML=chips;(card.querySelector('.goal-meta')||card).appendChild(holder)}
+    if(g.pinned){var tt=card.querySelector('.goal-title');if(tt)tt.insertAdjacentHTML('afterbegin','<i class="fa-solid fa-thumbtack" style="color:var(--primary-dark);font-size:.8em;margin-right:6px" title="Pinned"></i>')}
   });
   pinned.reverse().forEach(function(p){p.parentNode.insertBefore(p,p.parentNode.firstChild)});
 }
@@ -86090,6 +86933,8 @@ function toggleP(g){
   else{g.pausedAt=now();toast('Goal paused. Its deadline is frozen until you resume.')}
   save();rerender();
 }
+window.gpTogglePin=function(id){var g=G().find(function(x){return String(x.id)===String(id)});if(!g)return;g.pinned=!g.pinned;save();rerender()};
+window.gpTogglePause=function(id){var g=G().find(function(x){return String(x.id)===String(id)});if(!g||done(g))return;toggleP(g)};
 var busy=false;
 function rerender(){busy=true;try{window.renderGoals()}finally{busy=false}}
 
@@ -88075,4 +88920,292 @@ document.addEventListener('keydown', function (e) {
 
 </style>
 
+<style id="goalSlimCSS">
+/* ===== Goals: slimmer card, ⋯ menu, quick add, compact summary ===== */
+#goalsSection .goal-milestone-track { display: none; }
+/* The card used to clip anything that sticks out; the ⋯ and Push-deadline menus need to overflow it */
+#goalsSection .goal-item { overflow: visible; }
+#goalsSection .goal-item:has(.goal-more-menu.show), #goalsSection .goal-item:has(.goal-push-menu.show) { z-index: 50; }
+#goalsSection .goal-actions { flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 8px; margin-top: 12px; }
+#goalsSection .goal-actions .goal-action-btn { flex: 0 0 auto; max-width: none; min-width: 0; }
+#goalsSection .goal-actions .goal-more-wrap { margin-left: auto; }
+.goal-action-btn.link-icon { padding: 7px 12px; }
+.goal-more-wrap { position: relative; display: inline-flex; }
+.goal-more-menu { display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 210px; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--bg-white, #fff); border: 1px solid var(--border-color, #f0d7de); border-radius: 12px; box-shadow: 0 10px 28px rgba(74,50,64,.18); }
+.goal-more-menu.show { display: flex; }
+.goal-more-menu button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: none; color: var(--text-dark, #4a3240);
+  font: inherit; font-size: .85rem; font-weight: 600; padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+.goal-more-menu button i { width: 1.1em; text-align: center; color: var(--text-muted, #9a7686); }
+.goal-more-menu button:hover, .goal-more-menu button:focus-visible { background: rgba(var(--primary-rgb, 209,123,150), .14); outline: none; }
+.goal-more-menu button.danger, .goal-more-menu button.danger i { color: #e74c3c; }
+.goal-more-sep { height: 1px; background: var(--border-color, #f0d7de); margin: 4px 6px; }
+body.dark-mode .goal-more-menu { background: #2d1c2b; border-color: #9a7686; box-shadow: 0 10px 28px rgba(0,0,0,.5); }
+body.dark-mode .goal-more-menu button { color: #faf3f6; }
+body.dark-mode .goal-more-menu button.danger, body.dark-mode .goal-more-menu button.danger i { color: #fb7185; }
+
+.goal-quick-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.goal-quick-chip { border: 1px solid var(--border-color, #f0d7de); background: var(--bg-white, #fff); color: var(--theme-accent-deep, #a85870);
+  border-radius: 999px; padding: 4px 12px; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; min-height: 30px; transition: background .15s, transform .1s; }
+.goal-quick-chip:hover { background: rgba(var(--primary-rgb, 209,123,150), .16); }
+.goal-quick-chip:active { transform: scale(.95); }
+.goal-quick-chip.undo { color: var(--text-muted, #9a7686); border-style: dashed; }
+body.dark-mode .goal-quick-chip { background: #3a2530; border-color: #9a7686; color: #f9a8d4; }
+body.dark-mode .goal-quick-chip.undo { color: #d9b5c6; }
+
+#goalsSection .goal-meta .gp-metachips { margin-left: auto; display: inline-flex; gap: 6px; flex-wrap: wrap; }
+
+/* Compact "Goal Completion" summary: small ring + one line, instead of a 250px block */
+#goalsSection .goal-progress-summary { display: flex; align-items: center; gap: 16px; padding: 12px 16px; margin: 12px 0; text-align: left; }
+#goalsSection .goal-progress-title { display: none; }
+#goalsSection .goal-ring-wrap { width: 72px; height: 72px; flex: 0 0 72px; margin: 0; }
+#goalsSection .goal-ring-icon, #goalsSection .goal-ring-caption { display: none; }
+#goalsSection .goal-ring-percent { font-size: 1.05rem; }
+#goalsSection .goal-summary-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+#goalsSection .goal-progress-summary .goal-progress-text { width: auto; text-align: left; margin: 0; font-size: .88rem; }
+#goalsSection .goal-ring-legend { justify-content: flex-start; margin: 0; gap: 4px 14px; }
+</style>
+<style id="suggestionsCSS">
+/* ═══ SUGGESTIONS — Sakura Mist: viền + nền sáng, không fill đặc, màu lấy từ token của theme ═══ */
+
+/* Nút phụ dùng chung (vd. nút Suggestions ở trạng thái "No Goals Yet") */
+.sg-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:8px 18px;
+  border:1px solid var(--primary);border-radius:var(--ui-r,10px);background:var(--bg-white);color:var(--primary-dark);
+  font:inherit;font-size:.88rem;font-weight:600;line-height:1.2;cursor:pointer;box-shadow:none;transition:background .15s,border-color .15s,transform .1s}
+.sg-btn:hover{background:rgba(var(--primary-rgb,209,123,150),.12);border-color:var(--primary-dark)}
+.sg-btn:active{transform:scale(.98)}
+.sg-btn:focus-visible{outline:none;box-shadow:var(--ui-ring,0 0 0 3px rgba(209,123,150,.18))}
+body.dark-mode .sg-btn{color:var(--primary)}
+
+/* Nút "Add" của Goals: viền hồng + nền sáng, không đổ màu đặc (thắng rule !important của Step 4) */
+body #goalsSection .goal-add-btn,
+body.dark-mode #goalsSection .goal-add-btn{
+  background:var(--bg-white) !important;background-image:none !important;color:var(--primary-dark) !important;
+  border:1px solid var(--primary) !important;box-shadow:none !important;transform:none}
+body.dark-mode #goalsSection .goal-add-btn{color:var(--primary) !important}
+body #goalsSection .goal-add-btn:hover,
+body.dark-mode #goalsSection .goal-add-btn:hover{
+  background:rgba(var(--primary-rgb,209,123,150),.12) !important;border-color:var(--primary-dark) !important;
+  box-shadow:none !important;filter:none;transform:none}
+
+/* Preset trong form Add Goal (trước đây xanh dương, hover đổ màu đặc) */
+.sg-presets{margin-top:12px;padding:12px;border:1px solid var(--border-color);border-radius:10px;background:rgba(var(--primary-rgb,209,123,150),.06)}
+.sg-presets-title{margin-bottom:8px;font-size:.88rem;font-weight:600;color:var(--text-dark)}
+.sg-presets-row{display:flex;flex-wrap:wrap;gap:8px}
+.sg-presets-tip{margin-top:8px;font-size:.8rem;color:var(--text-muted)}
+body .suggestion-btn{padding:5px 12px;border:1px solid var(--primary);border-radius:999px;background:var(--bg-white);color:var(--primary-dark);
+  font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;box-shadow:none;transition:background .15s}
+body .suggestion-btn:hover{background:rgba(var(--primary-rgb,209,123,150),.14);transform:none;box-shadow:none}
+body.dark-mode .suggestion-btn{color:var(--primary)}
+
+/* Modal */
+#suggestionsModal{--sg-accent:var(--primary-dark);--sg-line:rgba(var(--primary-rgb,209,123,150),.3);--sg-soft:rgba(var(--primary-rgb,209,123,150),.08);
+  --sg-warn:#9a6a1f;--sg-bad:#b4414f;--sg-good:#2f8a6c;
+  position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:rgba(60,35,50,.45);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+body.dark-mode #suggestionsModal{--sg-accent:var(--primary);--sg-warn:#e3c58f;--sg-bad:#f0a3ab;--sg-good:#93d3bc;background:rgba(0,0,0,.6)}
+@keyframes sgPop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+#suggestionsModal .sg-panel{display:flex;flex-direction:column;width:100%;max-width:760px;max-height:90vh;overflow:hidden;outline:none;
+  background:var(--bg-white);color:var(--text-dark);border:1px solid var(--border-color);border-radius:16px;
+  box-shadow:0 20px 60px rgba(74,50,64,.28);animation:sgPop .22s ease}
+body.dark-mode #suggestionsModal .sg-panel{box-shadow:0 20px 60px rgba(0,0,0,.55)}
+
+#suggestionsModal .sg-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:20px 22px 6px}
+#suggestionsModal .sg-head h2{margin:0 0 4px;font-size:1.35rem;color:var(--text-dark)}
+#suggestionsModal .sg-head p{margin:0;font-size:.88rem;color:var(--text-muted)}
+#suggestionsModal .sg-close{flex:0 0 auto;width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:var(--ui-r-sm,8px);
+  background:transparent;color:var(--text-muted);font-size:1.05rem;cursor:pointer;transition:background .15s,color .15s}
+#suggestionsModal .sg-close:hover{background:var(--sg-soft);color:var(--sg-accent)}
+#suggestionsModal .sg-close:focus-visible,#suggestionsModal .sg-tab:focus-visible,#suggestionsModal .sg-card:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+#suggestionsModal .sg-pace{display:flex;align-items:center;gap:8px;padding:2px 22px 12px;font-size:.8rem;color:var(--text-muted)}
+#suggestionsModal .sg-pace i{color:var(--sg-accent)}
+
+#suggestionsModal .sg-tabs{display:flex;gap:6px;padding:0 22px 12px;border-bottom:1px solid var(--border-color);overflow-x:auto}
+#suggestionsModal .sg-tab{display:inline-flex;align-items:center;white-space:nowrap;padding:7px 14px;border:1px solid transparent;border-radius:999px;
+  background:transparent;color:var(--text-muted);font:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+#suggestionsModal .sg-tab:hover{background:var(--sg-soft);color:var(--sg-accent)}
+#suggestionsModal .sg-tab[aria-selected="true"]{background:var(--sg-soft);border-color:var(--sg-line);color:var(--sg-accent)}
+#suggestionsModal .sg-count{margin-left:7px;font-weight:700;opacity:.75;font-variant-numeric:tabular-nums}
+
+#suggestionsModal .sg-body{flex:1;min-height:0;overflow-y:auto;padding:18px 22px 22px}
+#suggestionsModal .sg-foot{padding:11px 22px;border-top:1px solid var(--border-color);background:var(--bg-light);
+  font-size:.8rem;color:var(--text-muted);text-align:center}
+#suggestionsModal .sg-list{display:grid;gap:10px}
+#suggestionsModal .sg-intro{margin:0 0 12px;font-size:.86rem;color:var(--text-muted)}
+
+/* Thẻ gợi ý */
+#suggestionsModal .sg-card{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border:1px solid var(--border-color);border-radius:12px;
+  background:var(--bg-white);transition:border-color .15s,background .15s,box-shadow .15s}
+#suggestionsModal .sg-card[role="button"]{cursor:pointer}
+#suggestionsModal .sg-card[role="button"]:hover{border-color:var(--primary);background:var(--sg-soft);box-shadow:0 4px 14px rgba(var(--primary-rgb,209,123,150),.14)}
+#suggestionsModal .sg-card--overdue{border-left:3px solid var(--sg-bad)}
+#suggestionsModal .sg-card--risk{border-left:3px solid var(--sg-warn)}
+#suggestionsModal .sg-card--covered{opacity:.6}
+#suggestionsModal .sg-ic{flex:0 0 38px;width:38px;height:38px;display:grid;place-items:center;border-radius:10px;background:var(--sg-soft);color:var(--sg-accent);font-size:1rem}
+#suggestionsModal .sg-card--overdue .sg-ic{color:var(--sg-bad)}
+#suggestionsModal .sg-card--risk .sg-ic{color:var(--sg-warn)}
+#suggestionsModal .sg-main{flex:1;min-width:0}
+#suggestionsModal .sg-kind{margin-bottom:2px;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sg-accent)}
+#suggestionsModal .sg-kind--overdue{color:var(--sg-bad)}
+#suggestionsModal .sg-kind--risk{color:var(--sg-warn)}
+#suggestionsModal .sg-title{font-size:.98rem;font-weight:650;line-height:1.3;color:var(--text-dark);overflow-wrap:anywhere}
+#suggestionsModal .sg-badge{margin-left:8px;font-size:.72rem;font-weight:650;color:var(--sg-good);white-space:nowrap}
+#suggestionsModal .sg-badge--warn{color:var(--sg-warn)}
+#suggestionsModal .sg-why{margin-top:3px;font-size:.84rem;line-height:1.45;color:var(--text-muted)}
+#suggestionsModal .sg-bar{height:6px;margin-top:10px;overflow:hidden;border-radius:99px;background:rgba(var(--primary-rgb,209,123,150),.16)}
+#suggestionsModal .sg-bar i{display:block;height:100%;border-radius:inherit;background:var(--primary)}
+#suggestionsModal .sg-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#suggestionsModal .sg-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--border-color);border-radius:999px;
+  background:var(--bg-light);font-size:.74rem;color:var(--text-muted);max-width:100%;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+#suggestionsModal .sg-chip i{font-size:.72rem;color:var(--sg-accent)}
+#suggestionsModal .sg-cta{align-self:center;flex:0 0 auto;font-size:.82rem;font-weight:650;color:var(--sg-accent);white-space:nowrap}
+#suggestionsModal .sg-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:0 0 auto}
+#suggestionsModal .sg-side .sg-cta{align-self:auto}
+#suggestionsModal .sg-warn{margin-top:8px;font-size:.78rem;color:var(--sg-warn)}
+
+/* Nút xoá template: hai lần bấm, trạng thái "armed" dùng nền đỏ nhạt chứ không đổ đặc */
+#suggestionsModal .sg-del{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:4px 9px;border:1px solid var(--border-color);border-radius:var(--ui-r-sm,8px);
+  background:transparent;color:var(--text-muted);font:inherit;font-size:.75rem;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s}
+#suggestionsModal .sg-del:hover,#suggestionsModal .sg-del.armed,#suggestionsModal .sg-del.armed:hover{background:color-mix(in srgb,var(--sg-bad) 12%,transparent);color:var(--sg-bad);border-color:var(--sg-bad)}
+#suggestionsModal .sg-del.armed{font-weight:650}
+
+/* Cảnh báo "hoàn thành trước khi thêm" */
+#suggestionsModal .sg-note{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;padding:12px 14px;border:1px solid var(--sg-line);border-radius:12px;
+  background:var(--sg-soft);font-size:.86rem;line-height:1.45}
+#suggestionsModal .sg-note i{margin-top:2px;color:var(--sg-accent)}
+
+/* Roadmap theo tier */
+#suggestionsModal .sg-tier{margin-top:22px}
+#suggestionsModal .sg-tier:first-child{margin-top:0}
+#suggestionsModal .sg-tier-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border-color)}
+#suggestionsModal .sg-tier-head i{align-self:center;color:var(--sg-accent)}
+#suggestionsModal .sg-tier-name{font-size:1rem;font-weight:700;color:var(--text-dark)}
+#suggestionsModal .sg-tier-hint{font-size:.82rem;color:var(--text-muted)}
+#suggestionsModal .sg-tier-count{margin-left:auto;font-size:.76rem;font-weight:600;color:var(--text-muted);font-variant-numeric:tabular-nums}
+#suggestionsModal .sg-done{margin-top:10px;font-size:.84rem;color:var(--text-muted)}
+#suggestionsModal .sg-done summary{cursor:pointer;padding:4px 0;font-weight:600;color:var(--sg-good)}
+#suggestionsModal .sg-done ul{margin:6px 0 0;padding:0;list-style:none}
+#suggestionsModal .sg-done li{display:flex;gap:8px;padding:3px 0;overflow-wrap:anywhere}
+#suggestionsModal .sg-done li i{margin-top:3px;font-size:.72rem;color:var(--sg-good)}
+
+/* Trạng thái trống */
+#suggestionsModal .sg-empty{padding:34px 12px;text-align:center;color:var(--text-muted)}
+#suggestionsModal .sg-empty-ic{width:48px;height:48px;margin:0 auto 12px;display:grid;place-items:center;border-radius:50%;background:var(--sg-soft);color:var(--sg-accent);font-size:1.2rem}
+#suggestionsModal .sg-empty-title{margin:0 0 6px;font-size:1rem;font-weight:650;color:var(--text-dark)}
+#suggestionsModal .sg-sub{margin:0 auto 16px;max-width:420px;font-size:.88rem;line-height:1.5}
+
+@media (max-width:560px){
+  #suggestionsModal{padding:10px}
+  #suggestionsModal .sg-card{padding:12px}
+  #suggestionsModal .sg-ic{display:none}
+  #suggestionsModal .sg-cta{align-self:flex-start}
+}
+@media (prefers-reduced-motion:reduce){#suggestionsModal .sg-panel{animation:none}}
+</style>
+<style id="roadmapCSS2">
+/* ═══ STRATEGIC ROADMAP v2 — Sakura Mist: viền + nền sáng, không đổ màu đặc, màu lấy từ token của theme ═══ */
+#roadmapCard{--rdm-accent:var(--primary-dark);--rdm-soft:rgba(var(--primary-rgb,209,123,150),.08);--rdm-line:rgba(var(--primary-rgb,209,123,150),.3)}
+.dark-mode #roadmapCard{--rdm-accent:var(--primary)}
+
+/* Header phase: nền nhạt + chấm màu nhỏ thay cho khối đặc xanh/lá/cam/đỏ; bấm để gập/mở */
+#roadmapCard .rdm-phase-block{background:var(--bg-white);box-shadow:none}
+#roadmapCard .rdm-phase-block:hover{box-shadow:none;transform:none}
+#roadmapCard .rdm-phase-label{background:var(--rdm-soft) !important;background-image:none !important;color:var(--text-dark);
+  text-transform:none;letter-spacing:.1px;font-size:.86rem;padding:11px 12px;cursor:pointer;user-select:none}
+#roadmapCard .rdm-phase-label::before{width:9px;height:9px;background:var(--ph,var(--primary));box-shadow:none}
+#roadmapCard .rdm-phase-label:hover{background:rgba(var(--primary-rgb,209,123,150),.14) !important}
+#roadmapCard .rdm-phase-label:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+#roadmapCard .rdm-phase-name{flex:1;min-width:0;overflow-wrap:anywhere}
+#roadmapCard .rdm-phase-chev{margin-left:auto;width:16px;height:16px;color:var(--text-muted);transition:transform .2s ease;flex-shrink:0}
+#roadmapCard .rdm-phase-block:not(.rdm-collapsed) .rdm-phase-chev{transform:rotate(180deg)}
+#roadmapCard .rdm-phase-reason{background:transparent !important;background-image:none !important;color:var(--text-muted);padding:9px 12px 8px;font-size:.76rem}
+#roadmapCard .rdm-phase-progress{flex-wrap:wrap;border-top:1px solid var(--border-color)}
+#roadmapCard .rdm-phase-progress-fill{background:var(--primary) !important;background-image:none !important}
+#roadmapCard .rdm-phase-body{display:block}
+#roadmapCard .rdm-phase-block.rdm-collapsed .rdm-phase-body{display:none}
+/* Kỹ năng bị khoá ẩn mặc định trong phase đang mở, có nút hiện lại */
+#roadmapCard .rdm-phase-block:not(.rdm-show-locked) .rdm-skill-node[data-locked="1"]{display:none}
+#roadmapCard .rdm-locked-toggle{display:block;width:100%;padding:10px 12px;border:0;border-top:1px solid var(--border-color);background:transparent;
+  color:var(--rdm-accent);font:inherit;font-size:.76rem;font-weight:650;cursor:pointer;text-align:center}
+#roadmapCard .rdm-locked-toggle:hover{background:var(--rdm-soft)}
+/* Đang tìm kiếm: phase gập và kỹ năng khoá vẫn hiện kết quả khớp */
+#rdmOutput.rdm-searching .rdm-phase-block.rdm-collapsed .rdm-phase-body{display:block}
+#rdmOutput.rdm-searching .rdm-phase-block .rdm-skill-node[data-locked="1"]{display:flex}
+#rdmOutput.rdm-searching .rdm-locked-toggle{display:none}
+
+/* Mở/đóng tất cả */
+#roadmapCard .rdm-lf-links{display:inline-flex;gap:10px;margin-left:auto}
+#roadmapCard .rdm-lf-link{border:0;background:transparent;padding:0;font:inherit;font-size:.74rem;font-weight:650;color:var(--rdm-accent);cursor:pointer}
+#roadmapCard .rdm-lf-link:hover{text-decoration:underline}
+
+/* Thẻ Focus Now: viền hồng + nền sáng thay cho gradient đặc */
+#roadmapCard .rdm-focus-card,.dark-mode #roadmapCard .rdm-focus-card{background:var(--bg-white);color:var(--text-dark);border:1px solid var(--primary);
+  box-shadow:0 4px 16px rgba(var(--primary-rgb,209,123,150),.14)}
+#roadmapCard .rdm-focus-card::before{display:none}
+#roadmapCard .rdm-focus-label{color:var(--rdm-accent);opacity:1}
+#roadmapCard .rdm-focus-label .rdm-icon-chip.rdm-icon-inverse{background:var(--rdm-soft);border-color:var(--rdm-line);color:var(--rdm-accent)}
+#roadmapCard .rdm-focus-meta .rdm-time-badge{background:rgba(var(--primary-rgb,209,123,150),.12);color:var(--rdm-accent)}
+#roadmapCard .rdm-focus-meta .rdm-stars{color:#f59e0b}
+#roadmapCard .rdm-focus-card .rdm-hrs-progress-track{background:rgba(var(--primary-rgb,209,123,150),.16)}
+#roadmapCard .rdm-focus-card .rdm-hrs-progress-threshold{background:var(--text-muted)}
+#roadmapCard .rdm-focus-card .rdm-hrs-progress-label{color:var(--text-muted)}
+#roadmapCard .rdm-focus-card .rdm-hrs-remain-chip{color:#8a5a12;background:rgba(245,158,11,.14)}
+.dark-mode #roadmapCard .rdm-focus-card .rdm-hrs-remain-chip{color:#fbbf24;background:rgba(245,158,11,.18)}
+#roadmapCard .rdm-focus-card .rdm-hrs-remain-chip.rdm-hrs-remain-done{color:#1a7f5a;background:rgba(107,191,168,.2)}
+.dark-mode #roadmapCard .rdm-focus-card .rdm-hrs-remain-chip.rdm-hrs-remain-done{color:#7ecdb4;background:rgba(126,205,180,.16)}
+#roadmapCard .rdm-focus-check,#roadmapCard .rdm-focus-goal-btn{border:1px solid var(--primary);background:var(--bg-white);color:var(--rdm-accent);box-shadow:none}
+#roadmapCard .rdm-focus-check:hover,#roadmapCard .rdm-focus-goal-btn:hover{background:rgba(var(--primary-rgb,209,123,150),.12);transform:none}
+/* Vòng "pearl frame" vàng + huy hiệu vàng đặc → bỏ; % logged là chip viền */
+#roadmapCard .rdm-focus-frame,.dark-mode #roadmapCard .rdm-focus-frame{padding:0;background:none;box-shadow:none;animation:none}
+#roadmapCard .rdm-focus-frame-pct,.dark-mode #roadmapCard .rdm-focus-frame-pct{background:var(--bg-white);color:var(--rdm-accent);border:1px solid var(--primary);box-shadow:none;top:-10px}
+
+/* Khối "This week" */
+#roadmapCard .rdm-week{margin:8px 0;padding:12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-white)}
+#roadmapCard .rdm-week-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 10px}
+#roadmapCard .rdm-week-title{font-size:.88rem;font-weight:800;color:var(--text-dark)}
+#roadmapCard .rdm-week-sum{font-size:.78rem;color:var(--text-muted);font-variant-numeric:tabular-nums}
+#roadmapCard .rdm-week-sum strong{color:var(--text-dark)}
+#roadmapCard .rdm-week-bar{height:6px;margin:9px 0 8px;overflow:hidden;border-radius:99px;background:rgba(var(--primary-rgb,209,123,150),.16)}
+#roadmapCard .rdm-week-bar i{display:block;height:100%;border-radius:inherit;background:var(--primary);transition:width .35s ease}
+#roadmapCard .rdm-week-note{margin-bottom:8px;font-size:.76rem;line-height:1.4;color:var(--text-muted)}
+#roadmapCard .rdm-week-note.ok{color:#4f8a6b}
+#roadmapCard .rdm-week-note.warn{color:#b0702a}
+.dark-mode #roadmapCard .rdm-week-note.ok{color:#7fc3a0}
+.dark-mode #roadmapCard .rdm-week-note.warn{color:#e0a05f}
+#roadmapCard .rdm-week-list{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+#roadmapCard .rdm-week-item{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:8px 10px;border:1px solid var(--border-color);border-radius:10px;font-size:.8rem}
+#roadmapCard .rdm-week-skill{flex:1 1 140px;min-width:0;font-weight:650;color:var(--text-dark);overflow-wrap:anywhere}
+#roadmapCard .rdm-week-h{font-weight:800;color:var(--rdm-accent);white-space:nowrap;font-variant-numeric:tabular-nums}
+#roadmapCard .rdm-mini-btn{padding:3px 10px;border:1px solid var(--primary);border-radius:999px;background:var(--bg-white);color:var(--rdm-accent);
+  font:inherit;font-size:.7rem;font-weight:700;cursor:pointer;box-shadow:none;transition:background .15s}
+#roadmapCard .rdm-mini-btn:hover{background:rgba(var(--primary-rgb,209,123,150),.12)}
+#roadmapCard .rdm-week-more{margin-top:10px}
+#roadmapCard .rdm-goal-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--rdm-line);border-radius:999px;
+  background:var(--rdm-soft);color:var(--rdm-accent);font-size:.68rem;font-weight:700;white-space:nowrap}
+#roadmapCard .rdm-goal-chip .icon-svg{width:10px;height:10px;color:inherit}
+#roadmapCard .rdm-node-goal{margin-top:5px}
+
+/* Overview / Compare: tên track xuống dòng thay vì bị cắt ("Investment Banki") */
+#roadmapCard .rdm-compare-head{align-items:flex-start}
+#roadmapCard .rdm-compare-head-label{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.3;overflow-wrap:anywhere}
+#roadmapCard .rdm-compare-btn .icon-svg{width:12px;height:12px;vertical-align:-2px;color:inherit}
+/* Màn hình hẹp: nút Focus không bị vỡ chữ, nút chính chiếm trọn hàng */
+#roadmapCard .rdm-focus-actions{flex-wrap:wrap}
+#roadmapCard .rdm-focus-goal-btn{white-space:nowrap;flex:1 1 auto}
+#roadmapCard .rdm-focus-check{flex:1 1 100%}
+@media(min-width:520px){#roadmapCard .rdm-focus-check{flex:2 1 220px}}
+/* Graph: "Ready" dùng viền hồng của theme thay cho màu cam; Locked mờ hơn để Ready nổi bật */
+#roadmapCard{--rdm-gnode-ready-fill:var(--bg-white);--rdm-gnode-ready-stroke:var(--primary);--rdm-gnode-ready-text:var(--primary-dark)}
+.dark-mode #roadmapCard{--rdm-gnode-ready-fill:rgba(var(--primary-rgb,209,123,150),.14);--rdm-gnode-ready-text:var(--primary)}
+#roadmapCard .rdm-gnode-rect[stroke="var(--rdm-gnode-ready-stroke)"]{stroke-width:1.8}
+#roadmapCard .rdm-graph-legend span:nth-child(2) i{background:var(--bg-white) !important;border:2px solid var(--primary)}
+#roadmapCard .rdm-cmp-vs{margin:0 0 10px;padding:10px 12px;border:1px solid var(--rdm-line);border-radius:12px;background:var(--rdm-soft);font-size:.8rem;line-height:1.45;color:var(--text-dark)}
+#roadmapCard .rdm-cmp-vs strong{color:var(--rdm-accent)}
+#roadmapCard .rdm-cmp-vs span{display:block;margin-top:3px;font-size:.72rem;color:var(--text-muted)}
+/* Overview: thẻ cao bằng nhau, ô focus dính đáy; pin dùng màu theme thay vì cam */
+#roadmapCard .rdm-compare-col{display:flex;flex-direction:column}
+#roadmapCard .rdm-compare-col .rdm-compare-focus{margin-top:auto}
+#roadmapCard .rdm-compare-col-clickable.rdm-pinned-col{border-color:var(--primary)}
+#roadmapCard .rdm-compare-col-clickable.rdm-pinned-col:hover{border-color:var(--primary-dark);box-shadow:0 6px 18px rgba(var(--primary-rgb,209,123,150),.22)}
+</style>
 </body>
