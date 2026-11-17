@@ -115,7 +115,7 @@
    (hoặc ngay khi bấm nút Notes, tùy cái nào đến trước). Dữ liệu vẫn nằm đúng chỗ cũ (IndexedDB), không đổi gì.
    Nếu cập nhật vault.* thì đổi V để trình duyệt lấy bản mới. */
 (function () {
-    var V = '20261116d';
+    var V = '20261116e';
     var FONTS = ["https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap", "https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"];
     var loaded = false, loading = null;
 
@@ -30980,6 +30980,30 @@ window.DBP={
                             <canvas id="dailyStudyChart" role="img" aria-label="Study hours, last 7 days"></canvas>
                         </div>
                         <p class="yprog-chart-hint" id="yprogChartHint" hidden>No hours in the last 7 days yet. The bars fill in as you log sessions.</p>
+
+                        <div class="yprog-section-label">Study Heatmap</div>
+                        <div style="margin:0 0 16px; padding:14px 14px 10px; overflow-x:auto; background:var(--bg-light); border-radius:var(--radius-md); border:1px solid var(--border-color);" id="studyHeatmapWrap">
+                            <div id="studyHeatmapGrid" role="img" aria-label="Study heatmap, last 12 months" style="display:inline-block; min-width:100%;"></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:8px; flex-wrap:wrap;">
+                                <span id="studyHeatmapSummary" style="font-size:0.72rem; color:var(--text-muted);"></span>
+                                <span style="display:flex; align-items:center; gap:4px; font-size:0.7rem; color:var(--text-muted);">
+                                    Less <span id="studyHeatmapLegend" style="display:flex; gap:3px;"></span> More
+                                </span>
+                            </div>
+                        </div>
+                        <div id="studyHeatmapTooltip" style="display:none; position:fixed; z-index:9999; pointer-events:none; background:var(--text-dark); color:#fff; font-size:0.72rem; line-height:1.5; padding:6px 9px; border-radius:6px; box-shadow:0 4px 14px rgba(0,0,0,0.25); max-width:220px;"></div>
+                        <div id="studyDayPanel" role="region" aria-live="polite" aria-label="Study day details" hidden style="margin:-4px 0 16px; padding:12px 14px; background:var(--bg-white, var(--bg-light)); border:1px solid var(--border-color); border-radius:var(--radius-md);">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <button type="button" id="studyDayPrev" onclick="studyDayStep(-1)" aria-label="Previous day" style="width:30px; height:30px; border:1px solid var(--border-color); background:var(--bg-light); color:var(--text-dark); border-radius:8px; cursor:pointer; font-size:1rem; line-height:1;">&lsaquo;</button>
+                                <div style="flex:1; text-align:center; min-width:0;">
+                                    <div id="studyDayTitle" style="font-weight:600; font-size:0.9rem;"></div>
+                                    <div id="studyDaySub" style="font-size:0.74rem; color:var(--text-muted);"></div>
+                                </div>
+                                <button type="button" id="studyDayNext" onclick="studyDayStep(1)" aria-label="Next day" style="width:30px; height:30px; border:1px solid var(--border-color); background:var(--bg-light); color:var(--text-dark); border-radius:8px; cursor:pointer; font-size:1rem; line-height:1;">&rsaquo;</button>
+                                <button type="button" onclick="closeStudyDay()" aria-label="Close" style="width:30px; height:30px; border:1px solid var(--border-color); background:transparent; color:var(--text-muted); border-radius:8px; cursor:pointer; font-size:1rem; line-height:1;">&times;</button>
+                            </div>
+                            <div id="studyDayBody" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
+                        </div>
                     
                         <div class="yprog-section-label">Skills</div>
                         <div class="skills-chart-row">
@@ -46976,6 +47000,7 @@ const EnglishDaily = (function () {
                 sleepTimelineChart.update();
             }
             if (typeof renderSleepHeatmap === 'function') renderSleepHeatmap();
+            if (typeof renderStudyHeatmap === 'function') renderStudyHeatmap();
             if (solTrendChart) {
                 const textColor = isDark ? '#b8919f' : '#b8919f';
                 solTrendChart.options.scales.y.ticks.color = textColor;
@@ -53246,6 +53271,7 @@ const EnglishDaily = (function () {
             updateWeeklyTrendSummary();
             updateWeeklyGoalUI();
             renderDailyStudyChart();
+            if (typeof renderStudyHeatmap === 'function') renderStudyHeatmap();
         }
 
         // Plugin: dashed daily-goal line (weekly goal / 7) across the 7-day chart.
@@ -53306,6 +53332,191 @@ const EnglishDaily = (function () {
                 ctx.restore();
             }
         };
+
+        // ===== Study Heatmap — "GitHub contribution" style, 12 tháng gần nhất (cùng kiểu & bảng màu với Sleep Heatmap) =====
+        // Màu theo % mục tiêu học mỗi ngày (= mục tiêu tuần / 7): 0 = chưa học (ô xám hồng nhạt, không trắng trơn),
+        // 1 = học ít (<25%), 2 = 25-60%, 3 = 60-100%, 4 = đạt/vượt mục tiêu (đậm nhất).
+        const STUDY_HEATMAP_DAYS = 365;
+        function studyHeatmapLevel(hours, goal) {
+            if (!(hours > 0)) return 0;
+            const r = hours / (goal > 0 ? goal : 1);
+            return r >= 1 ? 4 : r >= 0.6 ? 3 : r >= 0.25 ? 2 : 1;
+        }
+        function fmtStudyDuration(h) {
+            const m = Math.round((h || 0) * 60);
+            return m >= 60 ? Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '') : m + 'm';
+        }
+        function renderStudyHeatmap() {
+            const grid = document.getElementById('studyHeatmapGrid');
+            if (!grid) return;
+            const legendEl = document.getElementById('studyHeatmapLegend');
+            const summaryEl = document.getElementById('studyHeatmapSummary');
+            const tooltipEl = document.getElementById('studyHeatmapTooltip');
+            const isDark = document.body.classList.contains('dark-mode');
+            const goal = (typeof getWeeklyGoalHours === 'function' ? getWeeklyGoalHours() : 7) / 7;
+            const byDate = getStudyHoursByLocalDate();           // { 'YYYY-MM-DD': hours } (giờ máy, cùng cách app ghi giờ học)
+            const now = new Date();
+            const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());   // lịch thuần, tránh lệch múi giờ (như Sleep Heatmap)
+            const rangeStartUTC = todayUTC - (STUDY_HEATMAP_DAYS - 1) * 86400000;
+            const startSundayUTC = rangeStartUTC - new Date(rangeStartUTC).getUTCDay() * 86400000;
+            const weekCount = Math.ceil((todayUTC - startSundayUTC) / 86400000 / 7) + 1;
+            const cellSize = 12, cellGap = 3, dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const key = (u) => { const d = new Date(u); return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); };
+
+            let monthsRowHtml = '', gridHtml = '', lastMonth = null, total = 0, monthDays = 0, activeDays = 0;
+            const curMonthKey = key(todayUTC).slice(0, 7);
+            grid.dataset.min = key(rangeStartUTC); grid.dataset.max = key(todayUTC);
+            for (let w = 0; w < weekCount; w++) {
+                const colStartUTC = startSundayUTC + w * 7 * 86400000;
+                const colMonth = new Date(colStartUTC).getUTCMonth();
+                let monthLabel = '';
+                if (colMonth !== lastMonth) { monthLabel = 'Th' + (colMonth + 1); lastMonth = colMonth; }
+                monthsRowHtml += `<div style="width:${cellSize}px; font-size:0.62rem; color:var(--text-muted); white-space:nowrap; overflow:visible;">${monthLabel}</div>`;
+                let colHtml = '';
+                for (let d = 0; d < 7; d++) {
+                    const cellUTC = colStartUTC + d * 86400000;
+                    if (cellUTC > todayUTC || cellUTC < rangeStartUTC) { colHtml += `<div style="width:${cellSize}px; height:${cellSize}px;"></div>`; continue; }
+                    const k = key(cellUTC), hours = byDate[k] || 0, level = studyHeatmapLevel(hours, goal);
+                    if (hours > 0) { total += hours; activeDays++; if (k.slice(0, 7) === curMonthKey) monthDays++; }
+                    const disp = new Date(cellUTC).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+                    const tip = hours > 0
+                        ? `<b>${disp}</b><br>${fmtStudyDuration(hours)} studied · ${Math.round(hours / (goal > 0 ? goal : 1) * 100)}% of daily goal`
+                        : `<b>${disp}</b><br>No study logged`;
+                    colHtml += `<div class="study-heatmap-cell" data-tip="${tip.replace(/"/g, '&quot;')}" data-date="${k}" style="width:${cellSize}px; height:${cellSize}px; border-radius:3px; cursor:pointer; background:${heatmapLevelColor(level, isDark)};${k === studyDaySel ? ' box-shadow:0 0 0 2px var(--primary);' : ''}"></div>`;
+                }
+                gridHtml += `<div style="display:flex; flex-direction:column; gap:${cellGap}px;">${colHtml}</div>`;
+            }
+            grid.innerHTML = `
+                <div style="display:flex; gap:${cellGap}px; margin-left:26px; margin-bottom:3px;">${monthsRowHtml}</div>
+                <div style="display:flex; gap:4px;">
+                    <div style="display:flex; flex-direction:column; gap:${cellGap}px; width:22px;">
+                        ${dayNames.map((r, i) => `<div style="height:${cellSize}px; font-size:0.6rem; line-height:${cellSize}px; color:var(--text-muted);">${i % 2 === 1 ? r : ''}</div>`).join('')}
+                    </div>
+                    <div style="display:flex; gap:${cellGap}px;">${gridHtml}</div>
+                </div>`;
+            if (legendEl) legendEl.innerHTML = [0, 1, 2, 3, 4].map(l => `<span style="width:10px; height:10px; border-radius:2px; display:inline-block; background:${heatmapLevelColor(l, isDark)};"></span>`).join('');
+
+            // Streak: số ngày liên tiếp có học tới hôm nay (hôm nay chưa học thì tính từ hôm qua — chưa làm đứt streak)
+            let streak = 0, u = byDate[key(todayUTC)] > 0 ? todayUTC : todayUTC - 86400000;
+            while (u >= rangeStartUTC && byDate[key(u)] > 0) { streak++; u -= 86400000; }
+            const summary = `This month: ${monthDays} study ${monthDays === 1 ? 'day' : 'days'} · Last 12 months: ${activeDays} days, ${total.toFixed(1)}h · Streak: ${streak}d`;
+            if (summaryEl) summaryEl.textContent = summary;
+            grid.setAttribute('aria-label', 'Study heatmap, last 12 months. ' + summary);
+
+            const wrap = document.getElementById('studyHeatmapWrap');
+            if (wrap && !wrap.dataset.scrolled) { wrap.scrollLeft = wrap.scrollWidth; wrap.dataset.scrolled = '1'; }   // lần đầu mở ở những tuần gần đây nhất; các lần vẽ lại sau giữ nguyên vị trí cuộn
+
+            if (tooltipEl && !grid.dataset.tipBound) {          // chuột: hover · điện thoại: chạm vào ô
+                const show = (cell, x, y) => {
+                    tooltipEl.innerHTML = cell.dataset.tip; tooltipEl.style.display = 'block';
+                    tooltipEl.style.left = Math.max(6, Math.min(x + 12, window.innerWidth - 230)) + 'px';
+                    tooltipEl.style.top = Math.max(y - 40, 6) + 'px';
+                };
+                grid.addEventListener('mousemove', (e) => { const c = e.target.closest('.study-heatmap-cell'); if (c) show(c, e.clientX, e.clientY); else tooltipEl.style.display = 'none'; });
+                grid.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
+                grid.addEventListener('click', (e) => {
+                    const c = e.target.closest('.study-heatmap-cell'); if (!c) return;
+                    selectStudyDay(c.dataset.date); show(c, e.clientX, e.clientY); clearTimeout(grid._tipT); grid._tipT = setTimeout(() => { tooltipEl.style.display = 'none'; }, 2500);
+                });
+                grid.dataset.tipBound = '1';
+            }
+            if (studyDaySel) renderStudyDay(studyDaySel);      // dữ liệu vừa đổi → làm mới bảng chi tiết đang mở
+        }
+
+        var studyDaySel = null;   // 'YYYY-MM-DD' đang xem trong bảng chi tiết (var để tránh lỗi TDZ nếu bị gọi sớm)
+        function selectStudyDay(dateStr) {
+            studyDaySel = dateStr;
+            const grid = document.getElementById('studyHeatmapGrid');
+            if (grid) grid.querySelectorAll('.study-heatmap-cell').forEach(c => { c.style.boxShadow = (c.dataset.date === dateStr) ? '0 0 0 2px var(--primary)' : ''; });
+            renderStudyDay(dateStr);
+        }
+        function studyDayStep(delta) {
+            if (!studyDaySel) return;
+            const grid = document.getElementById('studyHeatmapGrid');
+            const [y, m, d] = studyDaySel.split('-').map(Number);
+            const u = new Date(Date.UTC(y, m - 1, d + delta));
+            const k = u.getUTCFullYear() + '-' + String(u.getUTCMonth() + 1).padStart(2, '0') + '-' + String(u.getUTCDate()).padStart(2, '0');
+            if (grid && (k < grid.dataset.min || k > grid.dataset.max)) return;
+            selectStudyDay(k);
+            const cell = grid && grid.querySelector('.study-heatmap-cell[data-date="' + k + '"]');
+            if (cell && cell.scrollIntoView) cell.scrollIntoView({ inline: 'center', block: 'nearest' });
+        }
+        function closeStudyDay() {
+            studyDaySel = null;
+            const panel = document.getElementById('studyDayPanel'); if (panel) panel.hidden = true;
+            const grid = document.getElementById('studyHeatmapGrid');
+            if (grid) grid.querySelectorAll('.study-heatmap-cell').forEach(c => { c.style.boxShadow = ''; });
+        }
+        function renderStudyDay(dateStr) {
+            const panel = document.getElementById('studyDayPanel'), body = document.getElementById('studyDayBody');
+            if (!panel || !body) return;
+            const E = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+            const ic = (id) => (typeof snIcon === 'function' ? snIcon(id) : '');
+            const isDark = document.body.classList.contains('dark-mode');
+            const grid = document.getElementById('studyHeatmapGrid');
+            const [y, mo, d] = dateStr.split('-').map(Number);
+            const day = new Date(y, mo - 1, d);
+            const goal = (typeof getWeeklyGoalHours === 'function' ? getWeeklyGoalHours() : 7) / 7;
+            const hours = getStudyHoursByLocalDate()[dateStr] || 0;
+            const pct = hours > 0 ? Math.round(hours / (goal > 0 ? goal : 1) * 100) : 0;
+            const level = studyHeatmapLevel(hours, goal);
+
+            // Header
+            document.getElementById('studyDayTitle').innerHTML =
+                `<span style="display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; background:${heatmapLevelColor(level, isDark)};"></span>` +
+                E(day.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }));
+            document.getElementById('studyDaySub').textContent = hours > 0
+                ? `${fmtStudyDuration(hours)} studied · ${pct}% of daily goal (${fmtStudyDuration(goal)})`
+                : 'No study logged for this day';
+            const prev = document.getElementById('studyDayPrev'), next = document.getElementById('studyDayNext');
+            if (grid && prev && next) { prev.disabled = dateStr <= grid.dataset.min; next.disabled = dateStr >= grid.dataset.max; prev.style.opacity = prev.disabled ? 0.35 : 1; next.style.opacity = next.disabled ? 0.35 : 1; }
+
+            // Session notes of that day (Session Notes, stored in sessionLogs; id = timestamp)
+            const logs = (typeof sessionLogs !== 'undefined' && Array.isArray(sessionLogs)) ? sessionLogs : [];
+            const sameDay = (id) => { const t = new Date(id); return t.getFullYear() === y && t.getMonth() === mo - 1 && t.getDate() === d; };
+            const dayLogs = logs.filter(l => sameDay(l.id)).sort((a, b) => a.id - b.id);
+            const quality = (l) => (!l.energy && !l.focus && !l.stress) ? null : Math.round((((l.energy || 3) + (l.focus || 3) - (l.stress || 3) + 3) / 9) * 100);
+            let html = '';
+            if (dayLogs.length) {
+                html += `<div style="font-size:0.74rem; font-weight:600; color:var(--text-muted);">Session notes · ${dayLogs.length}</div>`;
+                dayLogs.forEach(l => {
+                    const q = quality(l);
+                    const badges = [
+                        l.duration ? `<span class="sn-badge snb-duration">${ic('ft-icon-hourglass')}${E(fmtStudyDuration(parseFloat(l.duration) || 0))}</span>` : '',
+                        l.career ? `<span class="sn-badge snb-career">${E(String(l.career).toUpperCase())}</span>` : '',
+                        l.energy ? `<span class="sn-badge snb-energy">${ic('icon-zap')}${E(l.energy)}</span>` : '',
+                        l.focus ? `<span class="sn-badge snb-focus">${ic('sn-icon-focus')}${E(l.focus)}</span>` : '',
+                        l.stress ? `<span class="sn-badge snb-stress${l.stress >= 4 ? ' high' : ''}">${ic('icon-triangle-alert')}${E(l.stress)}</span>` : '',
+                        q !== null ? `<span class="sn-badge ${q >= 70 ? 'snb-quality-high' : q >= 45 ? 'snb-quality-medium' : 'snb-quality-low'}">${q}%</span>` : ''
+                    ].filter(Boolean).join('');
+                    const time = new Date(l.id).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                    const text = typeof formatLogText === 'function' ? formatLogText(l.text || '') : E(l.text || '');
+                    html += `<div style="padding:8px 10px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-light);">
+                        <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-bottom:4px;"><span style="font-size:0.72rem; color:var(--text-muted); margin-right:4px;">${E(time)}</span>${badges}</div>
+                        <div title="Click to expand" onclick="this.style.webkitLineClamp = (this.style.webkitLineClamp === 'unset') ? '4' : 'unset'" style="display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden; cursor:pointer; font-size:0.84rem; line-height:1.5; word-break:break-word;">${text}</div>
+                    </div>`;
+                });
+            } else if (hours > 0) {
+                html += '<div style="font-size:0.82rem; color:var(--text-muted);">No session notes for this day.</div>';
+            }
+            const oldest = logs.length ? Math.min(...logs.map(l => l.id)) : null;
+            if (!dayLogs.length && logs.length >= 50 && oldest !== null && new Date(y, mo - 1, d + 1).getTime() <= oldest) {
+                html += '<div style="font-size:0.74rem; color:var(--text-muted);">Session Notes keeps only the latest 50 logs, so notes from this day are no longer stored.</div>';
+            }
+
+            // Sleep of the night before (Sleep Tracker buckets are keyed by wake-up day)
+            try {
+                const entry = (typeof buildSleepHeatmapBuckets === 'function') ? buildSleepHeatmapBuckets()[dateStr] : null;
+                if (entry) {
+                    const { avgQuality } = heatmapCompositeScore(entry, getSleepGoal());
+                    html += `<div style="font-size:0.82rem;">Sleep the night before: <b>${entry.duration.toFixed(1)}h</b>${avgQuality !== null ? ` · quality ${avgQuality.toFixed(1)}/5` : ' · not rated'}</div>`;
+                } else {
+                    html += '<div style="font-size:0.78rem; color:var(--text-muted);">No sleep logged for the night before.</div>';
+                }
+            } catch (e) { /* sleep data is optional */ }
+            body.innerHTML = html;
+            panel.hidden = false;
+        }
 
         // Hàm vẽ biểu đồ cột 7 ngày — tạo một lần rồi update tại chỗ (không destroy/recreate)
         function renderDailyStudyChart() {

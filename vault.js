@@ -5713,7 +5713,7 @@
             try { relinked = await renameLinksAcrossVault(oldT, newT, secondary.id, findBacklinksToTitle(oldT, secondary.id)); }
             catch (e) { console.warn('Notes Vault: couldn’t re-point links after merge', e); }
         }
-        if (S.note && (S.note.id === primary.id || relinked)) { fillDoc(); }
+        if (S.note && (S.note.id === primary.id || relinked)) { frRepaintOpen(); }   // also redraw the Read view, not just the editor fields
         const trashed = await deleteNote(secondary.id);   // shows its own "Moved to Trash · Undo" toast
         renderAll();
         if (!trashed) { flash('Merged, but couldn’t move “' + otherTitle + '” to Trash'); return false; }
@@ -6129,7 +6129,7 @@
             const md = lines.join('\n');
             if (md !== parent.markdown) {
                 parent.markdown = md;
-                if (S.note === parent) { el.src.value = md; markDirty(); await flushSave(); }
+                if (S.note === parent) { el.src.value = md; markDirty(); await flushSave(); if (S.mode !== 'edit' || S.split) renderInto(el.read, md); }
                 else { try { await dbPut(parent); } catch (e) { console.warn('Notes Vault: could not link the checklist', e); } }
             }
         }
