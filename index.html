@@ -24568,30 +24568,55 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
   }
 
   /* ─── Time helpers ─── */
-  /* IMPORTANT: use this instead of `new Date().toISOString().slice(0,10)`.
-     toISOString() always converts to UTC, so anytime between 00:00–07:00
-     local time (e.g. Vietnam, UTC+7) it silently reports "yesterday's" date
-     — that previously caused wrong completedAt/snooze dates. This builds
-     the date string from the LOCAL calendar fields instead. */
+  /* ── Vietnam time (UTC+7) is the single source of truth for "today" in Deadlines ──
+     Same zone as Goals (getVietnamDateStr), so both screens agree on the day
+     whatever the device's own timezone is. Dates are plain YYYY-MM-DD calendar
+     dates; all arithmetic is done on LOCAL-midnight Date objects built from
+     those parts (never new Date('YYYY-MM-DD'), which is UTC midnight and
+     shifts a day on devices west of UTC). */
+  const DLT_TZ = 'Asia/Ho_Chi_Minh', DLT_TZ_OFFSET = '+07:00';
+
+  /* Today's date in Vietnam as YYYY-MM-DD. */
+  function vnTodayISO() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: DLT_TZ }).format(new Date());
+  }
+
+  /* YYYY-MM-DD (or any Date-parsable string) -> Date at local midnight of that calendar day. */
+  function parseDay(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s == null ? '' : s));
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    const d = new Date(s);
+    return isNaN(d) ? d : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  /* Today in Vietnam as a local-midnight Date, ready for setDate()/getDay() arithmetic. */
+  function vnToday() { return parseDay(vnTodayISO()); }
+
+  /* The real instant a deadline expires: its time (default 23:59:59) in Vietnam time. */
+  function vnDeadlineEnd(dateStr, timeStr) {
+    const tm = /^(\d{1,2}):(\d{2})/.exec(timeStr || '');
+    return new Date(tm ? `${dateStr}T${tm[1].padStart(2, '0')}:${tm[2]}:00${DLT_TZ_OFFSET}`
+                       : `${dateStr}T23:59:59${DLT_TZ_OFFSET}`);
+  }
+
+  /* Format a Date (local calendar fields) as YYYY-MM-DD. With no argument: today in Vietnam.
+     Do not use toISOString() for this: it converts to UTC and can report the wrong day. */
   function localISODate(d) {
-    d = d || new Date();
+    if (!d) return vnTodayISO();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
   }
 
+  /* Whole days from today (Vietnam) to dateStr: negative = overdue */
   function daysLeft(dateStr) {
-    const now = new Date(); now.setHours(0,0,0,0);
-    const d   = new Date(dateStr); d.setHours(0,0,0,0);
-    return Math.round((d - now) / 86400000);
+    return Math.round((parseDay(dateStr) - vnToday()) / 86400000);
   }
 
   /* Whole-day difference between two YYYY-MM-DD dates: positive = b is after a */
   function daysBetween(dateA, dateB) {
-    const a = new Date(dateA); a.setHours(0,0,0,0);
-    const b = new Date(dateB); b.setHours(0,0,0,0);
-    return Math.round((b - a) / 86400000);
+    return Math.round((parseDay(dateB) - parseDay(dateA)) / 86400000);
   }
 
   /* Compute the next occurrence's date from a repeat spec, anchored to
@@ -24619,8 +24644,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
   /* Live clock: opt-in, ticks every second. Setting key shared with the Today page. */
   function secClockOn() { try { return localStorage.getItem('dltSecClock') === '1'; } catch (e) { return false; } }
   function secClockParts(dateStr, timeStr) {
-    const tm = /^(\d{1,2}):(\d{2})/.exec(timeStr || '');
-    const end = tm ? new Date(`${dateStr}T${tm[1].padStart(2, '0')}:${tm[2]}:00`) : new Date(`${dateStr}T23:59:59`);
+    const end = vnDeadlineEnd(dateStr, timeStr);
     let ms = end - new Date();
     if (isNaN(ms)) return null;
     const late = ms < 0; ms = Math.abs(ms);
@@ -24629,7 +24653,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     return { late, secs: late ? Infinity : t, text: (d ? d + 'd ' : '') + p(Math.floor(t % 86400 / 3600)) + ':' + p(Math.floor(t % 3600 / 60)) + ':' + p(t % 60) };
   }
   function countdown(dateStr) {
-    const ms = new Date(dateStr + 'T23:59:59') - new Date();
+    const ms = vnDeadlineEnd(dateStr) - new Date();
     if (ms <= 0 || ms > 72 * 3600000) return '';
     const h = Math.floor(ms / 3600000);
     const m = Math.floor((ms % 3600000) / 60000);
@@ -24861,8 +24885,8 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
      defeats the whole point. Upcoming items push forward from their own
      current date as normal. */
   function pushBaseDate(dateStr) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const cur = new Date(dateStr + 'T00:00:00');
+    const today = vnToday();
+    const cur = parseDay(dateStr);
     return cur < today ? today : cur;
   }
 
@@ -25481,7 +25505,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     const el = document.getElementById('dltTimeline');
     if (!el) return; // widget not on this page
 
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const today = vnToday();
     const buckets = [{ label: 'Overdue', short: `<svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-triangle-alert"/></svg>`, count: 0, from: null, to: null }];
     for (let w = 0; w < 8; w++) {
       const from = new Date(today); from.setDate(from.getDate() + w * 7);
@@ -25534,7 +25558,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     const dark = document.body.classList.contains('dark-mode');
     const col = (l) => (typeof heatmapLevelColor === 'function') ? heatmapLevelColor(l, dark) : (['#f3e3ea', '#f9c9da', '#f0a0be', '#d9638d', '#b53a68'][l]);
     const W = { high: 3, medium: 2, low: 1 };
-    const DAYS = 30, today = new Date(); today.setHours(0, 0, 0, 0);
+    const DAYS = 30, today = vnToday();
     const iso = (off) => { const d = new Date(today); d.setDate(d.getDate() + off); return localISODate(d); };
     const dayKeys = Array.from({ length: DAYS }, (_, i) => iso(i));
     const idx = {}; dayKeys.forEach((k, i) => { idx[k] = i; });
@@ -25634,7 +25658,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
 
   /* ─── Daily Popup ─── */
   function checkPopup() {
-    if (localStorage.getItem('dltSkipDay') === new Date().toDateString()) return;
+    if (localStorage.getItem('dltSkipDay') === vnTodayISO()) return;
     const urgent = allItems().filter(d => !doneIds.includes(d.id) && !isSnoozed(d.id) && daysLeft(d.date) >= 0 && daysLeft(d.date) <= 3);
     if (!urgent.length) return;
     const top = urgent.slice(0, 5);
@@ -25885,7 +25909,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     const lines = [];
     const SEP = '═'.repeat(52);
     const DIV = '─'.repeat(52);
-    const dateStr = new Date().toLocaleDateString('en-GB', {
+    const dateStr = vnToday().toLocaleDateString('en-GB', {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
     });
 
@@ -26636,7 +26660,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     /* "Review again in N days" on a note-linked deadline: moves the date, brings the card back if it was ticked/snoozed */
     async reviewAgain(id, days) {
         const item = manualList.find(m => m.id === id); if (!item) return;
-        const t = new Date(); t.setDate(t.getDate() + (Number(days) || 7));
+        const t = vnToday(); t.setDate(t.getDate() + (Number(days) || 7));
         const date = localISODate(t);
         if (item.sourceNoteId) {
             try {
@@ -26754,7 +26778,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
       const id = cardModalId; const d = allItems().find(x => x.id === id); if (!d) return;
       const today = localISODate();
       const base = d.date > today ? d.date : today;   // quá hạn thì tính từ hôm nay
-      const t = new Date(base + 'T00:00:00'); t.setDate(t.getDate() + Number(n));
+      const t = parseDay(base); t.setDate(t.getDate() + Number(n));
       DLT.cardSetDate(localISODate(t));
     },
     cardSetPriority(p) {
@@ -27042,7 +27066,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
       const span = Math.max(1, Number(totalDays) - 1);
       const moves = []; let count = 0;
       items.forEach((it, i) => {
-        const d = new Date(); d.setHours(0, 0, 0, 0);
+        const d = vnToday();
         d.setDate(d.getDate() + 1 + Math.round(n === 1 ? span : (i * span) / (n - 1)));
         let target = localISODate(d);
         if (target < it.date) target = it.date; // spreading only ever pushes later, never earlier
@@ -27086,7 +27110,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
 
     dismissPopup(skipToday) {
       document.getElementById('dltPopup').style.display = 'none';
-      if (skipToday) localStorage.setItem('dltSkipDay', new Date().toDateString());
+      if (skipToday) localStorage.setItem('dltSkipDay', vnTodayISO());
     },
 
     /* ─── Quick Reschedule ─── */
@@ -27236,7 +27260,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     },
 
     snooze(id, days) {
-      const until = new Date();
+      const until = vnToday();
       until.setDate(until.getDate() + Number(days));
       snoozeMap[id] = localISODate(until);
       persist();
@@ -27281,7 +27305,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     },
 
     snoozeAllOverdue(days) {
-      const until = new Date();
+      const until = vnToday();
       until.setDate(until.getDate() + Number(days));
       const untilISO = localISODate(until);
       const targets = allItems().filter(d => !doneIds.includes(d.id) && !isSnoozed(d.id) && daysLeft(d.date) < 0);
@@ -27347,7 +27371,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
 
     pushAllOverdue(days) {
       const targets = allItems().filter(d => !doneIds.includes(d.id) && !isSnoozed(d.id) && daysLeft(d.date) < 0);
-      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const today = vnToday();
       today.setDate(today.getDate() + Number(days));
       const newDate = localISODate(today);
       let count = 0; const moves = [];
