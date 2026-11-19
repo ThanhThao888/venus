@@ -34071,7 +34071,10 @@ body.dark-mode #resourceModal select, body.dark-mode #resourceModal textarea { c
             <div id="sleepDebtCard" style="display:none; margin: 4px 0 14px; padding:12px 14px; background: var(--bg-light); border-radius: var(--radius-md); border:1px solid var(--border-color);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-hourglass"></use></svg> Sleep debt</span>
-                    <span id="sleepDebtBadge" style="font-size:0.78rem; font-weight:700; padding:2px 10px; border-radius:10px; display:none;"></span>
+                    <span style="display:inline-flex; align-items:center; gap:8px;">
+                        <span id="sleepDebtBadge" style="font-size:0.78rem; font-weight:700; padding:2px 10px; border-radius:10px; display:none;"></span>
+                        <button type="button" onclick="copySleepDebtPlanForAI()" title="Copy 30-day sleep data + debt payback prompt for AI" aria-label="Copy 30-day sleep data and debt payback prompt for AI" style="font-size:0.72rem; padding:5px 8px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; display:inline-flex; align-items:center; transition:background .2s,color .2s,border-color .2s;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sparkles"></use></svg></button>
+                    </span>
                 </div>
                 <div id="sleepDebtCardBody"></div>
             </div>
@@ -61497,6 +61500,211 @@ document.addEventListener('DOMContentLoaded', function() {
                 fallbackCopySleep(fullText);
                 finish();
             }
+        }
+
+        // ===== Copy Sleep-Debt PAYBACK PLAN for AI =====
+        // Nút icon ở card "Sleep debt": copy 1 lượt = prompt lập kế hoạch trả nợ ngủ 7 ngày + toàn bộ dữ liệu
+        // ngủ 30 ngày gần nhất (từng phiên, nap, nợ sau mỗi đêm, thói quen, giờ học) để dán thẳng vào ChatGPT.
+        // Luật tính nợ trong prompt lấy từ SLEEP_DEBT_CFG / SLEEP_NAP_CFG nên luôn khớp app.
+        function copySleepDebtPlanForAI() {
+            const DAYS = 30;
+            const sessionsAll = getSortedSleepSessions();
+            if (sessionsAll.length === 0) {
+                const m = 'No sleep data logged yet to copy.';
+                if (window.skAlert) skAlert(m); else alert(m);
+                return;
+            }
+
+            const goal = getSleepGoal();
+            const tol = SLEEP_DEBT_CFG.tolerance;
+            const todayStr = getVietnamDateStr();
+            const todayNum = sleepDateToDayNum(todayStr);
+            const startNum = todayNum - (DAYS - 1);
+            const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const wdIdx = ds => new Date(ds + 'T00:00:00Z').getUTCDay();
+            const lbl = ds => `${WD[wdIdx(ds)]} ${sleepDateLabelDM(ds)}`;
+            const hm = m => { const x = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
+            const sg = v => (v < 0 ? '-' : '+') + Math.abs(v).toFixed(1);
+            const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+            const median = arr => { const s = [...arr].sort((a, b) => a - b); const i = Math.floor(s.length / 2); return s.length % 2 ? s[i] : (s[i - 1] + s[i]) / 2; };
+            // Giờ trong ngày (giờ VN) có thể vắt qua nửa đêm HOẶC qua trưa (người ngủ ngày) → thử mọi điểm cắt, chọn điểm cho độ lệch nhỏ nhất.
+            const clockStats = tsList => {
+                if (tsList.length < 3) return null;
+                const mins = tsList.map(vnMinuteOfDay);
+                let best = null;
+                for (let p = 0; p < 1440; p += 60) {
+                    const sh = mins.map(m => (m - p + 1440) % 1440);
+                    const sd = stdDev(sh);
+                    if (best === null || sd < best.sd) best = { sd, p, sh };
+                }
+                return { sd: best.sd, med: median(best.sh) + best.p };
+            };
+            const qualityLabels = ['', 'very poor', 'poor', 'fair', 'good', 'excellent'];
+
+            // ── dữ liệu ──
+            const nightsAll = buildSleepNightsByWakeDate(sessionsAll);
+            attachNapsToNights(nightsAll, getSleepNapsSafe());
+            const nights = nightsAll.filter(n => n.dayNum >= startNum);
+            const byDate = new Map(nights.map(n => [n.date, n]));
+            const sessByDate = new Map();
+            sessionsAll.forEach(s => {
+                const d = getSleepWakeDateVN(s);
+                if (sleepDateToDayNum(d) < startNum) return;
+                if (!sessByDate.has(d)) sessByDate.set(d, []);
+                sessByDate.get(d).push(s);
+            });
+            const debtMap = computeSleepDebtAsOfMap();
+            const debtInfo = computeSleepDebt();
+            const reg7 = computeSleepRegularity(7);
+            const studyByDate = (typeof getStudyHoursByLocalDate === 'function') ? getStudyHoursByLocalDate() : {};
+
+            const L = [];
+            const SEP = '='.repeat(56);
+
+            // ── PROMPT (đặt trước dữ liệu) ──
+            const napPts = [10, 25, 45, 90].map(m => `${m} min ≈ ${interpolateCurve(SLEEP_NAP_CFG.durationCurve, m).toFixed(0)} min credit`).join(', ');
+            L.push('TASK: Build me a personalised SLEEP-DEBT PAYBACK PLAN for the next 7 days, using ONLY my own data below.');
+            L.push('Answer in Vietnamese (casual tone, concise, no lecture). Do not ask me questions first — make reasonable assumptions, state them, and I will correct them afterwards.');
+            L.push('');
+            L.push('About me: I work a full-time job and study on top of it, so my schedule is tight. When I am short on sleep, my study hours feel wasted (too tired to absorb anything), which stresses me out more. My fixed commitments (work/class hours) are NOT given — infer them from my sleep/wake pattern in the data and list what you inferred.');
+            L.push('');
+            L.push('HOW MY APP COUNTS SLEEP DEBT (design your plan so the numbers work out under these exact rules):');
+            L.push(`- Goal: ${goal}h/night. Each night is assigned to its WAKE-UP date. Sleep that night = time asleep minus awake minutes in the middle of the night. Multiple sleep periods that end on the same date are added together.`);
+            L.push(`- Short night (more than ${Math.round(tol * 60)} min under goal) adds the shortfall to debt. A night above goal repays debt, but at most ${SLEEP_DEBT_CFG.maxCreditPerNight}h per night — extra beyond goal+${SLEEP_DEBT_CFG.maxCreditPerNight}h is NOT credited. Debt never goes below 0.`);
+            L.push(`- Naps repay debt only partially: credit minutes depend on nap length (${napPts}) and on how long after waking the nap starts (full credit when it starts 5–8.5h after waking; ~0.6x at 9.5–10.5h; ~0.2x if earlier than 3.5h or later than 11.5h). All naps in a day are capped at ${SLEEP_NAP_CFG.dailyCapMin} min of credit/day. A nap never counts as night sleep.`);
+            L.push(`- The app's debt only looks at the last ${SLEEP_DEBT_CFG.windowNights} nights. Levels: OK ≤ ${SLEEP_DEBT_LEVELS[0].max}h, Mild ≤ ${SLEEP_DEBT_LEVELS[1].max}h, Moderate ≤ ${SLEEP_DEBT_LEVELS[2].max}h, Severe above. Unlogged nights are skipped.`);
+            L.push('');
+            L.push('WHAT TO GIVE ME (in this order):');
+            L.push('1) DIAGNOSIS (max 4 lines): where did my current debt actually come from — short nights, irregular timing (bed/wake drifting, weekend vs weekday), a logging mistake, or a mix? Name the single biggest driver.');
+            L.push('2) ASSUMPTIONS you made (inferred work/study hours, usual wake anchor, etc.).');
+            L.push(`3) DAY-BY-DAY PLAN, 7 days starting from the next sleep (table: date+weekday | bedtime | wake time | planned sleep h | nap (start time + minutes, or "none") | expected debt after that day under the rules above | study suggestion: heavy / light / rest). Keep my wake anchor as stable as realistically possible; move bedtime earlier instead of sleeping in; never plan more than goal+${SLEEP_DEBT_CFG.maxCreditPerNight}h in a night. Aim to bring debt to ≤ ${SLEEP_DEBT_LEVELS[0].max}h (the app's "OK" level) in as few nights as is realistic — say how many nights that takes and show the arithmetic.`);
+            L.push('4) WHAT TO CUT first: habits/tags/notes in my data that correlate with my worst nights (late caffeine, screens, alcohol, late meals, late wake-ups, long sleep-onset, etc.) — only if the data supports it; say "not enough data" otherwise.');
+            L.push('5) CHECKPOINTS: what debt number I should see in the app after night 3 and night 7 if I follow the plan, and what to do if I miss a night.');
+            L.push('6) DATA PROBLEMS: any logged nights that look like mistakes (very short/very long, overlapping, forgot to press Stop, unlogged nights) that I should fix because they distort the debt number.');
+            L.push('If my irregular timing matters more than total hours, say so directly and prioritise fixing the schedule over "banking" extra hours.');
+            L.push('');
+            L.push(SEP);
+            L.push(`MY SLEEP DATA — last ${DAYS} days (until ${lbl(todayStr)}). All clock times are UTC+7 (24h). Generated ${lbl(todayStr)}/${todayStr.slice(0, 4)}.`);
+            L.push(SEP);
+
+            // ── tình trạng hiện tại ──
+            L.push('');
+            L.push('CURRENT STATE');
+            L.push(`- Sleep goal: ${goal}h/night`);
+            if (debtInfo.ok) {
+                L.push(`- Sleep debt now (last ${debtInfo.expected}-night ledger): ${debtInfo.debt.toFixed(1)}h — ${debtInfo.level.label} (≈ ${debtInfo.equivNights.toFixed(1)} full nights of sleep)`);
+                if (debtInfo.delta !== null) L.push(`- Change over last ${SLEEP_DEBT_CFG.trendNights} nights: ${sg(debtInfo.delta)}h (${debtInfo.trend === 'up' ? 'rising' : debtInfo.trend === 'down' ? 'falling' : 'about flat'})`);
+                L.push(`- Avg actual sleep in that window: ${debtInfo.avgHours.toFixed(1)}h/night (${sg(debtInfo.avgGap)}h vs goal); short nights ${debtInfo.shortNights}/${debtInfo.logged}; current run of consecutive short nights: ${debtInfo.shortStreak}`);
+                if (debtInfo.napCount > 0) L.push(`- Nap payback in window: ${debtInfo.napCount} naps, ${Math.round(debtInfo.napMinutesTotal)} min total → repaid ${Math.round(debtInfo.napCreditMin)} min of debt`);
+                if (debtInfo.missing > 0) L.push(`- ${debtInfo.missing} of ${debtInfo.expected} nights in the debt window are not logged (skipped, so real debt may be higher)`);
+            } else {
+                L.push(`- Sleep debt: not enough data yet (${debtInfo.logged} logged nights, need ${debtInfo.needed}).`);
+            }
+
+            // ── thống kê 30 ngày ──
+            const hrs = nights.map(n => n.hours);
+            const wkend = nights.filter(n => { const w = wdIdx(n.date); return w === 0 || w === 6; }).map(n => n.hours);
+            const wkday = nights.filter(n => { const w = wdIdx(n.date); return w !== 0 && w !== 6; }).map(n => n.hours);
+            const bedStats = clockStats(nights.map(n => n.startTs).filter(t => typeof t === 'number'));
+            const wakeStats = clockStats(nights.map(n => n.endTs));
+            L.push('');
+            L.push(`${DAYS}-DAY SUMMARY`);
+            L.push(`- Nights logged: ${nights.length}/${DAYS}`);
+            if (hrs.length) {
+                L.push(`- Avg sleep: ${avg(hrs).toFixed(1)}h (weekdays ${wkday.length ? avg(wkday).toFixed(1) + 'h' : 'n/a'}, weekends ${wkend.length ? avg(wkend).toFixed(1) + 'h' : 'n/a'}); shortest ${Math.min(...hrs).toFixed(1)}h, longest ${Math.max(...hrs).toFixed(1)}h`);
+                L.push(`- Nights at/above goal (within ${Math.round(tol * 60)} min): ${hrs.filter(h => h >= goal - tol).length}/${hrs.length}`);
+            }
+            if (bedStats && wakeStats) {
+                L.push(`- Typical bedtime (median) ${hm(bedStats.med)}, typical wake time (median) ${hm(wakeStats.med)}; spread (SD) bedtime ±${Math.round(bedStats.sd)} min, wake ±${Math.round(wakeStats.sd)} min`);
+            }
+            if (reg7) L.push(`- App Regularity Index (last 7 nights, max SD of bed/wake): ±${Math.round(reg7.score)} min`);
+            const missingDates = [];
+            for (let d = startNum; d <= todayNum; d++) { const ds = sleepDayNumToDateStr(d); if (!byDate.has(ds)) missingDates.push(lbl(ds)); }
+            if (missingDates.length) L.push(`- Wake dates with NO logged sleep: ${missingDates.join(', ')}${byDate.has(todayStr) ? '' : ' (today’s sleep may simply not have happened/logged yet)'}`);
+
+            // ── từng đêm ──
+            L.push('');
+            L.push('NIGHT-BY-NIGHT (oldest → newest; grouped by WAKE-UP date; "debt after" = app ledger value after that night)');
+            const flagged = [];
+            nights.forEach(n => {
+                const ss = (sessByDate.get(n.date) || []).slice().sort((a, b) => a.start - b.start);
+                const gap = n.hours - goal;
+                const dAfter = debtMap[n.date];
+                L.push(`${lbl(n.date)}: slept ${n.hours.toFixed(1)}h (${sg(gap)}h vs goal)${n.sessions > 1 ? ` in ${n.sessions} periods` : ''}${typeof dAfter === 'number' ? ` → debt after ${dAfter.toFixed(1)}h` : ''}`);
+                ss.forEach(s => {
+                    const endTs = getSleepSessionEndTs(s);
+                    const se = computeSleepEfficiency(s);
+                    const tags = [];
+                    if (s.tags?.screen) tags.push('screen before bed');
+                    if (s.tags?.alcohol) tags.push('alcohol');
+                    if (s.auto_tags?.caffeineLate) tags.push('late caffeine');
+                    if (s.auto_tags?.lateMeal) tags.push('late meal');
+                    if (s.auto_tags?.exercise) tags.push('exercised');
+                    (window.sleepExtraHabitsOf ? sleepExtraHabitsOf(s) : []).forEach(h => tags.push(String(h.label).toLowerCase()));
+                    const odd = (s.duration < 3 || s.duration > SLEEP_DEBT_CFG.longNightHours);
+                    if (odd) flagged.push(`${lbl(n.date)} ${fmtVNTimeHM(s.start)}→${endTs !== null ? fmtVNTimeHM(endTs) : '?'} (${s.duration}h)`);
+                    let t = `   • ${fmtVNTimeHM(s.start)} → ${endTs !== null ? fmtVNTimeHM(endTs) : '?'}, ${s.duration}h asleep`;
+                    if (s.sol != null) t += `, fell asleep in ${s.sol}m`;
+                    if (s.awakenings_min != null) t += `, awake mid-sleep ${s.awakenings_min}m`;
+                    if (se !== null) t += `, SE ${se.toFixed(0)}%`;
+                    if (s.quality) t += `, quality ${qualityLabels[s.quality]}`;
+                    if (tags.length) t += `, tags: ${tags.join('/')}`;
+                    if (odd) t += '  [CHECK ENTRY: unusually short/long]';
+                    L.push(t);
+                    if (s.notes && String(s.notes).trim()) L.push(`      note: ${String(s.notes).trim()}`);
+                });
+                n.naps.forEach(p => L.push(`   • nap ${fmtVNTimeHM(p.start)}, ${Math.round(p.minutes)} min (${p.hoursAfterWake.toFixed(1)}h after waking) → ${p.creditMin.toFixed(0)} min debt credit`));
+                if (n.napDiscardedMin > 0.5) L.push(`     (nap credit capped at ${SLEEP_NAP_CFG.dailyCapMin} min/day)`);
+            });
+            if (flagged.length) { L.push(''); L.push(`Entries that look like mistakes (<3h or >${SLEEP_DEBT_CFG.longNightHours}h): ${flagged.join('; ')}`); }
+
+            // ── giờ học (ngữ cảnh) ──
+            const studyLines = [];
+            let studyTotal = 0;
+            for (let i = DAYS - 1; i >= 0; i--) {
+                const d = new Date(); d.setDate(d.getDate() - i);
+                const k = toLocalDateStr(d);
+                const h = studyByDate[k] || 0;
+                studyTotal += h;
+                if (h > 0) { const [, m, dd] = k.split('-'); studyLines.push(`${dd}/${m} ${h.toFixed(1)}h`); }
+            }
+            L.push('');
+            L.push(`STUDY HOURS LOGGED (same ${DAYS} days; total ${studyTotal.toFixed(1)}h)`);
+            L.push(studyLines.length ? studyLines.join(' · ') : 'No study hours logged.');
+            L.push('');
+            L.push('END OF DATA. Now write the plan as specified in TASK above.');
+
+            const fullText = L.join('\n');
+
+            const finish = () => {
+                if (typeof showNotification === 'function') showNotification('Copied debt payback prompt + 30-day sleep data — paste it into ChatGPT!', 'success');
+                document.querySelectorAll('button[onclick="copySleepDebtPlanForAI()"]').forEach(btn => {
+                    const use = btn.querySelector('use');
+                    if (!use || btn.dataset.copyFlash) return;
+                    const orig = use.getAttribute('href');
+                    const origTitle = btn.title;
+                    btn.dataset.copyFlash = '1';
+                    use.setAttribute('href', '#icon-check');
+                    btn.title = 'Copied!';
+                    btn.style.background = '#10b981'; btn.style.color = '#fff'; btn.style.borderColor = '#10b981';
+                    setTimeout(() => {
+                        use.setAttribute('href', orig); btn.title = origTitle;
+                        btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = '';
+                        delete btn.dataset.copyFlash;
+                    }, 2000);
+                });
+            };
+            const fallback = t => {
+                const ta = document.createElement('textarea');
+                ta.value = t; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(ta);
+            };
+            window.__lastSleepDebtPlanText = fullText; // tiện debug / kiểm tra nội dung đã copy
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(fullText).then(finish).catch(() => { fallback(fullText); finish(); });
+            } else { fallback(fullText); finish(); }
         }
 
         // ===== One-tap "Giống đêm qua" (#48) — copy SOL/awakenings/quality/tags từ session
