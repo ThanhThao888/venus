@@ -38490,7 +38490,7 @@ const EnglishDaily = (function () {
                     <div class="form-group" style="display:flex; gap:10px;">
                         <div style="flex:1;">
                             <label for="bookFirstPublished"><svg class="icon-svg icon-sm" aria-hidden="true"><use href="#icon-calendar"></use></svg> First Published (Optional)</label>
-                            <input type="number" id="bookFirstPublished" min="1000" max="2099" placeholder="YYYY e.g. 1997">
+                            <input type="number" id="bookFirstPublished" min="-3000" max="2100" placeholder="YYYY e.g. 1997">
                         </div>
                         <div style="flex:1;">
                             <label for="bookCurrentEdition"><svg class="icon-svg icon-sm" aria-hidden="true"><use href="#icon-bookmark"></use></svg> Current Edition (Optional)</label>
@@ -38597,7 +38597,7 @@ const EnglishDaily = (function () {
                     <div style="margin-bottom: 12px; display:flex; gap:10px;">
                         <div style="flex:1;">
                             <label for="editBookFirstPublished" style="display: block; margin-bottom: 5px; font-weight: 500;"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-calendar"></use></svg> First Published</label>
-                            <input type="number" id="editBookFirstPublished" min="1000" max="2099" placeholder="YYYY e.g. 1997" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
+                            <input type="number" id="editBookFirstPublished" min="-3000" max="2100" placeholder="YYYY e.g. 1997" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; background: var(--bg-white); color: var(--text-dark);">
                         </div>
                         <div style="flex:1;">
                             <label for="editBookCurrentEdition" style="display: block; margin-bottom: 5px; font-weight: 500;"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-bookmark"></use></svg> Current Edition</label>
@@ -47650,7 +47650,7 @@ const EnglishDaily = (function () {
                     book.author.toLowerCase().includes(searchQuery) ||
                     (book.genre && book.genre.toLowerCase().includes(searchQuery)) ||
                     (book.review && book.review.toLowerCase().includes(searchQuery)) ||
-                    (book.takeaways && ((book.takeaways.learned || '') + ' ' + (book.takeaways.apply || '')).toLowerCase().includes(searchQuery));
+                    (book.takeaways && ((book.takeaways.learned || '') + ' ' + (book.takeaways.internalize || '') + ' ' + (book.takeaways.apply || '')).toLowerCase().includes(searchQuery));
                 return matchesGenre && matchesSearch;
             });
 
@@ -47778,9 +47778,32 @@ const EnglishDaily = (function () {
                 if (book.pages || cp) {
                     const pct = book.pages ? Math.min(100, Math.round((cp / book.pages) * 100)) : 0;
                     const label = book.pages ? `Page ${cp} / ${book.pages}` : `Page ${cp}`;
+                    // Milestone notches at 25 / 50 / 75 %: lit once passed
+                    const ticks = book.pages ? [25, 50, 75].map(m => `<i class="bp-tick${pct >= m ? ' is-hit' : ''}" style="left:${m}%"></i>`).join('') : '';
+                    // Footer: pages left + (for books in progress) pace and estimated finish date
+                    let footHTML = '';
+                    if (book.pages && book.status !== 'finished' && cp < book.pages) {
+                        const left = book.pages - cp;
+                        let etaHTML = '';
+                        if (book.status === 'reading' && cp > 0 && book.startedAt) {
+                            const start = new Date(book.startedAt + 'T00:00:00'), now = new Date();
+                            const days = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - start) / 864e5);
+                            if (!isNaN(days) && days >= 2) {
+                                const pace = cp / days;                       // pages per day since the start date
+                                const daysLeft = Math.ceil(left / pace);
+                                if (isFinite(daysLeft) && daysLeft <= 730) {
+                                    const eta = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysLeft);
+                                    const paceTxt = pace >= 10 ? Math.round(pace) : (Math.round(pace * 10) / 10);
+                                    etaHTML = `<span title="Based on ${cp} pages in ${days} days since you started">~${paceTxt} pp/day · done <b>${fmtBookDate(toLocalDateStr(eta))}</b></span>`;
+                                }
+                            }
+                        }
+                        footHTML = `<div class="bp-foot"><span><b>${left}</b> pages left</span>${etaHTML}</div>`;
+                    }
                     progressHTML = `<div class="book-progress" onclick="event.stopPropagation();">
                                 <div class="book-progress-head"><span>${label}</span>${book.pages ? `<strong>${pct}%</strong>` : ''}</div>
-                                <div class="goal-progress-container"><div class="goal-progress-fill${pct >= 100 ? ' completed' : ''}" style="width:${pct}%;"></div></div>
+                                <div class="goal-progress-container"><div class="goal-progress-fill${pct >= 100 ? ' completed' : ''}" style="width:${pct}%;"></div>${ticks}</div>
+                                ${footHTML}
                             </div>`;
                 }
                 const linkBtn = (url, title, icon) => `<button class="book-action-btn" onclick="openBookLink('${String(url).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'); event.stopPropagation();" title="${title}" aria-label="${title}"><svg class="icon-svg" aria-hidden="true"><use href="#icon-${icon}"></use></svg></button>`;
@@ -47817,24 +47840,48 @@ const EnglishDaily = (function () {
             const sel = document.getElementById('bookGenre');
             const genres = sel ? Array.from(sel.options).map(o => o.value).filter(Boolean).join(' | ') : 'Fiction | Non-Fiction | Other';
             return [
-                'You are a data-entry assistant for my personal reading-list app. From now on I will only send a BOOK TITLE (optionally with the author).',
-                'For each book, look it up on the web (Goodreads, Google Books, Open Library, the publisher\'s site...) and reply in EXACTLY the format below: plain text, one field per line, no markdown, no extra commentary, so I can copy each line straight into my form.',
+                'You are a bibliographic research and data-entry assistant for my personal reading-list app.',
+                '',
+                'WORKFLOW:',
+                'From now on I will send only a book title, optionally followed by its author. For every book, research its bibliographic information on the web. Source priority:',
+                '- Publisher\u2019s official website: publication and edition details.',
+                '- Google Books: ISBN, page count, publication metadata.',
+                '- Open Library: ISBN and cover availability.',
+                '- Goodreads: average reader rating only.',
+                '',
+                'DATA ACCURACY RULES:',
+                '1. Verify information with reliable sources. Never fabricate bibliographic details.',
+                '2. When sources conflict, trust the publisher first, then Google Books, then Open Library.',
+                '3. Select ONE edition: the latest standard print edition (no special, collector or limited editions).',
+                '4. Use that SAME edition for ISBN-13, cover image, page count and edition number. Never mix metadata from different editions.',
+                '5. Cover: build the URL from the verified ISBN-13 as https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg (replace ISBN13). If the ISBN-13 is not verified or no cover exists, write N/A.',
+                '6. Rating: use the real Goodreads average, rounded to a whole number 1-5. Never substitute another platform\u2019s rating.',
+                '7. Current Edition: the edition number of the selected edition, only if a reliable source states it. A reprint, impression or new format is NOT a new edition. Never default to 1; if unsure, write N/A.',
+                '8. Pages: the page count of the selected print edition, not an ebook or audiobook.',
+                '9. First Published: the year the book was ORIGINALLY published, not the year of the selected edition.',
+                '',
+                'GENRE: choose EXACTLY ONE from: ' + genres,
+                'Pick the most specific category for the book\u2019s primary subject, not its secondary themes.',
+                '',
+                'REVIEW: 2-3 sentences in English: what the book is fundamentally about, its most important strengths, and who benefits most from it. Mention a meaningful limitation only if you can support it; never invent criticism. Avoid generic praise and keep the author\u2019s claims separate from your evaluation. If you cannot reliably assess the book, write N/A.',
+                '',
+                'OUTPUT: reply in EXACTLY this format, plain text, one field per line:',
                 '',
                 'Book Title: <full official title>',
                 'Author: <author; separate multiple authors with commas>',
-                'Cover Image URL: <https://covers.openlibrary.org/b/isbn/ISBN13-L.jpg, replacing ISBN13 with the ISBN-13 of the most common edition>',
-                'Genre: <pick EXACTLY one of: ' + genres + '>',
-                'Rating: <whole number 1-5, rounded from the Goodreads average>',
-                'Review: <2-3 sentences in English: what the book is about, its main strengths and weaknesses, who it suits>',
-                'Pages: <number only, total pages>',
-                'First Published: <year of first publication, 4 digits>',
-                'Current Edition: <number only, edition number of the latest edition>',
+                'Cover Image URL: <verified Open Library cover URL, or N/A>',
+                'Genre: <exactly one category from the list>',
+                'Rating: <whole number 1-5, or N/A>',
+                'Review: <2-3 sentences in English, or N/A>',
+                'Pages: <number only, or N/A>',
+                'First Published: <4-digit year, or N/A>',
+                'Current Edition: <number only, or N/A>',
                 '',
-                'Rules:',
-                '- If you do not know or are not sure about a field, write N/A for it. Never make up numbers.',
-                '- Do NOT include Reading Link or Audio Link (I will find those myself).',
-                '- If the title is ambiguous (several books share it), ask me ONE short clarifying question.',
-                '- If I send several books at once, reply with one block per book, separated by a blank line. Every block MUST start with the "Book Title:" line. No tables, no numbering, no code block.',
+                'STRICT RULES:',
+                '- No markdown, tables, numbering, code blocks or extra commentary. Do not include Reading Link, Audio Link, ISBN or any other field.',
+                '- Write N/A for any field you cannot reliably verify. If you cannot browse the web, say so in one short line instead of guessing.',
+                '- If the title is ambiguous (several books share it), ask me ONE short clarifying question instead of guessing.',
+                '- If I send several books, reply with one complete block per book, separated by one blank line. Every block MUST start with the "Book Title:" line. Never omit a field.',
                 '',
                 'If you understand, reply only "Ready" and wait for my first book title.'
             ].join('\n');
@@ -48408,7 +48455,7 @@ const EnglishDaily = (function () {
             try { renderReadingList(); } catch (e) {}
         })();
 
-        // ===== READING LIST+ : Takeaways / "How I'll apply this" (book.takeaways = {learned, apply, updatedAt}) =====
+        // ===== READING LIST+ : Takeaways / "How I'll apply this" (book.takeaways = {learned, apply, internalize, updatedAt}) =====
         (function () {
             const st = document.createElement('style');
             st.textContent = `
@@ -48454,7 +48501,9 @@ const EnglishDaily = (function () {
             body #rlTkModal .rl-imp-foot .add-time-btn:not(.btn-secondary){background:var(--primary-dark)!important;background-image:none!important;color:#fff!important;border:1.5px solid var(--primary-dark)!important;box-shadow:0 4px 12px rgba(var(--primary-rgb,209,123,150),.3)!important}
             body.dark-mode #rlTkModal .rl-imp-foot .btn-secondary{background:transparent!important;color:var(--primary)!important}
             body.dark-mode #rlTkModal .rl-imp-foot .add-time-btn:not(.btn-secondary){background:var(--primary)!important;border-color:var(--primary)!important;color:#2a1420!important}
+            #rlTkModal #rlTkInternalize{min-height:64px}
             @media (max-height:760px){
+                #rlTkModal #rlTkInternalize{height:60px}
                 #rlTkModal .rl-tk-head{padding:16px 22px 10px}
                 #rlTkModal #rlTkLearned{height:92px}
                 #rlTkModal #rlTkApply{height:72px}
@@ -48491,7 +48540,8 @@ const EnglishDaily = (function () {
                     </div>
                     <div class="rl-tk-form">
                         <div class="rl-tk-paste"><textarea id="rlTkPaste" rows="1" placeholder="Paste AI reply here: both boxes fill in automatically" title="Paste the AI reply here and both boxes fill themselves in" oninput="rlTkPasteSoon()"></textarea></div>
-                        <label class="rl-tk-field"><span class="rl-tk-lab"><b>What stuck with me</b><i>up to 3 ideas, one per line</i></span><textarea id="rlTkLearned" rows="4"></textarea></label>
+                        <label class="rl-tk-field"><span class="rl-tk-lab"><b>Understand</b><i>thesis · mechanism · implication</i></span><textarea id="rlTkLearned" rows="4"></textarea></label>
+                        <label class="rl-tk-field"><span class="rl-tk-lab"><b>Internalize</b><i>your own words, not the AI’s</i></span><textarea id="rlTkInternalize" rows="3" placeholder="What did I believe before? What do I see differently now?"></textarea></label>
                         <label class="rl-tk-field"><span class="rl-tk-lab"><b>How I’ll apply this</b><i>one action: where and when</i></span><textarea id="rlTkApply" rows="3"></textarea></label>
                         <div class="rl-tk-todo">
                             <span class="rl-tk-todo-lab">Turn it into a to-do</span>
@@ -48502,7 +48552,7 @@ const EnglishDaily = (function () {
                     <div class="rl-imp-foot"><button type="button" class="add-time-btn btn-secondary" onclick="rlCloseTk()">Cancel</button><button type="button" class="add-time-btn" onclick="rlSaveTk(${b.id})">Save</button></div></div>`;
                 document.body.appendChild(m);
                 const L = document.getElementById('rlTkLearned'), A = document.getElementById('rlTkApply');
-                L.value = t.learned || ''; A.value = t.apply || '';
+                L.value = t.learned || ''; A.value = t.apply || ''; document.getElementById('rlTkInternalize').value = t.internalize || '';
                 m.addEventListener('keydown', e => {
                     if (e.key === 'Escape') rlCloseTk();
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) rlSaveTk(b.id);
@@ -48524,17 +48574,36 @@ const EnglishDaily = (function () {
             window.rlCopyTkPrompt = function (id, btn) {
                 const b = get(id); if (!b) return;
                 rlCopyText([
-                    'Help me fill in the "takeaways" for my reading journal.',
-                    'Book: ' + b.title + (b.author ? ' by ' + b.author : '') + (b.review ? '\nMy notes/review: ' + b.review : ''),
+                    'You are my intellectual reading analyst. Turn the most valuable ideas of this book into durable knowledge that improves my understanding of the world and my decision-making.',
                     '',
-                    'Reply in EXACTLY this plain-text format (no markdown, no extra commentary):',
+                    'Book: ' + b.title,
+                    'Author: ' + (b.author || 'Unknown'),
+                    ...(b.review ? ['My notes/review: ' + b.review] : []),
+                    '',
+                    'Give exactly THREE non-overlapping takeaways, in this order:',
+                    '1. Core thesis: the most important argument the author wants readers to understand.',
+                    '2. Underlying mechanism: the causal mechanism, framework or principle that explains HOW it works (the logic, not just the name of a concept).',
+                    '3. Strategic implication: the deeper insight that changes how I understand economics, finance, politics, institutions, human behaviour or decision-making.',
+                    '',
+                    'Rules:',
+                    '- Each takeaway is ONE concise but intellectually meaningful sentence.',
+                    '- Prefer fundamental principles over interesting minor details. No generic motivational statements.',
+                    '- Stay faithful to the author\u2019s argument and its nuances. Do not invent claims, examples or conclusions the book does not support.',
+                    '- If a point is your own interpretation rather than the author\u2019s explicit claim, start that line with "(AI view)".',
+                    '- If you are not sure what the book says, write N/A instead of guessing.',
+                    '',
+                    'Apply: design ONE intellectual exercise I can finish within seven days. My context: I am building a career in finance, investing and economics.',
+                    '- Use a real concept from the book on a real financial, economic, institutional or investment situation.',
+                    '- It must sharpen my analysis (not summarise or memorise) and end in a tangible output: a short investment note, comparison, research note or written conclusion.',
+                    '- Say exactly what to do, where, and on which day/time.',
+                    '- If the link to the book would be forced or superficial, write N/A instead.',
+                    '',
+                    'Reply in EXACTLY this plain-text format (no markdown, no headings, no extra commentary):',
                     'Takeaways:',
-                    '- <idea 1: the most useful idea, one short sentence>',
-                    '- <idea 2>',
-                    '- <idea 3>',
-                    'Apply: <ONE concrete action I can do within a week, say where and when. My context: building a career in finance, investing and economics.>',
-                    '',
-                    'If you are not sure what the book says, write N/A instead of guessing.'
+                    '- <core thesis>',
+                    '- <underlying mechanism>',
+                    '- <strategic implication>',
+                    'Apply: <one exercise with its output, where, and day/time>'
                 ].join('\n'), btn);
             };
             function rlParseTk(raw) {
@@ -48569,6 +48638,7 @@ const EnglishDaily = (function () {
                 const b = get(id); if (!b) return;
                 const learned = (document.getElementById('rlTkLearned').value || '').trim();
                 const apply = (document.getElementById('rlTkApply').value || '').trim();
+                const internalize = (document.getElementById('rlTkInternalize').value || '').trim();
                 const due = (document.getElementById('rlTkDue').value || '').trim() || null;
                 if (!apply) { showNotification('Write the action first.', 'info'); document.getElementById('rlTkApply').focus(); return; }
                 const list = getTodos();
@@ -48579,7 +48649,7 @@ const EnglishDaily = (function () {
                     list.push(td);
                 }
                 saveTodos(list);
-                b.takeaways = { learned, apply, updatedAt: todayISO(), todoId: td.id };
+                b.takeaways = { learned, apply, internalize, updatedAt: todayISO(), todoId: td.id };
                 save(); rlCloseTk(); renderReadingList();
                 try { if (typeof PLANEXT !== 'undefined' && document.getElementById('todoNewText')) PLANEXT.openTodoView(); } catch (e) {}
                 const dm = document.getElementById('bookDetailsModal');
@@ -48590,7 +48660,8 @@ const EnglishDaily = (function () {
                 const b = get(id); if (!b) return;
                 const learned = (document.getElementById('rlTkLearned').value || '').trim();
                 const apply = (document.getElementById('rlTkApply').value || '').trim();
-                if (learned || apply) b.takeaways = { learned, apply, updatedAt: todayISO(), todoId: (b.takeaways || {}).todoId }; else delete b.takeaways;
+                const internalize = (document.getElementById('rlTkInternalize').value || '').trim();
+                if (learned || apply || internalize) b.takeaways = { learned, apply, internalize, updatedAt: todayISO(), todoId: (b.takeaways || {}).todoId }; else delete b.takeaways;
                 save(); rlCloseTk(); renderReadingList();
                 const dm = document.getElementById('bookDetailsModal');
                 if (dm && getComputedStyle(dm).display !== 'none') showBookDetails(b.id);
@@ -48604,7 +48675,7 @@ const EnglishDaily = (function () {
                 const t = b.takeaways;
                 const btn = label => `<button type="button" class="rl-tk-nudge" title="Takeaways" style="margin-top:0" onclick="closeBookDetailsModal(); rlOpenTakeaways(${b.id})">${label}</button>`;
                 if (!t) { host.innerHTML = `<h4>Takeaways</h4>${btn('+ Add')}`; return; }
-                host.innerHTML = `<h4>Takeaways</h4>${t.learned ? `<div class="tk-txt">${escapeHtml(t.learned)}</div>` : ''}${t.apply ? `<h4>How I’ll apply this</h4><div class="tk-txt">${escapeHtml(t.apply)}</div>` : ''}${btn('Edit')}`;
+                host.innerHTML = `<h4>Takeaways</h4>${t.learned ? `<div class="tk-txt">${escapeHtml(t.learned)}</div>` : ''}${t.internalize ? `<h4>How it changes my thinking</h4><div class="tk-txt">${escapeHtml(t.internalize)}</div>` : ''}${t.apply ? `<h4>How I’ll apply this</h4><div class="tk-txt">${escapeHtml(t.apply)}</div>` : ''}${btn('Edit')}`;
             }
             const _sd = showBookDetails;
             showBookDetails = function (id) { _sd.apply(this, arguments); const b = get(id); if (b) try { rlRenderDetailsTk(b); } catch (e) { console.error(e); } };
@@ -48660,7 +48731,11 @@ const EnglishDaily = (function () {
             document.getElementById('editBookCoverUrl').value = book.cover || '';
             document.getElementById('editBookDriveLink').value = book.driveLink || '';
             document.getElementById('editBookAudioLink').value = book.audioLink || '';
-            document.getElementById('editBookGenre').value = book.genre || 'Other';
+            (function () {
+                const gs = document.getElementById('editBookGenre'), g = (book.genre || 'Other').trim();
+                if (![...gs.options].some(o => o.value === g)) gs.add(new Option(g, g));   // unknown / imported genre stays selectable
+                gs.value = g;
+            })();
             document.getElementById('editBookStatus').value = book.status;
             document.getElementById('editBookRating').value = book.rating !== null ? book.rating : '';
             document.getElementById('editBookReview').value = book.review || '';
@@ -48977,6 +49052,27 @@ const EnglishDaily = (function () {
         }
 
         // Two-column layout + date fields for the Add/Edit Book forms
+        // Native validation used to fail silently when the bad field was out of view: say which field, scroll to it, outline it.
+        function bookFormValidationFeedback() {
+            ['addBookForm', 'editBookForm'].forEach(id => {
+                const f = document.getElementById(id);
+                if (!f || f.dataset.vfb) return;
+                f.dataset.vfb = '1';
+                f.addEventListener('invalid', e => {
+                    const el = e.target;
+                    el.classList.add('is-invalid');
+                    if (f._vfbBusy) return;
+                    f._vfbBusy = true; setTimeout(() => { f._vfbBusy = false; }, 400);
+                    const lab = f.querySelector('label[for="' + el.id + '"]');
+                    const name = lab ? lab.textContent.replace(/[*]/g, '').replace(/\(.*?\)/g, '').trim() : 'A field';
+                    showNotification(name + ': ' + el.validationMessage, 'error');
+                    try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) {}
+                }, true);
+                f.addEventListener('input', e => e.target.classList && e.target.classList.remove('is-invalid'));
+                f.addEventListener('change', e => e.target.classList && e.target.classList.remove('is-invalid'));
+            });
+        }
+
         function enhanceBookForms() {
             // Re-lays out the Add / Edit book forms: essentials first, details next, links + review last.
             const ORDER = ['Title', 'Author', 'Genre', 'Status', 'Rating', 'Pages', 'CurrentPage', 'FirstPublished', 'CurrentEdition', '__dates', 'CoverUrl', 'DriveLink', 'AudioLink', 'Review'];
@@ -49137,6 +49233,7 @@ const EnglishDaily = (function () {
             if (readingList.length > 0) localStorage.setItem('readingListDemoSeeded', 'true');
 
             enhanceBookForms();
+            bookFormValidationFeedback();
             renderReadingList();
             updateReadingCounts();
             const addBookForm = document.getElementById('addBookForm');
@@ -58783,14 +58880,14 @@ document.addEventListener('DOMContentLoaded', function() {
             };
             const status = { reading: 'Reading', want: 'Want to read', finished: 'Finished' };
             const head = ['Title', 'Author', 'Genre', 'Status', 'Up next', 'Rating', 'Pages', 'Current page', 'Progress %', 'Started', 'Finished',
-                          'First published', 'Edition', 'What stuck with me', 'How I will apply this', 'Review', 'Reading link', 'Audio link'];
+                          'First published', 'Edition', 'What stuck with me', 'How it changes my thinking', 'How I will apply this', 'Review', 'Reading link', 'Audio link'];
             const rows = list.map(b => {
                 const pg = Number(b.pages) || 0, cp = Number(b.currentPage) || 0, t = b.takeaways || {};
                 const prog = b.status === 'finished' ? 100 : (pg ? Math.min(100, Math.round(cp / pg * 100)) : '');
                 return [b.title, b.author, b.genre, status[b.status] || b.status, b.upNext ? 'Yes' : '',
                         (b.rating === null || b.rating === undefined || isNaN(b.rating)) ? '' : b.rating,
                         pg || '', cp || '', prog, b.startedAt || '', b.finishedAt || '', b.firstPublished || '', b.currentEdition || '',
-                        t.learned || '', t.apply || '', b.review || '', b.driveLink || '', b.audioLink || ''].map(cell).join(',');
+                        t.learned || '', t.internalize || '', t.apply || '', b.review || '', b.driveLink || '', b.audioLink || ''].map(cell).join(',');
             });
             const csv = '\ufeff' + [head.map(cell).join(',')].concat(rows).join('\r\n') + '\r\n';
             const d = new Date(), p = n => String(n).padStart(2, '0');
@@ -58837,7 +58934,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (b.pages) meta.push(`${b.pages}pp`);
                 if (b.firstPublished) meta.push(String(b.firstPublished));
                 if (b.currentEdition) meta.push(`Ed.${b.currentEdition}`);
-                const tk = b.takeaways ? (b.takeaways.learned ? '\n      Takeaways: ' + b.takeaways.learned.replace(/\n+/g, ' | ') : '') + (b.takeaways.apply ? '\n      Applying: ' + b.takeaways.apply : '') : '';
+                const tk = b.takeaways ? (b.takeaways.learned ? '\n      Takeaways: ' + b.takeaways.learned.replace(/\n+/g, ' | ') : '') + (b.takeaways.internalize ? '\n      Internalized: ' + b.takeaways.internalize.replace(/\n+/g, ' ') : '') + (b.takeaways.apply ? '\n      Applying: ' + b.takeaways.apply : '') : '';
                 return `  • ${b.title} — ${b.author}  [${meta.join(' · ')}]${tk}`;
             };
 
@@ -89582,4 +89679,433 @@ body.dark-mode :is(#addBookModal,#editBookModal,#bookDetailsModal,#fullReviewMod
 body.dark-mode #addFlashcardModal #flashcardModalTitle{color:var(--text-dark)!important}
 body.dark-mode :is(#addBookModal,#editBookModal) .modal-header h3 .icon-svg{color:var(--primary)}
 </style>
+<style id="readingListV2">
+/* ═══════════════════════════════════════════════════════════════
+   Reading List — v2 polish (loads last, scoped to #readingListCard)
+   Stat tiles · tabs · toolbar · pick-next · goal · book cards
+   The "Add" button keeps its white/pink-outline look (set earlier).
+   ═══════════════════════════════════════════════════════════════ */
+body #readingListCard {
+    --rl-glow: rgba(var(--primary-rgb, 209,123,150), .22);
+    --rl-tint: rgba(var(--primary-rgb, 209,123,150), .08);
+    --rl-ring: rgba(var(--primary-rgb, 209,123,150), .20);
+}
+
+/* ── 1. Stat tiles: icon chip + label/number, colour per status ── */
+body #readingListCard .stats-section { gap: 12px; margin: 16px 0 12px; }
+body #readingListCard .stat-item {
+    --st: var(--primary); --st-rgb: var(--primary-rgb, 209,123,150);
+    position: relative; overflow: hidden;
+    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+    column-gap: 14px; row-gap: 0; align-items: center; justify-items: start;
+    padding: 16px 20px;
+    border-radius: 18px;
+    background:
+        radial-gradient(120% 140% at 0% 0%, rgba(var(--st-rgb), .13), transparent 60%),
+        var(--bg-white);
+    border: 1px solid rgba(var(--st-rgb), .22);
+    box-shadow: 0 1px 2px rgba(var(--st-rgb), .08), 0 8px 20px -12px rgba(var(--st-rgb), .35);
+}
+body #readingListCard .stat-item::after {            /* soft corner glow */
+    content: ""; position: absolute; right: -28px; top: -28px; width: 90px; height: 90px;
+    border-radius: 50%; background: rgba(var(--st-rgb), .10); pointer-events: none;
+}
+body #readingListCard .stat-item:nth-child(2) { --st: #c2415f; --st-rgb: 194,65,95; }
+body #readingListCard .stat-item:nth-child(3) { --st: #3fa37a; --st-rgb: 63,163,122; }
+body.dark-mode #readingListCard .stat-item:nth-child(1) { --st: #f0a8c4; --st-rgb: 240,168,196; }
+body.dark-mode #readingListCard .stat-item:nth-child(2) { --st: #f2899f; --st-rgb: 242,137,159; }
+body.dark-mode #readingListCard .stat-item:nth-child(3) { --st: #7fc3a0; --st-rgb: 127,195,160; }
+body #readingListCard .stat-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 2px 4px rgba(var(--st-rgb), .12), 0 14px 28px -12px rgba(var(--st-rgb), .5);
+}
+body #readingListCard .stat-emoji {
+    grid-row: 1 / 3; width: 44px; height: 44px; margin: 0;
+    border-radius: 14px; color: var(--st);
+    background: linear-gradient(145deg, rgba(var(--st-rgb), .24), rgba(var(--st-rgb), .10));
+    box-shadow: inset 0 0 0 1px rgba(var(--st-rgb), .22);
+}
+body #readingListCard .stat-emoji .icon-svg { width: 21px; height: 21px; }
+body #readingListCard .stat-label {
+    align-self: end; font-size: .68rem; letter-spacing: .12em; color: var(--text-muted);
+}
+body #readingListCard .stat-value {
+    align-self: start; font-size: 2rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.05;
+    color: var(--text-dark);
+}
+
+/* ── 2. Insight line + goal ── */
+body #readingListCard .rl-insight-line {
+    align-self: center; display: inline-flex; align-items: center; gap: 2px;
+    padding: 5px 16px; border-radius: 999px;
+    background: var(--rl-tint); border: 1px solid var(--rl-ring);
+    font-size: .78rem; font-weight: 500;
+}
+body #readingListCard .rl-goal {
+    border-radius: 14px !important; padding: 12px 16px;
+    background: linear-gradient(135deg, var(--rl-tint), transparent 70%), var(--bg-white);
+    border: 1px solid var(--rl-ring);
+}
+body #readingListCard .rl-goal:hover { border-color: var(--primary); box-shadow: 0 6px 18px -8px var(--rl-glow); transform: translateY(-1px); }
+body #readingListCard .rl-goal-bar { height: 8px; background: rgba(var(--primary-rgb, 209,123,150), .14); }
+body #readingListCard .rl-goal-bar > span { box-shadow: 0 0 10px var(--rl-glow); }
+body #readingListCard .rl-goal--empty {
+    border: 1.5px dashed var(--rl-ring); background: transparent; box-shadow: none; transform: none;
+    transition: background .2s, border-color .2s;
+}
+body #readingListCard .rl-goal--empty:hover { background: var(--rl-tint); border-color: var(--primary); box-shadow: none; }
+
+/* ── 3. Status tabs: raised active pill, status-coloured counts ── */
+body #readingListCard .rl-status-tabs {
+    padding: 5px; gap: 3px; border-radius: 999px;
+    background: linear-gradient(180deg, rgba(var(--primary-rgb, 209,123,150), .10), rgba(var(--primary-rgb, 209,123,150), .05));
+    border: 1px solid var(--rl-ring);
+    box-shadow: inset 0 1px 3px rgba(var(--primary-rgb, 209,123,150), .12);
+}
+body #readingListCard .rl-tab {
+    padding: 9px 14px; font-size: .82rem; font-weight: 600;
+    transition: background .25s, color .25s, box-shadow .25s, transform .15s;
+}
+body #readingListCard .rl-tab:hover:not(.is-active) { background: rgba(var(--primary-rgb, 209,123,150), .10); }
+body #readingListCard .rl-tab:active { transform: scale(.97); }
+body #readingListCard .rl-tab.is-active {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff; box-shadow: 0 4px 12px -2px var(--rl-glow);
+}
+body.dark-mode #readingListCard .rl-tab.is-active {
+    background: linear-gradient(135deg, rgba(240,168,196,.30), rgba(212,179,232,.22));
+    color: #f8d0e0; box-shadow: inset 0 0 0 1px rgba(240,168,196,.4);
+}
+body #readingListCard .rl-tab.is-active .rl-tab-count { background: rgba(255,255,255,.26); color: #fff; }
+body.dark-mode #readingListCard .rl-tab.is-active .rl-tab-count { background: rgba(240,168,196,.22); color: #f8d0e0; }
+body #readingListCard .rl-tab[data-status="want"]:not(.is-active) .rl-tab-count     { background: rgba(217,138,27,.16); color: var(--rl-want); }
+body #readingListCard .rl-tab[data-status="finished"]:not(.is-active) .rl-tab-count { background: rgba(63,163,122,.16); color: var(--rl-done); }
+
+/* ── 4. Search / selects / tool buttons ── */
+body #readingListCard .reading-controls .rl-search-wrap input {
+    padding: 12px 16px 12px 40px; border-radius: 14px; font-size: .92rem;
+    border: 1px solid var(--rl-ring);
+    box-shadow: 0 2px 8px -4px var(--rl-glow);
+    transition: border-color .2s, box-shadow .2s;
+}
+body #readingListCard .rl-search-wrap-icon { left: 14px; color: var(--primary); opacity: .8; }
+body #readingListCard .reading-controls select {
+    -webkit-appearance: none; appearance: none;
+    padding: 10px 36px 10px 14px; border-radius: 14px; font-size: .86rem; font-weight: 500;
+    border: 1px solid var(--rl-ring); box-shadow: 0 2px 8px -4px var(--rl-glow);
+    background-repeat: no-repeat; background-position: right 13px center; background-size: 12px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d17b96' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    transition: border-color .2s, box-shadow .2s;
+}
+body.dark-mode #readingListCard .reading-controls select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f0a8c4' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+body #readingListCard .reading-controls select:hover { border-color: var(--primary); }
+body #readingListCard .reading-controls input:focus,
+body #readingListCard .reading-controls select:focus {
+    border-color: var(--primary); box-shadow: 0 0 0 4px var(--rl-ring);
+}
+body #readingListCard .book-context-btn {
+    width: 42px; border: 1px solid var(--rl-ring); background: var(--rl-tint); color: var(--primary);
+    transition: background .2s, color .2s, border-color .2s, transform .15s, box-shadow .2s;
+}
+body #readingListCard .book-context-btn:hover {
+    background: rgba(var(--primary-rgb, 209,123,150), .16); border-color: var(--primary); color: var(--primary-dark);
+    transform: translateY(-1px); box-shadow: 0 6px 14px -6px var(--rl-glow);
+}
+body.dark-mode #readingListCard .book-context-btn { background: rgba(240,168,196,.08); color: #f0a8c4; border-color: rgba(240,168,196,.25); }
+body.dark-mode #readingListCard .book-context-btn:hover { background: rgba(240,168,196,.16); color: #f8d0e0; border-color: rgba(240,168,196,.5); }
+
+/* ── 5. "Pick next" bar ── */
+body #readingListCard .rl-pickbtn {
+    border: 1px solid var(--rl-ring); border-radius: 14px; padding: 11px 14px;
+    background: linear-gradient(135deg, rgba(var(--primary-rgb, 209,123,150), .14), rgba(184,146,201,.12));
+    color: var(--primary-dark); font-weight: 700; letter-spacing: .01em;
+    transition: transform .15s, box-shadow .2s, border-color .2s;
+}
+body #readingListCard .rl-pickbtn:hover {
+    background: linear-gradient(135deg, rgba(var(--primary-rgb, 209,123,150), .22), rgba(184,146,201,.2));
+    border-color: var(--primary); transform: translateY(-1px); box-shadow: 0 6px 16px -8px var(--rl-glow);
+}
+body #readingListCard .rl-pickbtn .icon-svg { transition: transform .35s ease; }
+body #readingListCard .rl-pickbtn:hover .icon-svg { transform: rotate(180deg); }
+body.dark-mode #readingListCard .rl-pickbtn { color: #f8d0e0; border-color: rgba(240,168,196,.28); }
+
+/* ── 6. Book cards ── */
+body #readingListCard .book-item {
+    --ac-rgb: var(--primary-rgb, 209,123,150);
+    padding: 16px 16px 12px 18px; border-radius: 18px;
+    background:
+        linear-gradient(120deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 42%),
+        var(--bg-white);
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border-color));
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 10px 22px -16px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+body #readingListCard .book-item::before { width: 5px; border-radius: 18px 0 0 18px; }
+body #readingListCard .book-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 2px 4px rgba(0,0,0,.05), 0 18px 32px -16px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+body #readingListCard .book-cover {
+    border-radius: 3px 9px 9px 3px;
+    box-shadow: 0 10px 20px -6px rgba(0,0,0,.4), 0 2px 4px rgba(0,0,0,.18),
+                inset 3px 0 0 rgba(255,255,255,.25), inset 5px 0 5px -2px rgba(0,0,0,.2);
+    transition: transform .3s cubic-bezier(.2,.7,.3,1), box-shadow .3s;
+}
+body #readingListCard .book-item:hover .book-cover {
+    transform: perspective(500px) rotateY(-8deg) translateY(-2px);
+    box-shadow: 0 16px 26px -8px rgba(0,0,0,.45), 0 2px 4px rgba(0,0,0,.2),
+                inset 3px 0 0 rgba(255,255,255,.25), inset 5px 0 5px -2px rgba(0,0,0,.2);
+}
+body #readingListCard .book-title { font-size: 1.02rem; font-weight: 750; }
+body #readingListCard .book-genre {
+    background: linear-gradient(135deg, rgba(var(--primary-rgb, 209,123,150), .16), rgba(184,146,201,.14));
+    border: 1px solid rgba(var(--primary-rgb, 209,123,150), .18);
+}
+body #readingListCard .book-progress .goal-progress-container {
+    height: 8px; border-radius: 999px; box-shadow: inset 0 1px 2px rgba(0,0,0,.06);
+}
+body #readingListCard .book-progress .goal-progress-fill { border-radius: 999px; box-shadow: 0 0 8px var(--rl-glow); }
+body #readingListCard .book-review {
+    border-radius: 12px; border-left-width: 3px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, var(--bg-light)), var(--bg-light));
+}
+body #readingListCard .book-actions { border-top: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border-color)); }
+body #readingListCard .book-action-btn { border-radius: 10px; }
+
+/* Progress extras: milestone notches + pages-left / ETA footer */
+body #readingListCard .book-progress .goal-progress-container { position: relative; }
+body #readingListCard .bp-tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(var(--primary-rgb, 209,123,150), .38); pointer-events: none; }
+body #readingListCard .bp-tick.is-hit { background: rgba(255,255,255,.85); }
+body.dark-mode #readingListCard .bp-tick.is-hit { background: rgba(26,16,25,.55); }
+body #readingListCard .bp-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; margin-top: 5px; font-size: .7rem; color: var(--text-muted); }
+body #readingListCard .bp-foot b { color: var(--text-dark); font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* ── Small screens / motion ── */
+@media (max-width: 520px) {
+    body #readingListCard .stat-item { grid-template-columns: 1fr; justify-items: center; text-align: center; padding: 12px 6px; row-gap: 2px; }
+    body #readingListCard .stat-emoji { grid-row: auto; width: 34px; height: 34px; border-radius: 11px; }
+    body #readingListCard .stat-emoji .icon-svg { width: 17px; height: 17px; }
+    body #readingListCard .stat-label { align-self: auto; }
+    body #readingListCard .stat-value { font-size: 1.45rem; align-self: auto; }
+    body #readingListCard .rl-tab { padding: 8px 11px; }
+}
+@media (hover: none) {
+    body #readingListCard .book-item:hover .book-cover { transform: none; }
+    body #readingListCard .stat-item:hover, body #readingListCard .rl-goal:hover { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    body #readingListCard .book-cover, body #readingListCard .rl-pickbtn .icon-svg, body #readingListCard .stat-item { transition: none; }
+    body #readingListCard .book-item:hover .book-cover, body #readingListCard .rl-pickbtn:hover .icon-svg { transform: none; }
+}
+</style>
+<style id="readingListPickers">
+/* Reading List — custom pickers (genre = chips, sort = list). The real <select> stays in the DOM, hidden. */
+.rl-pick { flex: 1 1 110px; min-width: 0; position: relative; }
+.rl-pick > select { display: none !important; }
+body .rl-pick-btn {
+    width: 100%; min-height: 42px; display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px 10px 14px; border-radius: 14px; cursor: pointer; text-align: left;
+    border: 1px solid rgba(var(--primary-rgb, 209,123,150), .20);
+    background: var(--bg-white); color: var(--text-dark);
+    font: inherit; font-size: .86rem; font-weight: 500; line-height: 1.2;
+    box-shadow: 0 2px 8px -4px rgba(var(--primary-rgb, 209,123,150), .22);
+    transition: border-color .2s, box-shadow .2s, background .2s, color .2s;
+}
+body .rl-pick-btn:hover { border-color: var(--primary); }
+body .rl-pick-btn:focus-visible, body .rl-pick-btn[aria-expanded="true"] {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb, 209,123,150), .20);
+}
+.rl-pick-btn svg { width: 15px; height: 15px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rl-pick-btn .rl-pick-ico { color: var(--primary); opacity: .85; }
+.rl-pick-btn .rl-pick-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-pick-btn .rl-pick-chev { width: 13px; height: 13px; stroke-width: 3; color: var(--primary); transition: transform .2s; }
+.rl-pick-btn[aria-expanded="true"] .rl-pick-chev { transform: rotate(180deg); }
+.rl-pick.is-active .rl-pick-btn {
+    border-color: var(--primary); color: var(--primary-dark); font-weight: 600;
+    background: linear-gradient(135deg, rgba(var(--primary-rgb, 209,123,150), .14), rgba(184,146,201,.10)), var(--bg-white);
+}
+body.dark-mode .rl-pick-btn { background: rgba(255,255,255,.04); border-color: rgba(240,168,196,.25); }
+body.dark-mode .rl-pick.is-active .rl-pick-btn { color: #f8d0e0; background: linear-gradient(135deg, rgba(240,168,196,.18), rgba(212,179,232,.12)); }
+
+.rl-pop {
+    position: fixed; z-index: 100002; overflow: auto; padding: 12px;
+    background: var(--bg-white); color: var(--text-dark);
+    border: 1px solid rgba(var(--primary-rgb, 209,123,150), .24); border-radius: 18px;
+    box-shadow: 0 22px 44px -14px rgba(0,0,0,.38), 0 4px 10px rgba(0,0,0,.08);
+    font-family: inherit; transform-origin: top left; animation: rlPopIn .16s ease both;
+    scrollbar-width: thin; scrollbar-color: rgba(var(--primary-rgb, 209,123,150), .45) transparent;
+}
+.rl-pop.is-up { transform-origin: bottom left; }
+body.dark-mode .rl-pop { background: #261a25; border-color: rgba(240,168,196,.28); }
+@keyframes rlPopIn { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+.rl-pop-head { margin: 0 2px 10px; font-size: .66rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); }
+.rl-pop-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.rl-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid rgba(var(--primary-rgb, 209,123,150), .26);
+    background: rgba(var(--primary-rgb, 209,123,150), .07); color: var(--text-dark);
+    font: inherit; font-size: .8rem; font-weight: 600; line-height: 1.2;
+    transition: transform .15s, background .15s, border-color .15s, box-shadow .15s;
+}
+.rl-chip em { font-style: normal; font-size: .68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(var(--primary-rgb, 209,123,150), .16); color: var(--primary-dark); font-variant-numeric: tabular-nums; }
+.rl-chip:hover { transform: translateY(-1px); border-color: var(--primary); background: rgba(var(--primary-rgb, 209,123,150), .15); }
+.rl-chip.is-empty { opacity: .5; }
+.rl-chip.is-empty:hover { opacity: .85; }
+.rl-chip:focus-visible, .rl-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.rl-chip[aria-selected="true"] {
+    opacity: 1; border-color: transparent; color: #fff;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    box-shadow: 0 4px 12px -3px rgba(var(--primary-rgb, 209,123,150), .55);
+}
+.rl-chip[aria-selected="true"] em { background: rgba(255,255,255,.26); color: #fff; }
+body.dark-mode .rl-chip { border-color: rgba(240,168,196,.26); background: rgba(240,168,196,.07); }
+body.dark-mode .rl-chip em { color: #f8d0e0; background: rgba(240,168,196,.16); }
+body.dark-mode .rl-chip[aria-selected="true"] { color: #f8d0e0; background: linear-gradient(135deg, rgba(240,168,196,.32), rgba(212,179,232,.24)); box-shadow: inset 0 0 0 1px rgba(240,168,196,.5); }
+body.dark-mode .rl-chip[aria-selected="true"] em { background: rgba(240,168,196,.24); color: #f8d0e0; }
+
+.rl-pop-list { display: flex; flex-direction: column; gap: 2px; }
+.rl-pop--list { padding: 8px; }
+.rl-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 10px; cursor: pointer; text-align: left;
+    background: transparent; color: var(--text-dark); font: inherit; font-size: .86rem;
+    transition: background .15s, color .15s;
+}
+.rl-row:hover { background: rgba(var(--primary-rgb, 209,123,150), .10); }
+.rl-row .rl-check { margin-left: auto; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.rl-row[aria-selected="true"] { background: rgba(var(--primary-rgb, 209,123,150), .14); color: var(--primary-dark); font-weight: 700; }
+.rl-row[aria-selected="true"] .rl-check { opacity: 1; }
+body.dark-mode .rl-row[aria-selected="true"] { color: #f8d0e0; background: rgba(240,168,196,.16); }
+.is-invalid { border-color: #e5484d !important; box-shadow: 0 0 0 3px rgba(229,72,77,.18) !important; }
+body.dark-mode .is-invalid { border-color: #ff8a8f !important; box-shadow: 0 0 0 3px rgba(255,138,143,.2) !important; }
+@media (prefers-reduced-motion: reduce) { .rl-pop { animation: none; } .rl-chip, .rl-pick-btn .rl-pick-chev { transition: none; } }
+</style>
+<script id="readingListPickers">
+(function () {
+    var ICONS = {
+        tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".6" fill="currentColor"/>',
+        sort: '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
+        chev: '<path d="m6 9 6 6 6-6"/>',
+        check: '<path d="M20 6 9 17l-5-5"/>'
+    };
+    var svg = function (cls, name) { return '<svg class="' + cls + '" viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name] + '</svg>'; };
+    var esc = function (t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+    var openPop = null;
+
+    function closeOpen(refocus) { if (openPop) openPop.close(refocus); }
+
+    function enhance(sel, o) {
+        if (!sel || sel.dataset.rlPick) return;
+        sel.dataset.rlPick = '1';
+        var wrap = document.createElement('div'); wrap.className = 'rl-pick';
+        sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(sel);
+        var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'rl-pick-btn';
+        btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+        btn.title = sel.title || ''; btn.setAttribute('aria-label', sel.title || o.head);
+        btn.innerHTML = svg('rl-pick-ico', o.icon) + '<span class="rl-pick-label"></span>' + svg('rl-pick-chev', 'chev');
+        wrap.appendChild(btn);
+        var label = btn.querySelector('.rl-pick-label');
+
+        function sync() {
+            var op = sel.options[sel.selectedIndex];
+            label.textContent = op ? op.textContent.trim() : '';
+            wrap.classList.toggle('is-active', sel.value !== o.def);
+        }
+        sel.addEventListener('change', sync);
+        sync();
+
+        function counts() {
+            if (!o.chips || typeof readingList === 'undefined' || !Array.isArray(readingList)) return null;
+            var m = { all: readingList.length };
+            readingList.forEach(function (b) { if (b && b.genre) m[b.genre] = (m[b.genre] || 0) + 1; });
+            return m;
+        }
+
+        function open() {
+            closeOpen(false);
+            sync();
+            var cnt = counts();
+            var pop = document.createElement('div');
+            pop.className = 'rl-pop' + (o.chips ? '' : ' rl-pop--list');
+            pop.setAttribute('role', 'listbox'); pop.setAttribute('aria-label', o.head);
+            var items = Array.prototype.map.call(sel.options, function (op) {
+                var v = op.value, t = op.textContent.trim(), on = v === sel.value;
+                if (o.chips) {
+                    var n = cnt ? (cnt[v] || 0) : null;
+                    return '<button type="button" role="option" class="rl-chip' + (n === 0 ? ' is-empty' : '') + '" data-v="' + esc(v) + '" aria-selected="' + on + '">' + esc(t) + (n ? '<em>' + n + '</em>' : '') + '</button>';
+                }
+                return '<button type="button" role="option" class="rl-row" data-v="' + esc(v) + '" aria-selected="' + on + '"><span>' + esc(t) + '</span>' + svg('rl-check', 'check') + '</button>';
+            }).join('');
+            pop.innerHTML = '<div class="rl-pop-head">' + esc(o.head) + '</div><div class="' + (o.chips ? 'rl-pop-chips' : 'rl-pop-list') + '">' + items + '</div>';
+            document.body.appendChild(pop);
+            btn.setAttribute('aria-expanded', 'true');
+
+            function place() {
+                var r = btn.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+                var w = o.chips ? Math.min(400, vw - 24) : Math.min(Math.max(r.width, 250), vw - 24);
+                pop.style.width = w + 'px';
+                pop.style.left = Math.min(Math.max(12, r.left), vw - w - 12) + 'px';
+                pop.style.maxHeight = '';
+                var h = pop.scrollHeight + 2, below = vh - r.bottom - 14, above = r.top - 14;
+                if (h > below && above > below) {
+                    pop.classList.add('is-up'); pop.style.top = 'auto'; pop.style.bottom = (vh - r.top + 6) + 'px';
+                    pop.style.maxHeight = Math.min(420, above) + 'px';
+                } else {
+                    pop.classList.remove('is-up'); pop.style.bottom = 'auto'; pop.style.top = (r.bottom + 6) + 'px';
+                    pop.style.maxHeight = Math.min(420, below) + 'px';
+                }
+            }
+            place();
+
+            function onDoc(e) { if (!pop.contains(e.target) && !btn.contains(e.target)) close(false); }
+            function onKey(e) {
+                if (e.key === 'Escape') { e.preventDefault(); close(true); return; }
+                var keys = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                if (keys.indexOf(e.key) < 0) return;
+                var els = Array.prototype.slice.call(pop.querySelectorAll('[role=option]'));
+                var i = els.indexOf(document.activeElement);
+                if (e.key === 'Home') i = 0; else if (e.key === 'End') i = els.length - 1;
+                else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') i = Math.min(els.length - 1, i + 1);
+                else i = Math.max(0, i - 1);
+                e.preventDefault(); els[i].focus();
+            }
+            function close(refocus) {
+                document.removeEventListener('mousedown', onDoc, true);
+                document.removeEventListener('keydown', onKey, true);
+                window.removeEventListener('resize', place);
+                window.removeEventListener('scroll', place, true);
+                pop.remove(); btn.setAttribute('aria-expanded', 'false');
+                if (openPop && openPop.pop === pop) openPop = null;
+                if (refocus) btn.focus();
+            }
+            pop.addEventListener('click', function (e) {
+                var it = e.target.closest('[role=option]'); if (!it) return;
+                sel.value = it.dataset.v;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                close(true);
+            });
+            document.addEventListener('mousedown', onDoc, true);
+            document.addEventListener('keydown', onKey, true);
+            window.addEventListener('resize', place);
+            window.addEventListener('scroll', place, true);
+            openPop = { pop: pop, close: close };
+            var cur = pop.querySelector('[aria-selected=true]') || pop.querySelector('[role=option]');
+            if (cur) { cur.focus({ preventScroll: true }); if (cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' }); }
+        }
+
+        btn.addEventListener('click', function () {
+            if (btn.getAttribute('aria-expanded') === 'true') closeOpen(true); else open();
+        });
+        btn.addEventListener('keydown', function (e) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (btn.getAttribute('aria-expanded') !== 'true') open(); }
+        });
+    }
+
+    function init() {
+        enhance(document.getElementById('genreFilter'), { chips: true, icon: 'tag', head: 'Genre', def: 'all' });
+        enhance(document.getElementById('sortReadingList'), { chips: false, icon: 'sort', head: 'Sort by', def: 'default' });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
 </body>
