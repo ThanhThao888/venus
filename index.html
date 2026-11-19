@@ -34073,7 +34073,7 @@ body.dark-mode #resourceModal select, body.dark-mode #resourceModal textarea { c
                     <span style="font-size:0.8rem; font-weight:600; color:var(--text-dark);"><svg class="icon-svg" aria-hidden="true"><use href="#icon-hourglass"></use></svg> Sleep debt</span>
                     <span style="display:inline-flex; align-items:center; gap:8px;">
                         <span id="sleepDebtBadge" style="font-size:0.78rem; font-weight:700; padding:2px 10px; border-radius:10px; display:none;"></span>
-                        <button type="button" onclick="copySleepDebtPlanForAI()" title="Copy 30-day sleep data + debt payback prompt for AI" aria-label="Copy 30-day sleep data and debt payback prompt for AI" style="font-size:0.72rem; padding:5px 8px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; display:inline-flex; align-items:center; transition:background .2s,color .2s,border-color .2s;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sparkles"></use></svg></button>
+                        <button type="button" onclick="copySleepDebtPlanForAI()" title="Copy 30-day sleep data + debt payback prompt (EN + VI) for AI" aria-label="Copy 30-day sleep data and debt payback prompt (EN and VI) for AI" style="font-size:0.72rem; padding:5px 8px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-white); color:var(--text-dark); cursor:pointer; display:inline-flex; align-items:center; transition:background .2s,color .2s,border-color .2s;"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sparkles"></use></svg></button>
                     </span>
                 </div>
                 <div id="sleepDebtCardBody"></div>
@@ -61561,30 +61561,68 @@ document.addEventListener('DOMContentLoaded', function() {
             const L = [];
             const SEP = '='.repeat(56);
 
-            // ── PROMPT (đặt trước dữ liệu) ──
-            const napPts = [10, 25, 45, 90].map(m => `${m} min ≈ ${interpolateCurve(SLEEP_NAP_CFG.durationCurve, m).toFixed(0)} min credit`).join(', ');
-            L.push('TASK: Build me a personalised SLEEP-DEBT PAYBACK PLAN for the next 7 days, using ONLY my own data below.');
-            L.push('Answer in Vietnamese (casual tone, concise, no lecture). Do not ask me questions first — make reasonable assumptions, state them, and I will correct them afterwards.');
+            // ── PROMPT (đặt trước dữ liệu) — 2 ngôn ngữ: 'en' | 'vi' ──
+            const capN = SLEEP_DEBT_CFG.maxCreditPerNight;
+            const tolMin = Math.round(tol * 60);
+            const lv = SLEEP_DEBT_LEVELS;
+            const napPtsEN = [10, 25, 45, 90].map(m => `${m} min ≈ ${interpolateCurve(SLEEP_NAP_CFG.durationCurve, m).toFixed(0)} min credit`).join(', ');
+            const napPtsVI = [10, 25, 45, 90].map(m => `${m} phút ≈ trừ ${interpolateCurve(SLEEP_NAP_CFG.durationCurve, m).toFixed(0)} phút nợ`).join(', ');
+            const promptEN = [
+                'TASK: Build me a personalised SLEEP-DEBT PAYBACK PLAN for the next 7 days, using ONLY my own data below.',
+                'Answer in English (concise, no lecture). Do not ask me questions first — make reasonable assumptions, state them, and I will correct them afterwards.',
+                '',
+                'About me: I work a full-time job and study on top of it, so my schedule is tight. When I am short on sleep, my study hours feel wasted (too tired to absorb anything), which stresses me out more. My fixed commitments (work/class hours) are NOT given — infer them from my sleep/wake pattern in the data and list what you inferred.',
+                '',
+                'HOW MY APP COUNTS SLEEP DEBT (design your plan so the numbers work out under these exact rules):',
+                `- Goal: ${goal}h/night. Each night is assigned to its WAKE-UP date. Sleep that night = time asleep minus awake minutes in the middle of the night. Multiple sleep periods that end on the same date are added together.`,
+                `- Short night (more than ${tolMin} min under goal) adds the shortfall to debt. A night above goal repays debt, but at most ${capN}h per night — extra beyond goal+${capN}h is NOT credited. Debt never goes below 0.`,
+                `- Naps repay debt only partially: credit minutes depend on nap length (${napPtsEN}) and on how long after waking the nap starts (full credit when it starts 5–8.5h after waking; ~0.6x at 9.5–10.5h; ~0.2x if earlier than 3.5h or later than 11.5h). All naps in a day are capped at ${SLEEP_NAP_CFG.dailyCapMin} min of credit/day. A nap never counts as night sleep.`,
+                `- The app's debt only looks at the last ${SLEEP_DEBT_CFG.windowNights} nights. Levels: OK ≤ ${lv[0].max}h, Mild ≤ ${lv[1].max}h, Moderate ≤ ${lv[2].max}h, Severe above. Unlogged nights are skipped.`,
+                '',
+                'WHAT TO GIVE ME (in this order):',
+                '1) DIAGNOSIS (max 4 lines): where did my current debt actually come from — short nights, irregular timing (bed/wake drifting, weekend vs weekday), a logging mistake, or a mix? Name the single biggest driver.',
+                '2) ASSUMPTIONS you made (inferred work/study hours, usual wake anchor, etc.).',
+                `3) DAY-BY-DAY PLAN, 7 days starting from the next sleep (table: date+weekday | bedtime | wake time | planned sleep h | nap (start time + minutes, or "none") | expected debt after that day under the rules above | study suggestion: heavy / light / rest). Keep my wake anchor as stable as realistically possible; move bedtime earlier instead of sleeping in; never plan more than goal+${capN}h in a night. Aim to bring debt to ≤ ${lv[0].max}h (the app's "OK" level) in as few nights as is realistic — say how many nights that takes and show the arithmetic.`,
+                '4) WHAT TO CUT first: habits/tags/notes in my data that correlate with my worst nights (late caffeine, screens, alcohol, late meals, late wake-ups, long sleep-onset, etc.) — only if the data supports it; say "not enough data" otherwise.',
+                '5) CHECKPOINTS: what debt number I should see in the app after night 3 and night 7 if I follow the plan, and what to do if I miss a night.',
+                '6) DATA PROBLEMS: any logged nights that look like mistakes (very short/very long, overlapping, forgot to press Stop, unlogged nights) that I should fix because they distort the debt number.',
+                'If my irregular timing matters more than total hours, say so directly and prioritise fixing the schedule over "banking" extra hours.'
+            ];
+            const promptVI = [
+                'NHIỆM VỤ: Lập cho tôi KẾ HOẠCH TRẢ NỢ NGỦ cá nhân hoá cho 7 ngày tới, CHỈ dựa trên dữ liệu của chính tôi bên dưới.',
+                'Trả lời bằng tiếng Việt (giọng thân mật, ngắn gọn, không giảng đạo). Đừng hỏi lại tôi trước — hãy tự đặt giả định hợp lý, nêu rõ chúng ra, tôi sẽ sửa sau.',
+                '',
+                'Về tôi: tôi đi làm full-time và học thêm, lịch rất chặt. Khi thiếu ngủ, giờ học của tôi như bị phí (quá mệt để tiếp thu), càng làm tôi stress hơn. Tôi KHÔNG cung cấp lịch cố định (giờ làm/giờ học) — hãy suy ra từ nhịp ngủ/dậy trong dữ liệu và liệt kê những gì bạn suy ra.',
+                '',
+                'APP CỦA TÔI TÍNH NỢ NGỦ NHƯ SAU (hãy lập kế hoạch sao cho con số khớp đúng các luật này):',
+                `- Mục tiêu: ${goal}h/đêm. Mỗi đêm được gán vào NGÀY THỨC DẬY. Giờ ngủ của đêm = thời gian ngủ trừ số phút thức giữa đêm. Nhiều giấc ngủ kết thúc trong cùng một ngày thì cộng dồn.`,
+                `- Đêm thiếu (thiếu hơn ${tolMin} phút so với mục tiêu) thì phần thiếu được cộng vào nợ. Đêm ngủ dư thì trả nợ, nhưng tối đa ${capN}h/đêm — phần dư vượt quá mục tiêu+${capN}h KHÔNG được tính. Nợ không bao giờ xuống dưới 0.`,
+                `- Nap chỉ trả nợ một phần: số phút được trừ phụ thuộc độ dài nap (${napPtsVI}) và việc nap bắt đầu sau khi thức dậy bao lâu (trừ đủ khi bắt đầu sau 5–8.5h kể từ lúc dậy; ~0.6x ở mốc 9.5–10.5h; ~0.2x nếu sớm hơn 3.5h hoặc muộn hơn 11.5h). Tổng nap trong một ngày được trừ tối đa ${SLEEP_NAP_CFG.dailyCapMin} phút/ngày. Nap không bao giờ tính là giấc ngủ đêm.`,
+                `- Nợ của app chỉ xét ${SLEEP_DEBT_CFG.windowNights} đêm gần nhất. Các mức: OK ≤ ${lv[0].max}h, Mild ≤ ${lv[1].max}h, Moderate ≤ ${lv[2].max}h, Severe là trên đó. Đêm chưa log thì bị bỏ qua.`,
+                '',
+                'HÃY ĐƯA CHO TÔI (theo đúng thứ tự):',
+                '1) CHẨN ĐOÁN (tối đa 4 dòng): nợ hiện tại của tôi thực sự đến từ đâu — đêm ngủ thiếu, giờ giấc thất thường (giờ ngủ/dậy trôi, cuối tuần so với ngày thường), lỗi ghi dữ liệu, hay kết hợp? Chỉ ra MỘT nguyên nhân lớn nhất.',
+                '2) GIẢ ĐỊNH bạn đã đặt (giờ làm/học suy ra, mốc giờ dậy quen thuộc, v.v.).',
+                `3) KẾ HOẠCH TỪNG NGÀY, 7 ngày bắt đầu từ giấc ngủ sắp tới (dạng bảng: ngày+thứ | giờ đi ngủ | giờ dậy | số giờ ngủ dự kiến | nap (giờ bắt đầu + số phút, hoặc "không") | nợ dự kiến sau ngày đó theo các luật ở trên | gợi ý việc học: nặng / nhẹ / nghỉ). Giữ mốc giờ dậy ổn định nhất có thể; dời giờ đi ngủ sớm lên thay vì ngủ nướng; không bao giờ lên kế hoạch ngủ quá mục tiêu+${capN}h trong một đêm. Mục tiêu đưa nợ về ≤ ${lv[0].max}h (mức "OK" của app) trong số đêm ít nhất có thể — nói rõ cần bao nhiêu đêm và trình bày phép tính.`,
+                '4) NÊN CẮT TRƯỚC: các thói quen/tag/ghi chú trong dữ liệu có liên quan đến những đêm tệ nhất của tôi (caffeine muộn, màn hình, rượu, ăn khuya, dậy muộn, vào giấc lâu, v.v.) — chỉ khi dữ liệu ủng hộ; nếu không thì nói "chưa đủ dữ liệu".',
+                '5) MỐC KIỂM TRA: nếu tôi làm đúng kế hoạch thì con số nợ trong app sau đêm 3 và đêm 7 nên là bao nhiêu, và phải làm gì nếu tôi lỡ mất một đêm.',
+                '6) VẤN ĐỀ DỮ LIỆU: những đêm đã log mà trông như nhập sai (quá ngắn/quá dài, chồng lấn, quên bấm Stop, đêm chưa log) mà tôi nên sửa vì chúng làm lệch con số nợ.',
+                'Nếu giờ giấc thất thường quan trọng hơn tổng số giờ ngủ, hãy nói thẳng và ưu tiên sửa lịch hơn là cố "ngủ bù" thêm giờ.'
+            ];
+            L.push('>>> PROMPT TIẾNG VIỆT (bắt đầu) — dùng bản này thì xóa khối ENGLISH bên dưới <<<');
             L.push('');
-            L.push('About me: I work a full-time job and study on top of it, so my schedule is tight. When I am short on sleep, my study hours feel wasted (too tired to absorb anything), which stresses me out more. My fixed commitments (work/class hours) are NOT given — infer them from my sleep/wake pattern in the data and list what you inferred.');
+            promptVI.forEach(x => L.push(x));
             L.push('');
-            L.push('HOW MY APP COUNTS SLEEP DEBT (design your plan so the numbers work out under these exact rules):');
-            L.push(`- Goal: ${goal}h/night. Each night is assigned to its WAKE-UP date. Sleep that night = time asleep minus awake minutes in the middle of the night. Multiple sleep periods that end on the same date are added together.`);
-            L.push(`- Short night (more than ${Math.round(tol * 60)} min under goal) adds the shortfall to debt. A night above goal repays debt, but at most ${SLEEP_DEBT_CFG.maxCreditPerNight}h per night — extra beyond goal+${SLEEP_DEBT_CFG.maxCreditPerNight}h is NOT credited. Debt never goes below 0.`);
-            L.push(`- Naps repay debt only partially: credit minutes depend on nap length (${napPts}) and on how long after waking the nap starts (full credit when it starts 5–8.5h after waking; ~0.6x at 9.5–10.5h; ~0.2x if earlier than 3.5h or later than 11.5h). All naps in a day are capped at ${SLEEP_NAP_CFG.dailyCapMin} min of credit/day. A nap never counts as night sleep.`);
-            L.push(`- The app's debt only looks at the last ${SLEEP_DEBT_CFG.windowNights} nights. Levels: OK ≤ ${SLEEP_DEBT_LEVELS[0].max}h, Mild ≤ ${SLEEP_DEBT_LEVELS[1].max}h, Moderate ≤ ${SLEEP_DEBT_LEVELS[2].max}h, Severe above. Unlogged nights are skipped.`);
+            L.push('>>> PROMPT TIẾNG VIỆT (hết) <<<');
             L.push('');
-            L.push('WHAT TO GIVE ME (in this order):');
-            L.push('1) DIAGNOSIS (max 4 lines): where did my current debt actually come from — short nights, irregular timing (bed/wake drifting, weekend vs weekday), a logging mistake, or a mix? Name the single biggest driver.');
-            L.push('2) ASSUMPTIONS you made (inferred work/study hours, usual wake anchor, etc.).');
-            L.push(`3) DAY-BY-DAY PLAN, 7 days starting from the next sleep (table: date+weekday | bedtime | wake time | planned sleep h | nap (start time + minutes, or "none") | expected debt after that day under the rules above | study suggestion: heavy / light / rest). Keep my wake anchor as stable as realistically possible; move bedtime earlier instead of sleeping in; never plan more than goal+${SLEEP_DEBT_CFG.maxCreditPerNight}h in a night. Aim to bring debt to ≤ ${SLEEP_DEBT_LEVELS[0].max}h (the app's "OK" level) in as few nights as is realistic — say how many nights that takes and show the arithmetic.`);
-            L.push('4) WHAT TO CUT first: habits/tags/notes in my data that correlate with my worst nights (late caffeine, screens, alcohol, late meals, late wake-ups, long sleep-onset, etc.) — only if the data supports it; say "not enough data" otherwise.');
-            L.push('5) CHECKPOINTS: what debt number I should see in the app after night 3 and night 7 if I follow the plan, and what to do if I miss a night.');
-            L.push('6) DATA PROBLEMS: any logged nights that look like mistakes (very short/very long, overlapping, forgot to press Stop, unlogged nights) that I should fix because they distort the debt number.');
-            L.push('If my irregular timing matters more than total hours, say so directly and prioritise fixing the schedule over "banking" extra hours.');
+            L.push('>>> ENGLISH PROMPT (start) — if you use this one, delete the VIETNAMESE block above <<<');
+            L.push('');
+            promptEN.forEach(x => L.push(x));
+            L.push('');
+            L.push('>>> ENGLISH PROMPT (end) <<<');
             L.push('');
             L.push(SEP);
-            L.push(`MY SLEEP DATA — last ${DAYS} days (until ${lbl(todayStr)}). All clock times are UTC+7 (24h). Generated ${lbl(todayStr)}/${todayStr.slice(0, 4)}.`);
+            L.push(`MY SLEEP DATA / DỮ LIỆU GIẤC NGỦ CỦA TÔI — last ${DAYS} days / ${DAYS} ngày gần nhất (until/đến ${lbl(todayStr)}). All clock times are UTC+7 (24h) / Mọi giờ theo UTC+7 (24h). Data labels are in English / Nhãn dữ liệu viết bằng tiếng Anh. Generated/Xuất ngày ${lbl(todayStr)}/${todayStr.slice(0, 4)}.`);
             L.push(SEP);
 
             // ── tình trạng hiện tại ──
@@ -61672,12 +61710,12 @@ document.addEventListener('DOMContentLoaded', function() {
             L.push(`STUDY HOURS LOGGED (same ${DAYS} days; total ${studyTotal.toFixed(1)}h)`);
             L.push(studyLines.length ? studyLines.join(' · ') : 'No study hours logged.');
             L.push('');
-            L.push('END OF DATA. Now write the plan as specified in TASK above.');
+            L.push('END OF DATA / HẾT DỮ LIỆU. Now write the plan as specified in TASK / NHIỆM VỤ above (use the prompt that is left in this message).');
 
             const fullText = L.join('\n');
 
             const finish = () => {
-                if (typeof showNotification === 'function') showNotification('Copied debt payback prompt + 30-day sleep data — paste it into ChatGPT!', 'success');
+                if (typeof showNotification === 'function') showNotification('Đã copy prompt EN + VI + dữ liệu ngủ 30 ngày — dán vào ChatGPT, xóa bản ngôn ngữ không dùng nhé!', 'success');
                 document.querySelectorAll('button[onclick="copySleepDebtPlanForAI()"]').forEach(btn => {
                     const use = btn.querySelector('use');
                     if (!use || btn.dataset.copyFlash) return;
