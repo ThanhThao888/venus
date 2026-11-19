@@ -10476,24 +10476,74 @@
             transform: translateY(-1px);
         }
 
+        /* ===== PRIORITY CHIP v2 — colour-coded level meter (3 bars) =====
+           high = rose, 3 bars · medium = amber, 2 bars · low = sage, 1 bar.
+           Bars not reached stay as faint outlines so the scale is always readable. */
         .priority-chip {
+            --pc: var(--primary);
+            --pc-rgb: var(--primary-rgb);
             height: 28px;
             box-sizing: border-box;
-            padding: 0 9px;
+            padding: 0 10px 0 8px;
+            gap: 6px;
             border-radius: 999px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.78rem;
-            background: rgba(var(--primary-rgb), 0.1);
-            border: 1px solid rgba(var(--primary-rgb), 0.16);
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: .2px;
+            line-height: 1;
+            color: var(--pc);
+            background: linear-gradient(135deg, rgba(var(--pc-rgb), .16), rgba(var(--pc-rgb), .07));
+            border: 1px solid rgba(var(--pc-rgb), .28);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
             flex-shrink: 0;
+            white-space: nowrap;
+            cursor: default;
+            transition: transform .2s ease, box-shadow .2s ease;
+        }
+        .priority-chip:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(var(--pc-rgb), .22), inset 0 1px 0 rgba(255,255,255,.45);
+        }
+        .priority-chip[data-level="high"]   { --pc: #c2415f; --pc-rgb: 194, 65, 95; }
+        .priority-chip[data-level="medium"] { --pc: #b7791f; --pc-rgb: 217, 150, 40; }
+        .priority-chip[data-level="low"]    { --pc: #4f8a6b; --pc-rgb: 79, 138, 107; }
+        .priority-chip .pc-bars {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 11px;
+        }
+        .priority-chip .pc-bars i {
+            display: block;
+            width: 3px;
+            border-radius: 2px;
+            background: currentColor;
+            opacity: .22;
+        }
+        .priority-chip .pc-bars i:nth-child(1) { height: 5px; }
+        .priority-chip .pc-bars i:nth-child(2) { height: 8px; }
+        .priority-chip .pc-bars i:nth-child(3) { height: 11px; }
+        .priority-chip[data-level="high"]   .pc-bars i              { opacity: 1; }
+        .priority-chip[data-level="medium"] .pc-bars i:nth-child(-n+2) { opacity: 1; }
+        .priority-chip[data-level="low"]    .pc-bars i:nth-child(1) { opacity: 1; }
+        /* narrow screens: keep only the bars, drop the label */
+        @media (max-width: 520px) {
+            .priority-chip { padding: 0 8px; }
+            .priority-chip .pc-label { display: none; }
         }
 
         .dark-mode .priority-chip {
-            background: rgba(var(--primary-rgb), 0.12);
-            border-color: rgba(var(--primary-rgb), 0.2);
+            background: linear-gradient(135deg, rgba(var(--pc-rgb), .22), rgba(var(--pc-rgb), .10));
+            border-color: rgba(var(--pc-rgb), .38);
+            box-shadow: none;
         }
+        .dark-mode .priority-chip:hover { box-shadow: 0 3px 10px rgba(0,0,0,.35); }
+        .dark-mode .priority-chip[data-level="high"]   { --pc: #f2899f; --pc-rgb: 242, 137, 159; }
+        .dark-mode .priority-chip[data-level="medium"] { --pc: #e8b765; --pc-rgb: 232, 183, 101; }
+        .dark-mode .priority-chip[data-level="low"]    { --pc: #7fc3a0; --pc-rgb: 127, 195, 160; }
 
         /* ===== NOTE-AS-LINK CHIP ===== */
         .resource-note-link {
@@ -32290,9 +32340,21 @@ window.DBP={
                         <select id="resourceDomainFilter" onchange="filterResources()" class="filter-select">
                             <option value="all">All Domains</option>
                             <option value="career-finance">Career & Finance</option>
+                            <option value="economics-markets">Economics & Markets</option>
+                            <option value="ai-data">AI & Data</option>
+                            <option value="business">Business & Entrepreneurship</option>
+                            <option value="politics-world">Politics & World Affairs</option>
+                            <option value="law-compliance">Law & Compliance</option>
+                            <option value="negotiation-influence">Negotiation & Persuasion</option>
+                            <option value="communication">Communication & Writing</option>
+                            <option value="psychology-mindset">Psychology & Mindset</option>
+                            <option value="productivity">Productivity & ADHD</option>
+                            <option value="personal-growth">Personal Growth</option>
+                            <option value="health-wellness">Health & Wellness</option>
                             <option value="language-learning">Language Learning</option>
                             <option value="tech-tools">Tech & Tools</option>
-                            <option value="personal-growth">Personal Growth</option>
+                            <option value="lifestyle">Lifestyle & Style</option>
+                            <option value="travel-culture">Travel & Culture</option>
                             <option value="entertainment">Entertainment</option>
                             <option value="other">Other</option>
                         </select>
@@ -32431,7 +32493,15 @@ window.DBP={
         </div>
 
         <!-- ===== RESOURCE LIBRARY MODAL ===== -->
-        <div id="resourceModal" class="modal rl-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="resourceModalTitle">
+        <style>
+/* Native popups (Category suggestions list, Select dropdowns) follow color-scheme, not our palette.
+   Pin them to the app's own light/dark mode so they never turn black on a light page. */
+#resourceModal, #resourceModal input, #resourceModal select, #resourceModal textarea { color-scheme: light; }
+body.dark-mode #resourceModal, body.dark-mode #resourceModal input,
+body.dark-mode #resourceModal select, body.dark-mode #resourceModal textarea { color-scheme: dark; }
+#resourceModal select option { background: var(--bg-white); color: var(--text-dark); }
+</style>
+<div id="resourceModal" class="modal rl-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="resourceModalTitle">
             <div class="modal-content rl-sheet">
                 <div class="rl-head">
                     <span class="rl-head-icon" aria-hidden="true"><svg class="icon-svg"><use href="#icon-library"></use></svg></span>
@@ -32501,9 +32571,21 @@ window.DBP={
                                     <select id="resourceDomain">
                                 <option value="">Select Domain</option>
                                 <option value="career-finance">Career & Finance</option>
+                                <option value="economics-markets">Economics & Markets</option>
+                                <option value="ai-data">AI & Data</option>
+                                <option value="business">Business & Entrepreneurship</option>
+                                <option value="politics-world">Politics & World Affairs</option>
+                                <option value="law-compliance">Law & Compliance</option>
+                                <option value="negotiation-influence">Negotiation & Persuasion</option>
+                                <option value="communication">Communication & Writing</option>
+                                <option value="psychology-mindset">Psychology & Mindset</option>
+                                <option value="productivity">Productivity & ADHD</option>
+                                <option value="personal-growth">Personal Growth</option>
+                                <option value="health-wellness">Health & Wellness</option>
                                 <option value="language-learning">Language Learning</option>
                                 <option value="tech-tools">Tech & Tools</option>
-                                <option value="personal-growth">Personal Growth</option>
+                                <option value="lifestyle">Lifestyle & Style</option>
+                                <option value="travel-culture">Travel & Culture</option>
                                 <option value="entertainment">Entertainment</option>
                                 <option value="other">Other</option>
                             </select>
@@ -48335,7 +48417,50 @@ const EnglishDaily = (function () {
             .rl-tk-nudge{margin-top:6px;align-self:flex-start;border:1px dashed rgba(219,113,175,.55);background:transparent;color:#9d2867;border-radius:99px;padding:2px 10px;font:inherit;font-size:.74rem;font-weight:600;cursor:pointer}
             .dark-mode .rl-tk-nudge{color:#f9a8d4;border-color:rgba(244,114,182,.4)}
             .book-action-btn.has-tk{color:#db2777;border-color:#db2777}
-            .rl-tk-form{padding:6px 20px 4px;display:flex;flex-direction:column;gap:12px}
+            .rl-tk-form{padding:6px 20px 4px;display:flex;flex-direction:column;gap:12px;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+            #rlTkModal .rl-imp-head,#rlTkModal .rl-imp-foot{flex-shrink:0}
+            #rlTkModal .rl-tk-card{max-width:540px;border-radius:24px;border:1px solid var(--border-color);box-shadow:0 24px 70px -16px rgba(74,50,64,.45)}
+            #rlTkModal .rl-tk-head{display:flex;align-items:center;gap:12px;padding:20px 22px 14px;flex-shrink:0}
+            #rlTkModal .rl-tk-badge{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;flex-shrink:0;background:var(--primary-light);color:var(--primary-dark);font-size:20px}
+            #rlTkModal .rl-tk-titles{flex:1;min-width:0}
+            #rlTkModal .rl-tk-titles h3{margin:0;font-size:1.12rem;font-weight:700;letter-spacing:.1px;color:var(--text-dark)}
+            #rlTkModal .rl-tk-book{margin-top:1px;font-size:.82rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            #rlTkModal .rl-tk-pill{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;padding:7px 13px;border-radius:99px;font:inherit;font-size:.8rem;font-weight:600;cursor:pointer;background:var(--bg-white);color:var(--primary-dark);border:1.5px solid var(--primary);transition:background .15s,transform .15s}
+            #rlTkModal .rl-tk-pill:hover{background:var(--primary-light);transform:translateY(-1px)}
+            #rlTkModal .rl-tk-pill.is-on{background:var(--primary-light)}
+            #rlTkModal .rl-tk-form{padding:4px 22px 16px;gap:14px;scrollbar-width:thin;scrollbar-color:var(--primary) transparent;scroll-padding:8px}
+            #rlTkModal .rl-tk-form::-webkit-scrollbar{width:8px}
+            #rlTkModal .rl-tk-form::-webkit-scrollbar-track{background:transparent}
+            #rlTkModal .rl-tk-form::-webkit-scrollbar-thumb{background:var(--primary-light);border:1px solid var(--primary);border-radius:99px}
+            #rlTkModal .rl-tk-form>*{flex-shrink:0}
+            #rlTkModal .rl-tk-paste textarea{width:100%;height:46px;min-height:46px;resize:none;padding:12px 14px;border-radius:14px;border:1.5px dashed var(--primary);background:var(--primary-light);color:var(--text-dark);font:inherit;font-size:.86rem;line-height:1.4;overflow:hidden}
+            #rlTkModal .rl-tk-paste textarea::placeholder{color:var(--primary-dark);opacity:.75}
+            #rlTkModal .rl-tk-paste textarea:focus{outline:none;border-style:solid;background:var(--bg-white);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)}
+            #rlTkModal .rl-tk-field{gap:7px}
+            #rlTkModal .rl-tk-lab{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+            #rlTkModal .rl-tk-lab b{font-size:.9rem;font-weight:700;color:var(--text-dark)}
+            #rlTkModal .rl-tk-lab i{font-style:normal;font-size:.74rem;font-weight:500;color:var(--text-muted)}
+            #rlTkModal .rl-tk-field textarea{padding:12px 14px;border-radius:14px;border:1.5px solid var(--border-color);background:var(--bg-white);line-height:1.55}
+            #rlTkModal .rl-tk-field textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)}
+            #rlTkModal .rl-tk-todo{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--bg-light);border:1px solid var(--border-color)}
+            #rlTkModal .rl-tk-todo-lab{flex:1;font-size:.82rem;font-weight:600;color:var(--text-dark)}
+            #rlTkModal .rl-tk-todo input[type=date]{font:inherit;font-size:.84rem;padding:6px 10px;border-radius:10px;border:1.5px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);color-scheme:light}
+            #rlTkModal .rl-tk-todo input[type=date]:focus{outline:none;border-color:var(--primary)}
+            body.dark-mode #rlTkModal .rl-tk-todo input[type=date]{color-scheme:dark}
+            #rlTkModal .rl-imp-foot{border-top:1px solid var(--border-color);padding:14px 22px;flex-shrink:0}
+            body #rlTkModal .rl-imp-foot .add-time-btn{padding:10px 22px;border-radius:99px;font-weight:700;font-size:.9rem;min-width:92px}
+            body #rlTkModal .rl-imp-foot .btn-secondary{background:var(--bg-white)!important;color:var(--primary-dark)!important;border:1.5px solid var(--primary)!important;box-shadow:none!important}
+            body #rlTkModal .rl-imp-foot .btn-secondary:hover{background:var(--primary-light)!important}
+            body #rlTkModal .rl-imp-foot .add-time-btn:not(.btn-secondary){background:var(--primary-dark)!important;background-image:none!important;color:#fff!important;border:1.5px solid var(--primary-dark)!important;box-shadow:0 4px 12px rgba(var(--primary-rgb,209,123,150),.3)!important}
+            body.dark-mode #rlTkModal .rl-imp-foot .btn-secondary{background:transparent!important;color:var(--primary)!important}
+            body.dark-mode #rlTkModal .rl-imp-foot .add-time-btn:not(.btn-secondary){background:var(--primary)!important;border-color:var(--primary)!important;color:#2a1420!important}
+            @media (max-height:760px){
+                #rlTkModal .rl-tk-head{padding:16px 22px 10px}
+                #rlTkModal #rlTkLearned{height:92px}
+                #rlTkModal #rlTkApply{height:72px}
+            }
+            @media (max-width:480px){ #rlTkModal .rl-tk-todo{flex-wrap:wrap} #rlTkModal .rl-tk-todo-lab{flex-basis:100%} }
+            #rlTkModal .rl-imp-card{max-height:calc(100dvh - 40px)}
             .rl-tk-form label{font-size:.82rem;font-weight:600;color:var(--text-dark);display:flex;flex-direction:column;gap:5px}
             .rl-tk-form textarea{font:inherit;font-weight:400;font-size:.92rem;line-height:1.5;padding:9px 11px;border-radius:10px;border:1px solid rgba(219,113,175,.35);background:var(--bg-light);color:var(--text-dark);resize:vertical}
             .rl-tk-form textarea:focus{outline:none;border-color:#db2777;box-shadow:0 0 0 3px rgba(219,39,119,.14)}
@@ -48358,13 +48483,21 @@ const EnglishDaily = (function () {
                 const m = document.createElement('div'); m.id = 'rlTkModal'; m.className = 'rl-mini-modal';
                 m.onmousedown = e => { m._bd = (e.target === m); };
                 m.onclick = e => { if (e.target === m && m._bd) rlCloseTk(); };
-                m.innerHTML = `<div class="rl-imp-card" role="dialog" aria-modal="true" aria-label="Takeaways" style="max-width:520px">
-                    <div class="rl-imp-head" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><h3>Takeaways</h3><div class="rl-imp-sum">${escapeHtml(b.title)}</div></div><button type="button" class="book-action-btn" title="Copy AI prompt for this book" aria-label="Copy AI prompt" onclick="rlCopyTkPrompt(${b.id}, this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg></button></div>
+                m.innerHTML = `<div class="rl-imp-card rl-tk-card" role="dialog" aria-modal="true" aria-label="Takeaways">
+                    <div class="rl-tk-head">
+                        <span class="rl-tk-badge"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sparkles"></use></svg></span>
+                        <div class="rl-tk-titles"><h3>Takeaways</h3><div class="rl-tk-book" title="${escapeHtml(b.title)}">${escapeHtml(b.title)}</div></div>
+                        <button type="button" class="rl-tk-pill" title="Copy an AI prompt for this book, then paste the reply below" aria-label="Copy AI prompt" onclick="rlCopyTkPrompt(${b.id}, this)"><svg class="icon-svg icon-sm" aria-hidden="true"><use href="#icon-clipboard-list"></use></svg> Copy AI prompt</button>
+                    </div>
                     <div class="rl-tk-form">
-                        <textarea id="rlTkPaste" rows="1" placeholder="Paste AI reply" title="Paste the AI reply here and both boxes fill themselves in" oninput="rlTkPasteSoon()"></textarea>
-                        <label title="Up to 3 ideas, one per line">What stuck with me<textarea id="rlTkLearned" rows="4"></textarea></label>
-                        <label title="One concrete action: where and when">How I’ll apply this<textarea id="rlTkApply" rows="3"></textarea></label>
-                        <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end"><input type="date" id="rlTkDue" value="${due0}" title="Due date" style="font:inherit;font-size:.85rem;padding:6px 8px;border-radius:8px;border:1px solid rgba(219,113,175,.35);background:var(--bg-light);color:var(--text-dark)"><button type="button" class="book-action-btn${td0 && !td0.done ? ' has-tk' : ''}" title="${td0 ? 'Update the to-do' : 'Add to to-dos'}" aria-label="Add to to-dos" onclick="rlTkToTodo(${b.id}, this)"><svg class="icon-svg" aria-hidden="true"><use href="#icon-square-check"></use></svg></button></div>
+                        <div class="rl-tk-paste"><textarea id="rlTkPaste" rows="1" placeholder="Paste AI reply here: both boxes fill in automatically" title="Paste the AI reply here and both boxes fill themselves in" oninput="rlTkPasteSoon()"></textarea></div>
+                        <label class="rl-tk-field"><span class="rl-tk-lab"><b>What stuck with me</b><i>up to 3 ideas, one per line</i></span><textarea id="rlTkLearned" rows="4"></textarea></label>
+                        <label class="rl-tk-field"><span class="rl-tk-lab"><b>How I’ll apply this</b><i>one action: where and when</i></span><textarea id="rlTkApply" rows="3"></textarea></label>
+                        <div class="rl-tk-todo">
+                            <span class="rl-tk-todo-lab">Turn it into a to-do</span>
+                            <input type="date" id="rlTkDue" value="${due0}" title="Due date">
+                            <button type="button" class="rl-tk-pill${td0 && !td0.done ? ' is-on' : ''}" title="${td0 ? 'Update the to-do' : 'Add to to-dos'}" aria-label="Add to to-dos" onclick="rlTkToTodo(${b.id}, this)"><svg class="icon-svg icon-sm" aria-hidden="true"><use href="#icon-square-check"></use></svg> ${td0 ? 'Update' : 'Add'}</button>
+                        </div>
                     </div>
                     <div class="rl-imp-foot"><button type="button" class="add-time-btn btn-secondary" onclick="rlCloseTk()">Cancel</button><button type="button" class="add-time-btn" onclick="rlSaveTk(${b.id})">Save</button></div></div>`;
                 document.body.appendChild(m);
@@ -77165,7 +77298,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             title: "",
             type: "",       // format: video, audio, journal, research, data, podcast, book, tool, other
             purpose: "",     // why you use it: study, listening-practice, reference, inspiration, entertainment, work, other
-            domain: "",      // broad area: career-finance, language-learning, tech-tools, personal-growth, entertainment, other
+            domain: "",      // broad area: see RESOURCE_DOMAIN_GROUP_LABELS for the full list
             category: "",    // free-text, user-managed (see resourceCategories)
             url: "",
             author: "",
@@ -77189,9 +77322,21 @@ window.fcRenderTagChips = fcRenderTagChips;
         // Labels used for group section headers when groupBy = 'domain' (Group 5, item 20)
         const RESOURCE_DOMAIN_GROUP_LABELS = {
             'career-finance': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-briefcase"></use></svg> Career & Finance',
+            'economics-markets': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-chart-column"></use></svg> Economics & Markets',
+            'ai-data': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-brain"></use></svg> AI & Data',
+            'business': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-rocket"></use></svg> Business & Entrepreneurship',
+            'politics-world': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-globe"></use></svg> Politics & World Affairs',
+            'law-compliance': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-scale"></use></svg> Law & Compliance',
+            'negotiation-influence': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-handshake"></use></svg> Negotiation & Persuasion',
+            'communication': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-megaphone"></use></svg> Communication & Writing',
+            'psychology-mindset': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-puzzle"></use></svg> Psychology & Mindset',
+            'productivity': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-timer"></use></svg> Productivity & ADHD',
+            'personal-growth': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-sprout"></use></svg> Personal Growth',
+            'health-wellness': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-heart"></use></svg> Health & Wellness',
             'language-learning': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-languages"></use></svg> Language Learning',
             'tech-tools': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-monitor"></use></svg> Tech & Tools',
-            'personal-growth': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-sprout"></use></svg> Personal Growth',
+            'lifestyle': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-sparkles"></use></svg> Lifestyle & Style',
+            'travel-culture': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-map"></use></svg> Travel & Culture',
             'entertainment': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-clapperboard"></use></svg> Entertainment',
             'other': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-package"></use></svg> Other'
         };
@@ -77715,9 +77860,21 @@ window.fcRenderTagChips = fcRenderTagChips;
             
             const domainLabels = {
                 'career-finance': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-briefcase"></use></svg> Career & Finance',
+                'economics-markets': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-chart-column"></use></svg> Economics & Markets',
+                'ai-data': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-brain"></use></svg> AI & Data',
+                'business': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-rocket"></use></svg> Business & Entrepreneurship',
+                'politics-world': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-globe"></use></svg> Politics & World Affairs',
+                'law-compliance': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-scale"></use></svg> Law & Compliance',
+                'negotiation-influence': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-handshake"></use></svg> Negotiation & Persuasion',
+                'communication': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-megaphone"></use></svg> Communication & Writing',
+                'psychology-mindset': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-puzzle"></use></svg> Psychology & Mindset',
+                'productivity': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-timer"></use></svg> Productivity & ADHD',
+                'personal-growth': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-sprout"></use></svg> Personal Growth',
+                'health-wellness': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-heart"></use></svg> Health & Wellness',
                 'language-learning': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-languages"></use></svg> Language Learning',
                 'tech-tools': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-monitor"></use></svg> Tech & Tools',
-                'personal-growth': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-sprout"></use></svg> Personal Growth',
+                'lifestyle': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-sparkles"></use></svg> Lifestyle & Style',
+                'travel-culture': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-map"></use></svg> Travel & Culture',
                 'entertainment': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-clapperboard"></use></svg> Entertainment',
                 'other': '<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-package"></use></svg> Other'
             };
@@ -77983,7 +78140,7 @@ window.fcRenderTagChips = fcRenderTagChips;
                         </div>
                         <div class="resource-header-badges">
                             ${favoriteHTML}
-                            ${resource.priority ? `<span class="priority-chip">${priorityIcons[resource.priority]}</span>` : ''}
+                            ${resource.priority ? rcPriorityChip(resource.priority) : ''}
                             ${statusBadges[resource.status]}
                         </div>
                     </div>
@@ -78397,6 +78554,14 @@ window.fcRenderTagChips = fcRenderTagChips;
         }
 
         // ===== GROUP 4: FAVORITE / PIN (item 14) =====
+        // Resource-card priority chip: 3-bar level meter + label, colour set via data-level in CSS.
+        function rcPriorityChip(p) {
+            const lv = String(p || '').toLowerCase();
+            if (!['high', 'medium', 'low'].includes(lv)) return '';
+            const label = lv.charAt(0).toUpperCase() + lv.slice(1);
+            return `<span class="priority-chip" data-level="${lv}" title="Priority: ${label}" aria-label="Priority: ${label}"><span class="pc-bars" aria-hidden="true"><i></i><i></i><i></i></span><span class="pc-label">${label}</span></span>`;
+        }
+
         function toggleResourceFavorite(id) {
             const resource = resourceLibrary.find(r => r.id == id);
             if (!resource) return;
@@ -82869,6 +83034,26 @@ Here is my current progress summary:
   max-width:480px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.3);
 }
 .dark-mode .pxt-modal-box { background:#4a3240; }
+
+/* Primary CTA in the planning popups: vivid pastel in light mode, softened in dark mode so it doesn't glare */
+.pxt-cta-primary {
+  flex:1;padding:10px;border:1px solid transparent;border-radius:10px;
+  font-weight:700;cursor:pointer;font-size:.88rem;color:#fff;
+  background:linear-gradient(135deg,var(--primary),var(--theme-accent-3));
+  transition:background .2s,border-color .2s,color .2s;
+}
+.dark-mode .pxt-cta-primary {
+  background:linear-gradient(135deg,rgba(240,168,196,.26),rgba(212,179,232,.20));
+  border-color:rgba(240,168,196,.38);
+  color:#f8d0e0;
+  box-shadow:none;
+}
+.dark-mode .pxt-cta-primary:hover,
+.dark-mode .pxt-cta-primary:focus-visible {
+  background:linear-gradient(135deg,rgba(240,168,196,.36),rgba(212,179,232,.30));
+  border-color:rgba(240,168,196,.55);
+  outline:none;
+}
 /* GCal toast */
 .pxt-gcal-toast {
   position:fixed;bottom:90px;right:20px;z-index:10001;
@@ -84287,7 +84472,7 @@ return {
         </div>
         <div style="display:flex;gap:8px;">
           <button onclick="PLANEXT.whatNow();document.getElementById('pxtRitual').remove();"
-            style="flex:1;padding:10px;background:linear-gradient(135deg,var(--primary),var(--theme-accent-3));color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:.88rem;">
+            class="pxt-cta-primary">
             <svg class="pxt-icon pxt-icon-sm" aria-hidden="true"><use href="#pxt-icon-brain"/></svg> Gợi ý task
           </button>
           <button onclick="document.getElementById('pxtRitual').remove()"
@@ -89207,5 +89392,194 @@ body.dark-mode #suggestionsModal .sg-panel{box-shadow:0 20px 60px rgba(0,0,0,.55
 #roadmapCard .rdm-compare-col .rdm-compare-focus{margin-top:auto}
 #roadmapCard .rdm-compare-col-clickable.rdm-pinned-col{border-color:var(--primary)}
 #roadmapCard .rdm-compare-col-clickable.rdm-pinned-col:hover{border-color:var(--primary-dark);box-shadow:0 6px 18px rgba(var(--primary-rgb,209,123,150),.22)}
+/* ── Reading list "Add" button: white fill, pink outline, pink text ── */
+body #readingListCard .add-book-btn {
+  background: var(--bg-white) !important; background-image: none !important;
+  color: var(--primary-dark) !important; border: 1.5px solid var(--primary) !important;
+  box-shadow: none !important; filter: none !important;
+}
+body #readingListCard .add-book-btn:hover {
+  background: var(--primary-light) !important; color: var(--primary-dark) !important;
+  border-color: var(--primary-dark) !important; filter: none !important; transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--primary-rgb, 209,123,150), .22) !important;
+}
+body #readingListCard .add-book-btn:active { transform: translateY(0) scale(.97); }
+body.dark-mode #readingListCard .add-book-btn {
+  background: transparent !important; color: var(--primary) !important; border-color: var(--primary) !important;
+}
+body.dark-mode #readingListCard .add-book-btn:hover {
+  background: var(--primary-light) !important; color: var(--primary-dark) !important;
+}
+/* ── Add New Resource: tighter "Organize it" so the form needs less scrolling ── */
+@media (min-width: 761px){
+  body #resourceModal .rl-sheet{max-width:800px}
+  body #resourceModal .rl-section:nth-of-type(2) .rl-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+body #resourceModal .rl-section:nth-of-type(2) .rl-field select{text-overflow:ellipsis}
+/* ══ Round 4: one calm style for Add/Edit Book + wizard modals (matches Takeaways / Add Resource) ══ */
+/* Add / Edit Book: clean card, no hot-pink glow border */
+body #addBookModal .modal-content, body #editBookModal .modal-content{
+  background:var(--bg-white)!important;background-image:none!important;
+  border:1px solid var(--border-color)!important;border-top:1px solid var(--border-color)!important;
+  border-radius:24px!important;box-shadow:0 24px 70px -16px rgba(74,50,64,.45)!important;max-width:660px}
+body #addBookModal .modal-header, body #editBookModal .modal-header{border-bottom:1px solid var(--border-color)!important}
+body #addBookModal .modal-header h3, body #editBookModal .modal-header h3{color:var(--text-dark)!important;font-size:1.12rem;font-weight:700}
+body #addBookModal .modal-header h3 .icon-svg, body #editBookModal .modal-header h3 .icon-svg{color:var(--primary-dark)}
+/* labels: sentence case, readable, controls line up at the bottom of each row */
+body #addBookForm label, body #editBookForm label{text-transform:none;letter-spacing:0;font-size:.84rem;font-weight:600;color:var(--text-dark)}
+body #addBookForm .form-group:not(.bk-datesrow), body #editBookForm .form-group:not(.bk-datesrow){display:flex;flex-direction:column;justify-content:flex-end}
+body #addBookForm .bk-datesrow label, body #editBookForm .bk-datesrow label{text-transform:none;letter-spacing:0}
+/* controls: bigger radius, pink border, custom chevron on selects */
+body #addBookForm input:not([type=hidden]), body #addBookForm select, body #addBookForm textarea,
+body #editBookForm input:not([type=hidden]), body #editBookForm select, body #editBookForm textarea{
+  border:1.5px solid var(--border-color)!important;border-radius:14px!important;min-height:46px;padding:11px 14px}
+body #addBookForm textarea, body #editBookForm textarea{min-height:84px}
+body #addBookForm select, body #editBookForm select{-webkit-appearance:none;appearance:none;padding-right:40px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a85870' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center}
+body #addBookForm input:hover:not(:focus), body #addBookForm select:hover:not(:focus), body #addBookForm textarea:hover:not(:focus),
+body #editBookForm input:hover:not(:focus), body #editBookForm select:hover:not(:focus), body #editBookForm textarea:hover:not(:focus){border-color:var(--primary)!important}
+body #addBookForm input:focus, body #addBookForm select:focus, body #addBookForm textarea:focus,
+body #editBookForm input:focus, body #editBookForm select:focus, body #editBookForm textarea:focus{border-color:var(--primary)!important;box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)!important}
+body #addBookForm #bookPasteBox{border-style:dashed!important;border-color:var(--primary)!important;background:var(--primary-light)!important}
+body #addBookForm #bookPasteBox:focus{border-style:solid!important;background:var(--bg-white)!important}
+/* sticky footer */
+body #addBookModal .modal-actions, body #editBookModal .modal-actions{background:var(--bg-white)!important;border-top:1px solid var(--border-color);padding:14px 0 6px;margin-top:6px;display:flex;justify-content:flex-end;gap:10px}
+body #addBookModal .modal-actions .add-time-btn, body #editBookModal .modal-actions .add-time-btn{padding:10px 22px;border-radius:99px!important;font-weight:700;font-size:.9rem}
+body #addBookModal .modal-actions .btn-secondary, body #editBookModal .modal-actions .btn-secondary{background:var(--bg-white)!important;color:var(--primary-dark)!important;border:1.5px solid var(--primary)!important;box-shadow:none!important}
+body #addBookModal .modal-actions .btn-secondary:hover, body #editBookModal .modal-actions .btn-secondary:hover{background:var(--primary-light)!important}
+body #addBookModal .modal-actions .add-time-btn:not(.btn-secondary), body #editBookModal .modal-actions .add-time-btn:not(.btn-secondary){
+  background:var(--primary-dark)!important;background-image:none!important;color:#fff!important;border:1.5px solid var(--primary-dark)!important;box-shadow:0 4px 12px rgba(var(--primary-rgb,209,123,150),.3)!important}
+body.dark-mode #addBookModal .modal-actions .btn-secondary, body.dark-mode #editBookModal .modal-actions .btn-secondary{background:transparent!important;color:var(--primary)!important}
+body.dark-mode #addBookModal .modal-actions .add-time-btn:not(.btn-secondary), body.dark-mode #editBookModal .modal-actions .add-time-btn:not(.btn-secondary){background:var(--primary)!important;border-color:var(--primary)!important;color:#2a1420!important}
+
+/* Course / Analysis / Deal / Goal wizards: use the app's rose theme instead of hot pink + orange/gold gradients */
+body :is(#courseModal,#analysisModal,#dealModal){--cm-rgb:var(--primary-rgb);--cm-accent:var(--primary-dark);--cm-accent-deep:var(--primary-dark);--cm-on-accent:#fff}
+body.dark-mode :is(#courseModal,#analysisModal,#dealModal){--cm-rgb:var(--primary-rgb);--cm-accent:var(--primary);--cm-accent-deep:var(--primary);--cm-on-accent:#2a1420}
+body :is(#courseModal,#analysisModal,#dealModal) .course-wizard-btn.primary, body #goalModal .goal-wizard-btn.primary{
+  background:var(--primary-dark)!important;background-image:none!important;color:#fff!important;border:1.5px solid var(--primary-dark)!important;
+  box-shadow:0 4px 12px rgba(var(--primary-rgb,209,123,150),.3)!important;border-radius:99px!important}
+body :is(#courseModal,#analysisModal,#dealModal) .course-wizard-btn.primary:hover, body #goalModal .goal-wizard-btn.primary:hover{filter:brightness(1.07);box-shadow:0 6px 16px rgba(var(--primary-rgb,209,123,150),.38)!important}
+body.dark-mode :is(#courseModal,#analysisModal,#dealModal) .course-wizard-btn.primary, body.dark-mode #goalModal .goal-wizard-btn.primary{
+  background:var(--primary)!important;border-color:var(--primary)!important;color:#2a1420!important}
+body :is(#courseModal,#analysisModal,#dealModal) .course-wizard-btn:not(.primary), body #goalModal .goal-wizard-btn:not(.primary){border-radius:99px!important}
+body #goalModal .goal-wizard-dot.current{background:var(--primary-dark)}
+body.dark-mode #goalModal .goal-wizard-dot.current{background:var(--primary)}
+/* ══ Round 5: Book Details + Full Review — same calm card as Add Book / Takeaways ══ */
+body #bookDetailsModal .modal-content, body #fullReviewModal .modal-content{
+  background:var(--bg-white)!important;background-image:none!important;
+  border:1px solid var(--border-color)!important;border-top:1px solid var(--border-color)!important;
+  border-radius:24px!important;box-shadow:0 24px 70px -16px rgba(74,50,64,.45)!important}
+body #bookDetailsModal .modal-header, body #fullReviewModal .modal-header{border-bottom:1px solid var(--border-color)!important}
+body #bookDetailsModal .modal-header h3, body #fullReviewModal .modal-header h3{color:var(--text-dark)!important;font-size:1.15rem;font-weight:700}
+body #bookDetailsModal .modal-close, body #fullReviewModal .modal-close{border-radius:99px}
+/* status + genre chips */
+body #bookDetailsModal .bd-genre{background:var(--primary-light);color:var(--primary-dark);border:1px solid var(--border-color);border-radius:99px;font-weight:600}
+body #bookDetailsModal .book-status-badge{border-radius:99px;font-weight:700;letter-spacing:.02em}
+/* progress bar in theme rose */
+body #bookDetailsModal .goal-progress-container{height:8px;border-radius:99px;background:var(--primary-light);overflow:hidden}
+body #bookDetailsModal .goal-progress-fill{background:var(--primary)!important;background-image:none!important;border-radius:99px}
+body #bookDetailsModal #bookDetailsProgressLabel{color:var(--text-muted);font-weight:600}
+/* section headings: sentence case instead of tiny caps */
+body #bookDetailsModal h4, body #bookDetailsModal #bookDetailsReview h4{text-transform:none;letter-spacing:0;font-size:.88rem;font-weight:700;color:var(--text-dark)}
+body #bookDetailsModal #bookDetailsReview, body #bookDetailsModal #bookDetailsTakeaways{border-radius:16px}
+/* link chips */
+body #bookDetailsModal .bd-links a{border-radius:99px;border:1.5px solid var(--border-color);background:var(--bg-white);color:var(--primary-dark);font-weight:600;transition:background .15s,border-color .15s}
+body #bookDetailsModal .bd-links a:hover{background:var(--primary-light);border-color:var(--primary)}
+/* footer buttons: outlined pills */
+body #bookDetailsModal .bd-footer{border-top:1px solid var(--border-color)}
+body #bookDetailsModal .bd-btn{border-radius:99px;border:1.5px solid var(--primary);background:var(--bg-white);color:var(--primary-dark);font-weight:700}
+body #bookDetailsModal .bd-btn:hover{background:var(--primary-light);border-color:var(--primary-dark);color:var(--primary-dark)}
+body #bookDetailsModal .bd-btn--danger{border-color:var(--border-color);color:var(--bad)}
+body #bookDetailsModal .bd-btn--danger:hover{background:var(--bad-soft,#fbe9ec);border-color:var(--bad);color:var(--bad)}
+body.dark-mode #bookDetailsModal .bd-btn{background:transparent;color:var(--primary)}
+/* Full Review text card */
+body #fullReviewModal .fr-text{background:var(--bg-light)!important;border:1px solid var(--border-color)!important;border-radius:16px!important;line-height:1.7}
+body #bookDetailsModal #bookDetailsProgressFill:not(.completed){background:var(--primary)!important;background-image:none!important}
+body #bookDetailsModal :is(#bookDetailsReview,#bookDetailsTakeaways) :is(div,h4){text-transform:none;letter-spacing:0}
+body #bookDetailsModal #bookDetailsRating strong{text-transform:none;letter-spacing:0;font-size:.88rem;font-weight:700;color:var(--text-dark)}
+body #bookDetailsModal .book-status-badge{text-transform:none;font-size:.8rem;padding:4px 12px;background:var(--bg-light);border:1px solid var(--border-color);color:var(--text-dark)}
+body #bookDetailsModal :is(#bookDetailsReview,#bookDetailsTakeaways) :is(h4,[class*="label"],[class*="title"],[class*="head"]),
+body #bookDetailsModal #bookDetailsReview > :first-child{text-transform:none!important;letter-spacing:0!important;font-size:.88rem!important;font-weight:700!important;color:var(--text-dark)!important}
+/* ══ Round 6: Add New Flashcard — same calm card as the other modals ══ */
+body #addFlashcardModal{--fc-primary:var(--primary-dark);--fc-primary-hover:var(--primary-dark);--fc-primary-light:var(--primary-light);--fc-border:var(--border-color)}
+body.dark-mode #addFlashcardModal{--fc-primary:var(--primary);--fc-primary-hover:var(--primary);--fc-primary-light:var(--primary-light);--fc-border:var(--border-color)}
+body #addFlashcardModal .flashcard-modal-content{
+  background:var(--bg-white)!important;background-image:none!important;
+  border:1px solid var(--border-color)!important;border-top:1px solid var(--border-color)!important;
+  border-radius:24px!important;box-shadow:0 24px 70px -16px rgba(74,50,64,.45)!important;
+  padding:26px 30px 0!important;max-width:720px}
+body #addFlashcardModal .flashcard-modal-content > div:first-child{margin-bottom:16px!important}
+body #addFlashcardModal #flashcardModalTitle{color:var(--text-dark)!important;font-size:1.15rem!important;font-weight:700}
+body #addFlashcardModal .flashcard-modal-close{font-size:26px;border-radius:99px}
+/* General / Vocabulary switch */
+body #addFlashcardModal .fcv-switch{background:var(--bg-light);border:1px solid var(--border-color);margin:0 0 16px}
+body #addFlashcardModal .fcv-switch button{font-weight:600}
+body #addFlashcardModal .fcv-switch button.is-active{background:var(--bg-white);color:var(--primary-dark);box-shadow:0 1px 4px rgba(74,50,64,.12),0 0 0 1px var(--primary)}
+body.dark-mode #addFlashcardModal .fcv-switch button.is-active{color:var(--primary)}
+/* Formatting guide: quiet card, not a heavy pink bar */
+body #addFlashcardModal .formatting-guide{background:var(--bg-light)!important;border:1px solid var(--border-color)!important;border-left:1px solid var(--border-color)!important;border-radius:14px!important;margin-bottom:18px}
+body #addFlashcardModal .formatting-guide summary{color:var(--text-dark)!important;font-weight:600;font-size:.88rem}
+/* inputs: app font, rounded, rose focus */
+body #addFlashcardModal .flashcard-textarea{font-family:inherit;font-size:.95rem;line-height:1.6;padding:12px 14px;border:1.5px solid var(--border-color);border-radius:14px;background:var(--bg-white)}
+body #addFlashcardModal .flashcard-textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)}
+body #addFlashcardModal #fcImageUrlFallback{border:1.5px solid var(--border-color)!important;border-radius:14px!important;padding:11px 14px!important}
+body #addFlashcardModal #fcImageUrlFallback:focus{border-color:var(--primary)!important;outline:none;box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)}
+body #addFlashcardModal #fcImageDropZone{border:1.5px dashed var(--primary)!important;border-radius:14px!important;background:var(--primary-light);padding:14px!important}
+body #addFlashcardModal #fcImageDropZone:hover{background:var(--bg-white)}
+body #addFlashcardModal .fcv-paste{border-radius:14px;border:1.5px dashed var(--primary);background:var(--primary-light)}
+body #addFlashcardModal .fcv-paste textarea,body #addFlashcardModal .fcv-field input,body #addFlashcardModal .fcv-field select,body #addFlashcardModal .fcv-field textarea{border:1.5px solid var(--border-color);border-radius:14px;padding:11px 14px;background:var(--bg-white)}
+body #addFlashcardModal .fcv-paste textarea:focus,body #addFlashcardModal .fcv-field input:focus,body #addFlashcardModal .fcv-field select:focus,body #addFlashcardModal .fcv-field textarea:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)}
+/* sticky action bar */
+body #addFlashcardModal form > div:last-child{position:sticky;bottom:0;z-index:3;margin:0 -30px;padding:14px 30px 18px;background:var(--bg-white);border-top:1px solid var(--border-color)}
+body #addFlashcardModal form > #fcGenAnswerWrap{margin-bottom:16px!important}
+body #addFlashcardModal .flashcard-btn{border-radius:99px!important;padding:10px 22px;font-weight:700;font-size:.9rem}
+body #addFlashcardModal .flashcard-btn.fc-btn-secondary{background:var(--bg-white)!important;color:var(--primary-dark)!important;border:1.5px solid var(--primary)!important;box-shadow:none!important}
+body #addFlashcardModal .flashcard-btn.fc-btn-secondary:hover{background:var(--primary-light)!important}
+body #addFlashcardModal .flashcard-btn.fc-btn-primary{background:var(--primary-dark)!important;background-image:none!important;color:#fff!important;border:1.5px solid var(--primary-dark)!important;box-shadow:0 4px 12px rgba(var(--primary-rgb,209,123,150),.3)!important}
+body.dark-mode #addFlashcardModal .flashcard-btn.fc-btn-secondary{background:transparent!important;color:var(--primary)!important}
+body.dark-mode #addFlashcardModal .flashcard-btn.fc-btn-primary{background:var(--primary)!important;border-color:var(--primary)!important;color:#2a1420!important}
+body #addFlashcardModal .fcv-field select{-webkit-appearance:none;appearance:none;padding-right:40px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a85870' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center}
+/* ══ Round 7: Manage Flashcards — same calm card ══ */
+body #manageFlashcardsModal{--fc-primary:var(--primary-dark);--fc-primary-hover:var(--primary-dark);--fc-primary-light:var(--primary-light);--fc-border:var(--border-color)}
+body.dark-mode #manageFlashcardsModal{--fc-primary:var(--primary);--fc-primary-hover:var(--primary);--fc-primary-light:var(--primary-light);--fc-border:var(--border-color)}
+body #manageFlashcardsModal .flashcard-modal-content{
+  background:var(--bg-white)!important;background-image:none!important;
+  border:1px solid var(--border-color)!important;border-top:1px solid var(--border-color)!important;
+  border-radius:24px!important;box-shadow:0 24px 70px -16px rgba(74,50,64,.45)!important;
+  padding:0 30px 26px!important;max-width:860px!important}
+body #manageFlashcardsModal > .flashcard-modal-content > div:first-child{
+  position:sticky;top:0;z-index:10;background:var(--bg-white)!important;
+  margin:0 -30px 18px!important;padding:22px 30px 16px!important;
+  border-bottom:1px solid var(--border-color)!important;border-radius:24px 24px 0 0!important}
+body #manageFlashcardsModal > .flashcard-modal-content > div:first-child h2{color:var(--text-dark)!important;font-size:1.15rem!important;font-weight:700;margin:0 0 2px!important}
+body #manageFlashcardsModal > .flashcard-modal-content > div:first-child p{font-size:.84rem!important}
+body #manageFlashcardsModal .flashcard-modal-close{font-size:26px;border-radius:99px}
+/* export / import + search */
+body #manageFlashcardsModal .flashcard-modal-content > div:nth-child(2) button{border:1.5px solid var(--primary)!important;border-radius:99px!important;background:var(--bg-white)!important;color:var(--primary-dark)!important;padding:10px 14px!important}
+body #manageFlashcardsModal .flashcard-modal-content > div:nth-child(2) button:hover{background:var(--primary-light)!important}
+body.dark-mode #manageFlashcardsModal .flashcard-modal-content > div:nth-child(2) button{background:transparent!important;color:var(--primary)!important}
+body #manageFlashcardsModal #manageSearchInput{border:1.5px solid var(--border-color)!important;border-radius:14px!important;padding:11px 14px!important}
+body #manageFlashcardsModal #manageSearchInput:focus{border-color:var(--primary)!important;outline:none;box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)}
+body #manageFlashcardsModal #manageTagFilter button{border-radius:99px!important;font-weight:600;padding:5px 12px!important}
+/* cards */
+body #manageFlashcardsModal .manage-flashcard-item{background:var(--bg-light);border:1px solid var(--border-color);border-left:1px solid var(--border-color);border-radius:18px;padding:18px 20px;box-shadow:none}
+body #manageFlashcardsModal .manage-flashcard-item:hover{transform:none;border-color:var(--primary);box-shadow:0 6px 18px -8px rgba(var(--primary-rgb,209,123,150),.35)}
+body #manageFlashcardsModal .manage-flashcard-question{font-size:1rem}
+body #manageFlashcardsModal .manage-flashcard-answer-preview{border-radius:14px;background:var(--bg-white)}
+body #manageFlashcardsModal .manage-flashcard-buttons{align-self:flex-start;align-items:center;flex-shrink:0}
+body #manageFlashcardsModal .manage-flashcard-buttons button{height:auto;min-height:0;padding:7px 14px;border-radius:99px!important;font-size:.84rem;line-height:1.2}
+body #manageFlashcardsModal .manage-flashcard-buttons .mf-action-edit{border-color:var(--primary)!important;color:var(--primary-dark)!important;background:var(--bg-white)!important}
+body #manageFlashcardsModal .manage-flashcard-buttons .mf-action-edit:hover{background:var(--primary-light)!important;color:var(--primary-dark)!important}
+body #manageFlashcardsModal .manage-flashcard-buttons .mf-action-delete{border:1.5px solid var(--border-color)!important;color:var(--bad)!important;background:var(--bg-white)!important}
+body #manageFlashcardsModal .manage-flashcard-buttons .mf-action-delete:hover{background:var(--bad-soft)!important;border-color:var(--bad)!important;color:var(--bad)!important}
+body.dark-mode #manageFlashcardsModal .manage-flashcard-buttons .mf-action-edit{background:transparent!important;color:var(--primary)!important}
+body.dark-mode #manageFlashcardsModal .manage-flashcard-buttons .mf-action-delete{background:transparent!important}
+/* dark mode: same light title colour on every modal */
+body.dark-mode :is(#addBookModal,#editBookModal,#bookDetailsModal,#fullReviewModal) .modal-header h3,
+body.dark-mode #addFlashcardModal #flashcardModalTitle{color:var(--text-dark)!important}
+body.dark-mode :is(#addBookModal,#editBookModal) .modal-header h3 .icon-svg{color:var(--primary)}
 </style>
 </body>
