@@ -24080,6 +24080,109 @@ body.dark-mode .dlt-fg textarea {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(236, 72, 153, 0.2);
 }
+
+/* ── Card detail popup (click a deadline card) ── */
+#dlTracker .dlt-card, #dltList .dlt-card { cursor: pointer; }
+#dltCardModal {
+  display: none; position: fixed; inset: 0; z-index: 9990;
+  align-items: center; justify-content: center; padding: 20px;
+  background: rgba(40,12,30,.5); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#dltCardModal.open { display: flex; animation: dltNmFade .2s ease; }
+.dlt-cp-box {
+  position: relative; width: 100%; max-width: 600px; max-height: min(88vh, 760px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 22px; border: 1px solid var(--border-color, rgba(219,113,175,.22));
+  background: var(--bg-white, #fffbfc); color: var(--text-dark);
+  box-shadow: 0 30px 70px -20px rgba(190,24,93,.45), 0 8px 24px rgba(0,0,0,.12);
+  animation: dltNmPop .28s cubic-bezier(.34,1.3,.64,1);
+}
+.dlt-cp-box::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: #10b981; }
+.dlt-cp-box.c-urgent::before  { background: #ef4444; }
+.dlt-cp-box.c-warning::before { background: #f59e0b; }
+.dlt-cp-box.c-safe::before    { background: #10b981; }
+.dlt-cp-box.c-overdue::before, .dlt-cp-box.c-snoozed::before { background: #b8919f; }
+.dlt-cp-head { display: flex; align-items: flex-start; gap: 12px; padding: 22px 18px 8px 22px; }
+.dlt-cp-days { flex-shrink: 0; min-width: 58px; text-align: center; padding: 8px 6px; border-radius: 14px; background: rgba(16,185,129,.1); color: #10b981; }
+.dlt-cp-box.c-urgent .dlt-cp-days  { background: rgba(239,68,68,.1);  color: #ef4444; }
+.dlt-cp-box.c-warning .dlt-cp-days { background: rgba(245,158,11,.1); color: #d97706; }
+.dlt-cp-box.c-overdue .dlt-cp-days, .dlt-cp-box.c-snoozed .dlt-cp-days { background: rgba(184,145,159,.14); color: #9a7686; }
+.dlt-cp-days b { display: block; font-size: 1.5rem; line-height: 1.1; font-weight: 800; }
+.dlt-cp-days span { font-size: .66rem; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+.dlt-cp-titlewrap { flex: 1; min-width: 0; }
+.dlt-cp-title { margin: 0; font-size: 1.12rem; font-weight: 800; line-height: 1.35; word-break: break-word; }
+.dlt-cp-meta { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .78rem; color: var(--text-muted); }
+.dlt-cp-close {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(219,39,119,.09); color: #be185d; transition: all .18s;
+}
+.dlt-cp-close:hover { background: #db2777; color: #fff; transform: rotate(90deg); }
+.dlt-cp-badges { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 22px 6px; }
+.dlt-cp-badges:empty { display: none; }
+.dlt-cp-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 22px 8px; overscroll-behavior: contain; scrollbar-width: thin; }
+.dlt-cp-sec { margin-top: 14px; }
+.dlt-cp-label { font-size: .7rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.dlt-cp-label small { font-weight: 600; letter-spacing: 0; text-transform: none; opacity: .8; }
+.dlt-cp-daterow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dlt-cp-daterow input[type=date], .dlt-cp-sec textarea, .dlt-cp-ck-add input {
+  font: inherit; font-size: .88rem; color: var(--text-dark); background: var(--bg-light, #faf3f6);
+  border: 1px solid var(--border-color); border-radius: 11px; padding: 8px 10px; min-width: 0;
+}
+.dlt-cp-sec textarea { width: 100%; min-height: 84px; resize: vertical; line-height: 1.55; display: block; }
+.dlt-cp-daterow input[type=date]:focus, .dlt-cp-sec textarea:focus, .dlt-cp-ck-add input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.dlt-cp-chip {
+  font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; padding: 6px 11px; border-radius: 99px;
+  border: 1px solid var(--border-color); background: var(--bg-light, #faf3f6); color: var(--text-dark); transition: all .15s;
+}
+.dlt-cp-chip:hover { border-color: var(--primary); background: var(--primary-light); }
+.dlt-cp-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.dlt-cp-hint { margin-top: 6px; font-size: .72rem; color: var(--text-muted); }
+.dlt-cp-prio { display: flex; gap: 6px; flex-wrap: wrap; }
+.dlt-cp-text { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; font-size: .9rem; line-height: 1.65;
+  padding: 10px 12px; border-radius: 12px; background: var(--bg-light, #faf3f6); border: 1px solid var(--border-color); }
+.dlt-cp-text a, .dlt-cp-links a { color: var(--primary-dark); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.dlt-cp-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.dlt-cp-bar { height: 6px; border-radius: 99px; background: var(--primary-light); overflow: hidden; margin: 2px 0 8px; }
+.dlt-cp-bar i { display: block; height: 100%; background: var(--primary); border-radius: 99px; transition: width .3s; }
+.dlt-cp-ck { display: flex; align-items: center; gap: 9px; padding: 6px 2px; font-size: .9rem; border-bottom: 1px dashed var(--border-color); }
+.dlt-cp-ck:last-of-type { border-bottom: 0; }
+.dlt-cp-ck input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; }
+.dlt-cp-ck span { flex: 1; min-width: 0; word-break: break-word; }
+.dlt-cp-ck span.ck-done { text-decoration: line-through; opacity: .55; }
+.dlt-cp-ck button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 8px; display: inline-flex; }
+.dlt-cp-ck button:hover { background: var(--bad-soft, #fbe9ec); color: var(--bad, #b94a5a); }
+.dlt-cp-ck-add { display: flex; gap: 8px; margin-top: 8px; }
+.dlt-cp-ck-add input { flex: 1; }
+.dlt-cp-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dlt-cp-tags input { font: inherit; font-size: .8rem; padding: 5px 10px; border-radius: 99px; border: 1px dashed var(--border-color); background: transparent; color: var(--text-dark); width: 150px; max-width: 100%; }
+.dlt-cp-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--border-color); }
+.dlt-cp-foot .sp { flex: 1; }
+.dlt-cp-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 11px;
+  font: inherit; font-size: .82rem; font-weight: 700; border: 1px solid transparent; cursor: pointer;
+  text-decoration: none; transition: all .16s; touch-action: manipulation;
+}
+.dlt-cp-btn.ghost { background: rgba(219,39,119,.08); color: #be185d; }
+.dlt-cp-btn.ghost:hover { background: rgba(219,39,119,.16); transform: translateY(-1px); }
+.dlt-cp-btn.primary { background: linear-gradient(135deg, #ec4899, #db2777 55%, #a855f7); color: #fff; box-shadow: 0 6px 16px -6px rgba(219,39,119,.6); }
+.dlt-cp-btn.primary:hover { transform: translateY(-1px); }
+.dlt-cp-btn.good { background: rgba(16,185,129,.14); color: #059669; }
+.dlt-cp-btn.good:hover { background: rgba(16,185,129,.24); transform: translateY(-1px); }
+.dlt-cp-btn:focus-visible, .dlt-cp-chip:focus-visible, .dlt-cp-close:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+body.dark-mode .dlt-cp-box { background: linear-gradient(165deg, #2a1a2e 0%, #1f1424 100%); border-color: rgba(236,72,153,.25); }
+body.dark-mode .dlt-cp-close, body.dark-mode .dlt-cp-btn.ghost { background: rgba(236,72,153,.16); color: #f9a8d4; }
+body.dark-mode .dlt-cp-btn.ghost:hover { background: rgba(236,72,153,.28); }
+body.dark-mode .dlt-cp-btn.good { background: rgba(16,185,129,.2); color: #6ee7b7; }
+body.dark-mode .dlt-cp-days b { filter: brightness(1.15); }
+@media (max-width: 560px) {
+  #dltCardModal { padding: 0; align-items: flex-end; }
+  .dlt-cp-box { max-width: 100%; max-height: 92vh; border-radius: 22px 22px 0 0; }
+  .dlt-cp-foot { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .dlt-cp-foot .dlt-cp-btn { flex: 1; justify-content: center; }
+  .dlt-cp-foot .sp { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { #dltCardModal.open, .dlt-cp-box { animation: none; } .dlt-cp-btn, .dlt-cp-chip, .dlt-cp-close { transition: none; } }
 </style>
 
 <!-- HTML -->
@@ -24217,6 +24320,11 @@ body.dark-mode .dlt-fg textarea {
       <button class="dlt-modal-save"   id="dltModalSaveBtn" onclick="DLT.save()"><span>Save</span> <svg class="dlt-icon" aria-hidden="true"><use href="#icon-check"/></svg></button>
     </div>
   </div>
+</div>
+
+<!-- Deadline Card Popup (click a card) -->
+<div id="dltCardModal" role="dialog" aria-modal="true" aria-labelledby="dltCpTitle">
+  <div class="dlt-cp-box" id="dltCpBox"></div>
 </div>
 
 <!-- Deadline Note Popup -->
@@ -25058,7 +25166,7 @@ body.dark-mode .dlt-fg textarea {
           <div class="dlt-days">${dNum}</div>
           <div class="dlt-days-unit">${dUnit}</div>
         </div>
-        <div class="dlt-info${isNavigable ? ' dlt-jumpable' : ''}"${isNavigable ? ` onclick="DLT.navigate('${d.id}')" title="Click to jump straight to this course/goal"` : ''}>
+        <div class="dlt-info" title="Click to view details">
           <div class="dlt-name" title="${d.name}">${d.name}</div>
           <div class="dlt-meta">${d.category?d.category+' · ':''}${dateHtml}${d.time ? ' · <svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-alarm-clock"/></svg> ' + d.time : ''}</div>
           ${rescheduleInput}
@@ -26227,6 +26335,117 @@ body.dark-mode .dlt-fg textarea {
 
   { const _renderBase = render; render = function () { const r = _renderBase.apply(this, arguments); try { renderMoveBanner(); } catch (e) {} return r; }; }
 
+  /* ─── Card popup renderer ─── */
+  let cardModalId = null;
+  function renderCardModal() {
+    const id = cardModalId, box = document.getElementById('dltCpBox');
+    const d = allItems().find(x => x.id === id);
+    if (!d || !box) { if (id) DLT.closeCard(); return; }
+    const esc = d_escapeHtml, jq = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const ic = (n, c) => `<svg class="dlt-icon${c ? ' ' + c : ''}" aria-hidden="true"><use href="#icon-${n}"/></svg>`;
+    const done = doneIds.includes(id), snoozed = !done && isSnoozed(id);
+    const days = done ? 999 : daysLeft(d.date);
+    const own = !d.source && manualList.some(m => m.id === id);
+    const oldScroll = (box.querySelector('.dlt-cp-scroll') || {}).scrollTop || 0;
+    const dNum = done ? '✓' : Math.abs(days), dUnit = done ? 'done' : (days === 0 ? 'today' : days < 0 ? 'late' : Math.abs(days) === 1 ? 'day' : 'days');
+    const st = snoozed ? '' : statusTxt(days, done);
+    const tags = getTags(id);
+    const nlId = own ? (d.noteId || d.sourceNoteId) : '';
+    const note = String(d.note || '').trim();
+    const noteHtml = esc(note).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    const checklist = own && Array.isArray(d.checklist) ? d.checklist : [];
+    const ckDone = checklist.filter(c => c.done).length;
+    const pct = checklist.length ? Math.round(ckDone / checklist.length * 100) : 0;
+    const navigable = id.startsWith('c_') || id.startsWith('g_');
+    const canEditDate = !done;
+
+    box.className = 'dlt-cp-box ' + cardCls(days, done, snoozed);
+    box.innerHTML = `
+      <div class="dlt-cp-head">
+        <div class="dlt-cp-days"><b>${dNum}</b><span>${dUnit}</span></div>
+        <div class="dlt-cp-titlewrap">
+          <h3 class="dlt-cp-title" id="dltCpTitle">${esc(String(d.name || '').replace(/<[^>]*>/g, ''))}</h3>
+          <div class="dlt-cp-meta">
+            ${d.category ? `<span>${esc(d.category)}</span>` : ''}
+            <span>${ic('calendar', 'dlt-icon-sm')} ${fmtDate(d.date)}</span>
+            ${d.time ? `<span>${ic('alarm-clock', 'dlt-icon-sm')} ${esc(d.time)}</span>` : ''}
+          </div>
+        </div>
+        <button class="dlt-cp-close" onclick="DLT.closeCard()" aria-label="Close">${ic('x')}</button>
+      </div>
+      <div class="dlt-cp-badges">
+        ${!done ? priorityBadge(d.priority) : ''}
+        ${st ? `<span class="dlt-badge status">${st}</span>` : ''}
+        ${d.source ? `<span class="dlt-badge src">${esc(d.source)}</span>` : ''}
+        ${snoozed ? `<span class="dlt-badge snooze-badge">${snoozeLabel(id)}</span>` : ''}
+        ${(!done && d.repeatType && d.repeatType !== 'none') ? `<span class="dlt-badge repeat-badge">${repeatLabel(d)}</span>` : ''}
+      </div>
+      <div class="dlt-cp-scroll">
+        <div class="dlt-cp-sec">
+          <div class="dlt-cp-label">${ic('calendar', 'dlt-icon-sm')} Due date <small>· changes are undoable</small></div>
+          ${canEditDate ? `
+          <div class="dlt-cp-daterow">
+            <input type="date" id="dltCpDate" value="${esc(d.date)}" onchange="DLT.cardSetDate(this.value)" aria-label="Due date" />
+            <button class="dlt-cp-chip" onclick="DLT.cardAddDays(1)">+1 day</button>
+            <button class="dlt-cp-chip" onclick="DLT.cardAddDays(7)">+1 week</button>
+            <button class="dlt-cp-chip" onclick="DLT.cardAddDays(14)">+2 weeks</button>
+            <button class="dlt-cp-chip" onclick="DLT.cardAddDays(30)">+1 month</button>
+          </div>
+          <div class="dlt-cp-hint">Quick buttons count from today if it is already overdue.${d.source ? ' The new date is written back to the ' + esc(d.source.toLowerCase()) + ' itself.' : ''}</div>`
+          : `<div class="dlt-cp-text">${fmtDate(d.date)}</div>`}
+        </div>
+        ${own && !done ? `
+        <div class="dlt-cp-sec">
+          <div class="dlt-cp-label">Priority</div>
+          <div class="dlt-cp-prio">${Object.keys(PRIORITY_LABEL).map(k => `<button class="dlt-cp-chip${(PRIORITY_LABEL[d.priority] ? d.priority : 'medium') === k ? ' on' : ''}" onclick="DLT.cardSetPriority('${k}')">${PRIORITY_LABEL[k]}</button>`).join('')}</div>
+        </div>` : ''}
+        ${own && !done ? `
+        <div class="dlt-cp-sec">
+          <div class="dlt-cp-label">Note <small>· saves when you click away</small></div>
+          <textarea id="dltCpNote" placeholder="Add a note…" onchange="DLT.cardSaveNote(this.value)">${esc(d.note || '')}</textarea>
+        </div>` : (note ? `
+        <div class="dlt-cp-sec"><div class="dlt-cp-label">Note</div><div class="dlt-cp-text">${noteHtml}</div></div>` : '')}
+        ${(d.link || nlId || (own && d.roadmapTrack)) ? `
+        <div class="dlt-cp-sec"><div class="dlt-cp-label">Links</div><div class="dlt-cp-links">
+          ${d.link ? `<a class="dlt-cp-btn ghost" href="${esc(d.link)}" target="_blank" rel="noopener noreferrer">${ic('link', 'dlt-icon-sm')} Open link</a>` : ''}
+          ${nlId ? `<button class="dlt-cp-btn ghost" onclick="DLT.cardOpenNote()">${ic('sticky-note', 'dlt-icon-sm')} Open note</button>` : ''}
+          ${(own && d.roadmapTrack) ? `<button class="dlt-cp-btn ghost" onclick="DLT.closeCard(); DLT.jumpToRoadmap('${jq(d.roadmapTrack)}')">Roadmap</button>` : ''}
+        </div></div>` : ''}
+        ${own ? `
+        <div class="dlt-cp-sec">
+          <div class="dlt-cp-label">${ic('clipboard-list', 'dlt-icon-sm')} Sub-tasks <small>· ${ckDone}/${checklist.length}</small></div>
+          ${checklist.length ? `<div class="dlt-cp-bar"><i style="width:${pct}%"></i></div>` : ''}
+          ${checklist.map(c => `
+            <div class="dlt-cp-ck">
+              <input type="checkbox" ${c.done ? 'checked' : ''} ${done ? 'disabled' : ''} onchange="DLT.cardToggleSub('${esc(jq(c.id))}')" aria-label="Toggle sub-task" />
+              <span class="${c.done ? 'ck-done' : ''}">${esc(c.text)}</span>
+              ${done ? '' : `<button onclick="DLT.cardDelSub('${esc(jq(c.id))}')" aria-label="Delete sub-task">${ic('x', 'dlt-icon-sm')}</button>`}
+            </div>`).join('')}
+          ${done ? '' : `<div class="dlt-cp-ck-add">
+            <input type="text" id="dltCpCkInput" placeholder="+ Add sub-task…" maxlength="200" onkeydown="if(event.key==='Enter'){event.preventDefault(); DLT.cardAddSub(this.value);}" />
+            <button class="dlt-cp-btn ghost" onclick="DLT.cardAddSub(document.getElementById('dltCpCkInput').value)">Add</button>
+          </div>`}
+        </div>` : ''}
+        ${!done ? `
+        <div class="dlt-cp-sec">
+          <div class="dlt-cp-label">${ic('tag', 'dlt-icon-sm')} Tags</div>
+          <div class="dlt-cp-tags">
+            ${tags.map(t => `<span class="dlt-card-tag">${ic('tag', 'dlt-icon-sm')} ${esc(t)} <span class="x" role="button" tabindex="0" onclick="DLT.cardRemoveTag('${esc(jq(t))}')" aria-label="Remove tag">${ic('x', 'dlt-icon-sm')}</span></span>`).join('')}
+            <input type="text" id="dltCpTagInput" placeholder="Add tag…" maxlength="60" onkeydown="if(event.key==='Enter'){event.preventDefault(); DLT.cardAddTag(this.value);}" />
+          </div>
+        </div>` : ''}
+      </div>
+      <div class="dlt-cp-foot">
+        ${!done ? `<button class="dlt-cp-btn good" onclick="DLT.cardDone()">${ic('check', 'dlt-icon-sm')} Mark done</button>` : ''}
+        ${own && !done ? `<button class="dlt-cp-btn ghost" onclick="DLT.cardEdit()">${ic('pencil', 'dlt-icon-sm')} Edit all</button>` : ''}
+        ${navigable ? `<button class="dlt-cp-btn ghost" onclick="DLT.cardGo()">${ic('fast-forward', 'dlt-icon-sm')} Go to ${id.startsWith('c_') ? 'course' : 'goal'}</button>` : ''}
+        <span class="sp"></span>
+        <a class="dlt-cp-btn ghost" href="${esc(googleCalendarUrl(d.name, d.date))}" target="_blank" rel="noopener noreferrer">${ic('calendar', 'dlt-icon-sm')} Calendar</a>
+      </div>`;
+    const sc = box.querySelector('.dlt-cp-scroll'); if (sc) sc.scrollTop = oldScroll;
+  }
+
+
   window.DLT = {
     filter(c){ curFilter = c; render(); },
     search(v){ curSearch = v || ''; render(); },
@@ -26431,6 +26650,62 @@ body.dark-mode .dlt-fg textarea {
       DLT.closeNote();
       if (id) DLT.openEditModal(id);
     },
+
+    /* ─── Card popup: xem đầy đủ + sửa nhanh một deadline ─── */
+    openCard(id) {
+      if (!allItems().some(x => x.id === id)) return;
+      cardModalId = id;
+      renderCardModal();
+      document.getElementById('dltCardModal').classList.add('open');
+      const sc = document.querySelector('#dltCardModal .dlt-cp-scroll'); if (sc) sc.scrollTop = 0;
+    },
+    closeCard() {
+      document.getElementById('dltCardModal').classList.remove('open');
+      cardModalId = null;
+    },
+    cardSetDate(v) {
+      const id = cardModalId; if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return;
+      const d = allItems().find(x => x.id === id); if (!d || d.date === v) return;
+      if (!d.source && manualList.some(m => m.id === id)) DLT.reschedule(id, v); else DLT.pushDeadlineTo(id, v);
+      renderCardModal();
+    },
+    cardAddDays(n) {
+      const id = cardModalId; const d = allItems().find(x => x.id === id); if (!d) return;
+      const today = localISODate();
+      const base = d.date > today ? d.date : today;   // quá hạn thì tính từ hôm nay
+      const t = new Date(base + 'T00:00:00'); t.setDate(t.getDate() + Number(n));
+      DLT.cardSetDate(localISODate(t));
+    },
+    cardSetPriority(p) {
+      const item = manualList.find(m => m.id === cardModalId); if (!item || !PRIORITY_LABEL[p]) return;
+      item.priority = p; persist(); render(); renderCardModal();
+    },
+    cardSaveNote(v) {
+      const item = manualList.find(m => m.id === cardModalId); if (!item) return;
+      v = String(v || '').trim(); if (v === (item.note || '')) return;
+      item.note = v; persist(); render();   // không vẽ lại popup: tránh nuốt cú bấm nút khi ô note vừa mất focus
+    },
+    cardToggleSub(subId) { DLT.toggleSubtask(cardModalId, subId); renderCardModal(); },
+    cardDelSub(subId) { DLT.deleteSubtask(cardModalId, subId); renderCardModal(); },
+    cardAddSub(text) {
+      text = (text || '').trim(); if (!text) return;
+      DLT.addSubtask(cardModalId, text); renderCardModal();
+      const inp = document.getElementById('dltCpCkInput'); if (inp) inp.focus();
+    },
+    cardAddTag(v) {
+      if (!cardModalId || !String(v || '').trim()) return;
+      addTagsToItem(cardModalId, v); render(); renderCardModal();
+      const inp = document.getElementById('dltCpTagInput'); if (inp) inp.focus();
+    },
+    cardRemoveTag(tag) { if (!cardModalId) return; removeTagFromItem(cardModalId, tag); render(); renderCardModal(); },
+    cardDone() {
+      const id = cardModalId; const d = allItems().find(x => x.id === id); if (!d) return;
+      const days = daysLeft(d.date);
+      DLT.closeCard(); DLT.done(id, days);
+    },
+    cardEdit() { const id = cardModalId; DLT.closeCard(); if (id) DLT.openEditModal(id); },
+    cardGo() { const id = cardModalId; DLT.closeCard(); if (id) DLT.navigate(id); },
+    cardOpenNote() { const id = cardModalId; const nid = (allItems().find(x => x.id === id) || {}); const n = nid.noteId || nid.sourceNoteId; DLT.closeCard(); if (n) DLT.openLinkedNote(n); },
 
     openEditModal(id) {
       const item = manualList.find(m => m.id === id);
@@ -27088,6 +27363,20 @@ body.dark-mode .dlt-fg textarea {
   /* ─── Init ─── */
   document.getElementById('dltModal').addEventListener('click', e => { if (e.target.id==='dltModal') DLT.closeModal(); });
   document.getElementById('dltNoteModal').addEventListener('click', e => { if (e.target.id==='dltNoteModal') DLT.closeNote(); });
+  document.getElementById('dltCardModal').addEventListener('click', e => { if (e.target.id==='dltCardModal') DLT.closeCard(); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('dltNoteModal').classList.contains('open')) return;
+    if (document.getElementById('dltCardModal').classList.contains('open')) DLT.closeCard();
+  });
+  /* Click anywhere on a card (not on its buttons / links / menus) → open the detail popup */
+  document.getElementById('dltList').addEventListener('click', e => {
+    if (selectionMode) return;
+    const card = e.target.closest('.dlt-card'); if (!card || !card.dataset.id) return;
+    if (e.target.closest('button, a, input, select, textarea, label, .dlt-note, .dlt-link-chip, .dlt-rdmlink, .dlt-card-tag, .dlt-checklist-wrap, .dlt-snooze-wrap, .dlt-push-wrap, .dlt-tag-wrap, .dlt-date-click, .dlt-inline-date, .dlt-rv, .dlt-snooze-x')) return;
+    try { if (String(window.getSelection && window.getSelection()).trim()) return; } catch (_) {}
+    DLT.openCard(card.dataset.id);
+  });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.getElementById('dltNoteModal').classList.contains('open')) DLT.closeNote();
   });
