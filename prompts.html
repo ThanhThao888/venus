@@ -135,6 +135,54 @@ label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
 .btn.solid,.chip.on,.tab.on,.opt.on,.step.cur .num{color:var(--on-primary)}
 :root.dark-mode .tab.on{box-shadow:none}
 :root.dark-mode .step.done .num,:root.dark-mode #toast{color:#10261c}
+.vars{display:grid;gap:8px;margin:8px 0 2px}
+.vf{margin:0;font-size:.85rem}
+.vf span{display:block;color:var(--muted);margin-bottom:2px}
+.vf input,.vf select{padding:6px 10px;font-size:.9rem}
+.lngs{display:grid;gap:10px;margin:8px 0}
+.lng{display:grid;gap:4px;font-size:.85rem}
+.lk{color:var(--muted)}
+.lstat{color:var(--muted);font-size:.8rem}
+.lta{min-height:90px;font-size:13px}
+.out{margin:8px 0}
+.out summary{cursor:pointer;color:var(--primary-dark);font-size:.9rem}
+.ctx{margin:16px 0 4px}
+.ctx #ctxRes{margin-top:8px}
+#resume .goals{margin-bottom:6px}
+.goal-f{flex-wrap:wrap}
+#chips.collapsed{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+#chips.collapsed .chip{flex:none}
+dialog{box-shadow:var(--shadow)}
+dialog::backdrop{backdrop-filter:blur(3px)}
+input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.dlg[open]{display:flex;flex-direction:column;padding:0;overflow:hidden;max-height:92vh}
+.dlg .dhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);font-size:1.05rem}
+.dlg .dbody{padding:6px 18px 14px;overflow:auto;flex:1}
+.dlg .dfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line);background:var(--card)}
+.dlg .dintro{margin:10px 0 2px;line-height:1.5}
+.dlg label{display:flex;align-items:center;gap:8px;margin:14px 0 6px;font-weight:600;color:var(--ink)}
+.dlg label small{font-weight:400;color:var(--muted)}
+.stp{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;font-size:.75rem;font-weight:700}
+#iText{min-height:150px;max-height:36vh}
+#iRe{font:13px ui-monospace,Menlo,Consolas,monospace}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.ipv{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);overflow:hidden;font-size:.9rem}
+.ipv>.ip-hint,.ipv>.ip-bad{display:block;padding:10px 12px}
+.ip-hint{color:var(--muted)}
+.ip-bad{color:var(--bad);font-weight:600}
+.ip-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 12px;background:var(--primary-light);border-bottom:1px solid var(--line)}
+.ip-h .ip-hint{font-size:.8rem}
+.ipv .it{display:flex;justify-content:space-between;gap:12px;padding:7px 12px;border-bottom:1px solid var(--line)}
+.ipv .it:last-child{border-bottom:0}
+.ipv .itt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ipv .its{flex:none;color:var(--muted);font-size:.8rem}
+.ipv .its em{color:var(--bad);font-style:normal}
+.ipv .more{color:var(--muted);justify-content:center}
+@media (max-width:520px){.dlg[open]{width:100vw;max-width:100vw;height:100vh;max-height:100vh;border-radius:0}}
+.ip-w{padding:8px 12px;color:var(--bad);font-size:.85rem;border-bottom:1px solid var(--line)}
+.ip-i{color:var(--muted)}
+.dact{display:inline-flex;gap:6px;align-items:center}
+#iTpl{display:inline-flex;gap:6px;align-items:center}
 </style>
 </head>
 <body>
@@ -150,6 +198,7 @@ label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
       <button class="btn solid" id="bMix">Ghép</button>
       <button class="btn" id="bImport">Dán nhiều prompt</button>
       <button class="btn" id="bExport">Xuất JSON</button>
+      <button class="btn" id="bJson">Nhập JSON</button><input type="file" id="jFile" accept=".json,application/json" hidden>
       <button class="btn solid" id="bNew">+ Prompt mới</button>
     </div>
   </div>
@@ -158,6 +207,13 @@ label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
     <div id="flowHome">
       <h2 class="hello">Bạn đang cần làm gì?</h2>
       <div class="muted">Chọn một mục tiêu. App chỉ ra từng bước theo thứ tự, mỗi bước copy được ngay.</div>
+      <div id="resume"></div>
+      <div class="ctx">
+        <div class="ghead"><b>Gợi ý theo ngữ cảnh</b><span>Gõ cậu đang có gì hoặc muốn gì, hoặc chọn nhanh bên dưới</span></div>
+        <input type="search" id="ctxQ" placeholder="Ví dụ: có file PDF sách tài chính, transcript podcast 2 tiếng, muốn hiểu sâu IRRBB…">
+        <div class="chips" id="ctxChips"></div>
+        <div class="goals" id="ctxRes"></div>
+      </div>
       <div class="goals" id="goals"></div>
     </div>
     <div id="flowRun" hidden>
@@ -169,7 +225,8 @@ label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
 
   <section id="viewLib" hidden>
     <input type="search" id="q" placeholder="Tìm theo tên, nội dung, tag…">
-    <div class="chips" id="chips"></div>
+    <div class="chips collapsed" id="chips"></div>
+    <div class="row" style="justify-content:space-between;margin:-6px 0 10px"><span class="muted" id="count"></span><button type="button" class="btn ghost sm" id="chipsToggle">Hiện tất cả tag ▾</button></div>
     <div class="grid" id="grid"></div>
     <p class="muted" id="empty" hidden>Chưa có prompt nào khớp.</p>
   </section>
@@ -194,15 +251,31 @@ label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
   <div class="row" style="margin-top:12px"><button class="btn solid" id="eSave">Lưu</button><button class="btn ghost" data-close>Hủy</button></div>
 </dialog>
 
-<dialog id="imp">
-  <b>Dán nhiều prompt một lần</b>
-  <p class="muted">Dán cả tài liệu. App tự cắt thành từng prompt theo dòng tiêu đề khớp mẫu bên dưới (mặc định: "Prompt 0 —", "A. Finance…").</p>
-  <label>Mẫu tiêu đề (regex, mỗi dòng tiêu đề)</label>
-  <input type="text" id="iRe" value="^#{1,3}\s*(Prompt\s*\d+\b.*|[A-H]\.\s.*)$">
-  <label>Tag gán cho tất cả</label><input type="text" id="iTag" value="tts">
-  <label>Nội dung</label><textarea id="iText"></textarea>
-  <p class="muted" id="iInfo"></p>
-  <div class="row"><button class="btn solid" id="iGo">Nhập</button><button class="btn ghost" data-close>Hủy</button></div>
+<dialog id="imp" class="dlg">
+  <div class="dhead"><b>Dán nhiều prompt một lần</b><span class="dact"><button type="button" class="btn ghost sm" id="iTpl" title="Copy mẫu định dạng để dán cho ChatGPT"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><span id="iTplT" hidden></span></button><button type="button" class="btn ghost sm" data-close aria-label="Đóng">✕</button></span></div>
+  <div class="dbody">
+    <p class="muted dintro">Dán một tài liệu chứa nhiều prompt. App cắt tại các dòng tiêu đề: mỗi tiêu đề thành tên prompt, phần bên dưới thành nội dung. Prompt trùng tên đã có sẽ được bỏ qua.<br><b>Chưa có prompt?</b> Bấm nút copy ở góc trên để lấy mẫu định dạng, dán mẫu vào ChatGPT cùng mô tả của cậu, rồi dán kết quả vào ô bên dưới.</p>
+    <label for="iText"><span class="stp">1</span> Dán nội dung</label>
+    <textarea id="iText" placeholder="Ví dụ:&#10;## Prompt 1 — Tên prompt&#10;nội dung…&#10;## Prompt 2 — Tên khác&#10;nội dung…"></textarea>
+    <label for="iMode"><span class="stp">2</span> Cách cắt</label>
+    <select id="iMode">
+      <option value="auto">Tự nhận (khuyên dùng)</option>
+      <option value="def">"Prompt 0 —" hoặc "A. Tên"</option>
+      <option value="md1">Chỉ tiêu đề cấp 1 (#)</option>
+      <option value="md2">Chỉ tiêu đề cấp 2 (##)</option>
+      <option value="md3">Chỉ tiêu đề cấp 3 (###)</option>
+      <option value="md">Mọi cấp (#, ##, ###): dễ cắt thừa</option>
+      <option value="prompt">Dòng bắt đầu bằng "Prompt N"</option>
+      <option value="num">Đánh số "1. Tên" hoặc "1) Tên"</option>
+      <option value="sep">Ngăn cách bằng dòng --- (tên = dòng đầu mỗi khối)</option>
+      <option value="custom">Tự viết regex (nâng cao)</option>
+    </select>
+    <div id="iReWrap" hidden><label for="iRe">Regex cho dòng tiêu đề</label><input type="text" id="iRe" value="^#{1,3}\s*(Prompt\s*\d+\b.*|[A-H]\.\s.*)$" spellcheck="false"></div>
+    <label for="iTag"><span class="stp">3</span> Tag gán cho tất cả <small>(cách nhau bằng dấu phẩy)</small></label>
+    <input type="text" id="iTag" value="tts" placeholder="tts, finance…">
+    <div class="ipv" id="iInfo" aria-live="polite"></div>
+  </div>
+  <div class="dfoot"><button type="button" class="btn ghost" data-close>Hủy</button><button type="button" class="btn solid" id="iGo" disabled>Nhập</button></div>
 </dialog>
 <dialog id="mix">
   <b>Ghép prompt</b>
@@ -595,10 +668,12 @@ function save(){try{localStorage.setItem(KEY,JSON.stringify(P))}catch(e){alert("
 let P=load();
 if(!P)P=[];
 (function(){let SD=[];try{SD=JSON.parse(localStorage.getItem(KEY+".seeded")||"[]")}catch(e){}
-let n=0;SEED.forEach(s=>{if(!SD.includes(s.id)&&!P.some(p=>p.id===s.id)){if(s.replaces)P=P.filter(p=>p.id!==s.replaces);P.push({...s,created:Date.now()+n++})}if(!SD.includes(s.id))SD.push(s.id)});
+let n=0;SEED.forEach(s=>{if(!SD.includes(s.id)&&!P.some(p=>p.id===s.id)){let fv=!!s.fav;if(s.replaces){const o=P.find(p=>p.id===s.replaces);if(o){if(o.fav)fv=true;if(o.body===s.body)P=P.filter(p=>p!==o);else{if(!o.tags.includes("archive"))o.tags=[...o.tags,"archive"];o.fav=false;if(!/\(bản cũ\)$/.test(o.title))o.title+=" (bản cũ)"}}}P.push({...s,fav:fv,created:Date.now()+n++})}if(!SD.includes(s.id))SD.push(s.id)});
 DROP.forEach(id=>{if(!SD.includes("drop:"+id)){P=P.filter(p=>p.id!==id);SD.push("drop:"+id)}});
 PATCH.forEach(x=>{const k="patch:"+x.id;if(SD.includes(k))return;const p=P.find(q=>q.id===x.id);if(p){if(x.title&&(!x.was||p.title===x.was))p.title=x.title;(x.rep||[]).forEach(r=>{p.body=p.body.split(r[0]).join(r[1])})}SD.push(k)});
 R2.forEach(x=>{const k="r2:"+x.id;if(SD.includes(k))return;const p=P.find(q=>q.id===x.id);if(p){const o=SEED.find(s=>s.id===x.id);if(x.body!=null){if(o&&p.body===o.body)p.body=x.body}else{(x.rep||[]).forEach(r=>{p.body=p.body.split(r[0]).join(r[1])})}if(x.addTags){x.addTags.forEach(t=>{if(!p.tags.includes(t))p.tags.push(t)})}if(x.fav===false)p.fav=false}SD.push(k)});
+const RENAME=[{"id": "seed-p4", "from": "Audio Writer — Lecture Script cho TTS (bản cũ)", "to": "Cũ · Audio Writer bản ngắn"}, {"id": "seed-p4-full", "from": "Audio Writer — Lecture Script cho TTS (bản đầy đủ)", "to": "Nghe · Audio Writer, bài 8–12 phút"}, {"id": "seed-money", "from": "Master Prompt — The Anatomy of Money (khóa tiền tệ)", "to": "Nghe · Khóa Tiền tệ trọn bộ"}, {"id": "seed-dA", "from": "Domain A — Finance, Accounting, Economics (dán cuối Prompt 2 / Audio Writer)", "to": "Domain A · Tài chính, kế toán, kinh tế"}, {"id": "seed-dB", "from": "Domain B — Politics, Geopolitics, Institutional Power", "to": "Domain B · Chính trị, địa chính trị"}, {"id": "seed-dC", "from": "Domain C — Philosophy, Theories, Intellectual History", "to": "Domain C · Triết học, lý thuyết"}, {"id": "seed-dD", "from": "Domain D — Conspiracy, Deception, Propaganda, Intelligence (high scrutiny)", "to": "Domain D · Âm mưu, tuyên truyền, tình báo"}, {"id": "seed-dE", "from": "Domain E — Biology, Psychology, Health, Skincare, Human Behavior", "to": "Domain E · Sinh học, tâm lý, sức khỏe"}, {"id": "seed-dF", "from": "Domain F — AI, Technology, Future Economics", "to": "Domain F · AI, công nghệ, kinh tế tương lai"}, {"id": "seed-dG", "from": "Domain G — Business History & Strategic Case Stories (storyteller)", "to": "Domain G · Lịch sử kinh doanh, case chiến lược"}, {"id": "seed-dH", "from": "Domain H — Law, Legal Systems, Legal Reasoning", "to": "Domain H · Luật, hệ thống pháp lý"}, {"id": "seed-cross", "from": "Cross-Disciplinary Connections (nối kiến thức giữa các ngành)", "to": "Đào sâu · Nối kiến thức giữa các ngành"}, {"id": "up00", "from": "Document → Lecture (PDF, bài báo, báo cáo → script TTS)", "to": "Nghe · PDF, báo cáo thành bài giảng"}, {"id": "up01", "from": "High-Fidelity Audio Lecture Script Generator", "to": "Cũ · High-Fidelity Script Generator"}, {"id": "up02", "from": "Academic Paper → Audio Lecture (v2)", "to": "Nghe · Paper học thuật"}, {"id": "up03", "from": "ADHD-I Audio Lecture Prompt (v2)", "to": "Cũ · ADHD-I Audio v2"}, {"id": "up05", "from": "Book → Lecture (kiểm tra kiến thức còn đúng không)", "to": "Cũ · Sách thành bài giảng"}, {"id": "up06", "from": "CFA Curriculum → Audio Lecture (Mode A học / Mode B ôn)", "to": "Nghe · CFA, học hoặc ôn"}, {"id": "up07", "from": "Content Value Audit — lọc trước khi nghe", "to": "Lọc · Có đáng nghe không"}, {"id": "up08", "from": "Lecture Course → Script", "to": "Cũ · Lecture Course"}, {"id": "up09", "from": "Practitioner's Edge — Experiential Knowledge Extractor", "to": "Trích · Kinh nghiệm người làm nghề"}, {"id": "up10", "from": "Practitioner's Edge → Audio Converter (TTS)", "to": "Nghe · Kinh nghiệm người làm nghề"}, {"id": "up11", "from": "BCTC Extractor — 7 mục dán Excel (doanh nghiệp VN)", "to": "Tài chính · BCTC doanh nghiệp VN ra Excel"}, {"id": "up12", "from": "Textbook Chapter → Learning Lecture (học kế toán)", "to": "Nghe · Giáo trình kế toán"}, {"id": "up13", "from": "Seminar → Lecture", "to": "Nghe · Seminar"}, {"id": "up14", "from": "Thinking Partner — Applied Mental Models", "to": "Tư duy · Mô hình tư duy ứng dụng"}, {"id": "up16", "from": "Topic Map → Audio Lecture (v3 anti-fingerprint, mới nhất)", "to": "Nghe · Topic Map từng Part"}, {"id": "up17", "from": "Section-by-Section Lecture (dùng sau Topic Map)", "to": "Cũ · Section-by-Section"}, {"id": "up18", "from": "Knowledge Consolidator Output → Audio Script", "to": "Nghe · Bản kiến thức thành script"}, {"id": "up19", "from": "Podcast → Value-only TTS Script (v2)", "to": "Nghe · Podcast, chỉ giữ phần giá trị"}, {"id": "nw00-v2", "from": "ADHD-I Audio Lecture — từng section của Topic Map", "to": "Nghe · Topic Map từng section, ADHD-I"}, {"id": "nw01", "from": "Authority Deconstructor — bóc phát biểu của người có quyền lực", "to": "Kiểm · Bóc phát biểu người có quyền lực"}, {"id": "nw02", "from": "Financial Statement Red Flag Detector", "to": "Tài chính · Soi red flag BCTC"}, {"id": "nw03", "from": "Dual-Language Research & Academic Writing (EN/CN/VN)", "to": "Viết · Học thuật đa ngôn ngữ EN, CN, VN"}, {"id": "nw04", "from": "AI Content Fact-Checker — kiểm chứng transcript YouTube", "to": "Kiểm · Fact-check transcript YouTube"}, {"id": "nw05", "from": "Distressed Deal Analyzer", "to": "Tài chính · Phân tích deal distressed"}, {"id": "nw06", "from": "Professional Finance Writing Coach", "to": "Viết · Coach viết tài chính"}, {"id": "nw07", "from": "Vietnamese Market Intelligence Translator", "to": "Tài chính · Dịch tin thị trường VN"}, {"id": "nw08", "from": "Book → Audio Lecture (phân loại loại sách trước)", "to": "Nghe · Sách"}, {"id": "nw09", "from": "Full-Detail Knowledge Consolidator (không nén transcript)", "to": "Trích · Gom kiến thức đầy đủ, không nén"}, {"id": "nw10", "from": "YouTube Script Generator — kênh học tài chính", "to": "Viết · Script YouTube tài chính"}, {"id": "nw11", "from": "Anki tiếng Anh từ transcript (từ vựng, collocation, idiom)", "to": "Anki · Tiếng Anh từ transcript"}, {"id": "nw12", "from": "Topic Map Generator — Practitioner-Grade (bước đầu pipeline)", "to": "Topic Map · Tạo bản đồ kiến thức"}, {"id": "nw13", "from": "Tạo thẻ Anki — IB / Valuation (kèm hướng dẫn import)", "to": "Anki · IB và Valuation"}, {"id": "nw14", "from": "Concept Connection Mapper", "to": "Tài chính · Nối khái niệm"}, {"id": "nw15", "from": "Multi-Source Synthesis — Coherent Narrative Builder", "to": "Viết · Tổng hợp nhiều nguồn"}, {"id": "nw16", "from": "Citation & Data Verification — Academic Essay Checker", "to": "Kiểm · Bài luận có trích dẫn"}, {"id": "n200", "from": "Course Lecture Transcript → Audio Lecture (phân loại loại khóa học)", "to": "Nghe · Khóa học từ transcript"}, {"id": "n201", "from": "Lecture Creator — sách / transcript / tài liệu khóa học (phân loại 2 trục)", "to": "Cũ · Lecture Creator 2 trục"}, {"id": "n202", "from": "Academic Reaper → Audio Lecture (paper, có bước triage input)", "to": "Cũ · Academic Reaper"}, {"id": "n203", "from": "Research Assistant — Academic Finance Papers (tìm EN + CN)", "to": "Tìm · Paper tài chính EN và CN"}, {"id": "n204", "from": "Podcast / Meeting / Workshop → Academic Lecture (ADHD, TTS, 10.000+ từ)", "to": "Cũ · Podcast, họp, workshop thành bài giảng"}, {"id": "n205", "from": "Review sách finance (EN, chấm điểm kiểu institutional)", "to": "Viết · Review sách finance EN"}, {"id": "n206", "from": "Review sách finance (bản tiếng Việt)", "to": "Cũ · Review sách finance VN"}, {"id": "n207", "from": "Earnings Call — trích signal Long/Short", "to": "Tài chính · Earnings call, tín hiệu Long/Short"}, {"id": "n208", "from": "Lecture transcript → Study notes cho Obsidian", "to": "Ghi chú · Transcript thành note Obsidian"}, {"id": "rs-a", "from": "Analysis A — First-Principles & Mechanism (nghiên cứu sâu, bỏ phần giới thiệu chung)", "to": "Đào sâu · Cơ chế gốc"}, {"id": "rs-b", "from": "Analysis B — Systemic Vulnerability (hệ thống bị lợi dụng / lách như thế nào)", "to": "Đào sâu · Lỗ hổng hệ thống"}, {"id": "rs-c", "from": "Analysis C — Adversarial Stress-Test (phản biện luận điểm, chống nịnh)", "to": "Đào sâu · Phản biện, chống nịnh"}, {"id": "rs-d", "from": "Analysis D — Recursive Depth Override (dán khi AI trả lời quá nông)", "to": "Đào sâu · Khi AI trả lời nông"}, {"id": "v2-step0", "from": "Step 0 — Universal Research & Intellectual OS (cài vào Custom / Project Instructions)", "to": "Học Step 0 · Cài nền cho AI, làm 1 lần"}, {"id": "v2-p05", "from": "Prompt 0.5 — Source Acquisition & Evidence Audit (tìm + kiểm chứng nguồn trước khi viết)", "to": "Học P0.5 · Tìm và kiểm chứng nguồn"}, {"id": "v2-p1", "from": "Prompt 1 — Curriculum Architect (Research-Driven)", "to": "Học P1 · Lập lộ trình học"}, {"id": "v2-p2", "from": "Prompt 2 — First-Principles Deep-Dive Lecture", "to": "Học P2 · Bài giảng từ nguyên lý gốc"}, {"id": "v2-p3", "from": "Prompt 3 — Adversarial Fact-Checker & Evidence Auditor", "to": "Học P3 · Kiểm chứng điều vừa học"}, {"id": "v2-p4", "from": "Prompt 4 — Elite Simulation & Adaptive Stress-Test", "to": "Học P4 · Mô phỏng tình huống áp lực"}, {"id": "v2-p5", "from": "Prompt 5 — Knowledge Retention & Independent Reasoning Audit", "to": "Học P5 · Kiểm tra trí nhớ và lập luận"}, {"id": "v2-search", "from": "Search Query Toolkit — truy vấn site: theo ngành (dán cuối Prompt 0.5 / Step 0)", "to": "Tìm · Bộ truy vấn site: theo ngành"}, {"id": "v2-tutor", "from": "Adaptive Socratic Tutor & Misconception Diagnostician (gia sư hỏi từng câu, tìm chỗ hiểu sai)", "to": "Ôn · Gia sư hỏi từng câu"}, {"id": "v2-quant", "from": "Quantitative Problem Lab — Finance, Accounting, Economics (AI ra bài, mình giải, AI bắt lỗi)", "to": "Ôn · Phòng luyện bài tính"}, {"id": "v2-methods", "from": "Research Paper Methodology & Identification Auditor (paper có chứng minh được điều tác giả nói không?)", "to": "Kiểm · Phương pháp của paper"}, {"id": "v2-english", "from": "English Acquisition & Professional Language Coach (biến lecture thành tiếng Anh dùng được)", "to": "Ghi chú · Coach tiếng Anh chuyên ngành"}, {"id": "v2-errorlog", "from": "Learning Error Log Manager (nhật ký lỗi + lịch ôn lại)", "to": "Ôn · Nhật ký lỗi và lịch ôn"}, {"id": "pdf2-master", "from": "PDF Finder — Master rules (nền chung: nguồn hợp pháp, nhãn kiểm chứng link, output chuẩn)", "to": "PDF · Luật nền, cài 1 lần"}, {"id": "pdf2-book", "from": "BOOK HUNT — Tìm sách, giáo trình (đúng edition, ISBN, PDF tải được)", "to": "PDF · Tìm sách, giáo trình"}, {"id": "pdf2-paper", "from": "PAPER HUNT — Tìm paper, working paper (đúng version, DOI, PDF tải được)", "to": "PDF · Tìm paper"}, {"id": "leg-dossier", "from": "Legacy Modernizer — Dossier cập nhật cho PDF/sách cũ (chạy từng chương)", "to": "Cập nhật · Dossier cho PDF, sách cũ"}, {"id": "leg-addon", "from": "Legacy Integration Add-on — gắn cuối Audio Writer (PDF cũ + Dossier thành bài giảng)", "to": "Cập nhật · Gắn vào Audio Writer"}, {"id": "ldom-l1", "from": "Domain L1 — Accounting, Standards & Professional Exams (IFRS, US GAAP, ACCA, CFA)", "to": "Domain L1 · Kế toán, chuẩn mực, chứng chỉ"}, {"id": "ldom-l2", "from": "Domain L2 — Finance, Investment & Economics", "to": "Domain L2 · Tài chính, đầu tư, kinh tế"}, {"id": "ldom-l3", "from": "Domain L3 — Trading, Quant & Market Microstructure", "to": "Domain L3 · Trading, quant, microstructure"}, {"id": "ldom-l4", "from": "Domain L4 — AI, Machine Learning & Technology", "to": "Domain L4 · AI, ML, công nghệ"}, {"id": "ldom-l5", "from": "Domain L5 — Law, Tax & Regulation", "to": "Domain L5 · Luật, thuế, quy định"}, {"id": "ldom-l6", "from": "Domain L6 — Science, Psychology & Health", "to": "Domain L6 · Khoa học, tâm lý, sức khỏe"}, {"id": "fx-engine", "from": "Fiction → Intellectual Extraction Engine (tiểu thuyết → cơ chế hành vi, quyền lực, chiến lược, triết lý)", "to": "Tiểu thuyết · Engine trích tư tưởng"}, {"id": "fx-mode-comp", "from": "Chế độ 1 — Comprehensive Extraction (toàn diện, theo lĩnh vực, thay phần lớn việc đọc)", "to": "Tiểu thuyết · Chế độ 1, toàn diện"}, {"id": "fx-mode-deep", "from": "Chế độ 2 — Philosophical Deep Dive (10–15 ý lớn, phân tích sâu)", "to": "Tiểu thuyết · Chế độ 2, đào sâu triết học"}, {"id": "fx-mode-brief", "from": "Chế độ 3 — Executive Intelligence Brief (cô đọng khoảng 1.500 từ)", "to": "Tiểu thuyết · Chế độ 3, brief 1.500 từ"}, {"id": "fx-audit", "from": "Fiction Reality Audit — kiểm tra kiến thức chuyên môn, tính khả thi, khả năng áp dụng ngoài đời", "to": "Tiểu thuyết · Audit tính thực tế"}, {"id": "fx-merge", "from": "Fiction Extraction — Gộp, loại trùng, xếp hạng nhiều lượt phân tích", "to": "Tiểu thuyết · Gộp nhiều lượt phân tích"}, {"id": "ms-synth", "from": "Syntopical Integrator — gộp nhiều sách, paper, bài giảng thành một khung kiến thức", "to": "Làm chủ · Gộp nhiều nguồn thành khung"}, {"id": "ms-oral", "from": "Oral Mastery Trainer — dựng khung 5 nút rồi luyện nói không kịch bản", "to": "Làm chủ · Dựng khung 5 nút, luyện nói"}, {"id": "ms-record", "from": "Oral Transcript Reviewer — chấm bản chép lời bài tự nói của bạn", "to": "Làm chủ · Chấm bài tự nói"}, {"id": "ms-defend", "from": "Adversarial Oral Defense — AI chất vấn, bạn bảo vệ lập luận", "to": "Làm chủ · AI chất vấn, tự bảo vệ"}, {"id": "ca-larp", "from": "Expertise Demonstration Audit — chuyên môn thật hay chỉ diễn (podcast, hội thảo, interview)", "to": "Lọc · Chuyên môn thật hay diễn"}, {"id": "ca-compress", "from": "Long-form Compression & Padding Auditor — video dài có xứng với thời lượng không", "to": "Lọc · Video có bị kéo dài không"}, {"id": "ca-compare", "from": "Multi-Speaker Comparison — nhiều diễn giả, tìm chỗ trùng lặp và giá trị thêm", "to": "Lọc · So sánh nhiều diễn giả"}];
+RENAME.forEach(x=>{const k="rn1:"+x.id;if(SD.includes(k))return;const p=P.find(q=>q.id===x.id);if(p&&p.title===x.from)p.title=x.to;if(p)SD.push(k)});
 save();try{localStorage.setItem(KEY+".seeded",JSON.stringify(SD))}catch(e){}})();
 let filter="",tag="",cur=null;
 
@@ -606,6 +681,7 @@ function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";cle
 
 /* ===== RENDER ===== */
 function render(){
+  const _cs=$("chips").scrollLeft;
   const tags=[...new Set(P.flatMap(p=>p.tags))].sort();
   $("chips").innerHTML=['<span class="chip'+(!tag&&filter!=="★"?" on":"")+'" data-t="">Tất cả</span>','<span class="chip'+(filter==="★"?" on":"")+'" data-t="★">★ Yêu thích</span>']
     .concat(tags.map(t=>'<span class="chip'+(tag===t?" on":"")+'" data-t="'+esc(t)+'">'+esc(t)+'</span>')).join("");
@@ -614,9 +690,13 @@ function render(){
     .sort((a,b)=>(b.fav-a.fav)||(a.created-b.created));
   $("grid").innerHTML=list.map(p=>'<div class="card" data-id="'+p.id+'"><div class="row"><b style="flex:1">'+esc(p.title)+'</b><button class="star'+(p.fav?" on":"")+'" data-star="'+p.id+'">'+(p.fav?"★":"☆")+'</button></div><div>'+p.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div><p>'+esc(p.body.slice(0,220))+'</p></div>').join("");
   $("empty").hidden=list.length>0;
+  $("chips").scrollLeft=_cs;
+  const tot=P.filter(p=>!p.tags.includes("archive")).length;
+  $("count").textContent=(q||tag||filter?"Tìm thấy "+list.length+" / "+tot+" prompt":tot+" prompt")+((q||tag||filter)&&tag!=="archive"?" (không tính prompt archive)":"");
 }
 $("chips").onclick=e=>{const t=e.target.dataset.t;if(t===undefined)return;if(t==="★"){filter="★";tag=""}else{filter="";tag=t}render()};
 $("q").oninput=render;
+$("chipsToggle").onclick=()=>{const c=$("chips").classList.toggle("collapsed");$("chipsToggle").textContent=c?"Hiện tất cả tag ▾":"Thu gọn tag ▴"};
 $("grid").onclick=e=>{
   const s=e.target.dataset.star;
   if(s){const p=P.find(x=>x.id===s);p.fav=!p.fav;save();render();return}
@@ -625,8 +705,9 @@ $("grid").onclick=e=>{
 document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
 
 /* ===== VIEW / EDIT ===== */
-function openView(id){cur=P.find(p=>p.id===id);$("vTitle").textContent=cur.title;$("vTags").innerHTML=cur.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("");$("vBody").textContent=cur.body;$("view").showModal()}
-$("vCopy").onclick=async()=>{try{await navigator.clipboard.writeText(fillToday(cur.body))}catch(e){const r=document.createRange();r.selectNodeContents($("vBody"));getSelection().removeAllRanges();getSelection().addRange(r);document.execCommand("copy")}toast("Đã copy")};
+let VT=null;
+function openView(id,txt){VT=txt==null?null:txt;cur=P.find(p=>p.id===id);$("vTitle").textContent=cur.title;$("vTags").innerHTML=cur.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("");$("vBody").textContent=VT!=null?VT:cur.body;$("view").showModal()}
+$("vCopy").onclick=async()=>{try{await navigator.clipboard.writeText(VT!=null?VT:fillToday(cur.body))}catch(e){const r=document.createRange();r.selectNodeContents($("vBody"));getSelection().removeAllRanges();getSelection().addRange(r);document.execCommand("copy")}toast("Đã copy")};
 $("vDel").onclick=()=>{if(confirm("Xóa prompt này?")){P=P.filter(p=>p!==cur);save();$("view").close();render()}};
 function openEdit(p){cur=p;$("eHead").textContent=p?"Sửa prompt":"Prompt mới";$("eTitle").value=p?p.title:"";$("eTags").value=p?p.tags.join(", "):"";$("eBody").value=p?p.body:"";$("view").close();$("edit").showModal()}
 $("vEdit").onclick=()=>openEdit(cur);
@@ -639,28 +720,88 @@ $("eSave").onclick=()=>{
 };
 
 /* ===== SMART IMPORT ===== */
-function split(){
-  let re;try{re=new RegExp($("iRe").value,"i")}catch(e){return null}
+const IMP_RE={def:"^#{1,3}\\s*(Prompt\\s*\\d+\\b.*|[A-H]\\.\\s.*)$",md:"^#{1,3}\\s+\\S.*$",md1:"^#\\s+\\S.*$",md2:"^##\\s+\\S.*$",md3:"^###\\s+\\S.*$",prompt:"^#{0,3}\\s*Prompt\\s*\\d+\\b.*$",num:"^#{0,3}\\s*\\d+[.)]\\s+\\S.*$"};
+const IMP_LBL={def:'"Prompt N" / "A. Tên"',md:"mọi cấp tiêu đề Markdown",md1:"tiêu đề cấp 1 (#)",md2:"tiêu đề cấp 2 (##)",md3:"tiêu đề cấp 3 (###)",prompt:'"Prompt N"',num:"đánh số",sep:"dòng ---",custom:"regex tự viết"};
+function splitRe(text,reStr){
+  let re;try{re=new RegExp(reStr,"i")}catch(e){return null}
   const out=[];let c=null;
-  for(const line of $("iText").value.split("\n")){
+  for(const line of text.split("\n")){
     if(re.test(line.trim())){c={title:line.replace(/^#+\s*/,"").trim(),lines:[]};out.push(c)}
     else if(c)c.lines.push(line);
   }
   return out.map(x=>({title:x.title,body:x.lines.join("\n").trim()})).filter(x=>x.body);
 }
-$("bImport").onclick=()=>$("imp").showModal();
-["iText","iRe"].forEach(i=>$(i).oninput=()=>{const r=split();$("iInfo").textContent=r?"Tìm thấy "+r.length+" prompt: "+r.map(x=>x.title.slice(0,28)).join(" · "):"Regex chưa hợp lệ"});
+function splitSep(text){
+  return text.split(/^\s*(?:-{3,}|={3,})\s*$/m).map(b=>b.trim()).filter(Boolean).map(b=>{
+    const ls=b.split("\n"),i=ls.findIndex(l=>l.trim());
+    return {title:ls[i].replace(/^#+\s*/,"").trim().slice(0,100),body:ls.slice(i+1).join("\n").trim()};
+  }).filter(x=>x.body);
+}
+function split(){
+  const t=$("iText").value,m=$("iMode").value;
+  const run=k=>k==="sep"?splitSep(t):splitRe(t,k==="custom"?$("iRe").value:IMP_RE[k]);
+  if(m!=="auto")return {items:run(m),used:m};
+  /* tự nhận: ưu tiên kiểu "Prompt N"; với tiêu đề Markdown thì chọn cấp có ít mục nhất (>=2) để không cắt vào các mục bên trong prompt */
+  for(const k of ["def","prompt"]){const it=run(k);if(it&&it.length>=2)return {items:it,used:k}}
+  let best=null;
+  for(const k of ["md1","md2","md3"]){const it=run(k);if(it&&it.length>=2&&(!best||it.length<best.items.length))best={items:it,used:k}}
+  if(best)return best;
+  for(const k of ["num","sep"]){const it=run(k);if(it&&it.length>=2)return {items:it,used:k}}
+  for(const k of ["def","prompt","md1","md2","md3","num","sep"]){const it=run(k);if(it&&it.length>=1)return {items:it,used:k}}
+  return {items:[],used:"auto"};
+}
+function impRefresh(){
+  $("iReWrap").hidden=$("iMode").value!=="custom";
+  const box=$("iInfo"),go=$("iGo"),text=$("iText").value;
+  if(!text.trim()){box.innerHTML='<span class="ip-hint">Dán nội dung ở bước 1, app sẽ xem trước các prompt tìm thấy tại đây.</span>';go.disabled=true;go.textContent="Nhập";return}
+  const r=split();
+  if(!r.items){box.innerHTML='<span class="ip-bad">Regex chưa hợp lệ.</span>';go.disabled=true;go.textContent="Nhập";return}
+  if(!r.items.length){box.innerHTML='<span class="ip-bad">Không tìm thấy prompt nào.</span><span class="ip-hint"> Thử chọn cách cắt khác ở bước 2, hoặc kiểm tra mỗi prompt đã có dòng tiêu đề và nội dung bên dưới.</span>';go.disabled=true;go.textContent="Nhập";return}
+  const have=new Set(P.map(p=>p.title)),fresh=r.items.filter(x=>!have.has(x.title)).length;
+  const rows=r.items.slice(0,8).map(x=>'<div class="it"><span class="itt">'+esc(x.title)+'</span><span class="its">'+(have.has(x.title)?'<em>đã có</em>':x.body.length.toLocaleString("vi-VN")+" ký tự")+'</span></div>').join("");
+  box.innerHTML='<div class="ip-h"><b>Tìm thấy '+r.items.length+' prompt</b><span class="ip-hint">'+(r.used!=="auto"?"cắt theo "+IMP_LBL[r.used]:"")+(fresh<r.items.length?" · "+(r.items.length-fresh)+" trùng tên sẽ bỏ qua":"")+'</span></div>'+(()=>{if($("iMode").value!=="auto"||r.used==="sep")return "";const sp=splitSep(text);return sp.length>=2&&sp.length!==r.items.length?'<div class="ip-w ip-i">Tài liệu cũng có dòng --- ngăn cách ('+sp.length+' khối). Nếu đó mới là ranh giới giữa các prompt, chọn "Ngăn cách bằng dòng ---" ở bước 2.</div>':""})()+(r.items.length>25?'<div class="ip-w">⚠ Số prompt nhiều bất thường. Có thể đang cắt cả các mục bên trong prompt. Thử chọn "Chỉ tiêu đề cấp 1/2" ở bước 2.</div>':"")+rows+(r.items.length>8?'<div class="it more">… và '+(r.items.length-8)+' prompt nữa</div>':"");
+  go.disabled=fresh===0;go.textContent=fresh?"Nhập "+fresh+" prompt":"Không có prompt mới";
+}
+const IMP_TPL="I want you to write reusable prompts for me. Output them in an exact format so my prompt library app can split them into separate prompts automatically.\n\nMY GOAL:\n[Mô tả điều bạn muốn làm ở đây: chủ đề, mục đích, đầu vào bạn sẽ có, kết quả bạn muốn nhận, số prompt cần]\n\nOUTPUT FORMAT (follow exactly):\n1. Put the ENTIRE answer inside ONE code block (```markdown) so the formatting is preserved when I copy it. Write nothing outside the code block: no introduction, no explanation, no closing comment.\n2. Start every prompt with a title line, on its own line, in exactly this form (number from 1):\n## Prompt 1 — Short descriptive title\n## Prompt 2 — Another short title\n3. Directly below each title line, write the full prompt text, ready to paste into an AI chat.\n4. Inside the prompt text, never start a line with \"#\". Never start a line with \"Prompt <number>\" or with a letter and a dot such as \"A.\" or \"B.\". For sections use ALL-CAPS labels instead, for example ROLE:, TASK:, RULES:, OUTPUT FORMAT:.\n5. Do not use code fences inside the prompts.\n6. Mark every input I must supply with square brackets, using these words so my app can detect them: [INSERT TOPIC], [INSERT SUBJECT], [PASTE TEXT HERE], [PASTE OUTPUT FROM PROMPT 1].\n7. If the prompts work as a sequence, order them so that each one uses the output of the previous one, and say so with [PASTE OUTPUT FROM PROMPT N] at the point where that output is needed.\n8. Separate prompts with one blank line.\n9. Write the prompts in English unless my goal says otherwise.";
+$("iTpl").onclick=async()=>{await copyText(IMP_TPL);const b=$("iTpl"),t=$("iTplT");t.hidden=false;t.textContent="Đã copy ✓";clearTimeout(b._h);b._h=setTimeout(()=>{t.hidden=true;t.textContent=""},1800)};
+$("bImport").onclick=()=>{impRefresh();$("imp").showModal()};
+["iText","iRe","iTag"].forEach(i=>$(i).oninput=impRefresh);
+$("iMode").onchange=impRefresh;
 $("iGo").onclick=()=>{
-  const r=split();if(!r||!r.length)return alert("Không tìm thấy prompt nào. Chỉnh lại mẫu tiêu đề.");
+  const r=split();if(!r.items||!r.items.length)return;
   const tags=$("iTag").value.split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
-  let n=0;r.forEach(x=>{if(!P.some(p=>p.title===x.title)){P.push({id:uid(),title:x.title,tags,body:x.body,fav:false,created:Date.now()+n});n++}});
+  let n=0;r.items.forEach(x=>{if(!P.some(p=>p.title===x.title)){P.push({id:uid(),title:x.title,tags,body:x.body,fav:false,created:Date.now()+n});n++}});
   save();$("imp").close();$("iText").value="";render();toast("Đã nhập "+n+" prompt");
 };
 
 /* ===== EXPORT ===== */
 $("bExport").onclick=()=>{
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(P,null,2)],{type:"application/json"}));
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify({app:"promptLibrary",v:2,exported:new Date().toISOString(),prompts:P,flow:FS,out:OS},null,2)],{type:"application/json"}));
   a.download="prompt-library-"+new Date().toISOString().slice(0,10)+".json";a.click();toast("Đã xuất file");
+};
+
+/* ===== NHẬP JSON (khôi phục bản sao lưu) ===== */
+$("bJson").onclick=()=>$("jFile").click();
+$("jFile").onchange=async()=>{
+  const file=$("jFile").files[0];$("jFile").value="";if(!file)return;
+  let j;try{j=JSON.parse(await file.text())}catch(e){return alert("File JSON không hợp lệ.")}
+  const arr=Array.isArray(j)?j:(j&&Array.isArray(j.prompts)?j.prompts:null);
+  if(!arr)return alert("Không thấy danh sách prompt trong file.");
+  const ok=arr.filter(x=>x&&typeof x.title==="string"&&typeof x.body==="string");
+  const have=new Map(P.map(p=>[p.id,p]));
+  const clash=ok.filter(x=>have.has(x.id)&&have.get(x.id).body!==x.body).length;
+  const over=clash?confirm(clash+" prompt trùng id nhưng khác nội dung.\nOK = ghi đè bằng bản trong file.\nHủy = giữ cả hai (bản nhập thêm hậu tố)."):false;
+  let add=0,rep=0,dup=0,same=0;
+  ok.forEach(x=>{
+    const o=have.get(x.id),tg=Array.isArray(x.tags)?x.tags.map(String):[],base={tags:tg,fav:!!x.fav,created:x.created||Date.now()};
+    if(!o){const np={id:x.id||uid(),title:x.title,body:x.body,...base};P.push(np);have.set(np.id,np);add++}
+    else if(o.body===x.body)same++;
+    else if(over){Object.assign(o,{title:x.title,body:x.body,tags:tg,fav:!!x.fav});rep++}
+    else{P.push({id:uid(),title:x.title+" (bản nhập)",body:x.body,...base,fav:false});dup++}
+  });
+  if(j&&j.flow&&typeof j.flow==="object"&&!Array.isArray(j.flow))Object.keys(j.flow).forEach(k=>{if(!FS[k])FS[k]=j.flow[k]});
+  if(j&&j.out&&typeof j.out==="object"&&!Array.isArray(j.out)){Object.keys(j.out).forEach(k=>{if(!OS[k])OS[k]=j.out[k]});osave()}
+  save();fsave();render();toast("Nhập xong: +"+add+(rep?", ghi đè "+rep:"")+(dup?", giữ cả hai "+dup:"")+(same?", trùng "+same:""));
 };
 
 /* ===== GHÉP ===== */
@@ -702,7 +843,17 @@ const FLOWS=[{"id": "learn", "icon": "cap", "topic": true, "grp": "A", "title": 
 const FK="promptLibrary.flow.v1", VK="promptLibrary.view";
 let FS={};try{FS=JSON.parse(localStorage.getItem(FK)||"{}")}catch(e){}
 const fsave=()=>{try{localStorage.setItem(FK,JSON.stringify(FS))}catch(e){}};
-const fget=id=>{const f=FS[id]||(FS[id]={});f.done=f.done||{};f.sel=f.sel||{};f.dom=f.dom||{};f.topic=f.topic||"";return f};
+/* kết quả AI dán lại sau mỗi bước, để bước sau tự dùng cho các chỗ [PASTE ...] */
+const OKEY="promptLibrary.flow.out.v1",OUTOPEN={};
+let OS={};try{OS=JSON.parse(localStorage.getItem(OKEY)||"{}")}catch(e){}
+const osave=()=>{try{localStorage.setItem(OKEY,JSON.stringify(OS))}catch(e){toast("Không lưu được kết quả (đầy bộ nhớ). Hãy xuất JSON để giữ bản sao.")}};
+const oget=id=>OS[id]||(OS[id]={});
+const LONG_RE=/^\[(?:PASTE\b|INSERT[^\]]*\b(?:TOPIC MAP|COMPLETED MODULES|TRANSCRIPT)\b)/;
+const outOf=(fl,i)=>oget(fl.id)["o"+i]||"";
+const srcOf=(fl,j,k)=>fget(fl.id).src[j+"|"+k]||(/(TEXT|MATERIAL|TRANSCRIPT|CLAIM)/.test(k)?"own":"auto");
+function srcStep(fl,j,k){const v=srcOf(fl,j,k);if(v==="own")return -2;if(v==="auto"){for(let i=j-1;i>=0;i--)if(outOf(fl,i))return i;return -1}const n=+v;return outOf(fl,n)?n:-1}
+function resolveLong(fl,j,k){const n=srcStep(fl,j,k);return n===-2?(oget(fl.id)["own:"+j+"|"+k]||""):n>=0?outOf(fl,n):""}
+const fget=id=>{const f=FS[id]||(FS[id]={});f.done=f.done||{};f.sel=f.sel||{};f.dom=f.dom||{};f.topic=f.topic||"";f.vars=f.vars||{};f.src=f.src||{};return f};
 const opts=st=>(st.ids||[]).map(x=>typeof x==="string"?{id:x}:x);
 const selId=(fl,i)=>{const o=opts(fl.steps[i]),s=fget(fl.id).sel[i];return(o.find(x=>x.id===s)||o[0]||{}).id};
 const lib=id=>P.find(p=>p.id===id);
@@ -711,12 +862,68 @@ const FILL_RE=/\[(?:INSERT|PASTE|LIST|MODULE|BEGINNER|IF APPLICABLE)[^\]\n]{0,80
 
 function fillToday(t){const n=new Date();let d;try{d=n.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}catch(e){d=n.toISOString().slice(0,10)}return String(t).split("[TODAY]").join(d)}
 const domOf=(fl,i)=>{const f=fget(fl.id),st=fl.steps[i];return f.dom[i]===undefined?(st.domDefault||""):f.dom[i]};
-function buildText(fl,i){
+function buildText(fl,i,raw){
   const f=fget(fl.id),st=fl.steps[i],p=lib(selId(fl,i));if(!p)return null;
   let t=fillToday(p.body);
   if(f.topic.trim()&&!st.noTopic)t=t.replace(TOPIC_RE,()=>f.topic.trim());
   if(st.domain){const di=domOf(fl,i);if(di){const d=lib(di);if(d)t+="\n\n"+fillToday(d.body)}}
+  if(!raw)Object.keys(f.vars).forEach(k=>{if(f.vars[k])t=t.split(k).join(f.vars[k])});
+  if(!raw)[...new Set(t.match(FILL_RE)||[])].filter(k=>LONG_RE.test(k)).forEach(k=>{const v=resolveLong(fl,i,k);if(v)t=t.split(k).join(v)});
   return t;
+}
+function stepFields(fl,i){
+  const st=fl.steps[i],raw=buildText(fl,i,true)||"",all=[...new Set(raw.match(FILL_RE)||[])];
+  const tr=new RegExp(TOPIC_RE.source),byTopic=x=>fl.topic&&!st.noTopic&&tr.test(x);
+  return all.filter(x=>!LONG_RE.test(x)&&!byTopic(x));
+}
+function stepLongs(fl,i){
+  const st=fl.steps[i],raw=buildText(fl,i,true)||"",all=[...new Set(raw.match(FILL_RE)||[])];
+  const tr=new RegExp(TOPIC_RE.source),byTopic=x=>fl.topic&&!st.noTopic&&tr.test(x);
+  return all.filter(x=>LONG_RE.test(x)&&!byTopic(x));
+}
+function lstat(fl,j,k){
+  const n=srcStep(fl,j,k);
+  if(n===-2){const t=oget(fl.id)["own:"+j+"|"+k]||"";return t?"✓ "+t.length+" ký tự":"Dán nội dung vào ô bên dưới"}
+  if(n>=0)return "✓ Tự điền từ Bước "+(n+1)+" ("+outOf(fl,n).length+" ký tự)";
+  return "Chưa có kết quả: dán kết quả AI ở bước trước, hoặc chọn Dán riêng";
+}
+function lngOptions(fl,j,k){
+  const v=srcOf(fl,j,k);
+  let o='<option value="auto"'+(v==="auto"?" selected":"")+'>Tự động (bước gần nhất có kết quả)</option>';
+  for(let i=0;i<j;i++)if(outOf(fl,i))o+='<option value="'+i+'"'+(v===String(i)?" selected":"")+'>Bước '+(i+1)+' · '+esc(fl.steps[i].t.slice(0,36))+'</option>';
+  return o+'<option value="own"'+(v==="own"?" selected":"")+'>Dán riêng</option>';
+}
+function longsHtml(fl,j){
+  const L=stepLongs(fl,j);if(!L.length)return "";
+  return '<div class="lngs">'+L.map(k=>{
+    const lab=k.slice(1,-1).replace(/^INSERT\s+/,""),own=srcOf(fl,j,k)==="own";
+    return '<div class="lng" data-i="'+j+'" data-v="'+esc(k)+'"><span class="lk">'+esc(lab.length>60?lab.slice(0,58)+"…":lab)+'</span>'
+      +'<select data-act="src" data-i="'+j+'" data-v="'+esc(k)+'">'+lngOptions(fl,j,k)+'</select><span class="lstat">'+esc(lstat(fl,j,k))+'</span>'
+      +(own?'<textarea class="lta" data-act="own" data-i="'+j+'" data-v="'+esc(k)+'" placeholder="Dán nội dung ở đây">'+esc(oget(fl.id)["own:"+j+"|"+k]||"")+'</textarea>':'')+'</div>';
+  }).join("")+'</div>';
+}
+function outHtml(fl,i){
+  if(i>=fl.steps.length-1)return "";
+  const v=outOf(fl,i);
+  return '<details class="out" data-oi="'+i+'"'+(OUTOPEN[fl.id+"|"+i]?" open":"")+'><summary>Kết quả AI của bước này'+(v?" · "+v.length+" ký tự":"")+'</summary><textarea class="lta" data-act="out" data-i="'+i+'" placeholder="Dán kết quả AI vào đây. Các bước sau sẽ tự dùng cho chỗ [PASTE …]">'+esc(v)+'</textarea></details>';
+}
+function refreshDyn(){
+  const fl=curFlow;if(!fl)return;
+  document.querySelectorAll("#fSteps .step").forEach(li=>{const fe=li.querySelector(".fill");if(fe){const d=document.createElement("div");d.innerHTML=fillHtml(fl,+li.dataset.i);fe.replaceWith(d.firstChild)}});
+  document.querySelectorAll("#fSteps .lng").forEach(w=>{const j=+w.dataset.i,k=w.dataset.v;w.querySelector(".lstat").textContent=lstat(fl,j,k);w.querySelector("select").innerHTML=lngOptions(fl,j,k)});
+}
+function fillHtml(fl,i){
+  const t=buildText(fl,i)||"",miss=[...new Set(t.match(FILL_RE)||[])];
+  return miss.length?'<span class="fill" title="'+esc(miss.slice(0,6).join("\n"))+'">Còn '+miss.length+' chỗ cần điền sau khi dán</span>':'<span class="fill ok">Không có chỗ cần điền</span>';
+}
+function varsHtml(fl,i){
+  const f=fget(fl.id),fields=stepFields(fl,i);if(!fields.length)return "";
+  return '<div class="vars">'+fields.map(k=>{
+    const v=f.vars[k]||"",lab=k.slice(1,-1).replace(/^INSERT\s+/,""),sel=/^\[BEGINNER\s*\/\s*INTERMEDIATE\s*\/\s*ADVANCED\]$/.test(k);
+    const ctl=sel?'<select data-act="var" data-v="'+esc(k)+'"><option value="">—</option>'+["BEGINNER","INTERMEDIATE","ADVANCED"].map(o=>'<option'+(v===o?" selected":"")+'>'+o+'</option>').join("")+'</select>'
+      :'<input type="text" data-act="var" data-v="'+esc(k)+'" value="'+esc(v)+'" placeholder="Điền một lần, dùng cho cả lộ trình">';
+    return '<label class="vf"><span>'+esc(lab.length>60?lab.slice(0,58)+"…":lab)+'</span>'+ctl+'</label>';
+  }).join("")+'</div>';
 }
 async function copyText(t){
   try{await navigator.clipboard.writeText(t)}
@@ -726,6 +933,36 @@ const curIdx=fl=>{const d=fget(fl.id).done;for(let i=0;i<fl.steps.length;i++)if(
 
 /* --- màn hình chọn mục tiêu --- */
 const GROUPS={"A": {"t": "Pipeline A — Học một lĩnh vực mới", "s": "Nghiên cứu → hiểu → vận dụng → nhớ lâu"}, "B": {"t": "Pipeline B — Xử lý tài liệu có sẵn", "s": "Sách, paper, PDF, transcript: mỗi loại một prompt"}, "C": {"t": "Pipeline C — Phát triển kỹ năng chuyên môn", "s": "Phân tích, viết, ra quyết định"}};
+/* ===== GỢI Ý THEO NGỮ CẢNH (khớp từ khóa, chạy offline) ===== */
+const CTX_KW={"learn": ["học", "lĩnh vực mới", "chủ đề mới", "tìm hiểu", "chưa biết", "bắt đầu", "từ đầu", "tự học", "lộ trình học", "nghiên cứu", "curriculum", "muốn hiểu"], "review": ["ôn tập", "ôn lại", "kiểm tra", "quiz", "flashcard", "anki", "quên", "nhớ lâu", "bài tập", "thi", "giải bài", "tự kiểm tra", "spaced"], "master": ["làm chủ", "tự nói", "thuyết trình", "bảo vệ", "phỏng vấn", "nói không nhìn", "feynman", "ghi âm", "nhiều nguồn", "gộp nguồn", "nhớ không nhìn", "đã nghe", "đã học xong"], "deep": ["nông", "sâu hơn", "đào sâu", "chung chung", "nối tiếp", "cuộc trò chuyện", "liên ngành", "kết nối", "hỏi tiếp"], "notes": ["ghi chú", "note", "thẻ anki", "tiếng anh", "english", "tài liệu học", "chuyên ngành"], "filter": ["podcast", "youtube", "video", "hội thảo", "đáng nghe", "nghe trước", "kéo dài", "diễn giả", "panel", "webinar", "talk"], "doc2tts": ["pdf", "paper", "sách", "khóa học", "course", "tài liệu", "nghe", "tts", "bài giảng", "audio", "script", "có sẵn", "đọc thành"], "keep": ["transcript dài", "giữ chi tiết", "không nén", "đầy đủ", "chi tiết", "khóa học dài", "lecture", "transcript"], "topicmap": ["topic map", "bản đồ kiến thức", "tổng quan", "từng section", "từng phần", "toàn cảnh"], "search": ["tìm nguồn", "tìm paper", "search", "nguồn gốc", "tài liệu gốc", "học thuật", "academic", "ssrn", "scholar", "bài báo khoa học"], "pdf": ["tìm pdf", "tải sách", "tải pdf", "link pdf", "ebook", "edition", "bản pdf", "download", "tải về", "pdf"], "legacy": ["sách cũ", "pdf cũ", "cập nhật", "lỗi thời", "edition cũ", "bản cũ", "mới hơn", "đã thay đổi", "cập nhật kiến thức"], "fiction": ["tiểu thuyết", "truyện", "văn học", "nhân vật", "novel", "fiction", "cốt truyện", "quyền lực", "tâm lý nhân vật"], "verify": ["kiểm chứng", "nhận định", "fact check", "đúng không", "thật không", "tin giả", "claim", "bài viết", "phản biện", "nghi ngờ"], "fin": ["tài chính", "báo cáo tài chính", "bctc", "earnings", "doanh nghiệp", "cổ phiếu", "deal", "thị trường", "ngân hàng", "tính toán", "dcf", "bank", "alm", "irrbb", "công ty", "định giá"], "write": ["viết", "bài viết", "review sách", "kịch bản", "youtube", "script kênh", "blog", "content", "tổng hợp nhiều nguồn"]};
+const CTX_CHIPS=[["Có file PDF / sách", "pdf sách tài liệu"], ["PDF / sách đã cũ", "sách cũ cập nhật"], ["Có transcript", "transcript"], ["Podcast / YouTube", "podcast youtube video"], ["Paper khoa học", "paper nguồn học thuật"], ["Tiểu thuyết", "tiểu thuyết"], ["Chủ đề mới, chưa biết gì", "học chủ đề mới từ đầu"], ["Muốn ôn / tự kiểm tra", "ôn tập kiểm tra"], ["Đã học xong, muốn làm chủ", "làm chủ đã học xong"], ["Cần kiểm chứng nhận định", "kiểm chứng nhận định"], ["AI trả lời còn nông", "nông đào sâu hơn"], ["Báo cáo tài chính / doanh nghiệp", "tài chính doanh nghiệp"], ["Muốn viết bài", "viết bài"]];
+const norm=t=>String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/[^a-z0-9]+/g," ").trim();
+function ctxScore(f,q){
+  const nq=" "+norm(q)+" ",hit=[];let sc=0;
+  (CTX_KW[f.id]||[]).forEach(k=>{const nk=norm(k);if(nk&&nq.includes(" "+nk)){sc+=nk.includes(" ")?3:2;hit.push(k)}});
+  const body=" "+norm(f.title+" "+f.sub)+" ";
+  [...new Set(nq.trim().split(" ").filter(w=>w.length>=4))].forEach(w=>{if(body.includes(" "+w)){sc+=1}});
+  return {sc,hit};
+}
+function goalCard(f,extra){
+  const d=Object.keys((FS[f.id]||{}).done||{}).length,n=f.steps.length;
+  return '<button type="button" class="goal" data-flow="'+f.id+'"><span class="goal-ic">'+ico(f.icon,22)+'</span><span class="goal-t">'+esc(f.title)+'</span><span class="goal-s">'+esc(f.sub)+'</span><span class="goal-f"><span class="pill">'+n+' bước</span>'+(d?'<span class="pill on">'+d+'/'+n+' xong</span>':'')+(extra||"")+'</span></button>';
+}
+function renderCtx(){
+  const q=($("ctxQ").value||"").trim();
+  $("ctxChips").innerHTML=CTX_CHIPS.map(c=>'<span class="chip'+(norm(c[1])===norm(q)?" on":"")+'" data-q="'+esc(c[1])+'">'+esc(c[0])+'</span>').join("");
+  const rs=$("ctxRes");
+  if(!q){rs.innerHTML="";rs.hidden=true}
+  else{
+    rs.hidden=false;
+    const r=FLOWS.map(f=>({f,...ctxScore(f,q)})).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,3);
+    rs.innerHTML=r.length?r.map((x,i)=>goalCard(x.f,(i===0?'<span class="pill on">Hợp nhất</span>':'')+(x.hit.length?'<span class="pill">Khớp: '+esc(x.hit.slice(0,3).join(", "))+'</span>':""))).join(""):'<p class="muted">Chưa khớp mục tiêu nào. Thử từ khác, hoặc xem toàn bộ bên dưới.</p>';
+  }
+  const rd=FLOWS.filter(f=>{const d=Object.keys((FS[f.id]||{}).done||{}).length;return d>0&&curIdx(f)>=0});
+  $("resume").innerHTML=rd.length?'<div class="ghead"><b>Đang làm dở</b><span>Bấm để tiếp tục đúng bước đang dừng</span></div><div class="goals">'+rd.map(f=>goalCard(f,'<span class="pill">Tiếp theo: '+esc(f.steps[curIdx(f)].t.slice(0,40))+'</span>')).join("")+'</div>':"";
+}
+$("ctxQ").oninput=renderCtx;
+$("ctxChips").onclick=e=>{const q=e.target.dataset.q;if(q===undefined)return;$("ctxQ").value=($("ctxQ").value.trim()===q?"":q);renderCtx()};
 function renderGoals(){
   let h="";
   Object.keys(GROUPS).forEach(g=>{
@@ -737,6 +974,7 @@ function renderGoals(){
     }).join("");
   });
   $("goals").innerHTML=h;
+  renderCtx();
 }
 
 /* --- màn hình chạy từng bước --- */
@@ -763,8 +1001,7 @@ function stepHtml(fl,i,cur){
     if(!p)h+='<div class="miss">Prompt này không còn trong thư viện (đã bị xóa hoặc đổi id).</div>';
     else{
       h+='<div class="pname">Prompt: <span>'+esc(p.title)+'</span></div>';
-      const t=buildText(fl,i),miss=[...new Set(t.match(FILL_RE)||[])];
-      h+=miss.length?'<span class="fill" title="'+esc(miss.slice(0,6).join("\n"))+'">Còn '+miss.length+' chỗ cần điền sau khi dán</span>':'<span class="fill ok">Không có chỗ cần điền</span>';
+      h+=fillHtml(fl,i)+varsHtml(fl,i)+longsHtml(fl,i)+outHtml(fl,i);
       if(st.domain){const dt=st.domTag||"domain",di=domOf(fl,i);h+='<label class="dom">'+esc(st.domLabel||"Gắn thêm domain")+' <select data-act="dom" data-i="'+i+'"><option value="">Không gắn</option>'+P.filter(x=>x.tags.includes(dt)).map(x=>'<option value="'+x.id+'"'+(di===x.id?" selected":"")+'>'+esc(x.title.replace(/\s*\(.*$/,""))+'</option>').join("")+'</select></label>'+(st.domHint?'<span class="domhint">'+esc(st.domHint)+'</span>':"")}
     }
   }
@@ -796,10 +1033,10 @@ function flowClick(e){
   if(act==="exc"){copyText(fl.steps[i].ex[+el.dataset.k].t).then(()=>toast("Đã copy input mẫu"));return}
   if(act==="sel"){f.sel[i]=el.dataset.id;fsave();renderSteps();return}
   if(act==="copy"){const t=buildText(fl,i);if(t!=null)copyText(t).then(()=>toast("Đã copy: "+lib(selId(fl,i)).title.slice(0,40)));return}
-  if(act==="view"){openView(selId(fl,i));return}
+  if(act==="view"){openView(selId(fl,i),buildText(fl,i));return}
   if(act==="done"){if(f.done[i])delete f.done[i];else f.done[i]=1;fsave();renderSteps();return}
   if(act==="skip"){f.done[i]=2;fsave();renderSteps();return}
-  if(act==="reset"){if(confirm("Làm lại lộ trình này từ đầu?")){f.done={};fsave();renderSteps();window.scrollTo(0,0)}return}
+  if(act==="reset"){if(confirm("Làm lại lộ trình này từ đầu? (xóa luôn các kết quả đã dán)")){f.done={};delete OS[fl.id];osave();fsave();renderSteps();window.scrollTo(0,0)}return}
   if(act==="next"){
     const c=curIdx(fl);if(c<0)return;
     const t=opts(fl.steps[c]).length?buildText(fl,c):null;
@@ -809,6 +1046,21 @@ function flowClick(e){
   }
 }
 $("viewFlow").addEventListener("click",flowClick);
+$("viewFlow").addEventListener("input",e=>{
+  const el=e.target.closest('[data-act="out"],[data-act="own"]');if(!el||!curFlow)return;
+  const o=oget(curFlow.id),key=el.dataset.act==="out"?"o"+el.dataset.i:"own:"+el.dataset.i+"|"+el.dataset.v;
+  if(el.value)o[key]=el.value;else delete o[key];
+  osave();refreshDyn();
+  if(el.dataset.act==="out"){const sm=el.parentNode.querySelector("summary");if(sm)sm.textContent="Kết quả AI của bước này"+(el.value?" · "+el.value.length+" ký tự":"")}
+});
+$("viewFlow").addEventListener("change",e=>{const x=e.target.closest('select[data-act="src"]');if(!x||!curFlow)return;fget(curFlow.id).src[x.dataset.i+"|"+x.dataset.v]=x.value;fsave();renderSteps()});
+$("viewFlow").addEventListener("toggle",e=>{const d=e.target;if(curFlow&&d.matches&&d.matches("details.out"))OUTOPEN[curFlow.id+"|"+d.dataset.oi]=d.open},true);
+$("viewFlow").addEventListener("input",e=>{
+  const el=e.target.closest('[data-act="var"]');if(!el||!curFlow)return;
+  const f=fget(curFlow.id),k=el.dataset.v;if(el.value)f.vars[k]=el.value;else delete f.vars[k];fsave();
+  document.querySelectorAll("#fSteps .step").forEach(li=>{const fe=li.querySelector(".fill");if(fe){const d=document.createElement("div");d.innerHTML=fillHtml(curFlow,+li.dataset.i);fe.replaceWith(d.firstChild)}});
+  document.querySelectorAll('#fSteps [data-act="var"]').forEach(x=>{if(x!==el&&x.dataset.v===k)x.value=el.value});
+});
 $("viewFlow").addEventListener("change",e=>{const s=e.target.closest('select[data-act="dom"]');if(!s||!curFlow)return;fget(curFlow.id).dom[+s.dataset.i]=s.value;fsave();renderSteps()});
 
 /* --- chuyển tab Lộ trình / Thư viện --- */
