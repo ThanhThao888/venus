@@ -3363,6 +3363,7 @@
             + '<button type="button" class="nv-act" data-act="save"><i class="fa-solid fa-download" aria-hidden="true"></i> Save as…</button>'
             + (canDelete ? '<button type="button" class="nv-act nv-danger" data-act="delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>' : '');
         document.body.appendChild(menu);
+        attachMenuEl = menu;   // was never assigned, so closeAttachMenu() returned early and the menu could not be dismissed
         const r = imgEl.getBoundingClientRect();
         const top = Math.min(window.innerHeight - menu.offsetHeight - 8, r.bottom + 6);
         const left = Math.min(window.innerWidth - menu.offsetWidth - 8, r.left);
