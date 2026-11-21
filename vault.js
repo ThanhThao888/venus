@@ -1065,16 +1065,28 @@
     // revisions. Manual/on-demand (wired to a button in Manage storage) rather than automatic,
     // so nothing is ever deleted without the person asking for it.
     async function pruneOrphanAttachments() {
-        const refs = await dbGetAllAttachmentRefs();
+        await settle().catch(() => {});            // flush pending edits first, so an image pasted a moment ago is counted
+        const [atts, refs, notes, revs] = await Promise.all([dbGetAllAttachments(), dbGetAllAttachmentRefs(), dbGetAll(), dbGetAllRevisions()]);
+        const refMap = new Map(refs.map((r) => [r.id, r]));
+        // Ground truth beside the index: anything a note (incl. Trash), a version or the open editor still mentions is kept.
+        const mentioned = new Set();
+        const scan = (md) => { for (const id of extractAttachmentIds(md)) mentioned.add(id); };
+        notes.forEach((n) => scan(n.markdown)); revs.forEach((r) => scan(r.markdown));
+        if (S.note) scan(S.note.markdown);
         let freed = 0, count = 0;
-        for (const r of refs) {
-            if ((r.notes && r.notes.length) || (r.revisions && r.revisions.length)) continue;
-            const rec = await dbGetAttachment(r.id).catch(() => null);
-            if (rec) freed += rec.size || 0;
-            await dbDeleteAttachment(r.id).catch(() => {});
-            await dbDeleteAttachmentRefs(r.id).catch(() => {});
+        const have = new Set(atts.map((a) => a.id));
+        for (const rec of atts) {
+            const r = refMap.get(rec.id);
+            const used = r && ((r.notes && r.notes.length) || (r.revisions && r.revisions.length));
+            if (used || mentioned.has(rec.id)) continue;
+            freed += rec.size || 0;
+            await dbDeleteAttachment(rec.id).catch(() => {});
+            await dbDeleteAttachmentRefs(rec.id).catch(() => {});
+            S.attachmentCache.delete(rec.id);
             count++;
         }
+        // Stale index rows that point at no stored attachment at all: tidy silently.
+        for (const r of refs) if (!have.has(r.id) && !(r.notes && r.notes.length) && !(r.revisions && r.revisions.length)) await dbDeleteAttachmentRefs(r.id).catch(() => {});
         return { count, freed };
     }
 
@@ -3472,6 +3484,7 @@
                 if (e.type === 'keydown' && e.key !== 'Escape') return;
                 if (e.type === 'pointerdown' && menu.contains(e.target)) return;
                 closeAttachMenu();
+                if (e.type === 'keydown') e.stopPropagation();   // Esc only closes this menu, not the panel behind it
             };
             document.addEventListener('pointerdown', attachMenuOutsideHandler, true);
             document.addEventListener('keydown', attachMenuOutsideHandler, true);
@@ -10674,6 +10687,7 @@
     }
     async function renderStorBody() {
         if (!el.storBody) return;
+        closeAttachMenu();
         updateStorTabsUI();
         el.stor.dataset.tab = S.stor.tab;
         if (S.stor.tab !== 'images') { S.stor.selMode = false; S.stor.sel.clear(); }
@@ -10765,7 +10779,7 @@
         if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
         try {
             const { count, freed } = await pruneOrphanAttachments();
-            flash(count ? 'Removed ' + count + (count === 1 ? ' unused image' : ' unused images') + ' — freed ' + fmtBytes(freed) : 'No unused attachments found');
+            flash(count ? 'Removed ' + count + (count === 1 ? ' unused attachment' : ' unused attachments') + ' — freed ' + fmtBytes(freed) : 'No unused attachments found');
             await renderStorBody();
         } catch (e) {
             console.warn('Notes Vault: prune attachments failed', e);
@@ -10876,8 +10890,11 @@
             for (const id of ids) {
                 const it = fresh.get(id);
                 if (!it || it.noteIds.length || it.revIds.length) { skipped++; continue; }
-                await dbDeleteAttachment(id).catch(() => {});
+                let gone = true;
+                try { await dbDeleteAttachment(id); } catch (e) { gone = false; }
+                if (!gone) { skipped++; continue; }
                 await dbDeleteAttachmentRefs(id).catch(() => {});
+                S.attachmentCache.delete(id);
                 ok++;
             }
         } catch (e) { console.warn('Notes Vault: bulk delete failed', e); flash('Couldn’t delete the selected images'); }
@@ -11062,8 +11079,11 @@
             for (const id of ids) {
                 const it = fresh.get(id);
                 if (!it || it.noteIds.length || it.revIds.length) { skipped++; continue; }
-                await dbDeleteAttachment(id).catch(() => {});
+                let gone = true;
+                try { await dbDeleteAttachment(id); } catch (e) { gone = false; }
+                if (!gone) { skipped++; continue; }
                 await dbDeleteAttachmentRefs(id).catch(() => {});
+                S.attachmentCache.delete(id);
                 ok++; freed += it.rec.size || 0;
             }
         } catch (e) { console.warn('Notes Vault: bulk file delete failed', e); flash('Couldn’t delete the selected files'); }
@@ -11154,6 +11174,7 @@
     function closeStorModal() {
         if (!S.stor.open) return;
         S.stor.open = false;
+        closeAttachMenu();
         el.stor.hidden = true;
         el.storScrim.hidden = true;
         revokeStorObjectUrls();
