@@ -1,6 +1,31 @@
 (function () {
     'use strict';
 
+    /* ==highlight== — an inline syntax for marked (used by every render path: reading view, live
+       preview, print, previews). `==text==` becomes <mark class="nv-hl">text</mark>; the text inside
+       can carry bold / italic / links. Needs a non-space right after the opening and before the
+       closing ==, and never matches ===, so "a == b" and "x === y" stay plain text. */
+    (function registerHighlightSyntax() {
+        try {
+            const m = window.marked;
+            if (!m || typeof m.use !== 'function' || m.__nvHl) return;
+            m.use({
+                extensions: [{
+                    name: 'nvHighlight',
+                    level: 'inline',
+                    start(src) { const i = src.indexOf('=='); return i < 0 ? undefined : i; },
+                    tokenizer(src) {
+                        const match = /^==(?!=)(?=\S)((?:\\[\s\S]|[^=\n\\]|=(?!=))+?)(?<=\S)==(?!=)/.exec(src);
+                        if (!match) return undefined;
+                        return { type: 'nvHighlight', raw: match[0], text: match[1], tokens: this.lexer.inlineTokens(match[1]) };
+                    },
+                    renderer(token) { return '<mark class="nv-hl">' + this.parser.parseInline(token.tokens) + '</mark>'; }
+                }]
+            });
+            m.__nvHl = true;
+        } catch (e) { /* highlight syntax is optional — the note still renders without it */ }
+    })();
+
     /* Number fields (e.g. the PDF page box): no spinner arrows, and the mouse wheel never changes the value. */
     (function noWheelNumbers() {
         try {
@@ -2931,6 +2956,7 @@
     // Object URLs from the *previous* render are revoked first — nothing here is cached
     // across renders, since the note being shown can change at any time.
     async function resolveAttachments(target, opts) {
+        pvSweep();
         // `opts.urls` = isolated mode (PDF export): blob: URLs go into the caller's own array and the
         // Read view's URLs are left alone — otherwise exporting would revoke the on-screen images.
         const sink = opts && opts.urls ? opts.urls : null;
@@ -3006,7 +3032,7 @@
             try { url = URL.createObjectURL(rec.blob); } catch (e) { continue; }
             urlSink.push(url);
             if (rec.mime === 'application/pdf') {
-                renderPdfEmbed(a, rec, url);
+                renderPdfEmbed(a, rec, url, target === el.read);
             } else if (isSheetMime(rec.mime)) {
                 renderFileCard(a, rec, url);
             } else {
@@ -3023,7 +3049,7 @@
     // (filename, size, "…" menu reusing openAttachMenu) plus an <iframe> onto the blob: URL,
     // which every modern desktop/mobile browser renders using its own built-in PDF viewer — no
     // pdf.js or other bundled renderer needed, and it keeps working if that CDN is ever offline.
-    function renderPdfEmbed(anchor, rec, url) {
+    function renderPdfEmbed(anchor, rec, url, interactive) {
         const wrap = document.createElement('div');
         wrap.className = 'nv-pdf-embed';
         wrap.innerHTML =
@@ -3031,7 +3057,8 @@
             + '<i class="fa-solid fa-file-pdf" aria-hidden="true"></i>'
             + '<span class="nv-pdf-embed-name"></span>'
             + '<span class="nv-pdf-embed-size"></span>'
-            + '<button type="button" class="nv-pdf-embed-more" aria-label="PDF options" title="PDF options"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>'
+            + (interactive ? '<button type="button" class="nv-pdf-embed-more nv-pdf-embed-rd" title="Switch between the built-in reader (every page, selectable text, Highlight to note) and the browser\u2019s PDF viewer" aria-label="Switch PDF reader"><i class="fa-solid fa-book-open-reader" aria-hidden="true"></i></button>' : '')
+            + '<button type="button" class="nv-pdf-embed-more nv-pdf-embed-opts" aria-label="PDF options" title="PDF options"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>'
             + '</div>'
             + '<iframe class="nv-pdf-embed-frame" loading="lazy"></iframe>';
         const name = (rec.filename || anchor.textContent || 'PDF document').replace(/^\uD83D\uDCC4\s*/, '');
@@ -3039,12 +3066,39 @@
         wrap.querySelector('.nv-pdf-embed-size').textContent = fmtBytes(rec.size);
         const frame = wrap.querySelector('.nv-pdf-embed-frame');
         frame.title = name;
-        frame.src = url;
-        wrap.querySelector('.nv-pdf-embed-more').addEventListener('click', (e) => {
+        wrap.querySelector('.nv-pdf-embed-opts').addEventListener('click', (e) => {
             e.preventDefault();
             openAttachMenu(rec, e.currentTarget);
         });
+        // Built-in reader (pdf.js) vs the browser's viewer in the <iframe> — see createPdfReader.
+        let rd = null;
+        const showNative = () => {
+            if (rd) { rd.destroy(); rd = null; }
+            const h = wrap.querySelector('.nv-pv-host'); if (h) h.remove();
+            frame.style.display = '';
+            if (!frame.getAttribute('src')) frame.src = url;
+        };
+        const showReader = () => {
+            if (rd) return;
+            frame.style.display = 'none';
+            const host = document.createElement('div');
+            host.className = 'nv-pv-host';
+            frame.after(host);
+            const mine = createPdfReader(host, rec.blob, { onQuote: (t, p) => pdfQuoteToNote(t, p, name) });
+            rd = mine;
+            mine.ready.catch(() => {                      // offline / unreadable: fall back to the browser's viewer
+                if (rd !== mine) return;
+                showNative();
+                toast('Built-in PDF reader unavailable (offline?) \u2014 using the browser viewer');
+            });
+        };
+        const rdBtn = wrap.querySelector('.nv-pdf-embed-rd');
+        if (rdBtn) rdBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (rd) { setPdfReaderPref('native'); showNative(); } else { setPdfReaderPref('pdfjs'); showReader(); }
+        });
         anchor.replaceWith(wrap);
+        if (interactive && pdfReaderPref() === 'pdfjs') showReader(); else frame.src = url;
     }
 
     /* ── Spreadsheet preview: SheetJS is fetched lazily on the first "Preview" click (never at
@@ -6626,6 +6680,329 @@
         })().catch((e) => { pdfJsPromise = null; throw e; });
         return pdfJsPromise;
     }
+    /* ═════════════ Built-in PDF reader (pdf.js) ═════════════
+       The browser's own PDF viewer inside an <iframe> is fine on desktop, but iOS Safari shows only the
+       FIRST page of a PDF in an iframe and can't scroll the rest. So on iPhone / iPad the vault draws
+       the PDF itself with pdf.js (already used for search indexing and region extraction): a scrolling
+       column of pages that are rendered only while near the screen, with page jump, zoom, fullscreen and
+       real selectable text. Selecting text and tapping "Highlight" drops it into the note as
+       `> ==quote== (file, p. N)`. If pdf.js can't be loaded (offline) the caller falls back to the iframe.
+       Preference: localStorage 'nvPdfReader' = 'pdfjs' | 'native' (default: pdfjs on iOS, native elsewhere). */
+    const NV_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+    const PDF_READER_KEY = 'nvPdfReader';
+    function pdfReaderPref() {
+        try { const v = localStorage.getItem(PDF_READER_KEY); if (v === 'pdfjs' || v === 'native') return v; } catch (e) { /* optional */ }
+        return NV_IOS ? 'pdfjs' : 'native';
+    }
+    function setPdfReaderPref(v) { try { localStorage.setItem(PDF_READER_KEY, v); } catch (e) { /* optional */ } }
+
+    const PV_LIVE = new Set();
+    // Readers whose page was re-rendered away are cleaned up here (frees the pdf.js worker + listeners).
+    function pvSweep() { for (const r of Array.from(PV_LIVE)) { if (!r.root.isConnected) r.destroy(); } }
+
+    // Returns { root, destroy(), ready } — `ready` rejects when pdf.js or the file can't be opened.
+    function createPdfReader(host, blob, o) {
+        o = o || {};
+        const PAD = 8, MAX_ZOOM = 4, MIN_ZOOM = 0.5;
+        const R = { dead: false, doc: null, lib: null, pages: [], zoom: 1, gen: 0, sel: null, selTimer: 0, queue: new Set(), busy: false, full: false, lastW: 0, cur: 1 };
+        const root = document.createElement('div');
+        root.className = 'nv-pv';
+        root.innerHTML =
+            '<div class="nv-pv-bar">'
+            + '<button type="button" class="nv-pv-b" data-a="prev" title="Previous page" aria-label="Previous page"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button>'
+            + '<span class="nv-pv-pg"><input class="nv-pv-pgin" type="number" min="1" value="1" inputmode="numeric" aria-label="Page number"> <span class="nv-pv-of">/ <span class="nv-pv-total">–</span></span></span>'
+            + '<button type="button" class="nv-pv-b" data-a="next" title="Next page" aria-label="Next page"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>'
+            + '<span class="nv-pv-sp"></span>'
+            + '<button type="button" class="nv-pv-b" data-a="zout" title="Zoom out" aria-label="Zoom out"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>'
+            + '<button type="button" class="nv-pv-b nv-pv-zoom" data-a="fit" title="Fit to width" aria-label="Fit to width">100%</button>'
+            + '<button type="button" class="nv-pv-b" data-a="zin" title="Zoom in" aria-label="Zoom in"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>'
+            + (o.onQuote ? '<button type="button" class="nv-pv-b nv-pv-quote" data-a="quote" title="Select text in the PDF, then tap to add it to the note as a highlighted quote" aria-label="Highlight selection into note" disabled><i class="fa-solid fa-highlighter" aria-hidden="true"></i><span>Highlight</span></button>' : '')
+            + '<button type="button" class="nv-pv-b" data-a="full" title="Fullscreen" aria-label="Fullscreen"><i class="fa-solid fa-expand" aria-hidden="true"></i></button>'
+            + '</div>'
+            + '<div class="nv-pv-scroll" tabindex="0"><div class="nv-pv-pages"></div></div>'
+            + '<div class="nv-pv-msg">Loading PDF…</div>';
+        host.appendChild(root);
+        const q = (s) => root.querySelector(s);
+        const scroller = q('.nv-pv-scroll'), box = q('.nv-pv-pages'), pgIn = q('.nv-pv-pgin'), totalEl = q('.nv-pv-total'),
+            zoomEl = q('.nv-pv-zoom'), quoteBtn = q('[data-a="quote"]'), fullBtn = q('[data-a="full"]'), msg = q('.nv-pv-msg');
+        const showMsg = (t) => { msg.textContent = t || ''; msg.hidden = !t; };
+        let io = null, ro = null, roTimer = 0, rafId = 0;
+
+        const availW = () => Math.max(120, scroller.clientWidth - 2 * PAD);
+        function sizePage(p) {
+            const s = (availW() / p.w) * R.zoom;
+            p.scale = s;
+            p.cw = p.w * s; p.ch = p.h * s;
+            p.el.style.width = p.cw + 'px';
+            p.el.style.height = p.ch + 'px';
+            p.el.style.setProperty('--total-scale-factor', String(s));
+        }
+        function clearPage(p) {
+            if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } p.task = null; }
+            const c = p.el.querySelector('canvas');
+            if (c) { c.width = 0; c.height = 0; }      // hand the bitmap memory back right away (matters on iOS)
+            p.el.textContent = '';
+            if (p.state !== 'busy') p.state = 'idle';
+        }
+        function release(p) {
+            p.vis = false;
+            R.queue.delete(p);
+            if (p.state === 'done' || p.state === 'err') clearPage(p);
+            else if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } }
+        }
+        function pickNext() {
+            const mid = scroller.scrollTop + scroller.clientHeight / 2;
+            let best = null, bd = Infinity;
+            for (const p of R.queue) {
+                const d = Math.abs(p.el.offsetTop + p.ch / 2 - mid);
+                if (d < bd) { bd = d; best = p; }
+            }
+            return best;
+        }
+        async function pump() {
+            if (R.busy) return;
+            R.busy = true;
+            try {
+                while (!R.dead && R.queue.size) {
+                    const p = pickNext();
+                    R.queue.delete(p);
+                    await renderPage(p);
+                }
+            } finally { R.busy = false; }
+        }
+        async function renderPage(p) {
+            if (R.dead || p.state !== 'idle' || !p.vis) return;
+            p.state = 'busy';
+            const gen = R.gen;
+            const stale = () => R.dead || gen !== R.gen || !p.vis;
+            try {
+                const pg = await R.doc.getPage(p.n);
+                if (stale()) return;
+                const base = pg.getViewport({ scale: 1 });
+                if (Math.abs(base.width - p.w) > 0.5 || Math.abs(base.height - p.h) > 0.5) {
+                    // This page has a different size than the placeholder (mixed-size PDF): resize it, and keep
+                    // what the reader is looking at in place if the page sits above the visible area.
+                    const oldH = p.ch, above = p.el.offsetTop + oldH <= scroller.scrollTop;
+                    p.w = base.width; p.h = base.height; sizePage(p);
+                    if (above) scroller.scrollTop += p.ch - oldH;
+                }
+                const vp = pg.getViewport({ scale: p.scale });
+                let out = Math.min(window.devicePixelRatio || 1, 2);
+                const MAXPX = NV_IOS ? 4e6 : 12e6;            // iOS Safari cuts canvases off well below 16.7 Mpx in total
+                if (vp.width * vp.height * out * out > MAXPX) out = Math.max(0.5, Math.sqrt(MAXPX / (vp.width * vp.height)));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.floor(vp.width * out));
+                canvas.height = Math.max(1, Math.floor(vp.height * out));
+                canvas.className = 'nv-pv-canvas';
+                const task = pg.render({ canvasContext: canvas.getContext('2d'), canvas, viewport: pg.getViewport({ scale: p.scale * out }) });
+                p.task = task;
+                await task.promise;
+                p.task = null;
+                if (stale()) { canvas.width = canvas.height = 0; return; }
+                p.el.textContent = '';
+                p.el.appendChild(canvas);
+                const tdiv = document.createElement('div');
+                tdiv.className = 'textLayer';
+                p.el.appendChild(tdiv);
+                try {
+                    const tl = new R.lib.TextLayer({ textContentSource: pg.streamTextContent(), container: tdiv, viewport: vp });
+                    await tl.render();
+                } catch (e) { /* the page is still readable without a text layer */ }
+                if (stale()) { clearPage(p); return; }
+                p.state = 'done';
+                try { pg.cleanup(); } catch (e) { /* ignore */ }
+            } catch (e) {
+                p.task = null;
+                if (e && e.name === 'RenderingCancelledException') return;
+                console.warn('Notes Vault: PDF page ' + p.n + ' failed to render', e);
+                if (!R.dead) { p.state = 'err'; p.el.textContent = ''; }
+            } finally {
+                if (p.state === 'busy') p.state = 'idle';
+                if (!R.dead && p.vis && p.state === 'idle') R.queue.add(p);   // moved on (zoom / scroll) while rendering — try again
+            }
+        }
+
+        function anchor() {
+            const top = scroller.scrollTop;
+            for (const p of R.pages) {
+                const t = p.el.offsetTop;
+                if (t + p.ch > top) return { n: p.n, frac: p.ch ? Math.max(0, Math.min(1, (top - t) / p.ch)) : 0 };
+            }
+            return { n: 1, frac: 0 };
+        }
+        function relayout() {
+            if (R.dead || !R.pages.length) return;
+            R.gen++;
+            const a = anchor();
+            for (const p of R.pages) { if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } p.task = null; } if (p.state === 'done' || p.state === 'err') clearPage(p); sizePage(p); }
+            const t = R.pages[a.n - 1];
+            if (t) scroller.scrollTop = t.el.offsetTop + a.frac * t.ch;
+            R.lastW = scroller.clientWidth;
+            zoomEl.textContent = Math.round(R.zoom * 100) + '%';
+            for (const p of R.pages) if (p.vis && p.state === 'idle') R.queue.add(p);
+            pump();
+            updatePage();
+        }
+        function updatePage() {
+            if (R.dead) return;
+            const probe = scroller.scrollTop + scroller.clientHeight * 0.35;
+            let cur = 1;
+            for (const p of R.pages) { if (p.el.offsetTop <= probe) cur = p.n; else break; }
+            R.cur = cur;
+            if (document.activeElement !== pgIn) pgIn.value = String(cur);
+        }
+        const goPage = (n) => {
+            const p = R.pages[Math.max(1, Math.min(R.pages.length, n | 0)) - 1];
+            if (p) scroller.scrollTop = p.el.offsetTop - PAD;
+        };
+        const setZoom = (z) => { R.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z)); relayout(); };
+
+        function setFull(on) {
+            R.full = !!on;
+            root.classList.toggle('nv-pv-full', R.full);
+            const fl = R.full ? 'Exit fullscreen' : 'Fullscreen';
+            fullBtn.title = fl; fullBtn.setAttribute('aria-label', fl);
+            fullBtn.firstChild.className = R.full ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+        }
+
+        // ── selection → note ──
+        const clip = (t) => (t.length > 70 ? t.slice(0, 67) + '…' : t);
+        function onSelChange() {
+            if (R.dead || !quoteBtn) return;
+            const sel = window.getSelection ? window.getSelection() : null;
+            if (!sel || !sel.rangeCount || sel.isCollapsed) {
+                // iOS collapses the selection the moment the button is touched, so keep it for a moment.
+                clearTimeout(R.selTimer);
+                R.selTimer = setTimeout(() => { R.sel = null; quoteBtn.disabled = true; }, 1800);
+                return;
+            }
+            const r = sel.getRangeAt(0);
+            const ca = r.commonAncestorContainer, ce = ca.nodeType === 1 ? ca : ca.parentElement;
+            if (!ce || !scroller.contains(ce)) return;
+            const text = sel.toString().replace(/\s+/g, ' ').trim();
+            if (!text) return;
+            const se = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+            const pgEl = se && se.closest ? se.closest('.nv-pv-page') : null;
+            R.sel = { text, page: pgEl ? +pgEl.dataset.n : R.cur };
+            clearTimeout(R.selTimer);
+            quoteBtn.disabled = false;
+            quoteBtn.title = 'Add to note: “' + clip(text) + '”';
+        }
+        function doQuote() {
+            if (!R.sel) { try { toast('Select some text in the PDF first'); } catch (e) { /* ignore */ } return; }
+            const s = R.sel;
+            let ok = false;
+            try { ok = o.onQuote(s.text, s.page) !== false; } catch (e) { console.warn('Notes Vault: quote failed', e); }
+            if (ok) {
+                R.sel = null; quoteBtn.disabled = true; quoteBtn.title = 'Select text in the PDF, then tap to add it to the note as a highlighted quote';
+                try { const sel = window.getSelection(); if (sel) sel.removeAllRanges(); } catch (e) { /* ignore */ }
+            }
+        }
+        if (quoteBtn) document.addEventListener('selectionchange', onSelChange);
+
+        // ── toolbar + scrolling ──
+        root.addEventListener('pointerdown', (e) => { if (e.target.closest('.nv-pv-b') && !e.target.closest('input')) e.preventDefault(); });   // keep the text selection alive
+        root.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-a]');
+            if (!b || b.disabled) return;
+            const a = b.dataset.a;
+            if (a === 'prev') goPage(R.cur - 1);
+            else if (a === 'next') goPage(R.cur + 1);
+            else if (a === 'zin') setZoom(R.zoom * 1.25);
+            else if (a === 'zout') setZoom(R.zoom / 1.25);
+            else if (a === 'fit') setZoom(1);
+            else if (a === 'full') setFull(!R.full);
+            else if (a === 'quote') doQuote();
+        });
+        pgIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); goPage(parseInt(pgIn.value, 10) || 1); pgIn.blur(); } e.stopPropagation(); });
+        pgIn.addEventListener('change', () => goPage(parseInt(pgIn.value, 10) || 1));
+        root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && R.full) { e.stopPropagation(); e.preventDefault(); setFull(false); } });
+        scroller.addEventListener('scroll', () => { if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; updatePage(); }); }, { passive: true });
+
+        function destroy() {
+            if (R.dead) return;
+            R.dead = true;
+            PV_LIVE.delete(handle);
+            document.removeEventListener('selectionchange', onSelChange);
+            clearTimeout(R.selTimer); clearTimeout(roTimer); if (rafId) cancelAnimationFrame(rafId);
+            try { if (io) io.disconnect(); if (ro) ro.disconnect(); } catch (e) { /* ignore */ }
+            for (const p of R.pages) { if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } } const c = p.el.querySelector('canvas'); if (c) { c.width = 0; c.height = 0; } }
+            R.pages = []; R.queue.clear();
+            const d = R.doc; R.doc = null;
+            if (d) { try { d.destroy(); } catch (e) { /* ignore */ } }
+            root.remove();
+        }
+
+        const ready = (async () => {
+            pvSweep();
+            const lib = await loadPdfJs();
+            if (R.dead) return;
+            R.lib = lib;
+            const data = new Uint8Array(await blob.arrayBuffer());
+            const doc = await lib.getDocument({ data }).promise;
+            if (R.dead) { try { doc.destroy(); } catch (e) { /* ignore */ } return; }
+            R.doc = doc;
+            const first = await doc.getPage(1);
+            const vp1 = first.getViewport({ scale: 1 });
+            try { first.cleanup(); } catch (e) { /* ignore */ }
+            if (R.dead) return;
+            totalEl.textContent = String(doc.numPages);
+            pgIn.max = String(doc.numPages);
+            io = new IntersectionObserver((entries) => {
+                for (const en of entries) {
+                    const p = R.pages[+en.target.dataset.n - 1];
+                    if (!p) continue;
+                    if (en.isIntersecting) { p.vis = true; if (p.state === 'idle') R.queue.add(p); }
+                    else release(p);
+                }
+                pump();
+            }, { root: scroller, rootMargin: '120% 0px 120% 0px' });
+            const frag = document.createDocumentFragment();
+            for (let n = 1; n <= doc.numPages; n++) {
+                const el = document.createElement('div');
+                el.className = 'nv-pv-page'; el.dataset.n = String(n);
+                const p = { n, el, w: vp1.width, h: vp1.height, scale: 1, cw: 0, ch: 0, state: 'idle', task: null, vis: false };
+                R.pages.push(p); frag.appendChild(el);
+            }
+            box.appendChild(frag);
+            showMsg('');
+            for (const p of R.pages) { sizePage(p); io.observe(p.el); }
+            R.lastW = scroller.clientWidth;
+            ro = new ResizeObserver(() => {
+                clearTimeout(roTimer);
+                roTimer = setTimeout(() => { if (Math.abs(scroller.clientWidth - R.lastW) > 2) relayout(); else updatePage(); }, 160);
+            });
+            ro.observe(scroller);
+            updatePage();
+        })();
+        ready.catch((e) => { if (!R.dead) showMsg('Couldn’t open this PDF in the built-in reader' + (e && e.message ? ' (' + e.message + ')' : '') + '.'); });
+        const handle = { root, destroy, ready, getState: () => R };
+        PV_LIVE.add(handle);
+        return handle;
+    }
+
+    // Quotes always go to the END of the note — predictable, and it never focuses the editor (no keyboard pops up on iPhone).
+    function pdfQuoteToNote(text, page, fileName) {
+        if (!S.note || S.viewRev) { toast('Open a note to add the quote to'); return false; }
+        const clean = String(text || '').replace(/\s+/g, ' ').replace(/={2,}/g, '=').replace(/^[>#\-*+\s]+(?=\S)/, '').trim();
+        if (!clean) return false;
+        const label = String(fileName || 'PDF').replace(/\.pdf$/i, '').replace(/[\[\]*_`\\<>]/g, '').trim();
+        const quote = '> ==' + clean + '== *(' + (label ? label + ', ' : '') + 'p. ' + page + ')*';
+        const md = S.note.markdown || '';
+        S.note.markdown = md.replace(/\s+$/, '') + (md.trim() ? '\n\n' : '') + quote + '\n';
+        el.src.value = S.note.markdown;
+        markDirty();
+        if (S.mode !== 'edit' || S.split) {
+            // Reading view: add just the new block to the page, so a PDF reader sitting inside this very page is not reloaded.
+            try {
+                const tmp = document.createElement('div');
+                Promise.resolve(renderInto(tmp, quote, false, { urls: [] })).then(() => { while (tmp.firstChild) el.read.appendChild(tmp.firstChild); }).catch(() => {});
+            } catch (e) { /* the quote is saved either way */ }
+        }
+        toast('Added to note \u2014 page ' + page);
+        return true;
+    }
+
     function loadTesseract() {
         if (window.Tesseract) return Promise.resolve(window.Tesseract);
         if (!tessPromise) tessPromise = loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@' + TESS_VER + '/dist/tesseract.min.js')
@@ -7645,9 +8022,9 @@
        the exported .md are always exactly what you see in Edit mode. Edits go
        through execCommand('insertText') so the browser's own Ctrl+Z / Ctrl+Y
        history keeps working across toolbar actions. */
-    const MARK = { bold: '**', italic: '*', strike: '~~', code: '`' };
+    const MARK = { bold: '**', italic: '*', strike: '~~', hl: '==', code: '`' };
     const MOD_LABEL = /Mac|iPhone|iPad/i.test(navigator.platform || '') ? '⌘' : 'Ctrl+';
-    const SHORTCUTS = { bold: 'B', italic: 'I', link: 'K', strike: 'Shift+X', code: '`' };
+    const SHORTCUTS = { bold: 'B', italic: 'I', link: 'K', strike: 'Shift+X', hl: 'Shift+H', code: '`' };
     // indent · quote markers · (bullet [checkbox] | number)
     const LINE_RE = /^(\s*)((?:>[ \t]?)*)(?:([-*+])[ \t]+(?:\[([ xX])\][ \t]+)?|(\d{1,9})([.)])[ \t]+)?/;
     const isWordCh = (c) => /[\p{L}\p{N}\p{M}_]/u.test(c || '');
@@ -7722,6 +8099,7 @@
             if (open.code != null) { k++; continue; }
             if (ch === '*') { if (str[k + 1] === '*') { flip('bold', 2, k); k += 2; } else { flip('italic', 1, k); k++; } continue; }
             if (ch === '~' && str[k + 1] === '~') { flip('strike', 2, k); k += 2; continue; }
+            if (ch === '=' && str[k + 1] === '=' && str[k - 1] !== '=' && str[k + 2] !== '=') { flip('hl', 2, k); k += 2; continue; }
             k++;
         }
         return spans;
@@ -7844,6 +8222,7 @@
             .replace(/\*\*([^*]+)\*\*/g, '$1')
             .replace(/\*([^*\s][^*]*)\*/g, '$1')
             .replace(/~~([^~]+)~~/g, '$1')
+            .replace(/==(?!=)([^=\n]+?)==(?!=)/g, '$1')
             .replace(/`([^`]+)`/g, '$1')));
     }
 
@@ -7973,7 +8352,7 @@
         undo: () => { if (S.live && lv) lv.undo(); else { el.src.focus(); document.execCommand('undo'); } },
         redo: () => { if (S.live && lv) lv.redo(); else { el.src.focus(); document.execCommand('redo'); } },
         bold: () => toggleInline('bold'), italic: () => toggleInline('italic'),
-        strike: () => toggleInline('strike'), code: () => toggleInline('code'),
+        strike: () => toggleInline('strike'), hl: () => toggleInline('hl'), code: () => toggleInline('code'),
         h1: () => setHeading(1), h2: () => setHeading(2), h3: () => setHeading(3),
         ul: () => setList('ul'), ol: () => setList('ol'), task: () => setList('task'),
         quote: toggleQuote, link: insertLink, wikilink: insertWikilink,
@@ -8138,6 +8517,7 @@
             else if (!e.shiftKey && keyIs(e, 'i')) cmd = 'italic';
             else if (!e.shiftKey && keyIs(e, 'k')) cmd = 'link';
             else if (e.shiftKey && keyIs(e, 'x')) cmd = 'strike';
+            else if (e.shiftKey && keyIs(e, 'h')) cmd = 'hl';
             else if (!e.shiftKey && (e.key === '`' || e.code === 'Backquote')) cmd = 'code';
             if (cmd) { e.preventDefault(); e.stopPropagation(); runCmd(cmd); }
             return;
@@ -9140,8 +9520,38 @@
         if (vis) { rpApplyView(); if (rp.view === 'note') rpEnter(); else ppLoadForNote(); }
         else { ppCloseMenu(); rpCloseMenu(); rpFlush(); }
     }
+    // Side pane: the pdf.js reader (iPhone default) replaces the <iframe> while a PDF is open.
+    function ppUnmountReader() {
+        if (pp.rd) { try { pp.rd.destroy(); } catch (e) { /* ignore */ } pp.rd = null; }
+        const h = ppGet('nvPvHost'); if (h) h.remove();
+        const fr = ppGet('nvPdfFrame'); if (fr) fr.style.display = '';
+    }
+    function ppSyncReaderBtn() {
+        const b = ppGet('nvPdfReaderBtn'); if (!b) return;
+        const on = pdfReaderPref() === 'pdfjs';
+        b.setAttribute('aria-pressed', String(on));
+        b.title = on ? 'Built-in reader is on (every page, selectable text, Highlight to note) \u2014 tap to use the browser\u2019s viewer'
+                     : 'Use the built-in reader (every page, selectable text, Highlight to note)';
+    }
+    function ppMountReader(rec, name) {
+        ppUnmountReader();
+        const fr = ppGet('nvPdfFrame');
+        fr.src = 'about:blank'; fr.style.display = 'none';
+        const host = document.createElement('div');
+        host.id = 'nvPvHost'; host.className = 'nv-pv-host';
+        fr.after(host);
+        const mine = createPdfReader(host, rec.blob, { onQuote: (t, p) => pdfQuoteToNote(t, p, name) });
+        pp.rd = mine;
+        mine.ready.catch(() => {
+            if (pp.rd !== mine) return;
+            ppUnmountReader();
+            if (pp.url) fr.src = pp.url + '#view=FitH';
+            toast('Built-in PDF reader unavailable (offline?) \u2014 using the browser viewer');
+        });
+    }
     function ppRelease() {
         pp.seq++;
+        ppUnmountReader();
         const fr = ppGet('nvPdfFrame');
         if (fr) fr.src = 'about:blank';
         if (pp.url) { try { URL.revokeObjectURL(pp.url); } catch (e) { /* ignore */ } }
@@ -9161,7 +9571,8 @@
         pp.url = url; pp.rec = rec;
         const name = (rec.filename || 'PDF document').replace(/^📄\s*/, '');
         fr.title = name;
-        fr.src = url + '#view=FitH';
+        if (pdfReaderPref() === 'pdfjs') ppMountReader(rec, name);
+        else { ppUnmountReader(); fr.src = url + '#view=FitH'; }
         ppGet('nvPdfName').textContent = name;
         ppGet('nvPdfName').title = name;
         ppGet('nvPdfSize').textContent = rec.size ? fmtBytes(rec.size) : '';
@@ -9261,6 +9672,20 @@
         ppGet('nvPdfEmptyPick').addEventListener('click', (e) => { e.stopPropagation(); ppOpenMenu(); });
         ppGet('nvPdfClose').addEventListener('click', () => ppToggle(false));
         ppGet('nvPdfNewTab').addEventListener('click', () => { if (pp.url) window.open(pp.url, '_blank', 'noopener'); });
+        // Reader switch (built-in pdf.js reader ⇄ browser viewer), added next to "open in new tab".
+        if (!ppGet('nvPdfReaderBtn')) {
+            const rb = document.createElement('button');
+            rb.className = 'nv-ib'; rb.id = 'nvPdfReaderBtn'; rb.type = 'button';
+            rb.setAttribute('aria-label', 'Switch PDF reader');
+            rb.innerHTML = '<i class="fa-solid fa-book-open-reader" aria-hidden="true"></i>';
+            ppGet('nvPdfNewTab').before(rb);
+            rb.addEventListener('click', () => {
+                setPdfReaderPref(pdfReaderPref() === 'pdfjs' ? 'native' : 'pdfjs');
+                ppSyncReaderBtn();
+                if (pp.rec) ppShow(pp.rec, false);
+            });
+            ppSyncReaderBtn();
+        }
         ppGet('nvPdfLocal').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; ppOpenLocal(f); });
         document.addEventListener('click', (e) => { if (pp.menuOpen && !e.target.closest('#nvPdfMenu, #nvPdfPick, #nvPdfEmptyPick')) ppCloseMenu(); });
         // drop a PDF anywhere on the panel
@@ -11581,6 +12006,17 @@
             b.title = key ? name + ' (' + MOD_LABEL + key + ')' : name;
             b.setAttribute('aria-label', name);
         };
+        // Highlight button (==text==): added here so it sits right after Strikethrough without touching the page HTML.
+        if (el.toolsScroll && !el.toolsScroll.querySelector('[data-cmd="hl"]')) {
+            const after = el.toolsScroll.querySelector('[data-cmd="strike"]');
+            if (after) {
+                const hb = document.createElement('button');
+                hb.className = 'nv-tb'; hb.type = 'button'; hb.dataset.cmd = 'hl'; hb.dataset.tip = 'Highlight';
+                hb.setAttribute('aria-pressed', 'false');
+                hb.innerHTML = '<i class="fa-solid fa-highlighter" aria-hidden="true"></i>';
+                after.after(hb);
+            }
+        }
         el.tools.querySelectorAll('.nv-tb[data-cmd]').forEach(tip);
         const tbButtons = () => [...el.toolsScroll.querySelectorAll('.nv-tb'), el.toolsMore];
         const rove = (target) => { tbButtons().forEach((b) => { b.tabIndex = (b === target) ? 0 : -1; }); };
@@ -13806,7 +14242,7 @@
                 .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
                 .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '').replace(/^[ \t]*>[ \t]?/gm, '')
                 .replace(/^([ \t]*)(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?/gm, '$1')
-                .replace(/\*\*(.+?)\*\*/g, '$1').replace(/(?<![A-Za-z0-9_])__(.+?)__(?![A-Za-z0-9_])/g, '$1').replace(/\*(?=\S)(.+?)(?<=\S)\*/g, '$1').replace(/(?<![A-Za-z0-9_])_(?=\S)(.+?)(?<=\S)_(?![A-Za-z0-9_])/g, '$1').replace(/~~(.+?)~~/g, '$1').replace(/`([^`\n]+)`/g, '$1')
+                .replace(/\*\*(.+?)\*\*/g, '$1').replace(/(?<![A-Za-z0-9_])__(.+?)__(?![A-Za-z0-9_])/g, '$1').replace(/\*(?=\S)(.+?)(?<=\S)\*/g, '$1').replace(/(?<![A-Za-z0-9_])_(?=\S)(.+?)(?<=\S)_(?![A-Za-z0-9_])/g, '$1').replace(/~~(.+?)~~/g, '$1').replace(/==(?!=)(.+?)==(?!=)/g, '$1').replace(/`([^`\n]+)`/g, '$1')
                 .replace(/^[ \t]*\|[ \t]?|[ \t]?\|[ \t]*$/gm, '').replace(/[ \t]*\|[ \t]*/g, '\t')
                 .replace(/\n{3,}/g, '\n\n');
         },
