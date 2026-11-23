@@ -1,6 +1,9 @@
 (function () {
     'use strict';
 
+    /* Offline support: make sure the service-worker loader (pwa.js) is running even if this page's HTML doesn't include it. */
+    try { if (!window.__venusPwa && !document.querySelector('script[src*="pwa.js"]')) { var pw = document.createElement('script'); pw.src = './pwa.js'; pw.async = true; document.head.appendChild(pw); } } catch (e) { /* optional */ }
+
     /* ==highlight== — an inline syntax for marked (used by every render path: reading view, live
        preview, print, previews). `==text==` becomes <mark class="nv-hl">text</mark>; the text inside
        can carry bold / italic / links. Needs a non-space right after the opening and before the

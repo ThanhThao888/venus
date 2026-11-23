@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="theme-color" content="#d17b96">
 <title>Venus Hub</title>
 <script>
 const ico = (n, c) => '<svg class="i' + (c ? ' ' + c : '') + '" aria-hidden="true"><use href="#i-' + n + '"/></svg>';
@@ -71,6 +74,7 @@ a.btn{text-decoration:none;display:inline-block}
   <p class="tip">"Back up now" opens the Tracker and asks you to confirm, then downloads one file with everything (Tracker, Notes, Loan Ledger). Keep a copy on Google Drive or another device.</p>
 </div>
 
+<script src="./pwa.js"></script>
 <script>
 /* ===== APP LIST — edit only this part ===== */
 const APPS = [
@@ -118,6 +122,20 @@ async function health(){
   const ptxt = persisted===null ? "not supported by this browser" : persisted ? "Enabled" : "Not enabled";
   const btn = (persisted===false) ? ` <button id="persistBtn" class="btn">Enable protection</button>` : "";
   rows.push(`<div class="row"><span>Protection from browser auto-cleanup</span><span class="${persisted?'ok':'warn'}">${ptxt}${btn}</span></div>`);
+
+  // Offline mode (service worker + cached libraries)
+  let offTxt = "Not supported by this browser", offCls = "warn";
+  try{
+    if(!("serviceWorker" in navigator) || !window.caches){ /* keep default */ }
+    else if(!window.isSecureContext){ offTxt = "Needs https:// or localhost (not file://)"; }
+    else {
+      const names = await caches.keys(); let libs = 0, files = 0;
+      for(const n of names){ if(n.indexOf("venus-")!==0) continue; const c = await caches.open(n); const k = (await c.keys()).length; if(n.indexOf("venus-cdn")===0) libs += k; else files += k; }
+      if(navigator.serviceWorker.controller && files>0){ offTxt = "Ready · " + files + " app files, " + libs + " libraries saved"; offCls = "ok"; }
+      else { offTxt = "Setting up — reload this page once while online"; }
+    }
+  }catch(e){ offTxt = "Could not check"; }
+  rows.push(`<div class="row"><span>Offline mode</span><span class="${offCls}">${offTxt}</span></div>`);
 
   $("health").innerHTML = rows.join("");
   const pb = $("persistBtn");
