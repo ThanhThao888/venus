@@ -1,6 +1,23 @@
 (function () {
     'use strict';
 
+    /* Number fields (e.g. the PDF page box): no spinner arrows, and the mouse wheel never changes the value. */
+    (function noWheelNumbers() {
+        try {
+            if (!document.getElementById('nvNoSpin')) {
+                const st = document.createElement('style');
+                st.id = 'nvNoSpin';
+                st.textContent = 'input[type="number"]{-moz-appearance:textfield;appearance:textfield}'
+                    + 'input[type="number"]::-webkit-outer-spin-button,input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}';
+                (document.head || document.documentElement).appendChild(st);
+            }
+            document.addEventListener('wheel', (e) => {
+                const t = e.target;
+                if (t && t.tagName === 'INPUT' && t.type === 'number' && document.activeElement === t) t.blur();
+            }, { passive: true });
+        } catch (e) { /* cosmetic only */ }
+    })();
+
     /* ═════════════════════════════════════════════════════════════
        Notes Vault — step 1
        Full-screen workspace: sidebar · library / document · inspector.
