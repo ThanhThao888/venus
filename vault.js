@@ -1123,7 +1123,7 @@
         for (const rec of atts) {
             const r = refMap.get(rec.id);
             const used = r && ((r.notes && r.notes.length) || (r.revisions && r.revisions.length));
-            if (used || mentioned.has(rec.id)) continue;
+            if (used || mentioned.has(rec.id) || rec.lib) continue;   // rec.lib = lives in the PDF Library
             freed += rec.size || 0;
             await dbDeleteAttachment(rec.id).catch(() => {});
             await dbDeleteAttachmentRefs(rec.id).catch(() => {});
@@ -3429,9 +3429,9 @@
             const n = opts.noteCount || 0, rv = opts.revCount || 0;
             if (n) usageLine = ' \u00b7 Used in ' + n + (n === 1 ? ' note' : ' notes');
             else if (rv) usageLine = ' \u00b7 In version history only';
-            else usageLine = ' \u00b7 Unused';
+            else usageLine = rec.lib ? ' \u00b7 In PDF Library' : ' \u00b7 Unused';
         }
-        const canDelete = context === 'note' || (context === 'manager' && !opts.noteCount && !opts.revCount);
+        const canDelete = context === 'note' || (context === 'manager' && !opts.noteCount && !opts.revCount && !rec.lib);
         const isImage = /^image\//.test(rec.mime || '');
         const noun = isImage ? 'image' : 'file';
         const canResize = isImage && context === 'note' && !S.viewRev && !!S.note && imgEl && imgEl.tagName === 'IMG';
@@ -6095,6 +6095,7 @@
                 attachments.push({
                     id: rec.id, hash: rec.hash, mime: rec.mime, size: rec.size,
                     width: rec.width, height: rec.height, filename: rec.filename, createdAt: rec.createdAt,
+                    lib: rec.lib || undefined, title: rec.title || undefined, coll: rec.coll || undefined, fav: rec.fav || undefined, pages: rec.pages || undefined,
                     dataB64: await blobToBase64(rec.blob)
                 });
             } catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
@@ -6632,6 +6633,11 @@
                     size: +raw.size || blob.size, width: +raw.width || 0, height: +raw.height || 0,
                     filename: raw.filename || undefined, createdAt: +raw.createdAt || Date.now()
                 };
+                if (raw.lib) rec.lib = true;
+                if (raw.title) rec.title = String(raw.title);
+                if (raw.coll) rec.coll = String(raw.coll);
+                if (raw.fav) rec.fav = true;
+                if (raw.pages) rec.pages = +raw.pages || undefined;
                 await dbPutAttachment(rec);
                 S.attachmentCache.set(rec.id, rec);
                 added++;
@@ -10388,6 +10394,7 @@
         const V = 'Vault';
         add(V, 'new', 'plus', 'New note', newNote, { kw: 'create write blank add', keys: ['alt', 'N'] });
         add(V, 'search', 'magnifying-glass', 'Search notes', focusSearch, { kw: 'find filter', keys: ['/'] });
+        add(V, 'pdflib', 'file-pdf', 'PDF Library…', openPdfLib, { kw: 'pdf library books documents upload drag drop files read' });
         add(V, 'fr', 'right-left', 'Find & Replace…', openFrModal, { kw: 'replace substitute rename text bulk change all', keys: IS_MAC ? ['mod', 'alt', 'F'] : ['mod', 'H'] });
         if (window.BrainDump && document.getElementById('bdPanel')) add(V, 'bd', 'brain', 'Open Brain Dump', openBrainDump, { kw: 'inbox capture tracker thoughts' });
         add(V, 'exportmd', 'folder-tree', 'Export notes as .md files…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
@@ -11478,7 +11485,7 @@
         return '<span class="' + cls + '">' + html + '</span>';
     }
     function storFileRowHtml(it, maxSize) {
-        const unused = !it.noteIds.length && !it.revIds.length;
+        const unused = !it.noteIds.length && !it.revIds.length && !it.rec.lib;
         const name = it.rec.filename || (it.rec.id + '.' + extFromMime(it.rec.mime));
         const sheet = isSheetMime(it.rec.mime);
         let added = '';
@@ -11548,7 +11555,7 @@
             const fresh = new Map((await getAttachmentsOverview()).map((it) => [it.rec.id, it]));
             for (const id of ids) {
                 const it = fresh.get(id);
-                if (!it || it.noteIds.length || it.revIds.length) { skipped++; continue; }
+                if (!it || it.noteIds.length || it.revIds.length || it.rec.lib) { skipped++; continue; }
                 let gone = true;
                 try { await dbDeleteAttachment(id); } catch (e) { gone = false; }
                 if (!gone) { skipped++; continue; }
@@ -11569,7 +11576,7 @@
             const it = items[i];
             if (!it) return;
             row._storId = it.rec.id; row._storSize = it.rec.size || 0;
-            const locked = !!(it.noteIds.length || it.revIds.length);
+            const locked = !!(it.noteIds.length || it.revIds.length || it.rec.lib);
             if (S.stor.fSel.has(it.rec.id)) row.classList.add('nv-sel');
             const toggleSel = () => {
                 if (locked) { flash('Still used in a note or its history — can’t delete'); return; }
@@ -11618,8 +11625,9 @@
         }
         applyStorFileSort(items);
         const totalBytes = items.reduce((s, it) => s + (it.rec.size || 0), 0);
-        const unusedCount = items.filter((it) => !it.noteIds.length && !it.revIds.length).length;
-        const filtered = S.stor.fileFilter === 'unused' ? items.filter((it) => !it.noteIds.length && !it.revIds.length) : items;
+        const isFree = (it) => !it.noteIds.length && !it.revIds.length && !it.rec.lib;
+        const unusedCount = items.filter(isFree).length;
+        const filtered = S.stor.fileFilter === 'unused' ? items.filter(isFree) : items;
         const summary = '<p class="nv-stor-summary"><b>' + items.length + (items.length === 1 ? ' file' : ' files') + '</b><span>' + fmtBytes(totalBytes) + ' total</span>' + (unusedCount ? '<span class="nv-stor-summary-warn">' + unusedCount + ' unused</span>' : '') + '</p>';
         const maxSize = items.reduce((m, it) => Math.max(m, it.rec.size || 0), 0);
         const rows = filtered.length ? filtered.map((it) => storFileRowHtml(it, maxSize)).join('') : '';
@@ -11628,6 +11636,597 @@
         wireStorFilesToolbar();
         wireStorFileRows(filtered);
         updateStorFileSelUI();
+    }
+
+    /* ═════════════ PDF Library ═════════════
+       A proper home for PDFs, separate from any single note. Every PDF in the vault (attached to a note OR added
+       straight to the library) appears here as a card with a first-page thumbnail. Drag files onto the box, pick
+       them, pick a whole folder, or paste. Records live in the same `attachments` store as before — the library only
+       adds optional fields to them (lib, title, coll, fav, pages, thumb, lastOpenedAt) — so dedupe, search indexing,
+       "used in notes" counts and backup/restore keep working. `lib: true` also protects a PDF that no note uses
+       from "Remove unused attachments". Everything is built from JS (no HTML edits needed). ── */
+    const PL_MAX_BYTES = 50 * 1024 * 1024;
+    const PL_DROP_KEY = 'nvPdfDrop';       // 'lib' | 'note' — remembered answer of the "dropped a PDF" chooser
+    const PL = { open: false, root: null, scrim: null, q: '', sort: 'new', coll: 'all', addColl: '', alsoNote: false, items: [], view: 'lib',
+        readId: null, reader: null, readerUrl: null, uploads: [], upSeq: 0, thumbQ: Promise.resolve(), io: null, menu: null, menuCleanup: null, prevFocus: null, qTimer: 0 };
+    const plIsPdfFile = (f) => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
+    const plTitle = (rec) => String(rec.title || rec.filename || 'document.pdf').replace(/^\uD83D\uDCC4\s*/, '').replace(/\.pdf$/i, '') || 'document';
+    const plHasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') >= 0);
+    const plQ = (sel) => PL.root && PL.root.querySelector(sel);
+    const plDate = (ts) => { try { return ts ? new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''; } catch (e) { return ''; } };
+
+    async function plLoad() {
+        const ov = await getAttachmentsOverview();
+        PL.items = ov.filter((it) => ppIsPdf(it.rec)).map((it) => ({ rec: it.rec, notes: it.noteIds || [], revs: it.revIds || [] }));
+    }
+    async function plPatch(id, patch) {
+        const fresh = await dbGetAttachment(id);
+        if (!fresh) return null;
+        Object.keys(patch).forEach((k) => { if (patch[k] === undefined) delete fresh[k]; else fresh[k] = patch[k]; });
+        await dbPutAttachment(fresh);
+        S.attachmentCache.set(id, fresh);
+        const it = PL.items.find((x) => x.rec.id === id);
+        if (it) it.rec = fresh;
+        return fresh;
+    }
+    const plItem = (id) => PL.items.find((x) => x.rec.id === id);
+    const plColls = () => {
+        const m = new Map();
+        PL.items.forEach((it) => { if (it.rec.coll) m.set(it.rec.coll, (m.get(it.rec.coll) || 0) + 1); });
+        return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    };
+
+    /* ── adding files ── */
+    async function plStorageGuard() {
+        try {
+            const stats = await getVaultStorageStats();
+            if (getStorageHealth(stats.totals.percent).blockAttachments) throw attachError('Storage is almost full — free up space first.');
+        } catch (e) { if (e && e.__attach) throw e; }
+    }
+    function plRenderUploads() {
+        const box = $('nvPlUps');
+        if (!box) return;
+        box.innerHTML = PL.uploads.map((u) => '<div class="nv-pl-up" data-s="' + u.state + '"><i class="fa-solid '
+            + (u.state === 'busy' ? 'fa-spinner fa-spin' : u.state === 'ok' ? 'fa-circle-check' : u.state === 'dup' ? 'fa-clone' : u.state === 'err' ? 'fa-triangle-exclamation' : 'fa-clock')
+            + '" aria-hidden="true"></i><span class="nv-pl-upname" title="' + esc(u.name) + '">' + esc(u.name) + '</span><span class="nv-pl-upmsg">' + esc(u.msg) + '</span></div>').join('');
+    }
+    async function plAddFiles(list, o) {
+        o = o || {};
+        const all = Array.from(list || []);
+        const files = all.filter(plIsPdfFile);
+        if (!files.length) { toast(all.length ? 'Only PDF files can be added to the library.' : 'No files to add.'); return { added: 0, dup: 0, failed: 0 }; }
+        const coll = o.coll != null ? o.coll : PL.addColl;
+        const jobs = files.map((f) => { const u = { id: ++PL.upSeq, name: f.name || 'document.pdf', state: 'wait', msg: 'Waiting…' }; PL.uploads.push(u); return { f, u }; });
+        plRenderUploads();
+        let added = 0, dup = 0, failed = 0; const forNotes = []; let lastId = null;
+        for (const { f, u } of jobs) {
+            u.state = 'busy'; u.msg = 'Adding…'; plRenderUploads();
+            try {
+                if (f.size > PL_MAX_BYTES) throw new Error('Larger than ' + Math.round(PL_MAX_BYTES / 1048576) + ' MB');
+                if (!f.size) throw new Error('The file is empty');
+                await plStorageGuard();
+                const t0 = Date.now();
+                const rec = await ingestPdfAttachment(f);
+                const known = (rec.createdAt || 0) < t0;
+                const patch = { lib: true };
+                if (coll && !rec.coll) patch.coll = coll;
+                await plPatch(rec.id, patch);
+                lastId = rec.id;
+                if (known) { dup++; u.state = 'dup'; u.msg = 'Already in your library'; } else { added++; u.state = 'ok'; u.msg = fmtBytes(f.size) + ' · added'; }
+                if (o.alsoNote) forNotes.push(f);
+            } catch (e) { failed++; u.state = 'err'; u.msg = (e && e.message) || 'Could not add this file'; }
+            plRenderUploads();
+        }
+        if (PL.open) { await plLoad(); plRender(); }
+        const bits = [];
+        if (added) bits.push('Added ' + added + ' PDF' + (added === 1 ? '' : 's'));
+        if (dup) bits.push(dup + ' already there');
+        if (failed) bits.push(failed + ' failed');
+        toast(bits.join(' · ') + '.', (added === 1 && !PL.open && lastId) ? 'Open library' : '', (added === 1 && !PL.open && lastId) ? () => openPdfLib() : null);
+        setTimeout(() => { PL.uploads = PL.uploads.filter((u) => u.state === 'err' || u.state === 'busy' || u.state === 'wait'); plRenderUploads(); }, 7000);
+        if (forNotes.length) { closePdfLib(); await importPdfAsNotes(forNotes); }
+        return { added, dup, failed };
+    }
+    // Files out of a drop — also walks dropped folders.
+    async function plFilesFromDrop(dt) {
+        const items = dt && dt.items ? Array.from(dt.items) : [];
+        const entries = items.map((i) => (i.kind === 'file' && i.webkitGetAsEntry) ? i.webkitGetAsEntry() : null);   // must be read synchronously
+        if (!entries.some((en) => en && en.isDirectory)) return Array.from((dt && dt.files) || []);
+        const out = [];
+        const walk = async (en) => {
+            if (en.isFile) await new Promise((res) => en.file((f) => { out.push(f); res(); }, () => res()));
+            else if (en.isDirectory) {
+                const rd = en.createReader(); let batch;
+                do { batch = await new Promise((res) => rd.readEntries(res, () => res([]))); for (const c of batch) await walk(c); } while (batch.length);
+            }
+        };
+        for (const en of entries) if (en) await walk(en);
+        return out;
+    }
+
+    /* ── thumbnails (first page, rendered lazily and cached on the record) ── */
+    async function plMakeThumb(id) {
+        const it = plItem(id);
+        if (!PL.open || !it || it.rec.thumb || it.rec.thumbFail || !(it.rec.blob instanceof Blob)) return;
+        let doc = null;
+        try {
+            const pdfjs = await loadPdfJs();
+            doc = await pdfjs.getDocument({ data: new Uint8Array(await it.rec.blob.arrayBuffer()) }).promise;
+            const page = await doc.getPage(1);
+            const base = page.getViewport({ scale: 1 });
+            const vp = page.getViewport({ scale: 260 / base.width });
+            const cv = document.createElement('canvas');
+            cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+            const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+            await page.render({ canvasContext: ctx, canvas: cv, viewport: vp }).promise;
+            const url = cv.toDataURL('image/jpeg', 0.72);
+            cv.width = cv.height = 0;
+            await plPatch(id, { thumb: url, pages: doc.numPages });
+            plUpdateCard(id);
+        } catch (e) {
+            if (!/couldn.t load|reader unavailable|Failed to fetch|import|NetworkError|dynamically imported/i.test(String(e && e.message || e))) await plPatch(id, { thumbFail: true }).catch(() => {});
+        } finally { if (doc) { try { doc.destroy(); } catch (e) { /* ignore */ } } }
+    }
+    function plQueueThumb(id) { PL.thumbQ = PL.thumbQ.then(() => plMakeThumb(id)).catch(() => {}); }
+    function plUpdateCard(id) {
+        const card = PL.root && PL.root.querySelector('.nv-pl-card[data-id="' + id + '"]'), it = plItem(id);
+        if (!card || !it) return;
+        const th = card.querySelector('.nv-pl-thumb-img');
+        if (th && it.rec.thumb) th.innerHTML = '<img src="' + it.rec.thumb + '" alt="" draggable="false">';
+        const pg = card.querySelector('.nv-pl-pages');
+        if (!pg && it.rec.pages) { const s = document.createElement('span'); s.className = 'nv-pl-pages'; s.textContent = it.rec.pages + ' p'; card.querySelector('.nv-pl-thumb').appendChild(s); }
+    }
+
+    /* ── list rendering ── */
+    function plVisible() {
+        const tokens = fold(PL.q.normalize('NFC')).split(/\s+/).filter(Boolean);
+        const list = PL.items.filter((it) => {
+            const r = it.rec;
+            if (PL.coll === 'fav' && !r.fav) return false;
+            if (PL.coll === 'none' && r.coll) return false;
+            if (PL.coll.indexOf('c:') === 0 && r.coll !== PL.coll.slice(2)) return false;
+            if (!tokens.length) return true;
+            const hay = fold(plTitle(r) + ' ' + (r.filename || '') + ' ' + (r.coll || '')), body = S.attText.get(r.id);
+            return tokens.every((t) => hay.indexOf(t) >= 0 || (body && body.fold.indexOf(t) >= 0));
+        });
+        const by = {
+            new: (a, b) => (b.rec.createdAt || 0) - (a.rec.createdAt || 0),
+            opened: (a, b) => (b.rec.lastOpenedAt || 0) - (a.rec.lastOpenedAt || 0) || (b.rec.createdAt || 0) - (a.rec.createdAt || 0),
+            name: (a, b) => plTitle(a.rec).localeCompare(plTitle(b.rec), undefined, { numeric: true, sensitivity: 'base' }),
+            size: (a, b) => (b.rec.size || 0) - (a.rec.size || 0)
+        };
+        return { list: list.sort(by[PL.sort] || by.new), tokens };
+    }
+    function plSnippet(id, tokens) {
+        const a = S.attText.get(id);
+        if (!a || !tokens.length) return '';
+        for (const t of tokens) {
+            const i = a.fold.indexOf(t);
+            if (i < 0) continue;
+            const from = Math.max(0, i - 36), to = Math.min(a.raw.length, i + t.length + 70);
+            return (from ? '…' : '') + esc(a.raw.slice(from, to).replace(/\s+/g, ' ')) + (to < a.raw.length ? '…' : '');
+        }
+        return '';
+    }
+    function plCardHtml(it, tokens) {
+        const r = it.rec, n = it.notes.length, snip = plSnippet(r.id, tokens), name = plTitle(r);
+        return '<article class="nv-pl-card" data-id="' + esc(r.id) + '" tabindex="0" role="button" aria-label="Open ' + esc(name) + '">'
+            + '<div class="nv-pl-thumb"><div class="nv-pl-thumb-img">' + (r.thumb ? '<img src="' + r.thumb + '" alt="" draggable="false">' : '<i class="fa-regular fa-file-pdf" aria-hidden="true"></i>') + '</div>'
+            + (r.pages ? '<span class="nv-pl-pages">' + r.pages + ' p</span>' : '')
+            + '<button type="button" class="nv-pl-star' + (r.fav ? ' nv-on' : '') + '" data-a="fav" aria-pressed="' + (r.fav ? 'true' : 'false') + '" title="' + (r.fav ? 'Remove from favorites' : 'Add to favorites') + '"><i class="fa-' + (r.fav ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i></button></div>'
+            + '<div class="nv-pl-info"><div class="nv-pl-name" title="' + esc(name) + '">' + esc(name) + '</div>'
+            + '<div class="nv-pl-meta"><span>' + esc(fmtBytes(r.size || 0)) + '</span>' + (r.createdAt ? '<span>' + esc(plDate(r.createdAt)) + '</span>' : '') + '</div>'
+            + ((r.coll || n) ? '<div class="nv-pl-tags">' + (r.coll ? '<span class="nv-pl-chip"><i class="fa-solid fa-folder" aria-hidden="true"></i> ' + esc(r.coll) + '</span>' : '')
+                + (n ? '<span class="nv-pl-chip nv-pl-chip-note"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i> ' + 'In ' + n + (n === 1 ? ' note' : ' notes') + '</span>' : '') + '</div>' : '')
+            + (snip ? '<div class="nv-pl-snip">' + snip + '</div>' : '') + '</div>'
+            + '<button type="button" class="nv-pl-more" data-a="menu" aria-label="Options for ' + esc(name) + '" aria-haspopup="menu"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>'
+            + '</article>';
+    }
+    function plRenderChips() {
+        const box = $('nvPlChips'); if (!box) return;
+        const total = PL.items.length, favs = PL.items.filter((it) => it.rec.fav).length, none = PL.items.filter((it) => !it.rec.coll).length;
+        const colls = plColls();
+        if (PL.coll.indexOf('c:') === 0 && !colls.some((c) => 'c:' + c[0] === PL.coll)) PL.coll = 'all';
+        const chip = (k, icon, label, n) => '<button type="button" class="nv-pl-fchip' + (PL.coll === k ? ' nv-cur' : '') + '" data-coll="' + esc(k) + '" aria-pressed="' + (PL.coll === k ? 'true' : 'false') + '"><i class="fa-' + icon + '" aria-hidden="true"></i> ' + esc(label) + ' <span>' + n + '</span></button>';
+        box.hidden = !total;
+        box.innerHTML = chip('all', 'solid fa-layer-group', 'All', total) + chip('fav', 'solid fa-star', 'Favorites', favs)
+            + (colls.length ? chip('none', 'regular fa-folder-open', 'Unfiled', none) : '')
+            + colls.map((c) => chip('c:' + c[0], 'solid fa-folder', c[0], c[1])).join('');
+    }
+    function plFillCollSelect() {
+        const sel = $('nvPlAddColl'); if (!sel) return;
+        const colls = plColls().map((c) => c[0]);
+        if (PL.addColl && colls.indexOf(PL.addColl) < 0) colls.push(PL.addColl);
+        sel.innerHTML = '<option value="">Unfiled</option>' + colls.map((c) => '<option value="' + esc(c) + '"' + (c === PL.addColl ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '<option value="__new">New collection…</option>';
+        sel.value = PL.addColl;
+    }
+    function plRenderGrid() {
+        const grid = $('nvPlGrid'), sum = $('nvPlSum'); if (!grid) return;
+        if (PL.io) { PL.io.disconnect(); PL.io = null; }
+        const { list, tokens } = plVisible();
+        const bytes = PL.items.reduce((s, it) => s + (it.rec.size || 0), 0);
+        sum.hidden = !PL.items.length;
+        sum.innerHTML = '<b>' + (list.length === PL.items.length ? PL.items.length + (PL.items.length === 1 ? ' PDF' : ' PDFs') : list.length + ' of ' + PL.items.length) + '</b><span>' + esc(fmtBytes(bytes)) + ' in total</span>';
+        if (!PL.items.length) { grid.innerHTML = ''; return; }
+        if (!list.length) { grid.innerHTML = '<div class="nv-pl-empty"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>' + (PL.q ? 'No PDF matches “' + esc(PL.q) + '”.' : 'Nothing in this collection yet.') + '</div>'; return; }
+        grid.innerHTML = list.map((it) => plCardHtml(it, tokens)).join('');
+        if ('IntersectionObserver' in window) {
+            PL.io = new IntersectionObserver((ents) => {
+                ents.forEach((en) => { if (!en.isIntersecting) return; PL.io.unobserve(en.target); plQueueThumb(en.target.getAttribute('data-id')); });
+            }, { root: $('nvPlBody'), rootMargin: '240px' });
+            grid.querySelectorAll('.nv-pl-card').forEach((c) => { const it = plItem(c.getAttribute('data-id')); if (it && !it.rec.thumb && !it.rec.thumbFail) PL.io.observe(c); });
+        } else list.forEach((it) => { if (!it.rec.thumb && !it.rec.thumbFail) plQueueThumb(it.rec.id); });
+    }
+    function plRender() {
+        if (!PL.root) return;
+        const drop = $('nvPlDrop'); if (drop) drop.classList.toggle('nv-compact', PL.items.length > 0);
+        plFillCollSelect(); plRenderChips(); plRenderGrid(); plRenderUploads();
+    }
+
+    /* ── popup menu ── */
+    function plCloseMenu() {
+        if (PL.menuCleanup) { PL.menuCleanup(); PL.menuCleanup = null; }
+        if (PL.menu) { PL.menu.remove(); PL.menu = null; }
+    }
+    function plShowMenu(anchor, rows, head) {
+        plCloseMenu();
+        const m = document.createElement('div');
+        m.className = 'nv-pl-menu'; m.setAttribute('role', 'menu');
+        if (head) { const h = document.createElement('div'); h.className = 'nv-pl-menuh'; h.textContent = head; m.appendChild(h); }
+        rows.forEach((r) => {
+            if (!r) return;
+            if (r === '-') { const d = document.createElement('div'); d.className = 'nv-pl-menusep'; m.appendChild(d); return; }
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'nv-pl-mi' + (r.danger ? ' nv-danger' : ''); b.setAttribute('role', 'menuitem');
+            if (r.disabled) b.disabled = true;
+            b.innerHTML = '<i class="fa-' + (r.far ? 'regular' : 'solid') + ' fa-' + r.icon + '" aria-hidden="true"></i><span></span>' + (r.hint ? '<small></small>' : '') + (r.check ? '<i class="fa-solid fa-check nv-pl-mck" aria-hidden="true"></i>' : '');
+            b.querySelector('span').textContent = r.label;
+            if (r.hint) b.querySelector('small').textContent = r.hint;
+            b.addEventListener('click', () => { plCloseMenu(); if (!r.disabled) r.run(); });
+            m.appendChild(b);
+        });
+        PL.root.appendChild(m);
+        const rr = PL.root.getBoundingClientRect(), ar = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+        let left = ar.right - rr.left - mw, top = ar.bottom - rr.top + 4;
+        left = Math.max(8, Math.min(left, rr.width - mw - 8));
+        if (top + mh > rr.height - 8) top = Math.max(8, ar.top - rr.top - mh - 4);
+        m.style.left = left + 'px'; m.style.top = top + 'px';
+        PL.menu = m;
+        const out = (e) => { if (!m.contains(e.target)) plCloseMenu(); };
+        setTimeout(() => document.addEventListener('pointerdown', out, true), 0);
+        PL.menuCleanup = () => document.removeEventListener('pointerdown', out, true);
+        const first = m.querySelector('.nv-pl-mi:not(:disabled)'); if (first) first.focus({ preventScroll: true });
+        m.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            const els = Array.from(m.querySelectorAll('.nv-pl-mi:not(:disabled)')), i = els.indexOf(document.activeElement);
+            els[(i + (e.key === 'ArrowDown' ? 1 : -1) + els.length) % els.length].focus();
+        });
+    }
+    function plCardMenu(it, anchor) {
+        const r = it.rec, used = it.notes.length + it.revs.length, hasNote = !!S.note && !S.viewRev;
+        plShowMenu(anchor, [
+            { icon: 'book-open', label: 'Read', run: () => plOpenReader(r.id) },
+            hasNote && { icon: 'table-columns', label: 'Open beside the current note', run: () => plBesideNote(r) },
+            hasNote && { icon: 'paperclip', label: 'Attach to the current note', run: () => plAttachToNote(r) },
+            hasNote && { icon: 'crop', label: 'Extract a region to the note…', run: () => { closePdfLib(); openPdfCrop({ id: r.id, name: r.filename || 'document.pdf', blob: r.blob }); } },
+            { icon: 'file-lines', label: 'Import as a note (text / OCR)…', run: () => plImportAsNote(r) },
+            '-',
+            { icon: 'pen', label: 'Rename…', run: () => plRename(it) },
+            { icon: 'folder', label: 'Move to collection…', run: () => plCollMenu(it, anchor) },
+            { icon: 'star', far: !r.fav, label: r.fav ? 'Remove from favorites' : 'Add to favorites', run: () => plToggleFav(r.id) },
+            { icon: 'download', label: 'Download', run: () => plDownload(r) },
+            '-',
+            { icon: 'trash', label: 'Delete from vault', danger: true, disabled: !!used, hint: used ? 'Used in ' + it.notes.length + (it.notes.length === 1 ? ' note' : ' notes') + (it.notes.length ? '' : ' history') : '', run: () => plDelete(it) }
+        ], plTitle(r));
+    }
+    function plCollMenu(it, anchor) {
+        const r = it.rec;
+        const rows = [{ icon: 'folder-open', far: true, label: 'No collection', check: !r.coll, run: () => plSetColl(r.id, '') }];
+        plColls().forEach((c) => rows.push({ icon: 'folder', label: c[0], check: r.coll === c[0], run: () => plSetColl(r.id, c[0]) }));
+        rows.push('-', { icon: 'folder-plus', label: 'New collection…', run: () => { const v = (prompt('Collection name') || '').trim().slice(0, 40); if (v) plSetColl(r.id, v); } });
+        plShowMenu(anchor, rows, 'Move to collection');
+    }
+
+    /* ── actions ── */
+    async function plSetColl(id, coll) {
+        await plPatch(id, { coll: coll || undefined, lib: true });
+        plRender();
+        flash(coll ? 'Moved to “' + coll + '”' : 'Removed from collection');
+    }
+    async function plToggleFav(id) {
+        const it = plItem(id); if (!it) return;
+        await plPatch(id, { fav: it.rec.fav ? undefined : true, lib: true });
+        const sy = $('nvPlBody') ? $('nvPlBody').scrollTop : 0;
+        plRender(); if ($('nvPlBody')) $('nvPlBody').scrollTop = sy;
+    }
+    async function plRename(it) {
+        const v = prompt('Rename (library title only — notes keep the original file name)', plTitle(it.rec));
+        if (v == null) return;
+        const t = v.trim().slice(0, 140);
+        await plPatch(it.rec.id, { title: t && t !== plTitle({ filename: it.rec.filename }) ? t : undefined, lib: true });
+        plRender();
+    }
+    function plDownload(r) {
+        const url = URL.createObjectURL(r.blob), a = document.createElement('a');
+        a.href = url; a.download = r.filename || (plTitle(r) + '.pdf'); document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    async function plDelete(it) {
+        const fresh = (await getAttachmentsOverview()).find((x) => x.rec.id === it.rec.id);
+        if (fresh && (fresh.noteIds.length || fresh.revIds.length)) { flash('Still used in a note or its history — remove it there first'); await plLoad(); plRender(); return; }
+        if (!confirm('Delete “' + plTitle(it.rec) + '” (' + fmtBytes(it.rec.size || 0) + ') permanently? This cannot be undone.')) return;
+        try { await dbDeleteAttachment(it.rec.id); await dbDeleteAttachmentRefs(it.rec.id).catch(() => {}); S.attachmentCache.delete(it.rec.id); S.attText.delete(it.rec.id); S.attVer++; }
+        catch (e) { flash('Couldn’t delete that file'); return; }
+        PL.items = PL.items.filter((x) => x.rec.id !== it.rec.id);
+        plRender(); toast('Deleted “' + plTitle(it.rec) + '”.');
+    }
+    function plImportAsNote(r) {
+        const f = new File([r.blob], r.filename || (plTitle(r) + '.pdf'), { type: 'application/pdf', lastModified: r.createdAt || Date.now() });
+        closePdfLib(); importPdfAsNotes([f]);
+    }
+    function plBesideNote(r) {
+        if (!S.note) return;
+        const wasOn = !!(pp.on && S.focus);
+        closePdfLib();
+        ppRemember(S.note.id, r.id);
+        if (wasOn) ppShow(r, true); else ppToggle(true);
+    }
+    function plAttachToNote(r) {
+        if (!S.note || S.viewRev) { toast('Open a note first'); return; }
+        closePdfLib();
+        const label = (r.filename || plTitle(r) + '.pdf').replace(/[\[\]]/g, '').trim();
+        const md = '[\uD83D\uDCC4 ' + label + '](attachment://' + r.id + ')';
+        if (S.mode === 'edit' && !S.split) {
+            const s = el.src.selectionStart; replaceRange(s, el.src.selectionEnd, md, s + md.length);
+        } else {
+            const cur = S.note.markdown || '';
+            S.note.markdown = cur.replace(/\s+$/, '') + (cur.trim() ? '\n\n' : '') + md + '\n';
+            el.src.value = S.note.markdown;
+            if (S.mode !== 'edit' || S.split) { try { const tmp = document.createElement('div'); Promise.resolve(renderInto(tmp, md, false, { urls: [] })).then(() => { while (tmp.firstChild) el.read.appendChild(tmp.firstChild); }).catch(() => {}); } catch (e) { /* saved anyway */ } }
+        }
+        markDirty(); flushSave().catch(() => {});
+        toast('Attached “' + plTitle(r) + '” to this note.');
+    }
+
+    /* ── built-in reader inside the library ── */
+    function plCloseReader() {
+        if (PL.reader) { try { PL.reader.destroy(); } catch (e) { /* ignore */ } PL.reader = null; }
+        if (PL.readerUrl) { try { URL.revokeObjectURL(PL.readerUrl); } catch (e) { /* ignore */ } PL.readerUrl = null; }
+        const h = $('nvPlRHost'); if (h) h.textContent = '';
+    }
+    function plOpenReader(id) {
+        const it = plItem(id); if (!it || !(it.rec.blob instanceof Blob)) return;
+        plCloseMenu(); plCloseReader();
+        PL.view = 'read'; PL.readId = id; PL.root.dataset.view = 'read';
+        $('nvPlBody').hidden = true; $('nvPlReader').hidden = false;
+        $('nvPlRTitle').textContent = plTitle(it.rec); $('nvPlRTitle').title = plTitle(it.rec);
+        const hasNote = !!S.note && !S.viewRev;
+        $('nvPlRBeside').hidden = !hasNote; $('nvPlRAttach').hidden = !hasNote;
+        plPatch(id, { lastOpenedAt: Date.now(), lib: it.rec.lib }).catch(() => {});
+        const host = document.createElement('div'); host.className = 'nv-pv-host nv-pl-rpv';
+        $('nvPlRHost').appendChild(host);
+        PL.reader = createPdfReader(host, it.rec.blob, hasNote ? { onQuote: (t, p) => pdfQuoteToNote(t, p, plTitle(it.rec)) } : {});
+        PL.reader.ready.catch(() => { /* the reader shows its own message; "Open in a new tab" is still there */ });
+        const back = $('nvPlRBack'); if (back) back.focus({ preventScroll: true });
+    }
+    function plBackToLibrary() {
+        plCloseReader();
+        PL.view = 'lib'; PL.readId = null; PL.root.dataset.view = 'lib';
+        $('nvPlReader').hidden = true; $('nvPlBody').hidden = false;
+        plLoad().then(() => { if (PL.open) plRender(); }).catch(() => {});
+    }
+
+    /* ── build / open / close ── */
+    function plBuild() {
+        if (PL.root) return;
+        const host = (el.stor && el.stor.parentNode) || el.overlay || document.body;
+        const scrim = document.createElement('div'); scrim.className = 'nv-pl-scrim'; scrim.hidden = true;
+        const root = document.createElement('div'); root.className = 'nv-pl'; root.id = 'nvPl'; root.hidden = true; root.dataset.view = 'lib';
+        root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'PDF Library');
+        root.innerHTML =
+            '<div class="nv-pl-bar">'
+            + '<span class="nv-pl-title"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i><span>PDF Library</span></span>'
+            + '<label class="nv-pl-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" id="nvPlQ" placeholder="Search names and text inside PDFs…" autocomplete="off" spellcheck="false" aria-label="Search PDFs"></label>'
+            + '<select class="nv-pl-select" id="nvPlSort" aria-label="Sort PDFs"><option value="new">Newest</option><option value="opened">Recently opened</option><option value="name">Name</option><option value="size">Largest</option></select>'
+            + '<button type="button" class="nv-ib" id="nvPlClose" title="Close" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>'
+            + '</div>'
+            + '<div class="nv-pl-body" id="nvPlBody">'
+            + '<section class="nv-pl-drop" id="nvPlDrop" tabindex="0" role="button" aria-label="Add PDF files. Drag files here or press Enter to choose files">'
+            + '<i class="fa-regular fa-file nv-pl-drop-ico" aria-hidden="true"></i>'
+            + '<h3>Drag PDFs here to add them to your library</h3>'
+            + '<p>Or <a href="#" data-a="pick">choose your files</a><span class="nv-pl-drop-more"> · <a href="#" data-a="folder">choose a folder</a> · or paste with Ctrl+V</span></p>'
+            + '</section>'
+            + '<div class="nv-pl-opts">'
+            + '<label class="nv-pl-opt">Add to <select id="nvPlAddColl" aria-label="Collection for new PDFs"></select></label>'
+            + '<label class="nv-pl-opt nv-pl-opt-chk"><input type="checkbox" id="nvPlAlsoNote"> Also create a note from each PDF (text / OCR)</label>'
+            + '<span class="nv-pl-opt-hint">Up to ' + Math.round(PL_MAX_BYTES / 1048576) + ' MB each</span>'
+            + '</div>'
+            + '<div class="nv-pl-ups" id="nvPlUps" aria-live="polite"></div>'
+            + '<div class="nv-pl-chips" id="nvPlChips"></div>'
+            + '<p class="nv-pl-sum" id="nvPlSum" hidden></p>'
+            + '<div class="nv-pl-grid" id="nvPlGrid"></div>'
+            + '</div>'
+            + '<div class="nv-pl-reader" id="nvPlReader" hidden>'
+            + '<div class="nv-pl-rbar">'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvPlRBack"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Library</button>'
+            + '<span class="nv-pl-rtitle" id="nvPlRTitle"></span>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvPlRBeside" hidden title="Open this PDF next to the note you are writing"><i class="fa-solid fa-table-columns" aria-hidden="true"></i><span class="nv-btn-label"> Beside note</span></button>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvPlRAttach" hidden title="Insert a link to this PDF in the current note"><i class="fa-solid fa-paperclip" aria-hidden="true"></i><span class="nv-btn-label"> Attach</span></button>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvPlRNote" title="Create a note from the text of this PDF"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span class="nv-btn-label"> Make note</span></button>'
+            + '<button type="button" class="nv-ib" id="nvPlRTab" title="Open in a new tab" aria-label="Open in a new tab"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>'
+            + '<button type="button" class="nv-ib" id="nvPlRClose" title="Close" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>'
+            + '</div><div class="nv-pl-rhost" id="nvPlRHost"></div></div>'
+            + '<div class="nv-pl-veil" aria-hidden="true"><i class="fa-solid fa-cloud-arrow-up"></i><b>Drop to add to your library</b></div>'
+            + '<input type="file" id="nvPlFile" accept=".pdf,application/pdf" multiple hidden>'
+            + '<input type="file" id="nvPlFolder" webkitdirectory multiple hidden>';
+        host.appendChild(scrim); host.appendChild(root);
+        PL.scrim = scrim; PL.root = root;
+
+        const pick = () => $('nvPlFile').click();
+        $('nvPlClose').addEventListener('click', closePdfLib);
+        $('nvPlRClose').addEventListener('click', closePdfLib);
+        scrim.addEventListener('click', closePdfLib);
+        $('nvPlRBack').addEventListener('click', plBackToLibrary);
+        $('nvPlRBeside').addEventListener('click', () => { const it = plItem(PL.readId); if (it) plBesideNote(it.rec); });
+        $('nvPlRAttach').addEventListener('click', () => { const it = plItem(PL.readId); if (it) plAttachToNote(it.rec); });
+        $('nvPlRNote').addEventListener('click', () => { const it = plItem(PL.readId); if (it) plImportAsNote(it.rec); });
+        $('nvPlRTab').addEventListener('click', () => { const it = plItem(PL.readId); if (!it) return; const u = URL.createObjectURL(it.rec.blob); window.open(u, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(u), 60000); });
+        const drop = $('nvPlDrop');
+        drop.addEventListener('click', (e) => {
+            const a = e.target.closest('[data-a]');
+            e.preventDefault();
+            if (a && a.dataset.a === 'folder') $('nvPlFolder').click(); else pick();
+        });
+        drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+        $('nvPlFile').addEventListener('change', (e) => { const fl = Array.from(e.target.files || []); e.target.value = ''; plAddFiles(fl, { alsoNote: PL.alsoNote }); });
+        $('nvPlFolder').addEventListener('change', (e) => { const fl = Array.from(e.target.files || []); e.target.value = ''; plAddFiles(fl, { alsoNote: PL.alsoNote }); });
+        $('nvPlAlsoNote').addEventListener('change', (e) => { PL.alsoNote = e.target.checked; });
+        $('nvPlAddColl').addEventListener('change', (e) => {
+            if (e.target.value === '__new') {
+                const v = (prompt('Collection name') || '').trim().slice(0, 40);
+                PL.addColl = v; plFillCollSelect();
+            } else PL.addColl = e.target.value;
+        });
+        $('nvPlQ').addEventListener('input', (e) => { clearTimeout(PL.qTimer); const v = e.target.value; PL.qTimer = setTimeout(() => { PL.q = v; plRenderGrid(); }, 120); });
+        $('nvPlSort').addEventListener('change', (e) => { PL.sort = e.target.value; try { localStorage.setItem('nvPlSort', PL.sort); } catch (x) { /* optional */ } plRenderGrid(); });
+        $('nvPlChips').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-coll]'); if (!b) return;
+            PL.coll = b.dataset.coll;
+            PL.addColl = PL.coll.indexOf('c:') === 0 ? PL.coll.slice(2) : '';
+            plRender();
+        });
+        const grid = $('nvPlGrid');
+        grid.addEventListener('click', (e) => {
+            const card = e.target.closest('.nv-pl-card'); if (!card) return;
+            const id = card.getAttribute('data-id'), a = e.target.closest('[data-a]');
+            if (a && a.dataset.a === 'fav') { e.stopPropagation(); plToggleFav(id); return; }
+            if (a && a.dataset.a === 'menu') { e.stopPropagation(); const it = plItem(id); if (it) plCardMenu(it, a); return; }
+            plOpenReader(id);
+        });
+        grid.addEventListener('keydown', (e) => {
+            const card = e.target.closest('.nv-pl-card');
+            if (!card || e.target !== card) return;
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); plOpenReader(card.getAttribute('data-id')); }
+            else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) { e.preventDefault(); const it = plItem(card.getAttribute('data-id')), b = card.querySelector('.nv-pl-more'); if (it && b) plCardMenu(it, b); }
+        });
+        grid.addEventListener('contextmenu', (e) => { const card = e.target.closest('.nv-pl-card'); if (!card) return; e.preventDefault(); const it = plItem(card.getAttribute('data-id')), b = card.querySelector('.nv-pl-more'); if (it && b) plCardMenu(it, b); });
+    }
+    // Document-level handlers, only while the library is open: they run first (capture) so the vault's own
+    // "drop = import as note" handler and its hint never fire on top of the library.
+    function plOnDrag(e) {
+        if (!PL.open || !plHasFiles(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        if (e.type === 'dragleave') { if (!e.relatedTarget || !PL.root.contains(e.relatedTarget)) PL.root.classList.remove('nv-pl-dragging'); return; }
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        PL.root.classList.add('nv-pl-dragging');
+    }
+    async function plOnDrop(e) {
+        if (!PL.open || !plHasFiles(e)) return;
+        e.preventDefault(); e.stopPropagation();
+        PL.root.classList.remove('nv-pl-dragging');
+        const files = await plFilesFromDrop(e.dataTransfer);
+        plAddFiles(files, { alsoNote: PL.alsoNote });
+    }
+    function plOnPaste(e) {
+        if (!PL.open || PL.view !== 'lib') return;
+        const fl = Array.from((e.clipboardData && e.clipboardData.files) || []).filter(plIsPdfFile);
+        if (!fl.length) return;
+        e.preventDefault(); plAddFiles(fl, { alsoNote: PL.alsoNote });
+    }
+    function plOnKey(e) {
+        if (!PL.open) return;
+        if (e.key === 'Escape') {
+            e.preventDefault(); e.stopPropagation();
+            if (PL.menu) plCloseMenu(); else if (PL.view === 'read') plBackToLibrary(); else closePdfLib();
+            return;
+        }
+        if (e.key === 'Tab') {   // keep focus inside the dialog
+            const f = Array.from(PL.root.querySelectorAll('button:not(:disabled):not([hidden]), [href], input:not([hidden]), select, [tabindex="0"]')).filter((x) => x.offsetParent !== null);
+            if (!f.length) return;
+            const first = f[0], last = f[f.length - 1];
+            if (e.shiftKey && (document.activeElement === first || !PL.root.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+    }
+    async function openPdfLib(opts) {
+        if (!S.open || PL.open) return;
+        try { PL.sort = localStorage.getItem('nvPlSort') || PL.sort; } catch (e) { /* optional */ }
+        closeMenus();
+        plBuild();
+        PL.open = true; PL.prevFocus = document.activeElement;
+        PL.q = ''; PL.view = 'lib'; PL.root.dataset.view = 'lib'; PL.uploads = PL.uploads.filter((u) => u.state === 'busy' || u.state === 'wait');
+        $('nvPlQ').value = ''; $('nvPlSort').value = PL.sort; $('nvPlAlsoNote').checked = PL.alsoNote;
+        $('nvPlBody').hidden = false; $('nvPlReader').hidden = true;
+        PL.scrim.hidden = false; PL.root.hidden = false;
+        document.addEventListener('dragenter', plOnDrag, true); document.addEventListener('dragover', plOnDrag, true); document.addEventListener('dragleave', plOnDrag, true);
+        document.addEventListener('drop', plOnDrop, true); document.addEventListener('paste', plOnPaste, true); document.addEventListener('keydown', plOnKey, true);
+        try { await plLoad(); } catch (e) { console.warn('Notes Vault: could not load PDFs', e); PL.items = []; flash('Couldn’t read the PDF library'); }
+        plRender();
+        const files = opts && opts.files;
+        if (files && files.length) plAddFiles(files, { alsoNote: false });
+        else if (!PL.items.length) { const d = $('nvPlDrop'); if (d) d.focus({ preventScroll: true }); }
+        else $('nvPlClose').focus({ preventScroll: true });
+    }
+    function closePdfLib() {
+        if (!PL.open) return;
+        PL.open = false;
+        plCloseMenu(); plCloseReader();
+        if (PL.io) { PL.io.disconnect(); PL.io = null; }
+        document.removeEventListener('dragenter', plOnDrag, true); document.removeEventListener('dragover', plOnDrag, true); document.removeEventListener('dragleave', plOnDrag, true);
+        document.removeEventListener('drop', plOnDrop, true); document.removeEventListener('paste', plOnPaste, true); document.removeEventListener('keydown', plOnKey, true);
+        PL.root.classList.remove('nv-pl-dragging');
+        PL.root.hidden = true; PL.scrim.hidden = true;
+        PL.items.forEach((it) => { /* free nothing: blobs are shared with the attachment cache */ });
+        const f = PL.prevFocus; PL.prevFocus = null; refocus(f);
+    }
+    // A PDF dropped on the vault (outside the editor): ask once where it should go.
+    function plDropChoice(files) {
+        let pref = null;
+        try { pref = localStorage.getItem(PL_DROP_KEY); } catch (e) { /* optional */ }
+        if (pref === 'lib') return plAddFiles(files, {});
+        if (pref === 'note') return importPdfAsNotes(files);
+        return new Promise((resolve) => {
+            const scrim = document.createElement('div'); scrim.className = 'nv-pdfopt-scrim';
+            const n = files.length, label = n === 1 ? esc(files[0].name || 'this PDF') : n + ' PDFs';
+            scrim.innerHTML = '<div class="nv-pdfopt nv-pl-choice" role="dialog" aria-modal="true" aria-label="Add PDF">'
+                + '<h3>What should I do with ' + label + '?</h3>'
+                + '<button type="button" class="nv-pl-pick nv-pl-pick-main" data-c="lib"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i><span><b>Add to PDF Library</b><small>Keep the file, read it any time, attach it to notes later</small></span></button>'
+                + '<button type="button" class="nv-pl-pick" data-c="note"><i class="fa-solid fa-file-lines" aria-hidden="true"></i><span><b>Import as a note</b><small>Extract the text (OCR for scans) into a new note</small></span></button>'
+                + '<label class="nv-pdfopt-row nv-pl-remember"><span>Always do this for dropped PDFs</span><input type="checkbox" id="nvPlRemember"></label>'
+                + '<div class="nv-pdfopt-acts"><button type="button" data-c="cancel">Cancel</button></div></div>';
+            (el.overlay || document.body).appendChild(scrim);
+            const done = (c) => {
+                document.removeEventListener('keydown', onKey, true);
+                const rem = scrim.querySelector('#nvPlRemember').checked; scrim.remove();
+                if (c !== 'cancel' && rem) { try { localStorage.setItem(PL_DROP_KEY, c); } catch (e) { /* optional */ } }
+                if (c === 'lib') plAddFiles(files, {}).then(resolve, resolve);
+                else if (c === 'note') importPdfAsNotes(files).then(resolve, resolve);
+                else resolve();
+            };
+            const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done('cancel'); } };
+            document.addEventListener('keydown', onKey, true);
+            scrim.addEventListener('click', (e) => { const b = e.target.closest('[data-c]'); if (b) done(b.dataset.c); else if (e.target === scrim) done('cancel'); });
+            scrim.querySelector('[data-c="lib"]').focus();
+        });
+    }
+    // Sidebar button + gear-menu entry, added from here so no HTML file has to change.
+    function plInit() {
+        const nb = document.getElementById('nvNewBtn');
+        if (nb && !document.getElementById('nvPlOpen')) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.id = 'nvPlOpen'; b.className = 'nv-cmdhint nv-pl-open';
+            b.innerHTML = '<i class="fa-solid fa-file-pdf" aria-hidden="true"></i><span>PDF Library</span>';
+            b.addEventListener('click', () => { if (S.sideOpen) { S.sideOpen = false; applyLayout(); } openPdfLib(); });
+            nb.after(b);
+        }
+        if (el.gearMenu && !el.gearMenu.querySelector('[data-gear="pdflib"]')) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'nv-act'; b.setAttribute('role', 'menuitem'); b.dataset.gear = 'pdflib';
+            b.innerHTML = '<i class="fa-solid fa-file-pdf"></i> PDF Library…';
+            const ref = el.gearMenu.querySelector('[data-gear="importpdf"]');
+            if (ref) el.gearMenu.insertBefore(b, ref); else el.gearMenu.appendChild(b);
+        }
     }
 
     async function openStorModal() {
@@ -12399,6 +12998,7 @@
             else if (b.dataset.gear === 'dupes') openDupModal();
             else if (b.dataset.gear === 'findreplace') openFrModal();
             else if (b.dataset.gear === 'storage') openStorModal();
+            else if (b.dataset.gear === 'pdflib') openPdfLib();
         });
         el.importFile.addEventListener('change', () => importJson(el.importFile.files[0]));
         el.mdFile.addEventListener('change', async () => { const fl = Array.from(el.mdFile.files || []); el.mdFile.value = ''; await importMarkdownFiles(fl, false); });
@@ -12420,7 +13020,7 @@
             const showHint = () => {
                 if (hint) return;
                 hint = document.createElement('div');
-                hint.textContent = 'Drop .pdf, .docx, .md, .txt or Excel (.xlsx, .xls, .csv) files to import them as notes';
+                hint.textContent = 'Drop .pdf, .docx, .md, .txt or Excel (.xlsx, .xls, .csv) files to import them';
                 hint.style.cssText = 'position:fixed;inset:12px;z-index:99999;pointer-events:none;display:flex;align-items:center;justify-content:center;'
                     + 'border:3px dashed var(--primary,#db2777);border-radius:18px;background:rgba(219,39,119,.10);color:var(--primary,#db2777);'
                     + 'font:600 1.1rem system-ui,sans-serif;text-align:center;padding:20px;backdrop-filter:blur(2px);';
@@ -12439,7 +13039,7 @@
                 if (!pdfs.length && !mds.length && !docxs.length && !sheets.length) { toast('Drop .pdf, .docx, .md, .txt or Excel (.xlsx, .xls, .csv) files to import them as notes.'); return; }
                 (async () => {
                     if (mds.length) await importMarkdownFiles(mds, false);
-                    if (pdfs.length) await importPdfAsNotes(pdfs);
+                    if (pdfs.length) await plDropChoice(pdfs);
                     if (docxs.length) await importDocxAsNotes(docxs);
                     if (sheets.length) await importSheetsAsNotes(sheets);
                 })();
@@ -12475,6 +13075,7 @@
         el.storScrim.addEventListener('click', closeStorModal);
         el.storRefresh.addEventListener('click', renderStorBody);
         el.stor.querySelectorAll('[data-stor-tab]').forEach((b) => b.addEventListener('click', () => switchStorTab(b.dataset.storTab)));
+        plInit();   // PDF Library: sidebar button + gear-menu entry
 
         // density toggle (Comfortable / Compact row spacing in the list view)
         applyDensity();
