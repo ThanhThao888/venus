@@ -9485,7 +9485,7 @@
        the PDF remembered for this note → the first PDF embedded in the note → "no PDF yet".
        Pick any PDF stored in the vault, or open one from the computer (viewed only, never stored). */
     var PP_ON_KEY = 'nvPdfSplitOn', PP_W_KEY = 'nvPdfSplitW', PP_MAP_KEY = 'nvPdfSplitFor';
-    var pp = { on: false, w: 48, noteId: null, url: null, rec: null, seq: 0, menuOpen: false, wired: false };
+    var pp = { on: false, only: false, w: 48, noteId: null, url: null, rec: null, seq: 0, menuOpen: false, wired: false };
     function ppGet(id) { return document.getElementById(id); }
     function ppIsPdf(rec) { return !!rec && (rec.mime === 'application/pdf' || /\.pdf$/i.test(rec.filename || '')); }
     function ppLoadPrefs() {
@@ -9513,12 +9513,29 @@
         if (!pp.wired) return;
         rpGuardSame();
         const vis = ppVisible();
+        if (!vis) pp.only = false;   // "PDF only" lasts while the panel is open; closing the panel returns to normal
         el.app.classList.toggle('nv-pdf-on', vis);
+        el.app.classList.toggle('nv-pdf-only', vis && pp.only);
+        ppSyncOnlyBtn();
         ppGet('nvPdfPane').hidden = !vis;
         el.modeSplit.setAttribute('aria-pressed', String(S.focus ? pp.on : S.split));
         el.modeSplit.title = S.focus ? 'Split view: a PDF or another note on the right (switch with the PDF / Note tabs)' : 'Split view: edit on the left, live preview on the right';
         if (vis) { rpApplyView(); if (rp.view === 'note') rpEnter(); else ppLoadForNote(); }
         else { ppCloseMenu(); rpCloseMenu(); rpFlush(); }
+    }
+    // "Panel only" (PDF only): hides the note on the left so the right panel takes the full width; tap again to go back to split view.
+    function ppSyncOnlyBtn() {
+        const b = ppGet('nvPdfOnlyBtn'); if (!b) return;
+        b.setAttribute('aria-pressed', String(!!pp.only));
+        b.title = pp.only ? 'Back to split view (note + panel)' : 'Full width: hide the note and show only this panel';
+        b.setAttribute('aria-label', b.title);
+        const i = b.querySelector('i'); if (i) i.className = 'fa-solid fa-' + (pp.only ? 'compress' : 'expand');
+    }
+    function ppSetOnly(on) {
+        if (!ppVisible()) return;
+        pp.only = !!on;
+        el.app.classList.toggle('nv-pdf-only', pp.only);
+        ppSyncOnlyBtn();
     }
     // Side pane: the pdf.js reader (iPhone default) replaces the <iframe> while a PDF is open.
     function ppUnmountReader() {
@@ -9671,6 +9688,14 @@
         ppGet('nvPdfPick').addEventListener('click', (e) => { e.stopPropagation(); ppOpenMenu(); });
         ppGet('nvPdfEmptyPick').addEventListener('click', (e) => { e.stopPropagation(); ppOpenMenu(); });
         ppGet('nvPdfClose').addEventListener('click', () => ppToggle(false));
+        if (!ppGet('nvPdfOnlyBtn')) {
+            const ob = document.createElement('button');
+            ob.className = 'nv-ib'; ob.id = 'nvPdfOnlyBtn'; ob.type = 'button';
+            ob.innerHTML = '<i class="fa-solid fa-expand" aria-hidden="true"></i>';
+            ppGet('nvPdfClose').before(ob);
+            ob.addEventListener('click', () => ppSetOnly(!pp.only));
+            ppSyncOnlyBtn();
+        }
         ppGet('nvPdfNewTab').addEventListener('click', () => { if (pp.url) window.open(pp.url, '_blank', 'noopener'); });
         // Reader switch (built-in pdf.js reader ⇄ browser viewer), added next to "open in new tab".
         if (!ppGet('nvPdfReaderBtn')) {
