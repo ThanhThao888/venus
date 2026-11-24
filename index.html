@@ -25600,9 +25600,46 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     return frac === 0 ? TL_WEEK_STOPS[i0] : mixHex(TL_WEEK_STOPS[i0], TL_WEEK_STOPS[i1], frac);
   }
 
+  // Extra styles for the density bars + day-by-day map (kept here so this one file carries the whole change).
+  function dltEnsureStyle() {
+    if (document.getElementById('dltCrunchStyle')) return;
+    const st = document.createElement('style');
+    st.id = 'dltCrunchStyle';
+    st.textContent = `
+      #dltTimeline .dlt-tl-bar-track{height:70px}
+      .dlt-tl-date{font-size:.56rem;color:var(--text-muted);white-space:nowrap;margin-top:-2px;opacity:.85}
+      .dlt-tl-col.tl-now .dlt-tl-label{color:var(--primary)}
+      @media (max-width:640px){.dlt-tl-date{display:none}}
+      .dlt-cc{position:relative;min-height:42px;border:0;border-radius:8px;padding:0;cursor:pointer;font:inherit;transition:transform .12s,box-shadow .12s}
+      .dlt-cc:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(0,0,0,.16)}
+      .dlt-cc:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+      .dlt-cc-d{position:absolute;top:4px;left:6px;font-size:.64rem;opacity:.8;white-space:nowrap}
+      .dlt-cc-n{position:absolute;bottom:3px;right:7px;font-size:.82rem;font-weight:800}
+      .dlt-cc.is-m1{border-left:3px solid var(--primary)}
+      .dlt-cc.is-m1 .dlt-cc-d{font-weight:800;opacity:1}
+      .dlt-cc.is-today{outline:2px solid var(--primary);outline-offset:1px}
+      .dlt-cc.is-today::after{content:"Today";position:absolute;left:6px;bottom:4px;font-size:.56rem;font-weight:800;opacity:.85}
+      .dlt-cc.is-sel{box-shadow:0 0 0 2px var(--text-dark)}
+      .dlt-cc.is-we[data-lv="0"]{opacity:.6}
+      .dlt-cc-hi{position:absolute;top:5px;right:6px;display:flex;gap:2px}
+      .dlt-cc-hi i{width:7px;height:7px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 1.5px #fff}
+      .dlt-cc-wd{font-size:.62rem;color:var(--text-muted);text-align:center}
+      .dlt-cc-wd.is-we{opacity:.65}
+      .dlt-cc-detail{grid-column:1/-1;padding:8px 10px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-light)}
+      .dlt-cc-detail-h{display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:600;margin-bottom:4px}
+      .dlt-cc-detail-h span{flex:1}
+      .dlt-cc-x{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:1rem;line-height:1;padding:2px 6px;border-radius:6px}
+      .dlt-cc-x:hover{background:var(--bg-white);color:var(--text-dark)}
+      .dlt-cc-lg{display:inline-flex;align-items:center;gap:5px}
+      .dlt-cc-lg i{width:7px;height:7px;border-radius:50%;background:#e5484d;display:inline-block}
+    `;
+    document.head.appendChild(st);
+  }
+
   function renderTimeline() {
     const el = document.getElementById('dltTimeline');
     if (!el) return; // widget not on this page
+    dltEnsureStyle();
 
     const today = vnToday();
     const buckets = [{ label: 'Overdue', short: `<svg class="dlt-icon dlt-icon-sm" aria-hidden="true"><use href="#icon-triangle-alert"/></svg>`, count: 0, from: null, to: null }];
@@ -25624,7 +25661,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     });
 
     const maxCount = Math.max(1, ...buckets.map(b => b.count));
-    const minH = 4, maxH = 48;
+    const minH = 4, maxH = 62;
     // Highlight the single busiest bucket (only when something's actually
     // there to highlight — skip it if everything is empty).
     const peakCount = Math.max(...buckets.map(b => b.count));
@@ -25634,12 +25671,14 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
       const h = b.count ? Math.round(minH + (b.count / maxCount) * (maxH - minH)) : minH;
       const color = timelineColor(i, buckets.length);
       const rangeLabel = b.from ? `${fmtDate(localISODate(b.from))} – ${fmtDate(localISODate(b.to))}` : (i === 0 ? 'Past due' : '8+ weeks out');
-      const colCls = ['dlt-tl-col', i === 0 ? 'tl-overdue' : '', !b.count ? 'tl-empty' : '', i === peakIdx ? 'tl-peak' : '']
+      if (i === 0 && !b.count) return '';   // nothing overdue: no empty column with a warning icon
+      const colCls = ['dlt-tl-col', i === 0 ? 'tl-overdue' : '', !b.count ? 'tl-empty' : '', i === peakIdx ? 'tl-peak' : '', i === 1 ? 'tl-now' : '']
         .filter(Boolean).join(' ');
       return `<div class="${colCls}" title="${b.label} (${rangeLabel}): ${b.count} deadline(s)">
         <div class="dlt-tl-bar-track"><div class="dlt-tl-bar" style="height:${h}px;background-color:${color};"></div></div>
         <div class="dlt-tl-count">${b.count || ''}</div>
         <div class="dlt-tl-label">${b.short}</div>
+        ${b.from ? `<div class="dlt-tl-date">${b.from.getDate()} ${b.from.toLocaleDateString('en-US', { month: 'short' })}</div>` : ''}
       </div>`;
     }).join('');
     try { renderCrunchMap(); } catch (e) { console.warn('Deadlines: crunch map failed', e); }
@@ -25653,6 +25692,7 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
   function renderCrunchMap() {
     const el = document.getElementById('dltCrunch');
     if (!el) return;
+    dltEnsureStyle();
     const E = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const dark = document.body.classList.contains('dark-mode');
     const col = (l) => (typeof heatmapLevelColor === 'function') ? heatmapLevelColor(l, dark) : (['#f3e3ea', '#f9c9da', '#f0a0be', '#d9638d', '#b53a68'][l]);
@@ -25692,43 +25732,55 @@ body.dark-mode .dlt-cp-btn.good:hover { background: #26473a; border-color: #4a8f
     const cells = [];
     for (let i = -lead; i < DAYS; i++) cells.push(i);
     while (cells.length % 7) cells.push(cells.length - lead);
-    const head = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(n => `<div style="font-size:0.62rem; color:var(--text-muted); text-align:center;">${n}</div>`).join('');
-    const grid = cells.map(i => {
-      if (i < 0 || i >= DAYS) return '<div style="min-height:36px;"></div>';
+    const head = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((n, k) => `<div class="dlt-cc-wd${k > 4 ? ' is-we' : ''}">${n}</div>`).join('');
+    const monShort = (d) => d.toLocaleDateString('en-US', { month: 'short' });
+    const cellHtml = (i, pos) => {
+      if (i < 0 || i >= DAYS) return '<div style="min-height:42px;"></div>';
       const c = per[i], d = wk(i), L = level(c.score);
-      const sel = dayKeys[i] === crunchSel;
+      const hi = c.items.filter(x => x.priority === 'high').length;
+      const showMon = d.getDate() === 1 || i === 0;
+      const names = c.items.slice(0, 4).map(x => '• ' + x.name).join('\n') + (c.items.length > 4 ? `\n+${c.items.length - 4} more` : '');
       const label = `${dayName(d)} ${dm(d)}: ${c.items.length ? c.items.length + ' deadline' + (c.items.length === 1 ? '' : 's') : 'nothing due'}`;
-      return `<button type="button" class="dlt-crunch-cell" data-date="${dayKeys[i]}" aria-label="${E(label)}" title="${E(label)}" style="position:relative; min-height:36px; border:0; border-radius:8px; padding:0; cursor:pointer; background:${col(L)}; color:${L >= 3 ? '#fff' : 'var(--text-dark)'}; ${i === 0 ? 'outline:2px solid var(--primary); outline-offset:1px;' : ''} ${sel ? 'box-shadow:0 0 0 2px var(--text-dark);' : ''}">
-        <span style="position:absolute; top:3px; left:5px; font-size:0.62rem; opacity:0.75;">${d.getDate()}</span>
-        <span style="position:absolute; bottom:3px; right:6px; font-size:0.78rem; font-weight:700;">${c.items.length || ''}</span>
+      const cls = ['dlt-crunch-cell', 'dlt-cc', i === 0 ? 'is-today' : '', d.getDate() === 1 ? 'is-m1' : '', dayKeys[i] === crunchSel ? 'is-sel' : '', pos > 4 ? 'is-we' : ''].filter(Boolean).join(' ');
+      return `<button type="button" class="${cls}" data-date="${dayKeys[i]}" data-lv="${L}" aria-label="${E(label)}" title="${E(label + (names ? '\n' + names : ''))}" style="background:${col(L)}; color:${L >= 3 ? '#fff' : 'var(--text-dark)'};">
+        <span class="dlt-cc-d">${showMon ? d.getDate() + ' ' + monShort(d) : d.getDate()}</span>
+        ${hi ? `<span class="dlt-cc-hi" title="${hi} high priority">${'<i></i>'.repeat(Math.min(hi, 3))}</span>` : ''}
+        <span class="dlt-cc-n">${c.items.length || ''}</span>
       </button>`;
-    }).join('');
-    const legend = [0, 1, 2, 3, 4].map(l => `<span style="width:10px; height:10px; border-radius:2px; display:inline-block; background:${col(l)};"></span>`).join('');
-
-    let detail = '';
-    if (crunchSel && crunchSel in idx) {
+    };
+    // the detail of the selected day opens right under its own week row (not far away at the bottom)
+    const detailHtml = () => {
       const c = per[idx[crunchSel]];
       const items = c.items.slice().sort((a, b) => String(a.time || '99').localeCompare(String(b.time || '99')) || (W[b.priority] || 2) - (W[a.priority] || 2));
       const dot = { high: '#d9534f', medium: '#e0a05f', low: '#4f8a6b' };
-      detail = `<div style="margin-top:8px; padding:8px 10px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-light);">
-        <div style="font-size:0.78rem; font-weight:600; margin-bottom:4px;">${E(fmtDate(crunchSel))} · ${items.length ? items.length + ' due' : 'nothing due'}</div>
+      const sd = new Date(crunchSel + 'T00:00:00');
+      return `<div class="dlt-cc-detail">
+        <div class="dlt-cc-detail-h"><span>${E(dayName(sd))}, ${E(fmtDate(crunchSel))} · ${items.length ? items.length + ' due' : 'nothing due — a free day'}</span><button type="button" class="dlt-cc-x" aria-label="Close day details" title="Close">×</button></div>
         ${items.map(it => `<div class="dlt-crunch-item" data-id="${E(it.id)}" style="display:flex; align-items:center; gap:8px; padding:3px 0; font-size:0.82rem; cursor:pointer;">
           <span style="width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:${dot[it.priority] || dot.medium};" title="${E(it.priority || 'medium')} priority"></span>
           <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${E(it.name)}</span>
           <span style="color:var(--text-muted); font-size:0.72rem;">${E(it.time || '')}</span></div>`).join('')}
       </div>`;
+    };
+    let grid = '';
+    for (let r = 0; r < cells.length; r += 7) {
+      const row = cells.slice(r, r + 7);
+      grid += row.map((i, k) => cellHtml(i, k)).join('');
+      if (crunchSel && crunchSel in idx && row.some(i => i >= 0 && i < DAYS && dayKeys[i] === crunchSel)) grid += detailHtml();
     }
+    const legend = [0, 1, 2, 3, 4].map(l => `<span style="width:10px; height:10px; border-radius:2px; display:inline-block; background:${col(l)};"></span>`).join('');
 
     el.innerHTML = `
       <div class="dlt-timeline-title" style="margin-bottom:6px;"><svg class="dlt-icon" aria-hidden="true"><use href="#icon-calendar"/></svg> Day by day <span class="dlt-timeline-sub">— next ${DAYS} days${overdue ? ` · <b>${overdue} overdue</b> not shown` : ''}</span></div>
       <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px;">${head}${grid}</div>
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
         <span style="font-size:0.74rem; color:var(--text-muted);">${E(summary)}</span>
-        <span style="display:flex; align-items:center; gap:4px; font-size:0.7rem; color:var(--text-muted);">Light <span style="display:flex; gap:3px;">${legend}</span> Heavy</span>
-      </div>${detail}`;
+        <span style="display:flex; align-items:center; gap:10px; font-size:0.7rem; color:var(--text-muted);"><span class="dlt-cc-lg"><i></i> high priority</span><span style="display:flex; align-items:center; gap:4px;" title="Workload score: high = 3, medium = 2, low = 1 per deadline">Light <span style="display:flex; gap:3px;">${legend}</span> Heavy</span></span>
+      </div>`;
 
     if (!el.dataset.bound) {
       el.addEventListener('click', (e) => {
+        if (e.target.closest('.dlt-cc-x')) { crunchSel = null; renderCrunchMap(); return; }
         const it = e.target.closest('.dlt-crunch-item');
         if (it) { try { navigateToItem(it.dataset.id); } catch (err) { /* item may be filtered out of the list */ } return; }
         const cell = e.target.closest('.dlt-crunch-cell'); if (!cell) return;
