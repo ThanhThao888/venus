@@ -3087,7 +3087,7 @@
             const host = document.createElement('div');
             host.className = 'nv-pv-host';
             frame.after(host);
-            const mine = createPdfReader(host, rec.blob, { onQuote: (t, p) => pdfQuoteToNote(t, p, name) });
+            const mine = createPdfReader(host, rec.blob, { onQuote: (t, p) => pdfQuoteToNote(t, p, name), annos: pdfAnnoStore(rec.id) });
             rd = mine;
             mine.ready.catch(() => {                      // offline / unreadable: fall back to the browser's viewer
                 if (rd !== mine) return;
@@ -6095,7 +6095,7 @@
                 attachments.push({
                     id: rec.id, hash: rec.hash, mime: rec.mime, size: rec.size,
                     width: rec.width, height: rec.height, filename: rec.filename, createdAt: rec.createdAt,
-                    lib: rec.lib || undefined, title: rec.title || undefined, coll: rec.coll || undefined, fav: rec.fav || undefined, pages: rec.pages || undefined,
+                    lib: rec.lib || undefined, title: rec.title || undefined, coll: rec.coll || undefined, fav: rec.fav || undefined, pages: rec.pages || undefined, hls: (rec.hls && rec.hls.length) ? rec.hls : undefined,
                     dataB64: await blobToBase64(rec.blob)
                 });
             } catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
@@ -6638,6 +6638,7 @@
                 if (raw.coll) rec.coll = String(raw.coll);
                 if (raw.fav) rec.fav = true;
                 if (raw.pages) rec.pages = +raw.pages || undefined;
+                if (Array.isArray(raw.hls) && raw.hls.length) rec.hls = raw.hls;
                 await dbPutAttachment(rec);
                 S.attachmentCache.set(rec.id, rec);
                 added++;
@@ -6705,6 +6706,63 @@
     }
     function setPdfReaderPref(v) { try { localStorage.setItem(PDF_READER_KEY, v); } catch (e) { /* optional */ } }
 
+
+    /* ── Highlights drawn ON the PDF ─────────────────────────────────────────────
+       Stored on the attachment record as `hls`: [{ id, page, c (colour key), r: [[x0,y0,x1,y1]…] (fractions of the page, so
+       zoom never matters), t (text), at }]. One store per file is shared by every reader showing it (library, split pane,
+       embed in a note), which repaint when it changes. Included in backup / restore. ── */
+    const PV_COLORS = [['y', 'Yellow', '#ffd93b'], ['g', 'Green', '#6fd36b'], ['p', 'Pink', '#ff86b3'], ['b', 'Blue', '#6fbdf5'], ['v', 'Purple', '#b894ff']];
+    const pvColor = (k) => (PV_COLORS.find((c) => c[0] === k) || PV_COLORS[0])[2];
+    const PV_ANNO = new Map();
+    function pdfAnnoStore(id) {
+        if (!id) return null;
+        let st = PV_ANNO.get(id);
+        if (st) return st;
+        st = { id, list: [], loaded: null, subs: new Set() };
+        st.load = () => (st.loaded || (st.loaded = dbGetAttachment(id).then((r) => { st.list = (r && Array.isArray(r.hls)) ? r.hls.slice() : []; }).catch(() => {})));
+        st.sub = (f) => { st.subs.add(f); return () => st.subs.delete(f); };
+        st.save = async () => {
+            const r = await dbGetAttachment(id);
+            if (!r) return;
+            if (st.list.length) r.hls = st.list; else delete r.hls;
+            await dbPutAttachment(r);
+            S.attachmentCache.set(id, r);
+        };
+        st.fire = (pages) => st.subs.forEach((f) => { try { f(pages); } catch (e) { /* a closed reader */ } });
+        st.add = (arr) => { st.list.push(...arr); st.fire(arr.map((h) => h.page)); return st.save().catch((e) => console.warn('Notes Vault: could not save highlight', e)); };
+        st.remove = (hid) => { const h = st.list.find((x) => x.id === hid); if (!h) return; st.list = st.list.filter((x) => x !== h); st.fire([h.page]); return st.save().catch(() => {}); };
+        st.recolor = (hid, c) => { const h = st.list.find((x) => x.id === hid); if (!h) return; h.c = c; st.fire([h.page]); return st.save().catch(() => {}); };
+        PV_ANNO.set(id, st);
+        return st;
+    }
+    // Range → per-page boxes (fractions), tidied: boxes inside another are dropped, neighbours on one line are merged.
+    function pvSelRects(range, pages) {
+        const done = pages.filter((p) => p.state === 'done'), boxes = new Map(done.map((p) => [p, p.el.getBoundingClientRect()])), by = new Map();
+        for (const r of Array.from(range.getClientRects())) {
+            if (r.width < 1 || r.height < 1) continue;
+            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            const p = done.find((q) => { const b = boxes.get(q); return cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom; });
+            if (!p) continue;
+            const b = boxes.get(p);
+            const q = [Math.max(0, (r.left - b.left) / b.width), Math.max(0, (r.top - b.top) / b.height), Math.min(1, (r.right - b.left) / b.width), Math.min(1, (r.bottom - b.top) / b.height)].map((v) => Math.round(v * 10000) / 10000);
+            if (q[2] - q[0] < 0.002 || q[3] - q[1] < 0.002) continue;
+            if (!by.has(p.n)) by.set(p.n, []);
+            by.get(p.n).push(q);
+        }
+        const out = [];
+        by.forEach((arr, page) => {
+            arr.sort((a, b) => (a[1] - b[1]) || (a[0] - b[0]));
+            const kept = arr.filter((a, i) => !arr.some((b, j) => j !== i && b[0] <= a[0] + 0.002 && b[1] <= a[1] + 0.002 && b[2] >= a[2] - 0.002 && b[3] >= a[3] - 0.002 && (b[2] - b[0] > a[2] - a[0] || j < i)));
+            const merged = [];
+            for (const a of kept) {
+                const m = merged[merged.length - 1];
+                if (m && Math.abs(m[1] - a[1]) < 0.008 && Math.abs(m[3] - a[3]) < 0.008 && a[0] - m[2] < 0.014 && a[0] >= m[0] - 0.002) { m[2] = Math.max(m[2], a[2]); m[1] = Math.min(m[1], a[1]); m[3] = Math.max(m[3], a[3]); }
+                else merged.push(a.slice());
+            }
+            if (merged.length) out.push({ page, rects: merged });
+        });
+        return out;
+    }
     const PV_LIVE = new Set();
     // Readers whose page was re-rendered away are cleaned up here (frees the pdf.js worker + listeners).
     function pvSweep() { for (const r of Array.from(PV_LIVE)) { if (!r.root.isConnected) r.destroy(); } }
@@ -6725,6 +6783,8 @@
             + '<button type="button" class="nv-pv-b" data-a="zout" title="Zoom out" aria-label="Zoom out"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>'
             + '<button type="button" class="nv-pv-b nv-pv-zoom" data-a="fit" title="Fit to width" aria-label="Fit to width">100%</button>'
             + '<button type="button" class="nv-pv-b" data-a="zin" title="Zoom in" aria-label="Zoom in"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>'
+            + (o.annos ? '<span class="nv-pv-hlg" role="group" aria-label="Highlight the selected text">' + PV_COLORS.map((c) => '<button type="button" class="nv-pv-b nv-pv-dot" data-a="hl" data-c="' + c[0] + '" style="--c:' + c[2] + '" title="Select text, then highlight it ' + c[1].toLowerCase() + '" aria-label="Highlight ' + c[1].toLowerCase() + '" disabled></button>').join('') + '</span>'
+                + '<button type="button" class="nv-pv-b" data-a="hls" title="All highlights in this PDF" aria-label="Highlights list"><i class="fa-solid fa-list-ul" aria-hidden="true"></i><span class="nv-pv-hln"></span></button>' : '')
             + (o.onQuote ? '<button type="button" class="nv-pv-b nv-pv-quote" data-a="quote" title="Select text in the PDF, then tap to add it to the note as a highlighted quote" aria-label="Highlight selection into note" disabled><i class="fa-solid fa-highlighter" aria-hidden="true"></i><span>Highlight</span></button>' : '')
             + '<button type="button" class="nv-pv-b" data-a="full" title="Fullscreen" aria-label="Fullscreen"><i class="fa-solid fa-expand" aria-hidden="true"></i></button>'
             + '</div>'
@@ -6734,6 +6794,8 @@
         const q = (s) => root.querySelector(s);
         const scroller = q('.nv-pv-scroll'), box = q('.nv-pv-pages'), pgIn = q('.nv-pv-pgin'), totalEl = q('.nv-pv-total'),
             zoomEl = q('.nv-pv-zoom'), quoteBtn = q('[data-a="quote"]'), fullBtn = q('[data-a="full"]'), msg = q('.nv-pv-msg');
+        const dots = Array.from(root.querySelectorAll('[data-a="hl"]')), hlnEl = q('.nv-pv-hln');
+        const selUi = (on) => { if (quoteBtn) quoteBtn.disabled = !on; dots.forEach((d) => { d.disabled = !on; }); };
         const showMsg = (t) => { msg.textContent = t || ''; msg.hidden = !t; };
         let io = null, ro = null, roTimer = 0, rafId = 0;
 
@@ -6819,6 +6881,7 @@
                 } catch (e) { /* the page is still readable without a text layer */ }
                 if (stale()) { clearPage(p); return; }
                 p.state = 'done';
+                paintHl(p);
                 try { pg.cleanup(); } catch (e) { /* ignore */ }
             } catch (e) {
                 p.task = null;
@@ -6877,12 +6940,12 @@
         // ── selection → note ──
         const clip = (t) => (t.length > 70 ? t.slice(0, 67) + '…' : t);
         function onSelChange() {
-            if (R.dead || !quoteBtn) return;
+            if (R.dead || (!quoteBtn && !o.annos)) return;
             const sel = window.getSelection ? window.getSelection() : null;
             if (!sel || !sel.rangeCount || sel.isCollapsed) {
                 // iOS collapses the selection the moment the button is touched, so keep it for a moment.
                 clearTimeout(R.selTimer);
-                R.selTimer = setTimeout(() => { R.sel = null; quoteBtn.disabled = true; }, 1800);
+                R.selTimer = setTimeout(() => { R.sel = null; selUi(false); }, 1800);
                 return;
             }
             const r = sel.getRangeAt(0);
@@ -6892,10 +6955,10 @@
             if (!text) return;
             const se = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
             const pgEl = se && se.closest ? se.closest('.nv-pv-page') : null;
-            R.sel = { text, page: pgEl ? +pgEl.dataset.n : R.cur };
+            R.sel = { text, page: pgEl ? +pgEl.dataset.n : R.cur, rects: o.annos ? pvSelRects(r, R.pages) : null };
             clearTimeout(R.selTimer);
-            quoteBtn.disabled = false;
-            quoteBtn.title = 'Add to note: “' + clip(text) + '”';
+            selUi(true);
+            if (quoteBtn) quoteBtn.title = 'Add to note: “' + clip(text) + '”';
         }
         function doQuote() {
             if (!R.sel) { try { toast('Select some text in the PDF first'); } catch (e) { /* ignore */ } return; }
@@ -6903,11 +6966,102 @@
             let ok = false;
             try { ok = o.onQuote(s.text, s.page) !== false; } catch (e) { console.warn('Notes Vault: quote failed', e); }
             if (ok) {
-                R.sel = null; quoteBtn.disabled = true; quoteBtn.title = 'Select text in the PDF, then tap to add it to the note as a highlighted quote';
+                R.sel = null; selUi(false); quoteBtn.title = 'Select text in the PDF, then tap to add it to the note as a highlighted quote';
                 try { const sel = window.getSelection(); if (sel) sel.removeAllRanges(); } catch (e) { /* ignore */ }
             }
         }
-        if (quoteBtn) document.addEventListener('selectionchange', onSelChange);
+        if (quoteBtn || o.annos) document.addEventListener('selectionchange', onSelChange);
+
+        // ── highlights on the page ──
+        let popEl = null, listEl = null;
+        function paintHl(p) {
+            if (!R.anno || p.state !== 'done') return;
+            const list = R.anno.list.filter((h) => h.page === p.n);
+            let L = p.el.querySelector('.nv-pv-hl');
+            if (!list.length) { if (L) L.remove(); return; }
+            if (!L) { L = document.createElement('div'); L.className = 'nv-pv-hl'; const t = p.el.querySelector('.textLayer'); if (t) p.el.insertBefore(L, t); else p.el.appendChild(L); }
+            L.innerHTML = list.map((h) => h.r.map((r) => '<i data-h="' + h.id + '"' + (R.flash === h.id ? ' class="nv-flash"' : '') + ' style="--c:' + pvColor(h.c) + ';left:' + r[0] * 100 + '%;top:' + r[1] * 100 + '%;width:' + (r[2] - r[0]) * 100 + '%;height:' + (r[3] - r[1]) * 100 + '%"></i>').join('')).join('');
+        }
+        function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
+        function updateCount() { if (hlnEl) hlnEl.textContent = R.anno && R.anno.list.length ? String(R.anno.list.length) : ''; }
+        function onAnno(pages) {
+            if (R.dead) return;
+            (pages || []).forEach((n) => { const p = R.pages[n - 1]; if (p) paintHl(p); });
+            updateCount(); closePop(); if (listEl) renderList();
+        }
+        function doHighlight(c) {
+            const s2 = R.sel;
+            if (!R.anno || !s2 || !s2.rects || !s2.rects.length) { try { toast('Select some text in the PDF first'); } catch (e) { /* ignore */ } return; }
+            const at = Date.now();
+            R.anno.add(s2.rects.map((g, i) => ({ id: 'h' + at.toString(36) + i + Math.random().toString(36).slice(2, 5), page: g.page, c, r: g.rects, t: i === 0 ? s2.text.slice(0, 600) : '', at })));
+            R.sel = null; selUi(false);
+            try { const sel = window.getSelection(); if (sel) sel.removeAllRanges(); } catch (e) { /* ignore */ }
+        }
+        function openPop(h, cx, cy) {
+            closePop();
+            const pop = document.createElement('div');
+            pop.className = 'nv-pv-hlpop';
+            pop.innerHTML = PV_COLORS.map((c) => '<button type="button" class="nv-pv-b nv-pv-dot' + (c[0] === h.c ? ' nv-cur' : '') + '" data-pa="c" data-c="' + c[0] + '" style="--c:' + c[2] + '" aria-label="' + c[1] + '" title="' + c[1] + '"></button>').join('')
+                + (o.onQuote && h.t ? '<button type="button" class="nv-pv-b" data-pa="note" title="Add this highlight to the note" aria-label="Add to note"><i class="fa-solid fa-file-pen" aria-hidden="true"></i></button>' : '')
+                + '<button type="button" class="nv-pv-b" data-pa="del" title="Remove highlight" aria-label="Remove highlight"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>';
+            root.appendChild(pop);
+            const rr = root.getBoundingClientRect();
+            pop.style.left = Math.max(6, Math.min(cx - rr.left - pop.offsetWidth / 2, rr.width - pop.offsetWidth - 6)) + 'px';
+            pop.style.top = Math.max(6, Math.min(cy - rr.top + 12, rr.height - pop.offsetHeight - 6)) + 'px';
+            pop.addEventListener('pointerdown', (e) => e.preventDefault());
+            pop.addEventListener('click', (e) => {
+                const b = e.target.closest('[data-pa]'); if (!b) return;
+                if (b.dataset.pa === 'c') R.anno.recolor(h.id, b.dataset.c);
+                else if (b.dataset.pa === 'del') R.anno.remove(h.id);
+                else if (b.dataset.pa === 'note') { try { o.onQuote(h.t, h.page); } catch (x) { /* ignore */ } closePop(); }
+            });
+            popEl = pop;
+        }
+        function renderList() {
+            if (!listEl) return;
+            const all = R.anno ? R.anno.list.slice().sort((a, b) => (a.page - b.page) || (a.r[0][1] - b.r[0][1])) : [];
+            const shown = R.hlFilter ? all.filter((h) => h.c === R.hlFilter) : all;
+            listEl.innerHTML = '<div class="nv-pv-hlhead"><b>Highlights</b><span class="nv-pv-hlfilter">'
+                + PV_COLORS.map((c) => '<button type="button" class="nv-pv-b nv-pv-dot' + (R.hlFilter === c[0] ? ' nv-cur' : '') + '" data-la="f" data-c="' + c[0] + '" style="--c:' + c[2] + '" aria-label="Only ' + c[1].toLowerCase() + '" aria-pressed="' + (R.hlFilter === c[0]) + '" title="Only ' + c[1].toLowerCase() + '"></button>').join('')
+                + '</span><button type="button" class="nv-pv-b" data-la="x" aria-label="Close list"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>'
+                + '<div class="nv-pv-hlbody">' + (shown.length ? shown.map((h) => '<div class="nv-pv-hli" data-h="' + h.id + '" style="--c:' + pvColor(h.c) + '" tabindex="0" role="button">'
+                    + '<span class="nv-pv-hlt">' + (h.t ? esc(h.t) : '<i>…continued from the previous page</i>') + '</span>'
+                    + '<span class="nv-pv-hlm">p. ' + h.page + '</span>'
+                    + (o.onQuote && h.t ? '<button type="button" class="nv-pv-b" data-la="note" aria-label="Add to note" title="Add to note"><i class="fa-solid fa-file-pen" aria-hidden="true"></i></button>' : '')
+                    + '<button type="button" class="nv-pv-b" data-la="del" aria-label="Remove" title="Remove"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></div>').join('')
+                    : '<p class="nv-pv-hlempty">' + (all.length ? 'No highlights in this colour.' : 'Select text in the PDF, then tap a colour dot in the toolbar.') + '</p>') + '</div>';
+        }
+        function toggleList(on) {
+            if (!R.anno) return;
+            if (on === false || (on === undefined && listEl)) { if (listEl) { listEl.remove(); listEl = null; } return; }
+            listEl = document.createElement('div'); listEl.className = 'nv-pv-hlist';
+            root.appendChild(listEl); renderList();
+            listEl.addEventListener('pointerdown', (e) => { if (e.target.closest('.nv-pv-b')) e.preventDefault(); });
+            listEl.addEventListener('click', (e) => {
+                const a = e.target.closest('[data-la]'), row = e.target.closest('.nv-pv-hli');
+                if (a && a.dataset.la === 'x') { toggleList(false); return; }
+                if (a && a.dataset.la === 'f') { R.hlFilter = R.hlFilter === a.dataset.c ? '' : a.dataset.c; renderList(); return; }
+                const h = row && R.anno.list.find((x) => x.id === row.dataset.h); if (!h) return;
+                if (a && a.dataset.la === 'del') { R.anno.remove(h.id); return; }
+                if (a && a.dataset.la === 'note') { try { o.onQuote(h.t, h.page); } catch (x) { /* ignore */ } return; }
+                goPage(h.page);
+                R.flash = h.id; clearTimeout(R.flashT);
+                const p = R.pages[h.page - 1]; if (p) paintHl(p);
+                R.flashT = setTimeout(() => { R.flash = null; const q2 = R.pages[h.page - 1]; if (q2) paintHl(q2); }, 1600);
+            });
+            listEl.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('nv-pv-hli')) { e.preventDefault(); e.target.click(); } });
+        }
+        scroller.addEventListener('click', (e) => {
+            if (!R.anno) return;
+            const sel = window.getSelection ? window.getSelection() : null;
+            if (sel && !sel.isCollapsed) return;
+            const pageEl = e.target.closest('.nv-pv-page');
+            if (!pageEl) { closePop(); return; }
+            const b = pageEl.getBoundingClientRect(), x = (e.clientX - b.left) / b.width, y = (e.clientY - b.top) / b.height, n = +pageEl.dataset.n;
+            const hit = R.anno.list.find((h) => h.page === n && h.r.some((r) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]));
+            if (hit) openPop(hit, e.clientX, e.clientY); else closePop();
+        });
+        scroller.addEventListener('scroll', closePop, { passive: true });
 
         // ── toolbar + scrolling ──
         root.addEventListener('pointerdown', (e) => { if (e.target.closest('.nv-pv-b') && !e.target.closest('input')) e.preventDefault(); });   // keep the text selection alive
@@ -6922,10 +7076,17 @@
             else if (a === 'fit') setZoom(1);
             else if (a === 'full') setFull(!R.full);
             else if (a === 'quote') doQuote();
+            else if (a === 'hl') doHighlight(b.dataset.c);
+            else if (a === 'hls') toggleList();
         });
         pgIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); goPage(parseInt(pgIn.value, 10) || 1); pgIn.blur(); } e.stopPropagation(); });
         pgIn.addEventListener('change', () => goPage(parseInt(pgIn.value, 10) || 1));
-        root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && R.full) { e.stopPropagation(); e.preventDefault(); setFull(false); } });
+        root.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (popEl) { e.stopPropagation(); e.preventDefault(); closePop(); }
+            else if (listEl) { e.stopPropagation(); e.preventDefault(); toggleList(false); }
+            else if (R.full) { e.stopPropagation(); e.preventDefault(); setFull(false); }
+        });
         scroller.addEventListener('scroll', () => { if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; updatePage(); }); }, { passive: true });
 
         function destroy() {
@@ -6933,6 +7094,8 @@
             R.dead = true;
             PV_LIVE.delete(handle);
             document.removeEventListener('selectionchange', onSelChange);
+            if (R.unsub) { R.unsub(); R.unsub = null; }
+            clearTimeout(R.flashT);
             clearTimeout(R.selTimer); clearTimeout(roTimer); if (rafId) cancelAnimationFrame(rafId);
             try { if (io) io.disconnect(); if (ro) ro.disconnect(); } catch (e) { /* ignore */ }
             for (const p of R.pages) { if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } } const c = p.el.querySelector('canvas'); if (c) { c.width = 0; c.height = 0; } }
@@ -6951,6 +7114,7 @@
             const doc = await lib.getDocument({ data }).promise;
             if (R.dead) { try { doc.destroy(); } catch (e) { /* ignore */ } return; }
             R.doc = doc;
+            if (o.annos) { R.anno = o.annos; await R.anno.load(); if (R.dead) return; R.unsub = R.anno.sub(onAnno); updateCount(); }
             const first = await doc.getPage(1);
             const vp1 = first.getViewport({ scale: 1 });
             try { first.cleanup(); } catch (e) { /* ignore */ }
@@ -9566,7 +9730,7 @@
         const host = document.createElement('div');
         host.id = 'nvPvHost'; host.className = 'nv-pv-host';
         fr.after(host);
-        const mine = createPdfReader(host, rec.blob, { onQuote: (t, p) => pdfQuoteToNote(t, p, name) });
+        const mine = createPdfReader(host, rec.blob, { onQuote: (t, p) => pdfQuoteToNote(t, p, name), annos: pdfAnnoStore(rec.id) });
         pp.rd = mine;
         mine.ready.catch(() => {
             if (pp.rd !== mine) return;
@@ -11816,8 +11980,8 @@
             + '<button type="button" class="nv-pl-star' + (r.fav ? ' nv-on' : '') + '" data-a="fav" aria-pressed="' + (r.fav ? 'true' : 'false') + '" title="' + (r.fav ? 'Remove from favorites' : 'Add to favorites') + '"><i class="fa-' + (r.fav ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i></button></div>'
             + '<div class="nv-pl-info"><div class="nv-pl-name" title="' + esc(name) + '">' + esc(name) + '</div>'
             + '<div class="nv-pl-meta"><span>' + esc(fmtBytes(r.size || 0)) + '</span>' + (r.createdAt ? '<span>' + esc(plDate(r.createdAt)) + '</span>' : '') + '</div>'
-            + ((r.coll || n) ? '<div class="nv-pl-tags">' + (r.coll ? '<span class="nv-pl-chip"><i class="fa-solid fa-folder" aria-hidden="true"></i> ' + esc(r.coll) + '</span>' : '')
-                + (n ? '<span class="nv-pl-chip nv-pl-chip-note"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i> ' + 'In ' + n + (n === 1 ? ' note' : ' notes') + '</span>' : '') + '</div>' : '')
+            + ((r.coll || n || (r.hls || []).length) ? '<div class="nv-pl-tags">' + (r.coll ? '<span class="nv-pl-chip"><i class="fa-solid fa-folder" aria-hidden="true"></i> ' + esc(r.coll) + '</span>' : '')
+                + ((r.hls || []).length ? '<span class="nv-pl-chip"><i class="fa-solid fa-highlighter" aria-hidden="true"></i> ' + r.hls.length + '</span>' : '') + (n ? '<span class="nv-pl-chip nv-pl-chip-note"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i> ' + 'In ' + n + (n === 1 ? ' note' : ' notes') + '</span>' : '') + '</div>' : '')
             + (snip ? '<div class="nv-pl-snip">' + snip + '</div>' : '') + '</div>'
             + '<button type="button" class="nv-pl-more" data-a="menu" aria-label="Options for ' + esc(name) + '" aria-haspopup="menu"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>'
             + '</article>';
@@ -11956,7 +12120,7 @@
         const fresh = (await getAttachmentsOverview()).find((x) => x.rec.id === it.rec.id);
         if (fresh && (fresh.noteIds.length || fresh.revIds.length)) { flash('Still used in a note or its history — remove it there first'); await plLoad(); plRender(); return; }
         if (!confirm('Delete “' + plTitle(it.rec) + '” (' + fmtBytes(it.rec.size || 0) + ') permanently? This cannot be undone.')) return;
-        try { await dbDeleteAttachment(it.rec.id); await dbDeleteAttachmentRefs(it.rec.id).catch(() => {}); S.attachmentCache.delete(it.rec.id); S.attText.delete(it.rec.id); S.attVer++; }
+        try { await dbDeleteAttachment(it.rec.id); await dbDeleteAttachmentRefs(it.rec.id).catch(() => {}); S.attachmentCache.delete(it.rec.id); S.attText.delete(it.rec.id); S.attVer++; PV_ANNO.delete(it.rec.id); }
         catch (e) { flash('Couldn’t delete that file'); return; }
         PL.items = PL.items.filter((x) => x.rec.id !== it.rec.id);
         plRender(); toast('Deleted “' + plTitle(it.rec) + '”.');
@@ -12006,7 +12170,7 @@
         plPatch(id, { lastOpenedAt: Date.now(), lib: it.rec.lib }).catch(() => {});
         const host = document.createElement('div'); host.className = 'nv-pv-host nv-pl-rpv';
         $('nvPlRHost').appendChild(host);
-        PL.reader = createPdfReader(host, it.rec.blob, hasNote ? { onQuote: (t, p) => pdfQuoteToNote(t, p, plTitle(it.rec)) } : {});
+        PL.reader = createPdfReader(host, it.rec.blob, Object.assign({ annos: pdfAnnoStore(id) }, hasNote ? { onQuote: (t, p) => pdfQuoteToNote(t, p, plTitle(it.rec)) } : {}));
         PL.reader.ready.catch(() => { /* the reader shows its own message; "Open in a new tab" is still there */ });
         const back = $('nvPlRBack'); if (back) back.focus({ preventScroll: true });
     }
