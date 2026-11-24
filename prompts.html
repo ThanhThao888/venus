@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Prompt Library</title>
 <script>
 (function(){try{var v=localStorage.getItem('darkMode');var d=v==='true'||(v===null&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark-mode',d)}catch(e){}})();
@@ -40,6 +40,7 @@ dialog::backdrop{background:rgba(40,20,30,.5)}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;max-height:55vh;overflow:auto;font:14px/1.55 ui-monospace,Menlo,Consolas,monospace}
 label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
 .muted{color:var(--muted);font-size:.85rem}
+dialog #toast{bottom:24px}
 #toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:8px 18px;border-radius:99px;display:none;z-index:99}
 /* ===== LỘ TRÌNH (playbook) ===== */
 [hidden]{display:none!important}
@@ -184,6 +185,57 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 .dact{display:inline-flex;gap:6px;align-items:center}
 #iTpl{display:inline-flex;gap:6px;align-items:center}
 </style>
+<style id="ux2">
+/* ===== UX v2: header dính, thẻ rõ hơn, copy nhanh, sheet trên mobile ===== */
+html{scroll-padding-top:76px}
+body{line-height:1.55;-webkit-tap-highlight-color:transparent}
+.top{position:sticky;top:0;z-index:20;margin:0 -16px 16px;padding:10px 16px;background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+h1{font-weight:700;letter-spacing:.1px}
+.btn,.chip,.tab,.opt,.star,.goal,.card{transition:background .15s,border-color .15s,transform .12s,box-shadow .15s}
+.btn{min-height:36px;display:inline-flex;align-items:center;justify-content:center}
+.btn:hover{border-color:var(--primary-dark)}
+.btn:active,.chip:active,.opt:active{transform:scale(.97)}
+.btn:focus-visible,.chip:focus-visible,.tab:focus-visible,.opt:focus-visible,.star:focus-visible,.card:focus-visible,.cpy:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.chip{padding:5px 14px;user-select:none}
+.chip:hover{border-color:var(--primary)}
+.chip.on::before{content:"✓ ";font-weight:700}
+#chips.collapsed{-webkit-mask-image:linear-gradient(90deg,#000 92%,transparent);mask-image:linear-gradient(90deg,#000 92%,transparent)}
+#q{margin-top:2px}
+.grid{grid-template-columns:repeat(auto-fill,minmax(290px,1fr))}
+.card{min-height:132px;gap:8px}
+.card:hover{box-shadow:var(--shadow)}
+.card b{font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card p{-webkit-line-clamp:2;line-height:1.45}
+.card .tag{display:inline-block;margin:0 4px 4px 0}
+.cpy{border:1px solid var(--line);background:var(--bg);color:var(--primary-dark);border-radius:99px;padding:2px 11px;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap;align-self:flex-start;opacity:0;transition:opacity .15s,background .15s}
+.card:hover .cpy,.card:focus-within .cpy,.cpy:focus-visible{opacity:1}
+.cpy:hover{background:var(--primary-light);border-color:var(--primary)}
+.star{padding:2px 6px;border-radius:8px;line-height:1}
+.star:hover{background:var(--primary-light)}
+#count{line-height:1.4}
+#empty{text-align:center;padding:36px 12px;border:1px dashed var(--line);border-radius:16px}
+#view[open]{display:flex;flex-direction:column;max-height:92dvh}
+#view pre{flex:1;min-height:0;max-height:none;font-size:13.5px;line-height:1.6}
+#view .row:last-child{position:sticky;bottom:0;padding-top:12px;background:var(--card)}
+dialog[open]{animation:dpop .16s ease-out}
+dialog[open]::backdrop{animation:dfade .16s ease-out}
+@keyframes dpop{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes dfade{from{opacity:0}to{opacity:1}}
+#toast{display:none;align-items:center;gap:6px;box-shadow:var(--shadow);font-weight:600}
+#toast::before{content:"✓"}
+.dock{bottom:max(12px,env(safe-area-inset-bottom))}
+.wrap{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
+@media (pointer:coarse){.cpy{opacity:1}.chip{padding:8px 15px}.star{padding:6px 10px;font-size:1.25rem}.btn.sm{min-height:40px}}
+@media (max-width:640px){
+  input[type=search],input[type=text],textarea,select{font-size:16px}
+  .top{margin:0 -16px 12px}
+  dialog{width:100vw;max-width:100vw;margin:auto 0 0;border-radius:20px 20px 0 0;max-height:92dvh;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  dialog[open]{animation:dsheet .2s ease-out}
+  .grid{grid-template-columns:1fr}
+}
+@keyframes dsheet{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -224,11 +276,11 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
   </section>
 
   <section id="viewLib" hidden>
-    <input type="search" id="q" placeholder="Tìm theo tên, nội dung, tag…">
+    <input type="search" id="q" placeholder="Tìm theo tên, nội dung, tag… (nhấn / để tìm)" enterkeyhint="search" autocomplete="off">
     <div class="chips collapsed" id="chips"></div>
-    <div class="row" style="justify-content:space-between;margin:-6px 0 10px"><span class="muted" id="count"></span><button type="button" class="btn ghost sm" id="chipsToggle">Hiện tất cả tag ▾</button></div>
+    <div class="row" style="justify-content:space-between;margin:-6px 0 10px"><span class="muted" id="count"></span><button type="button" class="btn ghost sm" id="clearF" hidden>Xóa lọc</button><button type="button" class="btn ghost sm" id="chipsToggle">Hiện tất cả tag ▾</button></div>
     <div class="grid" id="grid"></div>
-    <p class="muted" id="empty" hidden>Chưa có prompt nào khớp.</p>
+    <p class="muted" id="empty" hidden>Không có prompt nào khớp. Thử bỏ bớt tag, đổi từ khóa hoặc bấm Xóa lọc.</p>
   </section>
 </div>
 
@@ -682,39 +734,43 @@ R2.forEach(x=>{const k="r2:"+x.id;if(SD.includes(k))return;const p=P.find(q=>q.i
 const RENAME=[{"id": "seed-p4", "from": "Audio Writer — Lecture Script cho TTS (bản cũ)", "to": "Cũ · Audio Writer bản ngắn"}, {"id": "seed-p4-full", "from": "Audio Writer — Lecture Script cho TTS (bản đầy đủ)", "to": "Nghe · Audio Writer, bài 8–12 phút"}, {"id": "seed-money", "from": "Master Prompt — The Anatomy of Money (khóa tiền tệ)", "to": "Nghe · Khóa Tiền tệ trọn bộ"}, {"id": "seed-dA", "from": "Domain A — Finance, Accounting, Economics (dán cuối Prompt 2 / Audio Writer)", "to": "Domain A · Tài chính, kế toán, kinh tế"}, {"id": "seed-dB", "from": "Domain B — Politics, Geopolitics, Institutional Power", "to": "Domain B · Chính trị, địa chính trị"}, {"id": "seed-dC", "from": "Domain C — Philosophy, Theories, Intellectual History", "to": "Domain C · Triết học, lý thuyết"}, {"id": "seed-dD", "from": "Domain D — Conspiracy, Deception, Propaganda, Intelligence (high scrutiny)", "to": "Domain D · Âm mưu, tuyên truyền, tình báo"}, {"id": "seed-dE", "from": "Domain E — Biology, Psychology, Health, Skincare, Human Behavior", "to": "Domain E · Sinh học, tâm lý, sức khỏe"}, {"id": "seed-dF", "from": "Domain F — AI, Technology, Future Economics", "to": "Domain F · AI, công nghệ, kinh tế tương lai"}, {"id": "seed-dG", "from": "Domain G — Business History & Strategic Case Stories (storyteller)", "to": "Domain G · Lịch sử kinh doanh, case chiến lược"}, {"id": "seed-dH", "from": "Domain H — Law, Legal Systems, Legal Reasoning", "to": "Domain H · Luật, hệ thống pháp lý"}, {"id": "seed-cross", "from": "Cross-Disciplinary Connections (nối kiến thức giữa các ngành)", "to": "Đào sâu · Nối kiến thức giữa các ngành"}, {"id": "up00", "from": "Document → Lecture (PDF, bài báo, báo cáo → script TTS)", "to": "Nghe · PDF, báo cáo thành bài giảng"}, {"id": "up01", "from": "High-Fidelity Audio Lecture Script Generator", "to": "Cũ · High-Fidelity Script Generator"}, {"id": "up02", "from": "Academic Paper → Audio Lecture (v2)", "to": "Nghe · Paper học thuật"}, {"id": "up03", "from": "ADHD-I Audio Lecture Prompt (v2)", "to": "Cũ · ADHD-I Audio v2"}, {"id": "up05", "from": "Book → Lecture (kiểm tra kiến thức còn đúng không)", "to": "Cũ · Sách thành bài giảng"}, {"id": "up06", "from": "CFA Curriculum → Audio Lecture (Mode A học / Mode B ôn)", "to": "Nghe · CFA, học hoặc ôn"}, {"id": "up07", "from": "Content Value Audit — lọc trước khi nghe", "to": "Lọc · Có đáng nghe không"}, {"id": "up08", "from": "Lecture Course → Script", "to": "Cũ · Lecture Course"}, {"id": "up09", "from": "Practitioner's Edge — Experiential Knowledge Extractor", "to": "Trích · Kinh nghiệm người làm nghề"}, {"id": "up10", "from": "Practitioner's Edge → Audio Converter (TTS)", "to": "Nghe · Kinh nghiệm người làm nghề"}, {"id": "up11", "from": "BCTC Extractor — 7 mục dán Excel (doanh nghiệp VN)", "to": "Tài chính · BCTC doanh nghiệp VN ra Excel"}, {"id": "up12", "from": "Textbook Chapter → Learning Lecture (học kế toán)", "to": "Nghe · Giáo trình kế toán"}, {"id": "up13", "from": "Seminar → Lecture", "to": "Nghe · Seminar"}, {"id": "up14", "from": "Thinking Partner — Applied Mental Models", "to": "Tư duy · Mô hình tư duy ứng dụng"}, {"id": "up16", "from": "Topic Map → Audio Lecture (v3 anti-fingerprint, mới nhất)", "to": "Nghe · Topic Map từng Part"}, {"id": "up17", "from": "Section-by-Section Lecture (dùng sau Topic Map)", "to": "Cũ · Section-by-Section"}, {"id": "up18", "from": "Knowledge Consolidator Output → Audio Script", "to": "Nghe · Bản kiến thức thành script"}, {"id": "up19", "from": "Podcast → Value-only TTS Script (v2)", "to": "Nghe · Podcast, chỉ giữ phần giá trị"}, {"id": "nw00-v2", "from": "ADHD-I Audio Lecture — từng section của Topic Map", "to": "Nghe · Topic Map từng section, ADHD-I"}, {"id": "nw01", "from": "Authority Deconstructor — bóc phát biểu của người có quyền lực", "to": "Kiểm · Bóc phát biểu người có quyền lực"}, {"id": "nw02", "from": "Financial Statement Red Flag Detector", "to": "Tài chính · Soi red flag BCTC"}, {"id": "nw03", "from": "Dual-Language Research & Academic Writing (EN/CN/VN)", "to": "Viết · Học thuật đa ngôn ngữ EN, CN, VN"}, {"id": "nw04", "from": "AI Content Fact-Checker — kiểm chứng transcript YouTube", "to": "Kiểm · Fact-check transcript YouTube"}, {"id": "nw05", "from": "Distressed Deal Analyzer", "to": "Tài chính · Phân tích deal distressed"}, {"id": "nw06", "from": "Professional Finance Writing Coach", "to": "Viết · Coach viết tài chính"}, {"id": "nw07", "from": "Vietnamese Market Intelligence Translator", "to": "Tài chính · Dịch tin thị trường VN"}, {"id": "nw08", "from": "Book → Audio Lecture (phân loại loại sách trước)", "to": "Nghe · Sách"}, {"id": "nw09", "from": "Full-Detail Knowledge Consolidator (không nén transcript)", "to": "Trích · Gom kiến thức đầy đủ, không nén"}, {"id": "nw10", "from": "YouTube Script Generator — kênh học tài chính", "to": "Viết · Script YouTube tài chính"}, {"id": "nw11", "from": "Anki tiếng Anh từ transcript (từ vựng, collocation, idiom)", "to": "Anki · Tiếng Anh từ transcript"}, {"id": "nw12", "from": "Topic Map Generator — Practitioner-Grade (bước đầu pipeline)", "to": "Topic Map · Tạo bản đồ kiến thức"}, {"id": "nw13", "from": "Tạo thẻ Anki — IB / Valuation (kèm hướng dẫn import)", "to": "Anki · IB và Valuation"}, {"id": "nw14", "from": "Concept Connection Mapper", "to": "Tài chính · Nối khái niệm"}, {"id": "nw15", "from": "Multi-Source Synthesis — Coherent Narrative Builder", "to": "Viết · Tổng hợp nhiều nguồn"}, {"id": "nw16", "from": "Citation & Data Verification — Academic Essay Checker", "to": "Kiểm · Bài luận có trích dẫn"}, {"id": "n200", "from": "Course Lecture Transcript → Audio Lecture (phân loại loại khóa học)", "to": "Nghe · Khóa học từ transcript"}, {"id": "n201", "from": "Lecture Creator — sách / transcript / tài liệu khóa học (phân loại 2 trục)", "to": "Cũ · Lecture Creator 2 trục"}, {"id": "n202", "from": "Academic Reaper → Audio Lecture (paper, có bước triage input)", "to": "Cũ · Academic Reaper"}, {"id": "n203", "from": "Research Assistant — Academic Finance Papers (tìm EN + CN)", "to": "Tìm · Paper tài chính EN và CN"}, {"id": "n204", "from": "Podcast / Meeting / Workshop → Academic Lecture (ADHD, TTS, 10.000+ từ)", "to": "Cũ · Podcast, họp, workshop thành bài giảng"}, {"id": "n205", "from": "Review sách finance (EN, chấm điểm kiểu institutional)", "to": "Viết · Review sách finance EN"}, {"id": "n206", "from": "Review sách finance (bản tiếng Việt)", "to": "Cũ · Review sách finance VN"}, {"id": "n207", "from": "Earnings Call — trích signal Long/Short", "to": "Tài chính · Earnings call, tín hiệu Long/Short"}, {"id": "n208", "from": "Lecture transcript → Study notes cho Obsidian", "to": "Ghi chú · Transcript thành note Obsidian"}, {"id": "rs-a", "from": "Analysis A — First-Principles & Mechanism (nghiên cứu sâu, bỏ phần giới thiệu chung)", "to": "Đào sâu · Cơ chế gốc"}, {"id": "rs-b", "from": "Analysis B — Systemic Vulnerability (hệ thống bị lợi dụng / lách như thế nào)", "to": "Đào sâu · Lỗ hổng hệ thống"}, {"id": "rs-c", "from": "Analysis C — Adversarial Stress-Test (phản biện luận điểm, chống nịnh)", "to": "Đào sâu · Phản biện, chống nịnh"}, {"id": "rs-d", "from": "Analysis D — Recursive Depth Override (dán khi AI trả lời quá nông)", "to": "Đào sâu · Khi AI trả lời nông"}, {"id": "v2-step0", "from": "Step 0 — Universal Research & Intellectual OS (cài vào Custom / Project Instructions)", "to": "Học Step 0 · Cài nền cho AI, làm 1 lần"}, {"id": "v2-p05", "from": "Prompt 0.5 — Source Acquisition & Evidence Audit (tìm + kiểm chứng nguồn trước khi viết)", "to": "Học P0.5 · Tìm và kiểm chứng nguồn"}, {"id": "v2-p1", "from": "Prompt 1 — Curriculum Architect (Research-Driven)", "to": "Học P1 · Lập lộ trình học"}, {"id": "v2-p2", "from": "Prompt 2 — First-Principles Deep-Dive Lecture", "to": "Học P2 · Bài giảng từ nguyên lý gốc"}, {"id": "v2-p3", "from": "Prompt 3 — Adversarial Fact-Checker & Evidence Auditor", "to": "Học P3 · Kiểm chứng điều vừa học"}, {"id": "v2-p4", "from": "Prompt 4 — Elite Simulation & Adaptive Stress-Test", "to": "Học P4 · Mô phỏng tình huống áp lực"}, {"id": "v2-p5", "from": "Prompt 5 — Knowledge Retention & Independent Reasoning Audit", "to": "Học P5 · Kiểm tra trí nhớ và lập luận"}, {"id": "v2-search", "from": "Search Query Toolkit — truy vấn site: theo ngành (dán cuối Prompt 0.5 / Step 0)", "to": "Tìm · Bộ truy vấn site: theo ngành"}, {"id": "v2-tutor", "from": "Adaptive Socratic Tutor & Misconception Diagnostician (gia sư hỏi từng câu, tìm chỗ hiểu sai)", "to": "Ôn · Gia sư hỏi từng câu"}, {"id": "v2-quant", "from": "Quantitative Problem Lab — Finance, Accounting, Economics (AI ra bài, mình giải, AI bắt lỗi)", "to": "Ôn · Phòng luyện bài tính"}, {"id": "v2-methods", "from": "Research Paper Methodology & Identification Auditor (paper có chứng minh được điều tác giả nói không?)", "to": "Kiểm · Phương pháp của paper"}, {"id": "v2-english", "from": "English Acquisition & Professional Language Coach (biến lecture thành tiếng Anh dùng được)", "to": "Ghi chú · Coach tiếng Anh chuyên ngành"}, {"id": "v2-errorlog", "from": "Learning Error Log Manager (nhật ký lỗi + lịch ôn lại)", "to": "Ôn · Nhật ký lỗi và lịch ôn"}, {"id": "pdf2-master", "from": "PDF Finder — Master rules (nền chung: nguồn hợp pháp, nhãn kiểm chứng link, output chuẩn)", "to": "PDF · Luật nền, cài 1 lần"}, {"id": "pdf2-book", "from": "BOOK HUNT — Tìm sách, giáo trình (đúng edition, ISBN, PDF tải được)", "to": "PDF · Tìm sách, giáo trình"}, {"id": "pdf2-paper", "from": "PAPER HUNT — Tìm paper, working paper (đúng version, DOI, PDF tải được)", "to": "PDF · Tìm paper"}, {"id": "leg-dossier", "from": "Legacy Modernizer — Dossier cập nhật cho PDF/sách cũ (chạy từng chương)", "to": "Cập nhật · Dossier cho PDF, sách cũ"}, {"id": "leg-addon", "from": "Legacy Integration Add-on — gắn cuối Audio Writer (PDF cũ + Dossier thành bài giảng)", "to": "Cập nhật · Gắn vào Audio Writer"}, {"id": "ldom-l1", "from": "Domain L1 — Accounting, Standards & Professional Exams (IFRS, US GAAP, ACCA, CFA)", "to": "Domain L1 · Kế toán, chuẩn mực, chứng chỉ"}, {"id": "ldom-l2", "from": "Domain L2 — Finance, Investment & Economics", "to": "Domain L2 · Tài chính, đầu tư, kinh tế"}, {"id": "ldom-l3", "from": "Domain L3 — Trading, Quant & Market Microstructure", "to": "Domain L3 · Trading, quant, microstructure"}, {"id": "ldom-l4", "from": "Domain L4 — AI, Machine Learning & Technology", "to": "Domain L4 · AI, ML, công nghệ"}, {"id": "ldom-l5", "from": "Domain L5 — Law, Tax & Regulation", "to": "Domain L5 · Luật, thuế, quy định"}, {"id": "ldom-l6", "from": "Domain L6 — Science, Psychology & Health", "to": "Domain L6 · Khoa học, tâm lý, sức khỏe"}, {"id": "fx-engine", "from": "Fiction → Intellectual Extraction Engine (tiểu thuyết → cơ chế hành vi, quyền lực, chiến lược, triết lý)", "to": "Tiểu thuyết · Engine trích tư tưởng"}, {"id": "fx-mode-comp", "from": "Chế độ 1 — Comprehensive Extraction (toàn diện, theo lĩnh vực, thay phần lớn việc đọc)", "to": "Tiểu thuyết · Chế độ 1, toàn diện"}, {"id": "fx-mode-deep", "from": "Chế độ 2 — Philosophical Deep Dive (10–15 ý lớn, phân tích sâu)", "to": "Tiểu thuyết · Chế độ 2, đào sâu triết học"}, {"id": "fx-mode-brief", "from": "Chế độ 3 — Executive Intelligence Brief (cô đọng khoảng 1.500 từ)", "to": "Tiểu thuyết · Chế độ 3, brief 1.500 từ"}, {"id": "fx-audit", "from": "Fiction Reality Audit — kiểm tra kiến thức chuyên môn, tính khả thi, khả năng áp dụng ngoài đời", "to": "Tiểu thuyết · Audit tính thực tế"}, {"id": "fx-merge", "from": "Fiction Extraction — Gộp, loại trùng, xếp hạng nhiều lượt phân tích", "to": "Tiểu thuyết · Gộp nhiều lượt phân tích"}, {"id": "ms-synth", "from": "Syntopical Integrator — gộp nhiều sách, paper, bài giảng thành một khung kiến thức", "to": "Làm chủ · Gộp nhiều nguồn thành khung"}, {"id": "ms-oral", "from": "Oral Mastery Trainer — dựng khung 5 nút rồi luyện nói không kịch bản", "to": "Làm chủ · Dựng khung 5 nút, luyện nói"}, {"id": "ms-record", "from": "Oral Transcript Reviewer — chấm bản chép lời bài tự nói của bạn", "to": "Làm chủ · Chấm bài tự nói"}, {"id": "ms-defend", "from": "Adversarial Oral Defense — AI chất vấn, bạn bảo vệ lập luận", "to": "Làm chủ · AI chất vấn, tự bảo vệ"}, {"id": "ca-larp", "from": "Expertise Demonstration Audit — chuyên môn thật hay chỉ diễn (podcast, hội thảo, interview)", "to": "Lọc · Chuyên môn thật hay diễn"}, {"id": "ca-compress", "from": "Long-form Compression & Padding Auditor — video dài có xứng với thời lượng không", "to": "Lọc · Video có bị kéo dài không"}, {"id": "ca-compare", "from": "Multi-Speaker Comparison — nhiều diễn giả, tìm chỗ trùng lặp và giá trị thêm", "to": "Lọc · So sánh nhiều diễn giả"}];
 RENAME.forEach(x=>{const k="rn1:"+x.id;if(SD.includes(k))return;const p=P.find(q=>q.id===x.id);if(p&&p.title===x.from)p.title=x.to;if(p)SD.push(k)});
 save();try{localStorage.setItem(KEY+".seeded",JSON.stringify(SD))}catch(e){}})();
-let filter="",tag="",cur=null;
+let filter="",sel=[],cur=null;
 
-function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",1600)}
+function toast(m){const t=$("toast"),d=document.querySelector("dialog[open]");(d||document.body).appendChild(t);t.textContent=m;t.style.display="flex";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",1600)}
 
 /* ===== RENDER ===== */
 function render(){
   const _cs=$("chips").scrollLeft;
   const tags=[...new Set(P.flatMap(p=>p.tags))].sort();
-  $("chips").innerHTML=['<span class="chip'+(!tag&&filter!=="★"?" on":"")+'" data-t="">Tất cả</span>','<span class="chip'+(filter==="★"?" on":"")+'" data-t="★">★ Yêu thích</span>']
-    .concat(tags.map(t=>'<span class="chip'+(tag===t?" on":"")+'" data-t="'+esc(t)+'">'+esc(t)+'</span>')).join("");
+  $("chips").innerHTML=['<span class="chip'+(!sel.length&&filter!=="★"?" on":"")+'" data-t="">Tất cả</span>','<span class="chip'+(filter==="★"?" on":"")+'" data-t="★">★ Yêu thích</span>']
+    .concat(tags.map(t=>'<span class="chip'+(sel.includes(t)?" on":"")+'" data-t="'+esc(t)+'">'+esc(t)+'</span>')).join("");
   const q=$("q").value.toLowerCase().trim();
-  const list=P.filter(p=>(filter!=="★"||p.fav)&&(tag==="archive"||!p.tags.includes("archive"))&&(!tag||p.tags.includes(tag))&&(!q||(p.title+" "+p.tags.join(" ")+" "+p.body).toLowerCase().includes(q)))
+  const list=P.filter(p=>(filter!=="★"||p.fav)&&(sel.includes("archive")||!p.tags.includes("archive"))&&sel.every(t=>p.tags.includes(t))&&(!q||(p.title+" "+p.tags.join(" ")+" "+p.body).toLowerCase().includes(q)))
     .sort((a,b)=>(b.fav-a.fav)||(a.created-b.created));
-  $("grid").innerHTML=list.map(p=>'<div class="card" data-id="'+p.id+'"><div class="row"><b style="flex:1">'+esc(p.title)+'</b><button class="star'+(p.fav?" on":"")+'" data-star="'+p.id+'">'+(p.fav?"★":"☆")+'</button></div><div>'+p.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div><p>'+esc(p.body.slice(0,220))+'</p></div>').join("");
-  $("empty").hidden=list.length>0;
+  $("grid").innerHTML=list.map(p=>'<div class="card" tabindex="0" data-id="'+p.id+'"><div class="row"><b style="flex:1">'+esc(p.title)+'</b><button class="cpy" data-cp="'+p.id+'" aria-label="Copy prompt">Copy</button><button class="star'+(p.fav?" on":"")+'" aria-label="Yêu thích" data-star="'+p.id+'">'+(p.fav?"★":"☆")+'</button></div><div>'+p.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div><p>'+esc(p.body.slice(0,220))+'</p></div>').join("");
+  $("empty").hidden=list.length>0;$("clearF").hidden=!(q||sel.length||filter);
   $("chips").scrollLeft=_cs;
   const tot=P.filter(p=>!p.tags.includes("archive")).length;
-  $("count").textContent=(q||tag||filter?"Tìm thấy "+list.length+" / "+tot+" prompt":tot+" prompt")+((q||tag||filter)&&tag!=="archive"?" (không tính prompt archive)":"");
+  $("count").textContent=((q||sel.length||filter)?(sel.length||filter?"Lọc: "+[filter&&"★"].concat(sel).filter(Boolean).join(" + ")+" · ":"")+"Tìm thấy "+list.length+" / "+tot+" prompt":tot+" prompt")+((q||sel.length||filter)&&!sel.includes("archive")?" (không tính prompt archive)":"");
 }
-$("chips").onclick=e=>{const t=e.target.dataset.t;if(t===undefined)return;if(t==="★"){filter="★";tag=""}else{filter="";tag=t}render()};
+$("chips").onclick=e=>{const c=e.target.closest&&e.target.closest("[data-t]");if(!c)return;const t=c.dataset.t;if(t===""){filter="";sel=[]}else if(t==="★"){filter=filter==="★"?"":"★"}else{const i=sel.indexOf(t);if(i>=0)sel.splice(i,1);else sel.push(t)}render()};
 $("q").oninput=render;
+$("clearF").onclick=()=>{filter="";sel=[];$("q").value="";render()};
 $("chipsToggle").onclick=()=>{const c=$("chips").classList.toggle("collapsed");$("chipsToggle").textContent=c?"Hiện tất cả tag ▾":"Thu gọn tag ▴"};
 $("grid").onclick=e=>{
+  const cp=e.target.closest("[data-cp]");if(cp){const p=P.find(x=>x.id===cp.dataset.cp);copyText(fillToday(p.body)).then(()=>{toast("Đã copy");cp.textContent="✓ Đã copy";setTimeout(()=>cp.textContent="Copy",1400)});return}
   const s=e.target.dataset.star;
   if(s){const p=P.find(x=>x.id===s);p.fav=!p.fav;save();render();return}
   const c=e.target.closest(".card");if(c)openView(c.dataset.id);
 };
+$("grid").addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.classList.contains("card")){e.preventDefault();openView(e.target.dataset.id)}});
+document.addEventListener("keydown",e=>{if(e.key==="/"&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)&&!document.querySelector("dialog[open]")&&!$("viewLib").hidden){e.preventDefault();$("q").focus()}});
 document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
 
 /* ===== VIEW / EDIT ===== */
 let VT=null;
 function openView(id,txt){VT=txt==null?null:txt;cur=P.find(p=>p.id===id);$("vTitle").textContent=cur.title;$("vTags").innerHTML=cur.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("");$("vBody").textContent=VT!=null?VT:cur.body;$("view").showModal()}
-$("vCopy").onclick=async()=>{try{await navigator.clipboard.writeText(VT!=null?VT:fillToday(cur.body))}catch(e){const r=document.createRange();r.selectNodeContents($("vBody"));getSelection().removeAllRanges();getSelection().addRange(r);document.execCommand("copy")}toast("Đã copy")};
+$("vCopy").onclick=async()=>{try{await navigator.clipboard.writeText(VT!=null?VT:fillToday(cur.body))}catch(e){const r=document.createRange();r.selectNodeContents($("vBody"));getSelection().removeAllRanges();getSelection().addRange(r);document.execCommand("copy")}const vb=$("vCopy");vb.textContent="✓ Đã copy";clearTimeout(vb._h);vb._h=setTimeout(()=>vb.textContent="Copy",1600);toast("Đã copy")};
 $("vDel").onclick=()=>{if(confirm("Xóa prompt này?")){P=P.filter(p=>p!==cur);save();$("view").close();render()}};
 function openEdit(p){cur=p;$("eHead").textContent=p?"Sửa prompt":"Prompt mới";$("eTitle").value=p?p.title:"";$("eTags").value=p?p.tags.join(", "):"";$("eBody").value=p?p.body:"";$("view").close();$("edit").showModal()}
 $("vEdit").onclick=()=>openEdit(cur);
