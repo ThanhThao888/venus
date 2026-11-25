@@ -5823,25 +5823,34 @@
         st.id = 'nvPrintStyle';
         st.textContent = `
         #nvPrintRoot { display: none; }
+        /* same font shield the vault uses inside #nvOverlay: the global font-family rule on all elements must not beat the theme font */
+        :where(#nvPrintRoot) *, :where(#nvPrintRoot) *::before, :where(#nvPrintRoot) *::after { font-family: inherit; }
         /* margin:0 makes Chrome/Edge skip their automatic header & footer (date, title, page URL, page number).
            The visual margins come from #nvPrintRoot's side padding + repeating spacer rows (.nv-pt-*) instead. */
         @page { margin: 0; }
         @media print {
-            html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+            /* page colour is set per export (see exportNotePdf) so it can follow the vault theme */
+            html, body { height: auto !important; overflow: visible !important; }
+            html::before, html::after, body::before, body::after { display: none !important; }
             body > *:not(#nvPrintRoot) { display: none !important; }
             #nvPrintRoot { display: block !important; position: static !important; width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 var(--nv-pm-x, 15mm) !important;
-                background: #fff !important; color: #111 !important; font-size: 11pt; line-height: 1.65;
+                background: var(--bg-white, #fff) !important; color: var(--text-dark, #111) !important; font-size: 11pt; line-height: 1.65;
                 --text-dark: #111; --text-muted: #555; --bg-light: #f4f4f5; --bg-card: #fff; --border-color: #d4d4d8; --primary: #9d2867; }
             #nvPrintRoot table.nv-pt { display: table; width: 100%; max-width: none; border-collapse: collapse; table-layout: fixed; }
             #nvPrintRoot table.nv-pt > thead { display: table-header-group; }
             #nvPrintRoot table.nv-pt > tfoot { display: table-footer-group; }
             #nvPrintRoot table.nv-pt > thead > tr > td, #nvPrintRoot table.nv-pt > tfoot > tr > td { height: var(--nv-pm-y, 16mm); padding: 0; border: 0; background: none; }
             #nvPrintRoot table.nv-pt > tbody > tr > td { padding: 0; border: 0; background: none; vertical-align: top; }
-            #nvPrintRoot .nv-print-title { font-size: 22pt; line-height: 1.25; margin: 0 0 4pt; color: #111; }
-            #nvPrintRoot .nv-print-meta { font-size: 9pt; color: #666; margin: 0 0 14pt; padding-bottom: 8pt; border-bottom: 1px solid #d4d4d8; }
-            #nvPrintRoot h1, #nvPrintRoot h2, #nvPrintRoot h3, #nvPrintRoot h4 { break-after: avoid; page-break-after: avoid; color: #111; }
+            #nvPrintRoot .nv-print-title { font-size: 22pt; line-height: 1.25; margin: 0 0 4pt; color: var(--text-dark, #111); }
+            #nvPrintRoot .nv-print-meta { font-size: 9pt; color: var(--text-muted, #666); margin: 0 0 14pt; padding-bottom: 8pt; border-bottom: 1px solid var(--border-color, #d4d4d8); }
+            #nvPrintRoot h1, #nvPrintRoot h2, #nvPrintRoot h3, #nvPrintRoot h4 { break-after: avoid; page-break-after: avoid; color: var(--text-dark, #111); }
+            /* The host app paints every bare <h1> with an animated rainbow gradient + glow in dark mode. The vault shields #nvOverlay
+               from that; the print root lives on <body>, so it needs the same shield or the PDF headings come out orange/pink. */
+            #nvPrintRoot h1, #nvPrintRoot h2, #nvPrintRoot h3, #nvPrintRoot h4, #nvPrintRoot h5, #nvPrintRoot h6 {
+                background: none !important; -webkit-background-clip: border-box !important; background-clip: border-box !important;
+                -webkit-text-fill-color: currentColor !important; animation: none !important; filter: none !important; text-shadow: none !important; }
             #nvPrintRoot pre, #nvPrintRoot blockquote, #nvPrintRoot img, #nvPrintRoot tr, #nvPrintRoot svg { break-inside: avoid; page-break-inside: avoid; }
-            #nvPrintRoot pre { white-space: pre-wrap !important; word-break: break-word; overflow: visible !important; background: #f4f4f5 !important; border: 1px solid #e4e4e7; }
+            #nvPrintRoot pre { white-space: pre-wrap !important; word-break: break-word; overflow: visible !important; background: var(--bg-light, #f4f4f5) !important; border: 1px solid var(--border-color, #e4e4e7); }
             #nvPrintRoot img { max-width: 100% !important; height: auto !important; }
             #nvPrintRoot .nv-tablewrap { overflow: visible !important; }
             #nvPrintRoot table { border-collapse: collapse; max-width: 100%; }
@@ -5859,7 +5868,7 @@
     }
     // ── PDF export options (remembered between exports) ──
     const PDF_OPT_KEY = 'nvPdfOpts';
-    const PDF_OPT_DEFAULT = { paper: 'A4', orient: 'portrait', margin: 'normal', title: true, meta: false };
+    const PDF_OPT_DEFAULT = { paper: 'A4', orient: 'portrait', margin: 'normal', colors: 'screen', title: true, meta: false };
     const PDF_MARGINS = { narrow: ['8mm', '8mm'], normal: ['15mm', '16mm'], wide: ['22mm', '24mm'] };   // [left/right, top/bottom]
     function loadPdfOpts() {
         try { return Object.assign({}, PDF_OPT_DEFAULT, JSON.parse(localStorage.getItem(PDF_OPT_KEY) || '{}')); } catch (e) { return Object.assign({}, PDF_OPT_DEFAULT); }
@@ -5875,6 +5884,7 @@
                 + '<div class="nv-pdfopt-row"><label for="nvPoPaper">Paper</label>' + sel('nvPoPaper', [['A4', 'A4'], ['Letter', 'Letter'], ['A5', 'A5'], ['A3', 'A3']], o.paper) + '</div>'
                 + '<div class="nv-pdfopt-row"><label for="nvPoOrient">Orientation</label>' + sel('nvPoOrient', [['portrait', 'Portrait'], ['landscape', 'Landscape']], o.orient) + '</div>'
                 + '<div class="nv-pdfopt-row"><label for="nvPoMargin">Margins</label>' + sel('nvPoMargin', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']], o.margin) + '</div>'
+                + '<div class="nv-pdfopt-row"><label for="nvPoColors">Colors</label>' + sel('nvPoColors', [['screen', 'Same as on screen'], ['light', 'Light paper (printer-friendly)']], o.colors) + '</div>'
                 + '<div class="nv-pdfopt-row"><label for="nvPoTitle">Include note title</label><input type="checkbox" id="nvPoTitle"' + (o.title ? ' checked' : '') + '></div>'
                 + '<div class="nv-pdfopt-row"><label for="nvPoMeta">Include folder &amp; date line</label><input type="checkbox" id="nvPoMeta"' + (o.meta ? ' checked' : '') + '></div>'
                 + '<p class="nv-pdfopt-hint">In the print window, set the destination to “Save as PDF”.</p>'
@@ -5884,7 +5894,7 @@
             const q = (id) => scrim.querySelector('#' + id);
             const close = (val) => { document.removeEventListener('keydown', onKey, true); scrim.remove(); resolve(val); };
             const go = () => {
-                const v = { paper: q('nvPoPaper').value, orient: q('nvPoOrient').value, margin: q('nvPoMargin').value, title: q('nvPoTitle').checked, meta: q('nvPoMeta').checked };
+                const v = { paper: q('nvPoPaper').value, orient: q('nvPoOrient').value, margin: q('nvPoMargin').value, colors: q('nvPoColors').value, title: q('nvPoTitle').checked, meta: q('nvPoMeta').checked };
                 try { localStorage.setItem(PDF_OPT_KEY, JSON.stringify(v)); } catch (e) { /* ignore */ }
                 close(v);
             };
@@ -5899,36 +5909,54 @@
             q('nvPoGo').focus();
         });
     }
-    /* PDF accent colours follow the vault theme that is active right now (Lavender Haze, Eucalyptus, ...).
-       #nvPrintRoot lives on <body>, outside #nvOverlay where each theme declares its variables, so it used to
-       fall back to a hard-coded magenta (#9d2867) + the site's Sakura values. Here we read the active theme's
-       accent from #nvOverlay and set it inline on the print root. The page itself stays white with dark text
-       (print-friendly): only accents (links, bullets, code chips, headings' colour accents) take the theme hue.
-       Colours are darkened if needed so they stay legible on white paper, also when the site is in dark mode. */
-    function applyPrintTheme(root) {
+    /* The PDF follows the vault theme that is active right now (Lavender Haze, Eucalyptus, ...), fonts included.
+       #nvPrintRoot lives on <body>, outside #nvOverlay where each theme declares its variables, so it can't inherit them:
+       they are read from #nvOverlay and copied inline onto the print root.
+         mode 'screen' → exactly what the vault shows (a dark theme gives a dark page; the page background is painted by
+                         the per-export @media print rule so the margins match).
+         mode 'light'  → the theme's LIGHT palette even when the app is in dark mode (printer-friendly): the dark-mode class is
+                         lifted for the instant the values are read (no frame is painted in between). Accents are darkened a
+                         little if needed so they stay legible on paper.
+       Returns the page background so the caller can paint it behind the margins. */
+    const PRINT_THEME_VARS = ['--nv-sans', '--nv-serif', '--nv-display', '--nv-mono',
+        '--bg-white', '--bg-light', '--border-color', '--text-dark', '--text-muted',
+        '--primary', '--primary-dark', '--primary-light', '--primary-rgb',
+        '--nv-ok', '--nv-warn', '--nv-danger', '--nv-hit', '--nv-hover', '--nv-active', '--nv-btn-bg', '--nv-btn-ink'];
+    function applyPrintTheme(root, mode) {
+        const out = { bg: '#fff' };
         try {
             const src = (typeof el !== 'undefined' && el && el.overlay) || document.getElementById('nvOverlay');
-            if (!src) return;
-            const cs = getComputedStyle(src);
-            const toRGB = (v) => {
-                v = (v || '').trim(); if (!v) return null;
-                const t = document.createElement('span'); t.style.color = v; document.body.appendChild(t);
+            if (!src) return out;
+            const hosts = [document.documentElement, document.body].filter((h) => h && h.classList.contains('dark-mode'));
+            const lift = mode === 'light' && hosts.length > 0;
+            const v = {};
+            if (lift) hosts.forEach((h) => h.classList.remove('dark-mode'));
+            try { const cs = getComputedStyle(src); PRINT_THEME_VARS.forEach((n) => { v[n] = (cs.getPropertyValue(n) || '').trim(); }); }
+            finally { if (lift) hosts.forEach((h) => h.classList.add('dark-mode')); }
+            const toRGB = (x) => {
+                x = (x || '').trim(); if (!x) return null;
+                const t = document.createElement('span'); t.style.color = x; document.body.appendChild(t);
                 const m = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/.exec(getComputedStyle(t).color); t.remove();
                 return m ? [+m[1], +m[2], +m[3]] : null;
             };
             const lum = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
             const fit = (c, max) => { let k = 1; while (k > 0.2 && lum(c.map((x) => x * k)) > max) k -= 0.05; return c.map((x) => Math.round(x * k)); };
             const hex = (c) => '#' + c.map((x) => x.toString(16).padStart(2, '0')).join('');
-            const pr = toRGB(cs.getPropertyValue('--primary'));
-            if (!pr) return;
-            const pd = toRGB(cs.getPropertyValue('--primary-dark')) || pr;
-            const accent = fit(pr, 0.55), link = fit(pd, 0.38);
-            const tint = accent.map((x) => Math.round(x + (255 - x) * 0.88));
-            root.style.setProperty('--primary', hex(accent));
-            root.style.setProperty('--primary-dark', hex(link));
-            root.style.setProperty('--primary-light', hex(tint));
-            root.style.setProperty('--primary-rgb', accent.join(', '));
+            if (mode === 'light') {
+                const pr = toRGB(v['--primary']);
+                if (pr) {
+                    const pd = toRGB(v['--primary-dark']) || pr;
+                    const accent = fit(pr, 0.55), link = fit(pd, 0.38);
+                    v['--primary'] = hex(accent); v['--primary-dark'] = hex(link);
+                    v['--primary-light'] = hex(accent.map((x) => Math.round(x + (255 - x) * 0.88)));
+                    v['--primary-rgb'] = accent.join(', ');
+                }
+            }
+            PRINT_THEME_VARS.forEach((n) => { if (v[n]) root.style.setProperty(n, v[n]); });
+            if (v['--bg-white']) root.style.setProperty('--bg-card', v['--bg-white']);
+            if (v['--bg-white']) out.bg = v['--bg-white'];
         } catch (e) { console.warn('Notes Vault: could not apply theme to PDF', e); }
+        return out;
     }
     async function exportNotePdf(n) {
         const opts = await askPdfOptions();
@@ -5948,7 +5976,8 @@
         root.className = 'nv-prose';
         root.style.setProperty('--nv-pm-x', pm[0]);
         root.style.setProperty('--nv-pm-y', pm[1]);
-        applyPrintTheme(root);
+        const theme = applyPrintTheme(root, opts.colors);
+        pageStyle.textContent += ' @media print { html, body { background: ' + theme.bg + ' !important; } }';
         const h = document.createElement('h1'); h.className = 'nv-print-title'; h.textContent = n.title || 'Untitled note';
         const body = document.createElement('div');
         // Only the note itself is exported: title + content. No folder/date line, no app link, no URL.

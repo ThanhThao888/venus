@@ -185,6 +185,9 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 .dact{display:inline-flex;gap:6px;align-items:center}
 #iTpl{display:inline-flex;gap:6px;align-items:center}
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap">
 <style id="ux2">
 /* ===== UX v2: header dính, thẻ rõ hơn, copy nhanh, sheet trên mobile ===== */
 html{scroll-padding-top:76px}
@@ -231,7 +234,7 @@ dialog[open]::backdrop{animation:dfade .16s ease-out}
   .top{margin:0 -16px 12px}
   dialog{width:100vw;max-width:100vw;margin:auto 0 0;border-radius:20px 20px 0 0;max-height:92dvh;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
   dialog[open]{animation:dsheet .2s ease-out}
-  .grid{grid-template-columns:1fr}
+  .grid{grid-template-columns:minmax(0,1fr)}
 }
 @keyframes dsheet{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
@@ -300,6 +303,36 @@ dialog::backdrop{background:rgba(40,20,32,.5);-webkit-backdrop-filter:blur(4px);
 @keyframes tup{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 @media (max-width:640px){.card{min-height:0}.card p{-webkit-line-clamp:2}}
 @media print{.top,.dock,#legend,#chips,#toast{display:none!important}body{background:#fff}}
+#sortSel{width:auto;display:inline-block;padding:5px 12px;border-radius:99px;font-size:.82rem;margin-left:8px;cursor:pointer}
+.newb{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:1px 8px;margin-right:7px;border-radius:99px;background:var(--primary);color:#fff;vertical-align:1px;-webkit-text-fill-color:currentColor}
+:root.dark-mode .newb,:root.dark-mode .seg button.on{color:#2a1420}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;background:var(--card);margin-left:8px}
+.seg button{border:0;background:transparent;color:var(--muted);padding:4px 12px;cursor:pointer;font-size:.95rem;line-height:1.2}
+.seg button:hover{background:var(--primary-light)}
+.seg button.on{background:var(--primary);color:#fff}
+.seg button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+/* dạng danh sách gọn */
+.grid.list{grid-template-columns:minmax(0,1fr);gap:6px}
+.grid.list .card{flex-direction:row;align-items:center;gap:12px;min-height:0;padding:8px 14px;border-radius:12px;box-shadow:none}
+.grid.list .card:hover{transform:none}
+.grid.list .card .row{display:contents}
+.grid.list .card b{order:0;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.grid.list .card>div:nth-child(2){order:1;flex:0 1 36%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid.list .card .cpy{order:2;opacity:1;align-self:center}
+.grid.list .card .star{order:3}
+.grid.list .card p{display:none}
+@media (max-width:640px){.grid.list .card>div:nth-child(2){display:none}.seg{margin-left:6px}}
+/* ===== font tựa: Playfair Display (có tiếng Việt); nội dung giữ nguyên font hệ thống ===== */
+:root{--font-title:"Playfair Display","Lora",Georgia,"Times New Roman",serif}
+h1,h2,.card b,#vTitle,.st,.goal b{font-family:var(--font-title);letter-spacing:0}
+h1,h2{font-weight:700}
+.card b{font-weight:600;font-size:1.02rem}
+.st{font-weight:600}
+.newb{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+/* chống tràn ngang: cột lưới và thẻ được phép co lại */
+.wrap,#viewLib,.grid,.grid>.card{min-width:0;max-width:100%}
+.grid.list .card>div:nth-child(2){max-width:36%}
+html,body{overflow-x:clip}
 </style>
 </head>
 <body>
@@ -345,7 +378,8 @@ dialog::backdrop{background:rgba(40,20,32,.5);-webkit-backdrop-filter:blur(4px);
   <section id="viewLib" hidden>
     <input type="search" id="q" placeholder="Tìm theo tên, nội dung, tag… (nhấn / để tìm)" enterkeyhint="search" autocomplete="off">
     <div class="chips collapsed" id="chips"></div>
-    <div class="row" style="justify-content:space-between;margin:-6px 0 10px"><span class="muted" id="count"></span><button type="button" class="btn ghost sm" id="clearF" hidden>Xóa lọc</button><button type="button" class="btn ghost sm" id="chipsToggle">Hiện tất cả tag ▾</button></div>
+    <div class="row" style="justify-content:space-between;margin:-6px 0 10px"><span class="muted" id="count"></span><button type="button" class="btn ghost sm" id="clearF" hidden>Xóa lọc</button>
+      <select id="sortSel" aria-label="Sắp xếp"><option value="def">★ trước, cũ → mới</option><option value="rec">Dùng gần đây</option><option value="neu">Mới thêm trước</option><option value="az">A → Z</option></select><div class="seg" id="viewSeg"><button type="button" data-v="grid" title="Dạng lưới" aria-label="Dạng lưới">▦</button><button type="button" data-v="list" title="Dạng danh sách gọn" aria-label="Dạng danh sách gọn">☰</button></div><button type="button" class="btn ghost sm" id="chipsToggle">Hiện tất cả tag ▾</button></div>
     <div class="legend" id="legend" aria-label="Nhóm màu"></div>
     <div class="grid" id="grid"></div>
     <p class="muted" id="empty" hidden>Không có prompt nào khớp. Thử bỏ bớt tag, đổi từ khóa hoặc bấm Xóa lọc.</p>
@@ -809,16 +843,26 @@ function fam(p){for(const[k,l]of FT)if(p.tags.some(t=>l.includes(t)))return k;re
 
 function toast(m){const t=$("toast"),d=document.querySelector("dialog[open]");(d||document.body).appendChild(t);t.textContent=m;t.style.display="flex";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",1600)}
 
+/* ===== sắp xếp, nhớ lần dùng, nhớ bộ lọc ===== */
+let US={},sortBy="def",viewMode="grid",NEWOK=true;
+try{US=JSON.parse(localStorage.getItem(KEY+".used")||"{}")}catch(e){}
+try{const u=JSON.parse(localStorage.getItem(KEY+".ui")||"{}");if(Array.isArray(u.sel))sel=u.sel;if(typeof u.fsel==="string")fsel=u.fsel;if(typeof u.filter==="string")filter=u.filter;if(u.sortBy)sortBy=u.sortBy;if(u.view==="list")viewMode="list"}catch(e){}
+function isNew(p){return NEWOK&&!US[p.id]&&!p.tags.includes("archive")&&Date.now()-p.created<6048e5}
+function markUsed(id){US[id]=Date.now();try{localStorage.setItem(KEY+".used",JSON.stringify(US))}catch(e){}}
+function saveUI(){try{localStorage.setItem(KEY+".ui",JSON.stringify({sel,fsel,filter,sortBy,view:viewMode}))}catch(e){}}
+const SORTS={def:(a,b)=>(b.fav-a.fav)||(a.created-b.created),rec:(a,b)=>((US[b.id]||0)-(US[a.id]||0))||SORTS.def(a,b),neu:(a,b)=>(b.created-a.created),az:(a,b)=>a.title.localeCompare(b.title,"vi")};
 /* ===== RENDER ===== */
-function render(){
+function render(){saveUI();if($("sortSel").value!==sortBy)$("sortSel").value=sortBy;
+  {const act=P.filter(p=>!p.tags.includes("archive")),rc=act.filter(p=>Date.now()-p.created<6048e5).length;NEWOK=rc>0&&rc/act.length<=.4}
+  $("grid").classList.toggle("list",viewMode==="list");document.querySelectorAll("#viewSeg button").forEach(b=>{const on=b.dataset.v===viewMode;b.classList.toggle("on",on);b.setAttribute("aria-pressed",on)});
   const _cs=$("chips").scrollLeft;
   const tags=[...new Set(P.flatMap(p=>p.tags))].sort();
   $("chips").innerHTML=['<span class="chip'+(!sel.length&&filter!=="★"?" on":"")+'" data-t="">Tất cả</span>','<span class="chip'+(filter==="★"?" on":"")+'" data-t="★">★ Yêu thích</span>']
     .concat(tags.map(t=>'<span class="chip'+(sel.includes(t)?" on":"")+'" data-t="'+esc(t)+'">'+esc(t)+'</span>')).join("");
   const q=$("q").value.toLowerCase().trim();
   const list=P.filter(p=>(filter!=="★"||p.fav)&&(sel.includes("archive")||!p.tags.includes("archive"))&&sel.every(t=>p.tags.includes(t))&&(!fsel||fam(p)===fsel)&&(!q||(p.title+" "+p.tags.join(" ")+" "+p.body).toLowerCase().includes(q)))
-    .sort((a,b)=>(b.fav-a.fav)||(a.created-b.created));
-  $("grid").innerHTML=list.map(p=>'<div class="card" tabindex="0" data-f="'+fam(p)+'" data-id="'+p.id+'"><div class="row"><b style="flex:1">'+esc(p.title)+'</b><button class="cpy" data-cp="'+p.id+'" aria-label="Copy prompt">Copy</button><button class="star'+(p.fav?" on":"")+'" aria-label="Yêu thích" data-star="'+p.id+'">'+(p.fav?"★":"☆")+'</button></div><div>'+p.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div><p>'+esc(p.body.slice(0,220))+'</p></div>').join("");
+    .sort(SORTS[sortBy]||SORTS.def);
+  $("grid").innerHTML=list.map(p=>'<div class="card" tabindex="0" data-f="'+fam(p)+'" data-id="'+p.id+'"><div class="row"><b style="flex:1">'+(isNew(p)?'<span class="newb">Mới</span>':"")+esc(p.title)+'</b><button class="cpy" data-cp="'+p.id+'" aria-label="Copy prompt">Copy</button><button class="star'+(p.fav?" on":"")+'" aria-label="Yêu thích" data-star="'+p.id+'">'+(p.fav?"★":"☆")+'</button></div><div>'+p.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("")+'</div><p>'+esc(p.body.slice(0,220))+'</p></div>').join("");
   $("empty").hidden=list.length>0;$("clearF").hidden=!(q||sel.length||filter||fsel);{const n={};P.filter(p=>!p.tags.includes("archive")||fam(p)==="old").forEach(p=>{const k=fam(p);if(k)n[k]=(n[k]||0)+1});$("legend").innerHTML=Object.keys(FN).filter(k=>n[k]).map(k=>'<button type="button" class="lg'+(fsel===k?" on":"")+'" data-fam="'+k+'"><i></i>'+FN[k]+" · "+n[k]+"</button>").join("")}
   $("chips").scrollLeft=_cs;
   const tot=P.filter(p=>!p.tags.includes("archive")).length;
@@ -829,10 +873,12 @@ $("q").oninput=render;
 $("legend").onclick=e=>{const b=e.target.closest("[data-fam]");if(!b)return;fsel=fsel===b.dataset.fam?"":b.dataset.fam;render()};
 document.addEventListener("click",e=>{const m=$("moreMenu");if(m.open&&(!m.contains(e.target)||e.target.closest(".menu button")))m.open=false});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")$("moreMenu").open=false});
+$("viewSeg").onclick=e=>{const b=e.target.closest("[data-v]");if(!b)return;viewMode=b.dataset.v;render()};
+$("sortSel").onchange=()=>{sortBy=$("sortSel").value;render()};
 $("clearF").onclick=()=>{filter="";sel=[];fsel="";$("q").value="";render()};
 $("chipsToggle").onclick=()=>{const c=$("chips").classList.toggle("collapsed");$("chipsToggle").textContent=c?"Hiện tất cả tag ▾":"Thu gọn tag ▴"};
 $("grid").onclick=e=>{
-  const cp=e.target.closest("[data-cp]");if(cp){const p=P.find(x=>x.id===cp.dataset.cp);copyText(fillToday(p.body)).then(()=>{toast("Đã copy");cp.textContent="✓ Đã copy";setTimeout(()=>cp.textContent="Copy",1400)});return}
+  const cp=e.target.closest("[data-cp]");if(cp){const p=P.find(x=>x.id===cp.dataset.cp);markUsed(p.id);copyText(fillToday(p.body)).then(()=>{toast("Đã copy");cp.textContent="✓ Đã copy";setTimeout(()=>cp.textContent="Copy",1400)});return}
   const s=e.target.dataset.star;
   if(s){const p=P.find(x=>x.id===s);p.fav=!p.fav;save();render();return}
   const c=e.target.closest(".card");if(c)openView(c.dataset.id);
@@ -844,7 +890,7 @@ document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>b.closest("di
 /* ===== VIEW / EDIT ===== */
 let VT=null;
 function openView(id,txt){VT=txt==null?null:txt;cur=P.find(p=>p.id===id);$("vTitle").textContent=cur.title;$("vTags").innerHTML=cur.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join("");$("vBody").textContent=VT!=null?VT:cur.body;$("view").showModal()}
-$("vCopy").onclick=async()=>{try{await navigator.clipboard.writeText(VT!=null?VT:fillToday(cur.body))}catch(e){const r=document.createRange();r.selectNodeContents($("vBody"));getSelection().removeAllRanges();getSelection().addRange(r);document.execCommand("copy")}const vb=$("vCopy");vb.textContent="✓ Đã copy";clearTimeout(vb._h);vb._h=setTimeout(()=>vb.textContent="Copy",1600);toast("Đã copy")};
+$("vCopy").onclick=async()=>{try{await navigator.clipboard.writeText(VT!=null?VT:fillToday(cur.body))}catch(e){const r=document.createRange();r.selectNodeContents($("vBody"));getSelection().removeAllRanges();getSelection().addRange(r);document.execCommand("copy")}if(cur)markUsed(cur.id);const vb=$("vCopy");vb.textContent="✓ Đã copy";clearTimeout(vb._h);vb._h=setTimeout(()=>vb.textContent="Copy",1600);toast("Đã copy")};
 $("vDel").onclick=()=>{if(confirm("Xóa prompt này?")){P=P.filter(p=>p!==cur);save();$("view").close();render()}};
 function openEdit(p){cur=p;$("eHead").textContent=p?"Sửa prompt":"Prompt mới";$("eTitle").value=p?p.title:"";$("eTags").value=p?p.tags.join(", "):"";$("eBody").value=p?p.body:"";$("view").close();$("edit").showModal()}
 $("vEdit").onclick=()=>openEdit(cur);
