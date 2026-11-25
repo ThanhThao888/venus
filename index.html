@@ -81070,23 +81070,30 @@ window.fcRenderTagChips = fcRenderTagChips;
                 try { await window.__ensureNotesVault(); }
                 catch (e) { throw new Error("Không tải được Notes Vault nên đã dừng backup (để file backup không bị thiếu notes). Kiểm tra mạng rồi thử lại."); }
             }
-            let notesVault = null;
+            let notesVault = null, vaultParts = null;
             try {
-                if (window.NotesVault && typeof window.NotesVault.getBackupData === 'function') {
+                // Preferred: the vault hands back the backup as a list of small parts (one Blob per attachment) so a
+                // vault full of PDFs never has to become one giant JSON string (that crashes the tab). Older vault.js
+                // without getBackupParts falls back to the object form.
+                if (window.NotesVault && typeof window.NotesVault.getBackupParts === 'function') {
+                    vaultParts = await window.NotesVault.getBackupParts();
+                } else if (window.NotesVault && typeof window.NotesVault.getBackupData === 'function') {
                     notesVault = await window.NotesVault.getBackupData();
                 }
             } catch (e) { console.error('Notes Vault backup failed:', e); }
-            return {
+            const vaultNoteCount = vaultParts ? vaultParts.counts.notes : (notesVault ? notesVault.notes.length : 0);
+            const vaultRevCount = vaultParts ? vaultParts.counts.revisions : (notesVault ? (notesVault.revisions || []).length : 0);
+            const result = {
                 __meta: {
                     app: "Finance Career Skills Tracker",
                     exportDate: new Date().toISOString(),
                     version: "3.2-full-backup",
                     keyCount: Object.keys(raw).length,
-                    notesVaultCount: notesVault ? notesVault.notes.length : 0,
+                    notesVaultCount: vaultNoteCount,
                     // Version history + file-link metadata ride along inside notesVault itself now
                     // (see NotesVault.getBackupData) — surfaced here too just for the import/export
                     // confirmation messages below.
-                    notesVaultRevisionsCount: notesVault ? (notesVault.revisions || []).length : 0,
+                    notesVaultRevisionsCount: vaultRevCount,
                     excludes: FULLBACKUP_EXCLUDE_KEYS,
                     ...extraMeta
                 },
@@ -81094,11 +81101,22 @@ window.fcRenderTagChips = fcRenderTagChips;
                 data: raw,
                 notesVault   // { schema, notes, revisions, fileLinks } from Notes Vault's IndexedDB, or null if the vault script hasn't loaded
             };
+            // Not enumerable → never ends up in a plain JSON.stringify; downloadBackupObject splices it in as parts.
+            if (vaultParts) Object.defineProperty(result, '__vaultParts', { value: vaultParts.parts, enumerable: false });
+            return result;
         }
 
         function downloadBackupObject(backup, filenamePrefix) {
-            const dataStr = JSON.stringify(backup, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            let dataBlob;
+            if (backup.__vaultParts) {
+                // Everything except the vault is small → pretty-printed as before. The vault goes in as parts
+                // (strings + one Blob per attachment), so no single string ever holds the base64 of every PDF.
+                const o = Object.assign({}, backup); delete o.notesVault;
+                const head = JSON.stringify(o, null, 2);
+                dataBlob = new Blob([head.slice(0, head.lastIndexOf('\n}')), ',\n"notesVault": '].concat(backup.__vaultParts, ['\n}\n']), { type: 'application/json' });
+            } else {
+                dataBlob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            }
             const url = URL.createObjectURL(dataBlob);
             const link = document.createElement('a');
             link.href = url;
@@ -81149,7 +81167,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             const reader = new FileReader();
             reader.onload = async function(e) {
                 try {
-                    const parsed = JSON.parse(e.target.result);
+                    const parsed = e.__streamed || JSON.parse(e.target.result);
 
                     // ✅ Nhận diện 2 loại file:
                     // - File backup MỚI (có __meta + data)  → restore thẳng từng key
@@ -81267,7 +81285,30 @@ window.fcRenderTagChips = fcRenderTagChips;
             };
             const _inputEl = event.target;
             reader.onloadend = function() { try { _inputEl.value = ''; } catch (_) {} };
-            reader.readAsText(file);
+            // File lớn (nhiều PDF): đọc theo luồng từng dòng thay vì nạp cả file thành 1 chuỗi (dễ sập tab / vượt giới hạn chuỗi).
+            // Ảnh/PDF được ghi thẳng vào IndexedDB khi đọc (chỉ cộng thêm, trùng id thì bỏ qua) — phần còn lại đi tiếp
+            // đúng luồng cũ (kiểm tra, hỏi xác nhận, ghi đè localStorage). File kiểu cũ → rơi về readAsText như trước.
+            if (file.size > 48 * 1024 * 1024 && window.__ensureNotesVault) {
+                (async () => {
+                    let streamed = null;
+                    try {
+                        await window.__ensureNotesVault();
+                        if (window.NotesVault && typeof window.NotesVault.readBackupStream === 'function' && typeof window.NotesVault.restoreAttachmentsList === 'function') {
+                            showNotification('⏳ File backup lớn — đang đọc từng phần, vui lòng chờ…', 'info');
+                            streamed = await window.NotesVault.readBackupStream(file, (att) => window.NotesVault.restoreAttachmentsList([att]));
+                        }
+                    } catch (err) {
+                        console.error('Streaming import failed:', err);
+                        showNotification('❌ Không đọc được file backup lớn: ' + err.message, 'error');
+                        try { _inputEl.value = ''; } catch (_) {}
+                        return;
+                    }
+                    if (streamed) { await reader.onload({ __streamed: streamed, target: {} }); try { _inputEl.value = ''; } catch (_) {} }
+                    else reader.readAsText(file);
+                })();
+            } else {
+                reader.readAsText(file);
+            }
         }
 
 

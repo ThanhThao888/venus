@@ -70,6 +70,7 @@
     const SAVE_DELAY = 700;
     // A backup is only "full" if it carries every IndexedDB store the vault actually uses —
     // notes alone silently drops version history and file links. Bumped if that shape changes.
+    const BIG_BACKUP_BYTES = 48 * 1024 * 1024;   // above this, import reads the backup as a stream (see readBackupStream)
     const BACKUP_SCHEMA = 2;   // v2 adds `attachments` (base64 image blobs) — see getBackupData
     // FileSystemFileHandle can't survive JSON (structured-clone only), so a restored file link
     // can't reopen the real file — this remembers just enough (name + when) to show a
@@ -182,12 +183,33 @@
         });
         return dbPromise;
     }
+    // The deadline each note had the last time THIS tab read it from / wrote it to the database. Today (today.html) and
+    // other tabs can change a note's deadline straight in IndexedDB; this lets dbPut tell "the user edited the deadline
+    // here" from "this tab simply still holds the old value" — see dbPut.
+    const dlSeen = new Map();
     async function dbPut(note) {
         const db = await openDb();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE, 'readwrite');
-            tx.objectStore(STORE).put(note);
-            tx.oncomplete = () => resolve(note);
+            const st = tx.objectStore(STORE);
+            let adopted = false;
+            // Read-then-write in ONE transaction (no race). If this tab never touched the deadline (it still equals what
+            // we last saw) but the stored one has moved on (Today's "Review again" / "Drop", another tab), keep the
+            // stored deadline — otherwise saving any edit would silently write the stale one back over it.
+            const g = st.get(note.id);
+            g.onsuccess = () => {
+                const cur = g.result, seen = dlSeen.get(note.id);
+                if (cur && seen !== undefined && (note.deadline || '') === seen && (cur.deadline || '') !== seen) {
+                    note.deadline = cur.deadline || '';
+                    adopted = true;
+                }
+                st.put(note);
+            };
+            tx.oncomplete = () => {
+                dlSeen.set(note.id, note.deadline || '');
+                if (adopted) { try { onDeadlineAdopted(note); } catch (e) { /* UI refresh is best-effort */ } }
+                resolve(note);
+            };
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error);
         });
@@ -1157,6 +1179,7 @@
         const refMap = new Map(refs.map((r) => [r.id, r]));
         let changed = 0, freed = 0;
         for (const rec of atts) {
+            if (!/^image\//i.test(rec.mime || '')) continue;   // PDFs / spreadsheets are stored as-is: never decode them as images
             const stale = rec.mime !== 'image/webp' || Math.max(rec.width || 0, rec.height || 0) > ATTACH_MAX_DIM;
             if (!stale) continue;
             const refRec = refMap.get(rec.id);
@@ -1929,6 +1952,7 @@
     /* ───────── Loading ───────── */
     async function loadAll() {
         const all = (await dbGetAll()).map(normalizeNote);
+        all.forEach((n) => dlSeen.set(n.id, n.deadline || ''));
         S.notes = all.filter((n) => !n.deletedAt);
         S.trash = all.filter((n) => n.deletedAt);
     }
@@ -2113,6 +2137,15 @@
         if (!note || note.deletedAt || !id) return false;
         return !EntityLinks.has(note, type, id);
     }
+    // A note holds ONE link per type (see EntityLinks). If it is already linked to a different target of this type,
+    // linking it again replaces that link — returns the title of what it currently points to, or '' if there is none.
+    function linkReplacesTitle(note, type, id) {
+        const cur = EntityLinks.getId(note, type);
+        if (!cur || String(cur) === String(id)) return '';
+        // skill id IS the skill name; the other types keep a text label of what they were linked to (note.course etc.).
+        const t = String(type === 'skill' ? cur : (note[type] || '')).trim();
+        return t || ('another ' + type);
+    }
     function linkPickerMatches(note, query) {
         if (!query) return true;
         const f = getFold(note);
@@ -2145,7 +2178,7 @@
             .map((n) => ({ n, s: linkPickerScore(n, lp.query) }))
             .sort((a, b) => b.s - a.s || b.n.updatedAt - a.n.updatedAt)
             .map((x) => x.n);
-        if (el.linkSub) el.linkSub.textContent = 'Select a note to link to “' + lp.title + '”. Existing links stay unchanged; only the selected note gets a new ' + lp.type + ' link.';
+        if (el.linkSub) el.linkSub.textContent = 'Select a note to link to “' + lp.title + '”. A note can have only one ' + lp.type + ' link, so notes already linked elsewhere are marked and will be switched to this one.';
         if (!candidates.length) {
             el.linkList.innerHTML = '<div class="nv-link-empty"><i class="fa-solid fa-link"></i><strong>' + (lp.query ? 'No matching notes' : 'No unlinked notes') + '</strong><div>' + (lp.query ? 'Try a shorter search.' : 'Every existing note is already linked to this ' + lp.type + ' or your vault is empty.') + '</div></div>';
             return;
@@ -2155,11 +2188,13 @@
             const title = n.title.trim() || 'Untitled note';
             const snippet = plainSnippet(n.markdown);
             const tags = n.tags.slice(0, 3).map((t) => '#' + esc(t)).join(' ');
+            const rep = linkReplacesTitle(n, lp.type, lp.id);
             return '<button type="button" class="nv-link-option" role="option" data-link-note="' + esc(n.id) + '">'
                 + '<span><span class="nv-link-option-title">' + esc(title) + '</span>'
                 + '<span class="nv-link-option-meta"><span>' + esc(normType(n.type)) + '</span><span>' + esc(fmtRel(n.updatedAt)) + '</span>' + (tags ? '<span>' + tags + '</span>' : '') + '</span>'
+                + (rep ? '<span class="nv-link-option-snip" style="color:var(--nv-warn,#c0762f)"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Currently linked to “' + esc(rep) + '” — linking will replace it</span>' : '')
                 + (snippet ? '<span class="nv-link-option-snip">' + esc(snippet) + '</span>' : '')
-                + '</span><span class="nv-link-option-cta">Link</span></button>';
+                + '</span><span class="nv-link-option-cta">' + (rep ? 'Replace' : 'Link') + '</span></button>';
         }).join('');
         if (candidates.length > shown.length) {
             el.linkList.insertAdjacentHTML('beforeend', '<div class="nv-link-empty" style="padding:12px 16px 18px;">Showing 80 of ' + candidates.length + ' matches. Refine the search to see another note.</div>');
@@ -2193,11 +2228,13 @@
         if (!lp.open) return;
         const note = S.notes.find((n) => n.id === noteId);
         if (!note || !noteCanBeLinkedToTarget(note, lp.type, lp.id)) return;
+        const replaced = linkReplacesTitle(note, lp.type, lp.id);
+        if (replaced && !confirm('This note is already linked to “' + replaced + '”. A note can have only one ' + lp.type + ' link, so linking it to “' + lp.title + '” will replace that link.\n\nContinue?')) return;
         const before = { title: note.title, updatedAt: note.updatedAt };
         try {
             EntityLinks.link(note, lp.type, lp.id, lp.type === 'skill' ? { career: lp.career } : {});
             if (lp.type === 'skill') { note.linkedCareer = lp.career || note.linkedCareer || ''; note.linkedSkill = lp.id; }
-            else if (lp.type === 'course') { note.course = lp.title || note.course || ''; if (lp.career) note.linkedCareer = lp.career; }
+            else if (lp.type === 'course') { note.course = lp.title || note.course || ''; if (lp.career && !note.linkedSkill) note.linkedCareer = lp.career; }   // keep the career a linked Skill depends on
             else if (lp.type === 'resource') note.resource = lp.title || note.resource || '';
             else if (lp.type === 'analysis') note.analysis = lp.title || note.analysis || '';
             else if (lp.type === 'deal') note.deal = lp.title || note.deal || '';
@@ -2211,7 +2248,7 @@
             }
             afterEntityLinkChanged(lp.type);
             closeLinkPicker();
-            flash('Linked “' + (note.title.trim() || 'Untitled note') + '” to ' + lp.title);
+            flash('Linked “' + (note.title.trim() || 'Untitled note') + '” to ' + lp.title + (replaced ? ' (replaced “' + replaced + '”)' : ''));
         } catch (e) {
             console.warn('Notes Vault: could not link existing note', e);
             toast('Couldn’t link that note. No changes were saved.');
@@ -2249,6 +2286,9 @@
             for (const n of old) {
                 await dbDelete(n.id);
                 try { await revDeleteForNote(n.id); } catch (e) { /* history is best-effort */ }
+                try { await clearLinkedFile(n.id); } catch (e) { /* ignore */ }
+                try { await releaseNoteAttachments(n.id, n.markdown); } catch (e) { /* attachments become orphans, catchable by "Clean up unused" */ }
+                clearPendingRelink(n.id);
                 foldCache.delete(n.id);
             }
             if (old.length) S.trash = S.trash.filter((n) => n.deletedAt >= cutoff);
@@ -2636,6 +2676,10 @@
         if (raw.career) data.career = String(Array.isArray(raw.career) ? raw.career[0] : raw.career).trim();
         if (raw.skill) data.skill = String(Array.isArray(raw.skill) ? raw.skill[0] : raw.skill).trim();
         if (raw.course) data.course = String(Array.isArray(raw.course) ? raw.course[0] : raw.course).trim();
+        ['resource', 'analysis', 'deal'].forEach((k) => { if (raw[k]) data[k] = String(Array.isArray(raw[k]) ? raw[k][0] : raw[k]).trim(); });
+        const rm = raw.remind || raw.remindat;   // written as "remind:" by the exporter; "remindAt" (any case) is accepted too
+        if (rm) { const r = String(Array.isArray(rm) ? rm[0] : rm).trim(); if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(r)) data.remind = r.slice(0, 16); }
+        if (raw.pinned && /^(true|yes|1)$/i.test(String(Array.isArray(raw.pinned) ? raw.pinned[0] : raw.pinned).trim())) data.pinned = true;
         if (raw.deadline) {
             const dl = String(Array.isArray(raw.deadline) ? raw.deadline[0] : raw.deadline).trim();
             if (/^\d{4}-\d{2}-\d{2}$/.test(dl)) data.deadline = dl;   // only ISO dates — anything else is ambiguous to parse safely
@@ -2665,11 +2709,22 @@
             n.tags = data.tags.slice();
             changed = true;
         }
-        if (data.course && !n.course) {
-            n.course = data.course;
-            if (el.course) el.course.value = n.course;
+        // Free-text label + best-effort link to the live tracker entry (exact, unambiguous title match only — same as typing it in the Info tab).
+        const fillLink = (type, field, resolver, node, badges) => {
+            if (!data[field] || n[field]) return;
+            n[field] = data[field];
+            if (node) node.value = n[field];
+            const hit = resolver(n[field]);
+            if (hit && !EntityLinks.getId(n, type)) EntityLinks.link(n, type, hit.id);
+            if (window[badges]) window[badges]();
             changed = true;
-        }
+        };
+        fillLink('course', 'course', resolveCourseLink, el.course, 'nvRefreshCourseBadges');
+        fillLink('resource', 'resource', resolveResourceLink, el.resource, 'nvRefreshResourceBadges');
+        fillLink('analysis', 'analysis', resolveAnalysisLink, el.analysis, 'nvRefreshAnalysisBadges');
+        fillLink('deal', 'deal', resolveDealLink, el.deal, 'nvRefreshDealBadges');
+        if (data.remind && !n.remindAt) { n.remindAt = data.remind; n.remindState = ''; fillRemind(); changed = true; }
+        if (data.pinned && !n.pinned) { n.pinned = true; changed = true; }
         if (data.deadline && !n.deadline) {
             n.deadline = data.deadline;
             if (el.deadline) el.deadline.value = n.deadline;
@@ -2948,7 +3003,9 @@
         renderFootnotes(tpl.content, footnoteDefs);
         applyImageSizes(tpl.content);
         target.replaceChildren(tpl.content);
-        mmRenderPending(target);
+        // Mermaid draws asynchronously (library load + render); keep the promise on the target so a caller that needs the
+        // finished diagrams (PDF export) can wait for it. vizRenderPending is synchronous, so it is done when this returns.
+        target.__nvMmDone = mmRenderPending(target).catch(() => {});
         vizRenderPending(target);
         if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise([target]).catch(() => {});
         return resolveAttachments(target, attachOpts);
@@ -3055,6 +3112,7 @@
     function renderPdfEmbed(anchor, rec, url, interactive) {
         const wrap = document.createElement('div');
         wrap.className = 'nv-pdf-embed';
+        wrap.dataset.att = rec.id;
         wrap.innerHTML =
             '<div class="nv-pdf-embed-bar">'
             + '<i class="fa-solid fa-file-pdf" aria-hidden="true"></i>'
@@ -3538,18 +3596,20 @@
                 if (opts.onDeleted) opts.onDeleted();
             } else if (act === 'delete') {
                 if (!confirm('Remove this ' + noun + ' from the note? The file stays stored until Storage → Clean up unused attachments is run, in case you undo.')) return;
-                if (S.note && S.mode === 'edit') {
-                    // Matches both the image syntax (`![alt](attachment://id)`) and the plain-link
-                    // syntax used for PDFs/other files (`[label](attachment://id)`).
-                    const md = S.note.markdown.replace(new RegExp('!?\\[[^\\]]*\\]\\(attachment://' + rec.id + '(?:\\s+"[^"]*")?\\)'), '');
-                    S.note.markdown = md;
-                    if (el.src) el.src.value = md;
-                    markDirty();
-                    renderInto(el.read, md);
-                    toast((isImage ? 'Image' : 'File') + ' removed from the note');
+                if (S.note && !S.viewRev) {
+                    const undoNoteId = S.note.id, undoMd = S.note.markdown;
+                    if (!removeAttachmentFromMarkdown(rec, imgEl)) { flash('Couldn’t remove this ' + noun + ' from the note'); return; }
+                    await rerenderKeepScroll();
+                    toast((isImage ? 'Image' : 'File') + ' removed from the note', 'Undo', async () => {
+                        if (!S.note || S.note.id !== undoNoteId || S.viewRev) { flash('Open the note again to undo'); return; }
+                        S.note.markdown = undoMd;
+                        if (el.src) el.src.value = undoMd;
+                        markDirty();
+                        await rerenderKeepScroll();
+                        hideToast();
+                    });
                 } else {
-                    const embed = imgEl.closest('.nv-pdf-embed');
-                    if (embed) embed.remove(); else imgEl.remove();
+                    flash('Open the current version of the note to remove this ' + noun);
                 }
             }
         });
@@ -3738,7 +3798,7 @@
     }
     /* ── Find in note (Read mode) ─ Ctrl/Cmd+F. Accent- and case-insensitive by default (typing "lien lac" finds
        "liên lạc"); matches may span inline formatting (bold/italic/links) but never two paragraphs. Highlights use the
-       CSS Custom Highlight API, so the rendered note is never modified. ── */
+       CSS Custom Highlight API (or, where that is missing, an overlay of boxes), so the rendered note is never modified. ── */
     const NF = { bar: null, input: null, count: null, matches: [], cur: -1, caseS: false, accS: false, timer: 0, watch: 0, mo: null, open: false };
     function foldChar(ch, caseS, accS) {
         if (/\s/.test(ch)) return ' ';
@@ -3792,8 +3852,47 @@
         if (NF.cur < 0 && NF.matches.length) NF.cur = 0;
         noteFindShow(!keepCur);
     }
+    // Browsers without the CSS Custom Highlight API (older Firefox / Safari) get translucent boxes drawn over the matches
+    // instead: a fixed, click-through layer holding one box per visible match rect. The note's own DOM is never touched.
+    function noteFindPaintBoxes() {
+        let layer = NF.layer;
+        if (!NF.open || !NF.matches.length || !el.read) { if (layer) layer.replaceChildren(); return; }
+        if (!layer) {
+            layer = NF.layer = document.createElement('div');
+            layer.setAttribute('aria-hidden', 'true');
+            layer.style.cssText = 'position:fixed;inset:0;z-index:10070;pointer-events:none;overflow:hidden';
+            document.body.appendChild(layer);
+        }
+        let sc = el.read;   // clip to the scrolling pane, so boxes never float over the toolbar or sidebar
+        while (sc && sc !== document.body) { const o = getComputedStyle(sc).overflowY; if ((o === 'auto' || o === 'scroll') && sc.scrollHeight > sc.clientHeight) break; sc = sc.parentElement; }
+        const vr = (sc && sc !== document.body) ? sc.getBoundingClientRect() : { top: 0, bottom: innerHeight, left: 0, right: innerWidth };
+        const frag = document.createDocumentFragment();
+        let drawn = 0;
+        NF.matches.forEach((rg, i) => {
+            const cur = i === NF.cur;
+            if (drawn > 500 && !cur) return;
+            let rects; try { rects = rg.getClientRects(); } catch (e) { return; }
+            for (const r of rects) {
+                if (r.bottom <= vr.top || r.top >= vr.bottom || r.right <= vr.left || r.left >= vr.right) continue;
+                const top = Math.max(r.top, vr.top), h = Math.min(r.bottom, vr.bottom) - top;
+                if (h <= 0) continue;
+                const d = document.createElement('div');
+                d.style.cssText = 'position:absolute;border-radius:2px;left:' + r.left + 'px;top:' + top + 'px;width:' + r.width + 'px;height:' + h + 'px;background:' + (cur ? 'rgba(255,126,0,.5)' : 'rgba(255,214,0,.4)');
+                frag.appendChild(d); drawn++;
+            }
+        });
+        layer.replaceChildren(frag);
+    }
     function noteFindPaint() {
-        if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined') return;
+        if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined') {
+            noteFindPaintBoxes();
+            if (!NF.onMove) {
+                NF.onMove = () => { if (!NF.raf) NF.raf = requestAnimationFrame(() => { NF.raf = 0; if (NF.open) noteFindPaintBoxes(); }); };
+                window.addEventListener('scroll', NF.onMove, true);   // capture: the scrolling pane is not the window
+                window.addEventListener('resize', NF.onMove);
+            }
+            return;
+        }
         CSS.highlights.set('nv-find', new Highlight(...NF.matches.filter((_, i) => i !== NF.cur)));
         if (NF.cur >= 0 && NF.matches[NF.cur]) CSS.highlights.set('nv-find-cur', new Highlight(NF.matches[NF.cur])); else CSS.highlights.delete('nv-find-cur');
     }
@@ -3826,6 +3925,8 @@
         clearInterval(NF.watch); if (NF.mo) NF.mo.disconnect();
         NF.matches = []; NF.cur = -1;
         if (window.CSS && CSS.highlights) { CSS.highlights.delete('nv-find'); CSS.highlights.delete('nv-find-cur'); }
+        if (NF.layer) NF.layer.replaceChildren();
+        if (NF.onMove) { window.removeEventListener('scroll', NF.onMove, true); window.removeEventListener('resize', NF.onMove); NF.onMove = null; }
     }
     // Hand the current search over to the Find & Replace modal: same text, same Aa / accent options, scope = this note.
     function noteFindToReplace() {
@@ -3997,6 +4098,37 @@
             hd.addEventListener('pointerup', up);
             hd.addEventListener('pointercancel', up);
         });
+    }
+    // Removes the clicked attachment (image, PDF or spreadsheet card) from the note's markdown. Works in Read, Edit,
+    // Split and Live Preview. The clicked one is matched by its position among the same attachment's embeds on the page
+    // (like updateImageInMarkdown), and `attachment://` text inside code fences is ignored because it isn't rendered.
+    function removeAttachmentFromMarkdown(rec, imgEl) {
+        if (!S.note || S.viewRev) return false;
+        const id = rec.id;
+        const sel = 'img[data-nv-attach="' + id + '"], .nv-pdf-embed[data-att="' + id + '"], .nv-file-card[data-att="' + id + '"]';
+        const nodes = Array.from(el.read.querySelectorAll(sel));
+        const host = imgEl && imgEl.closest ? (imgEl.closest('.nv-pdf-embed, .nv-file-card') || imgEl) : imgEl;
+        let idx = nodes.indexOf(host); if (idx < 0) idx = 0;
+        const md0 = S.note.markdown;
+        const fences = [];
+        const fre = /^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n[ \t]{0,3}\1[`~]*[ \t]*(?=\n|$)|$)/gm;
+        let fm; while ((fm = fre.exec(md0))) fences.push([fm.index, fm.index + fm[0].length]);
+        const re = new RegExp('!?\\[[^\\]]*\\]\\(attachment://' + id + '(?:\\s+"[^"]*")?\\)', 'g');
+        const noCode = stripFences(md0);   // same length as md0, with fenced AND inline code blanked out
+        let n = -1, changed = false;
+        const md = md0.replace(re, (full, off) => {
+            if (fences.some((f) => off >= f[0] && off < f[1])) return full;
+            if (noCode.substr(off, full.length) !== full) return full;   // inside `inline code`: not rendered, so not counted
+            n++;
+            if (n !== idx) return full;
+            changed = true;
+            return '';
+        });
+        if (!changed) return false;
+        S.note.markdown = md;
+        if (el.src) el.src.value = md;   // also pushes to CodeMirror when Live Preview is on (see initLiveAdapter)
+        markDirty();
+        return true;
     }
     // Writes the new width into the note's markdown (as ![alt|WIDTH](attachment://id)); width 0 = original size.
     // When the same image appears several times, the clicked one is matched by its position in the page.
@@ -4303,7 +4435,9 @@
         const list = [
             { id: 'pin', icon: 'star', label: n.pinned ? 'Unpin note' : 'Pin note' },
             { id: 'dup', icon: 'copy', label: 'Duplicate' },
-            { id: 'copy', icon: 'clipboard', label: 'Copy Markdown' }
+            { id: 'copy', icon: 'clipboard', label: 'Copy Markdown' },
+            { id: 'ctxpack', icon: 'robot', label: 'Copy Context Pack (for AI)…' },
+            { id: 'savetpl', icon: 'file-circle-plus', label: 'Save as template' }
         ];
         if (linked) {
             list.push({ id: 'savefsupdate', icon: 'floppy-disk', label: 'Save changes to file' });
@@ -5391,9 +5525,32 @@
     document.addEventListener('visibilitychange', () => { if (document.hidden) { flushSave().catch(() => {}); rpFlush().catch(() => {}); } });
     window.addEventListener('pagehide', () => { flushSave().catch(() => {}); rpFlush().catch(() => {}); });
 
+    /* ── Deadline changed outside this tab (Today's "Review again" / "Drop" write the note straight to IndexedDB) ──
+       today.html posts { id, deadline, updatedAt } on this channel. Update the note held in memory right away, so the
+       open editor shows the new date and a later autosave can't write the old one back. (dbPut has a second line of
+       defence for when no message arrives — tab asleep, browser without BroadcastChannel.) */
+    function onDeadlineAdopted(n) {
+        if (S.note && S.note.id === n.id) { if (el.deadline) el.deadline.value = n.deadline || ''; renderDocMeta(); toast('Deadline was changed elsewhere (Today) — kept the newer date: ' + (n.deadline || 'none') + '.'); }
+        renderSide(); renderLibrary();
+        nvSyncPlannerDeadline(n);
+    }
+    try {
+        const dlChannel = new BroadcastChannel('venus-note-deadline');
+        dlChannel.onmessage = (ev) => {
+            const d = ev && ev.data; if (!d || !d.id || typeof d.deadline !== 'string') return;
+            const n = S.notes.find((x) => x.id === d.id) || S.trash.find((x) => x.id === d.id);
+            if (!n) return;
+            n.deadline = d.deadline;
+            if (+d.updatedAt > n.updatedAt) n.updatedAt = +d.updatedAt;
+            dlSeen.set(n.id, d.deadline);
+            if (S.note && S.note.id === n.id) { if (el.deadline) el.deadline.value = n.deadline; renderDocMeta(); toast('Deadline changed in Today — now ' + (n.deadline || 'none') + '.'); }
+            renderSide(); renderLibrary();
+        };
+    } catch (e) { /* no BroadcastChannel: dbPut's check still protects the stored deadline */ }
+
     /* ═════════════ Actions ═════════════ */
     function download(content, filename, mime) {
-        const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+        const blob = new Blob(Array.isArray(content) ? content : [content], { type: mime + ';charset=utf-8' });   // an array = pre-split parts (see getBackupParts)
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = filename;
@@ -5434,6 +5591,9 @@
             if (opts.onAttachment) await opts.onAttachment(rec, filename);
             return 'attachments/' + filename;
         }
+        // PDFs / spreadsheets are NOT embedded as base64 in a single .md (huge line, links browsers won't open):
+        // the reference stays as-is — use Export to folder to take the real files along.
+        if (!/^image\//i.test(rec.mime || '')) return null;
         try {
             const b64 = await blobToBase64(rec.blob);
             return 'data:' + (rec.mime || 'image/webp') + ';base64,' + b64;
@@ -5442,22 +5602,23 @@
     async function portableizeAttachments(markdown, opts) {
         opts = opts || {};
         if (!markdown || markdown.indexOf('attachment://') === -1) return markdown;
-        const re = /!\[([^\]]*)\]\(attachment:\/\/([a-zA-Z0-9_-]+)(\s+"[^"]*")?\)/g;
+        // `!` is optional: images are `![alt](attachment://id)`, but PDFs and spreadsheets are plain links `[label](attachment://id)`.
+        const re = /(!?)\[([^\]]*)\]\(attachment:\/\/([a-zA-Z0-9_-]+)(\s+"[^"]*")?\)/g;
         const cache = new Map();   // attachment id -> resolved target (filename or data URI), or null if unavailable
         let out = '', last = 0, m;
         while ((m = re.exec(markdown))) {
             out += markdown.slice(last, m.index);
             last = re.lastIndex;
-            const [full, alt, id, ttl] = m;
+            const [full, bang, alt, id, ttl] = m;
             if (!cache.has(id)) cache.set(id, await resolveAttachmentForExport(id, opts));
             const target = cache.get(id);
-            out += target !== null ? ('![' + alt + '](' + target + (ttl || '') + ')') : full;
+            out += target !== null ? (bang + '[' + alt + '](' + target + (ttl || '') + ')') : full;
         }
         return out + markdown.slice(last);
     }
     async function toMarkdownFile(n, opts) {
         // Obsidian-friendly: YAML properties on top, then the note itself.
-        // course/deadline/career/skill are only written when set, so plain notes keep a clean
+        // course/resource/analysis/deal/deadline/remind/pinned/career/skill are only written when set, so plain notes keep a clean
         // frontmatter block — these round-trip back in via extractFrontmatter()/applyFrontmatterFill().
         const fm = ['---',
             'title: ' + yamlStr(n.title || 'Untitled note'),
@@ -5465,6 +5626,11 @@
             'tags: [' + n.tags.map(yamlStr).join(', ') + ']',
             ...(n.course ? ['course: ' + yamlStr(n.course)] : []),
             ...(n.deadline ? ['deadline: ' + yamlStr(n.deadline)] : []),
+            ...(n.remindAt ? ['remind: ' + yamlStr(n.remindAt)] : []),
+            ...(n.resource ? ['resource: ' + yamlStr(n.resource)] : []),
+            ...(n.analysis ? ['analysis: ' + yamlStr(n.analysis)] : []),
+            ...(n.deal ? ['deal: ' + yamlStr(n.deal)] : []),
+            ...(n.pinned ? ['pinned: true'] : []),
             ...(n.linkedCareer ? ['career: ' + yamlStr(n.linkedCareer)] : []),
             ...(n.linkedSkill ? ['skill: ' + yamlStr(n.linkedSkill)] : []),
             'created: ' + new Date(n.createdAt).toISOString(),
@@ -5776,6 +5942,46 @@
        (recoverable, same as a normal delete). Before overwriting, `primary`'s pre-merge state is
        snapshotted into its own version history, so "Merge" can be undone from the History panel
        even after the Trash's own Undo toast has expired. */
+    // Note Map relations (mapParent / mapOrder / mapLinks) when `secondary` is absorbed into `primary`:
+    //  • the sub-notes of `secondary` become sub-notes of `primary` (same order, after primary's own);
+    //  • `primary` takes `secondary`'s place in the tree when it has none (or was itself under `secondary`) — never creating a loop;
+    //  • `secondary`'s free connections are added to `primary`'s, and every connection that pointed at `secondary` now points at `primary`.
+    // Returns the notes that changed (the caller saves them) and how many sub-notes moved.
+    function mergeNoteMap(primary, secondary) {
+        const all = S.notes.concat(S.trash), changed = new Set();
+        const byId = mapById(mapLive());
+        mapRel(primary); mapRel(secondary);
+        const secParent = secondary.mapParent ? byId.get(secondary.mapParent) : null;
+        if (mapInside(secondary, primary, byId)) {   // primary sat below the note that is going away: take its place
+            const t = secParent && !mapInside(primary, secParent, byId) ? secParent : null;
+            primary.mapParent = t ? t.id : '';
+            primary.mapOrder = t ? ((+secondary.mapOrder || 0) || mapNextOrder(t, primary)) : 0;
+            changed.add(primary);
+        } else if (!primary.mapParent && secParent && !mapInside(primary, secParent, byId)) {
+            primary.mapParent = secParent.id;
+            primary.mapOrder = (+secondary.mapOrder || 0) || mapNextOrder(secParent, primary);
+            changed.add(primary);
+        }
+        const kids = all.filter((x) => x !== primary && x !== secondary && x.mapParent === secondary.id).sort(mapSort);
+        let next = mapNextOrder(primary, secondary);
+        kids.forEach((k) => { mapRel(k); k.mapParent = primary.id; k.mapOrder = next++; changed.add(k); });
+        const have = new Set(primary.mapLinks.map((l) => l.id));
+        secondary.mapLinks.forEach((l) => {
+            if (!l || !l.id || l.id === primary.id || l.id === secondary.id || have.has(l.id)) return;
+            have.add(l.id); primary.mapLinks.push({ id: l.id, label: l.label || '' }); changed.add(primary);
+        });
+        all.forEach((x) => {
+            if (x === secondary) return;
+            mapRel(x);
+            const i = x.mapLinks.findIndex((l) => l.id === secondary.id);
+            if (i < 0) return;
+            const label = x.mapLinks[i].label || '';
+            x.mapLinks.splice(i, 1);
+            if (x !== primary && !x.mapLinks.some((l) => l.id === primary.id)) x.mapLinks.splice(i, 0, { id: primary.id, label });
+            changed.add(x);
+        });
+        return { changed: Array.from(changed), kidsMoved: kids.length };
+    }
     async function mergeNotes(primary, secondary, opts) {
         if (!primary || !secondary || primary.id === secondary.id) return false;
         try { await snapshot({ id: primary.id, title: primary.title, markdown: primary.markdown }, { label: 'before merge' }); }
@@ -5802,10 +6008,17 @@
             catch (e) { console.warn('Notes Vault: couldn’t re-point links after merge', e); }
         }
         if (S.note && (S.note.id === primary.id || relinked)) { frRepaintOpen(); }   // also redraw the Read view, not just the editor fields
+        let mapMoved = 0;
+        try {   // keep the Note Map intact: sub-notes and connections of the trashed note move over to the survivor
+            const mr = mergeNoteMap(primary, secondary);
+            mapMoved = mr.kidsMoved;
+            if (mr.changed.length) { await mapCommit(mr.changed); mapChanged(); }
+        } catch (e) { console.warn('Notes Vault: couldn’t carry Note Map relations over after merge', e); }
         const trashed = await deleteNote(secondary.id);   // shows its own "Moved to Trash · Undo" toast
         renderAll();
         if (!trashed) { flash('Merged, but couldn’t move “' + otherTitle + '” to Trash'); return false; }
         const msg = [];
+        if (mapMoved) msg.push('Moved ' + mapMoved + (mapMoved === 1 ? ' sub-note' : ' sub-notes') + ' under this note on the Map.');
         if (relinked) msg.push('Re-pointed ' + relinked + (relinked === 1 ? ' note’s links' : ' notes’ links') + ' to this note.');
         if (lostMeta.length) msg.push('Kept this note’s ' + lostMeta.join(', ') + ' link; the other note’s ' + (lostMeta.length === 1 ? 'one is' : 'ones are') + ' still in Trash.');
         if (msg.length) toast(msg.join(' '));
@@ -5989,7 +6202,7 @@
         if (opts.title) cellEl.appendChild(h);
         if (opts.meta) {
             const meta = document.createElement('div'); meta.className = 'nv-print-meta';
-            meta.textContent = [n.folder, new Date(n.updatedAt || Date.now()).toLocaleDateString()].filter(Boolean).join(' \u00b7 ');
+            meta.textContent = [normType(n.type), new Date(n.updatedAt || Date.now()).toLocaleDateString()].filter(Boolean).join(' \u00b7 ');
             cellEl.appendChild(meta);
         }
         cellEl.appendChild(body);
@@ -6000,6 +6213,8 @@
         document.body.appendChild(root);
         const printUrls = [];
         try { await renderInto(body, n.markdown || '', false, { urls: printUrls }); } catch (e) { console.warn('Notes Vault: print render failed', e); }
+        // Wait for Mermaid diagrams to finish drawing (max ~15s, so a blocked CDN can't hang the export), or they print as empty boxes.
+        try { await Promise.race([body.__nvMmDone || Promise.resolve(), new Promise((r) => setTimeout(r, 15000))]); } catch (e) { /* print anyway */ }
         // Wait until every image is really decoded (blob: URLs resolve async), max ~6s.
         const imgs = Array.from(body.querySelectorAll('img'));
         imgs.forEach((im) => { im.loading = 'eager'; });
@@ -6030,6 +6245,8 @@
     async function runAction(id) {
         const n = S.note;
         if (!n) return;
+        if (id === 'ctxpack') { await flushSave(); openContextPack(); return; }
+        if (id === 'savetpl') { await saveNoteAsTemplate(); return; }
         if (id === 'pin') {
             await flushSave();
             n.pinned = !n.pinned;
@@ -6085,12 +6302,11 @@
         await exportNotesToFolder(list, el.libTitle ? el.libTitle.textContent : '');
     }
     async function exportAllJson() {
-        const backup = await getBackupData();
-        const payload = {
-            app: 'FinanceTracker-NotesVault', schema: BACKUP_SCHEMA, exportedAt: new Date().toISOString(),
-            notes: backup.notes, revisions: backup.revisions, fileLinks: backup.fileLinks, attachments: backup.attachments
-        };
-        download(JSON.stringify(payload, null, 2), 'notes-vault-backup-' + toLocalDateStr(new Date()) + '.json', 'application/json');
+        // Written as a list of parts (small strings + one Blob per attachment) instead of JSON.stringify-ing
+        // everything into one string — a few hundred MB of base64 PDFs would otherwise hit the browser's string
+        // limit / memory ceiling and crash the tab. See getBackupParts.
+        const backup = await getBackupParts({ extra: { app: 'FinanceTracker-NotesVault', exportedAt: new Date().toISOString() } });
+        download(backup.parts, 'notes-vault-backup-' + toLocalDateStr(new Date()) + '.json', 'application/json');
     }
     // The raw notes + their version history + file-link metadata (all three IndexedDB stores),
     // flushed and ready to embed in any backup file — used both by this module's own Export
@@ -6111,23 +6327,116 @@
     //     it on a fresh browser/device. Every attachment currently in the store is included
     //     (not just ones a live note references), so an image only pictured in an older
     //     revision is preserved too.
-    async function getBackupData() {
+    // Base64 of a Blob as a list of strings, one per 3 MB slice (3 MB is a multiple of 3 bytes, so the pieces
+    // concatenate into valid base64). Never holds the whole file as one string or one Uint8Array.
+    async function blobToBase64Parts(blob) {
+        const SLICE = 3 * 1024 * 1024, out = [];
+        for (let off = 0; off < blob.size; off += SLICE) {
+            const bytes = new Uint8Array(await blob.slice(off, off + SLICE).arrayBuffer());
+            let binary = '';
+            const CHUNK = 0x8000;
+            for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+            out.push(btoa(binary));
+        }
+        return out;
+    }
+    function backupAttMeta(rec) {
+        return {
+            id: rec.id, hash: rec.hash, mime: rec.mime, size: rec.size,
+            width: rec.width, height: rec.height, filename: rec.filename, createdAt: rec.createdAt,
+            lib: rec.lib || undefined, title: rec.title || undefined, coll: rec.coll || undefined, fav: rec.fav || undefined, pages: rec.pages || undefined, hls: (rec.hls && rec.hls.length) ? rec.hls : undefined
+        };
+    }
+    async function collectBackupStores(opts) {
         await flushSave();
         const notes = await dbGetAll();
         const revisions = await dbGetAllRevisions().catch((e) => { console.warn('Notes Vault: could not back up version history', e); return []; });
         const rawLinks = await dbGetAllLinks().catch((e) => { console.warn('Notes Vault: could not back up file links', e); return []; });
         const fileLinks = rawLinks.map((r) => ({ noteId: r.id, name: r.name || '', linkedAt: r.linkedAt || 0 }));
-        const attRecs = await dbGetAllAttachments().catch((e) => { console.warn('Notes Vault: could not back up attachments', e); return []; });
+        // opts.noAttachments (Quick backup): leave the image/PDF blobs out entirely — they are what makes a backup big.
+        const attRecs = (opts && opts.noAttachments) ? [] : await dbGetAllAttachments().catch((e) => { console.warn('Notes Vault: could not back up attachments', e); return []; });
+        return { notes, revisions, fileLinks, attRecs };
+    }
+    // Same content as getBackupData(), but as a list of parts to hand straight to `new Blob(parts)`, so a backup with
+    // hundreds of MB of PDFs never has to exist as one JS string (V8's hard limit is ~512M characters, and
+    // JSON.stringify(…, null, 2) of base64 needs several times the data size in RAM on the way there).
+    //
+    // Layout (valid JSON, but shaped so a big file can be read back line by line — see readBackupStream):
+    //     {…compact: schema, notes, revisions, fileLinks…,
+    //     "attachments":[
+    //     {…one attachment, base64 included, on ONE line…}
+    //     ,{…}
+    //     ]}
+    // Compact JSON.stringify escapes newlines inside strings, so the only raw line breaks are the ones written here.
+    // opts.extra: extra top-level fields (the standalone export adds app / exportedAt).
+    async function getBackupParts(opts) {
+        opts = opts || {};
+        const st = await collectBackupStores(opts);
+        const extra = Object.keys(opts.extra || {}).map((k) => JSON.stringify(k) + ':' + JSON.stringify(opts.extra[k]) + ',').join('');
+        const parts = ['{' + extra + '"schema":' + BACKUP_SCHEMA
+            + ',"notes":' + JSON.stringify(st.notes) + ',"revisions":' + JSON.stringify(st.revisions)
+            + ',"fileLinks":' + JSON.stringify(st.fileLinks) + ',\n"attachments":[\n'];
+        let n = 0;
+        for (const rec of st.attRecs) {
+            try {
+                const b64 = await blobToBase64Parts(rec.blob);
+                const meta = JSON.stringify(backupAttMeta(rec));
+                // One Blob per attachment: the browser can keep it off the JS heap, so only ONE attachment's base64
+                // is ever held as strings at a time.
+                parts.push(new Blob([(n ? ',' : '') + meta.slice(0, -1) + ',"dataB64":"'].concat(b64, ['"}\n'])));
+                n++;
+            } catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
+        }
+        parts.push(']}');
+        // A text-only backup does NOT reset the "last full backup" clock (images/PDFs aren't in it); it has its own stamp.
+        try { localStorage.setItem(opts.noAttachments ? 'nvLastQuickBackup' : 'nvLastBackup', String(Date.now())); } catch (e) { /* ignore */ }
+        return { parts, counts: { notes: st.notes.length, revisions: st.revisions.length, attachments: n } };
+    }
+    // Reads a backup written by getBackupParts without loading the file into one string: the text is decoded as a
+    // stream, split into lines, and each attachment line is parsed on its own and handed to onAttachment(obj) — so only
+    // one attachment (≤ ~33 MB of base64) is in memory at a time. Resolves to the rest of the backup as an object, with
+    // `attachments: []`. Resolves to null if the file isn't in that layout (older backups): the caller then falls back
+    // to the plain readAsText + JSON.parse path.
+    async function readBackupStream(file, onAttachment) {
+        if (!file || !file.stream || typeof TextDecoderStream === 'undefined') return null;
+        const rd = file.stream().pipeThrough(new TextDecoderStream()).getReader();
+        const head = [], tail = [];
+        let state = 0, pending = [];   // 0 = before attachments, 1 = inside, 2 = after
+        const onLine = async (raw) => {
+            const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+            if (state === 0) { head.push(line); if (line === '"attachments":[') state = 1; }
+            else if (state === 1) {
+                if (line.charAt(0) === ']') { state = 2; tail.push(line); return; }
+                let t = line; if (t.charAt(0) === ',') t = t.slice(1);
+                if (t.trim()) await onAttachment(JSON.parse(t));
+            } else tail.push(line);
+        };
+        for (;;) {
+            const { value, done } = await rd.read();
+            if (done) break;
+            // Only the NEW chunk is searched for line breaks (re-scanning a growing 30 MB line each time would be quadratic).
+            let from = 0, i;
+            while ((i = value.indexOf('\n', from)) >= 0) {
+                pending.push(value.slice(from, i));
+                const line = pending.length === 1 ? pending[0] : pending.join('');
+                pending = [];
+                from = i + 1;
+                await onLine(line);
+            }
+            if (from < value.length) pending.push(value.slice(from));
+        }
+        if (pending.length) await onLine(pending.join(''));
+        if (state !== 2) return null;
+        return JSON.parse(head.join('\n') + '\n' + tail.join('\n'));
+    }
+    // Object form of the backup (attachments inline as base64). Fine for small vaults, but for big ones prefer
+    // getBackupParts — this one builds every base64 string in memory at once.
+    async function getBackupData() {
+        const { notes, revisions, fileLinks, attRecs } = await collectBackupStores();
         const attachments = [];
         for (const rec of attRecs) {
-            try {
-                attachments.push({
-                    id: rec.id, hash: rec.hash, mime: rec.mime, size: rec.size,
-                    width: rec.width, height: rec.height, filename: rec.filename, createdAt: rec.createdAt,
-                    lib: rec.lib || undefined, title: rec.title || undefined, coll: rec.coll || undefined, fav: rec.fav || undefined, pages: rec.pages || undefined, hls: (rec.hls && rec.hls.length) ? rec.hls : undefined,
-                    dataB64: await blobToBase64(rec.blob)
-                });
-            } catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
+            try { attachments.push(Object.assign(backupAttMeta(rec), { dataB64: await blobToBase64(rec.blob) })); }
+            catch (e) { console.warn('Notes Vault: could not back up an attachment', rec.id, e); }
         }
         try { localStorage.setItem('nvLastBackup', String(Date.now())); } catch (e) { /* ignore */ }
         return { schema: BACKUP_SCHEMA, notes, revisions, fileLinks, attachments };
@@ -6583,6 +6892,7 @@
             });
             const ex = existing.get(inc.id);
             if (ex && ex.updatedAt > inc.updatedAt) { skipped++; continue; }   // never overwrite a newer note with an older backup
+            dlSeen.delete(inc.id);   // a restore is deliberate: don't let dbPut's "keep the newer deadline" guard override the backup's
             await dbPut(inc);
             // A restored note is written straight to IndexedDB (dbPut), bypassing flushSave —
             // which is normally what calls syncAttachmentRefs. Do it here too, or a restored
@@ -8137,9 +8447,16 @@
                 const t0 = f.lastModified || now;
                 list.push({
                     id: uid(), title, markdown: body, type: type || 'General',
-                    tags: (data && data.tags) || [], pinned: false,
+                    tags: (data && data.tags) || [], pinned: !!(data && data.pinned),
                     createdAt: fmDate('created') || t0, updatedAt: fmDate('updated') || t0,
                     course: data && data.course, deadline: data && data.deadline,
+                    remindAt: data && data.remind,
+                    resource: data && data.resource, analysis: data && data.analysis, deal: data && data.deal,
+                    // exact-title matches against the live trackers re-create the real links (otherwise they stay plain text labels)
+                    linkedCourseId: (data && data.course && (resolveCourseLink(data.course) || {}).id) || '',
+                    linkedResourceId: (data && data.resource && (resolveResourceLink(data.resource) || {}).id) || '',
+                    linkedAnalysisId: (data && data.analysis && (resolveAnalysisLink(data.analysis) || {}).id) || '',
+                    linkedDealId: (data && data.deal && (resolveDealLink(data.deal) || {}).id) || '',
                     linkedCareer: hit ? hit.career : '', linkedSkill: hit ? hit.skill : ''
                 });
             } catch (e) { console.warn('Notes Vault: could not read', f.name, e); failed++; }
@@ -8187,26 +8504,34 @@
 
     function importJson(file) {
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const data = JSON.parse(e.target.result);
-                const list = Array.isArray(data) ? data : (data.notes || []);
-                if (!Array.isArray(list) || !list.length) { alert('No notes found in that file.'); return; }
-                const attResult = await restoreAttachmentsList(data.attachments).catch(() => ({ added: 0 }));
-                const { added, updated, skipped } = await restoreNotesList(list);
-                const revResult = await restoreRevisionsList(data.revisions).catch(() => ({ added: 0 }));
-                await restoreFileLinksList(data.fileLinks).catch(() => ({ added: 0 }));
-                if (S.note) renderDocMeta();
-                const revMsg = revResult.added ? ' + ' + revResult.added + ' version' + (revResult.added === 1 ? '' : 's') + ' of history' : '';
-                const imgMsg = attResult.added ? ' + ' + attResult.added + ' image' + (attResult.added === 1 ? '' : 's') : '';
-                alert('Imported ' + (added + updated) + ' note(s)' + revMsg + imgMsg + (skipped ? ' — ' + skipped + ' skipped because a newer version is already here.' : '.'));
-            } catch (err) {
-                console.error(err);
-                alert('Could not read that file — is it a Notes Vault JSON backup?');
-            }
+        const finish = async (data, attAdded) => {
+            const list = Array.isArray(data) ? data : (data.notes || []);
+            if (!Array.isArray(list) || !list.length) { alert('No notes found in that file.'); return; }
+            const attResult = attAdded != null ? { added: attAdded } : await restoreAttachmentsList(data.attachments).catch(() => ({ added: 0 }));
+            const { added, updated, skipped } = await restoreNotesList(list);
+            const revResult = await restoreRevisionsList(data.revisions).catch(() => ({ added: 0 }));
+            await restoreFileLinksList(data.fileLinks).catch(() => ({ added: 0 }));
+            if (S.note) renderDocMeta();
+            const revMsg = revResult.added ? ' + ' + revResult.added + ' version' + (revResult.added === 1 ? '' : 's') + ' of history' : '';
+            const imgMsg = attResult.added ? ' + ' + attResult.added + ' image' + (attResult.added === 1 ? '' : 's') : '';
+            alert('Imported ' + (added + updated) + ' note(s)' + revMsg + imgMsg + (skipped ? ' — ' + skipped + ' skipped because a newer version is already here.' : '.'));
         };
-        reader.readAsText(file);
+        const bad = (err) => { console.error(err); alert('Could not read that file — is it a Notes Vault JSON backup?'); };
+        const plain = () => {
+            const reader = new FileReader();
+            reader.onload = async (e) => { try { await finish(JSON.parse(e.target.result)); } catch (err) { bad(err); } };
+            reader.readAsText(file);
+        };
+        // Big backups (lots of PDFs): read line by line so the whole file never sits in memory as one string.
+        if (file.size > BIG_BACKUP_BYTES) {
+            (async () => {
+                let attAdded = 0;
+                try {
+                    const data = await readBackupStream(file, async (a) => { attAdded += (await restoreAttachmentsList([a])).added; });
+                    if (data) await finish(data, attAdded); else plain();
+                } catch (err) { bad(err); }
+            })();
+        } else plain();
         el.importFile.value = '';
     }
     async function requestPersist() {
@@ -13192,6 +13517,8 @@
             else if (b.dataset.gear === 'findreplace') openFrModal();
             else if (b.dataset.gear === 'storage') openStorModal();
             else if (b.dataset.gear === 'pdflib') openPdfLib();
+            else if (b.dataset.gear === 'quickbackup') exportQuickBackup();
+            else if (b.dataset.gear === 'health') openHealth();
         });
         el.importFile.addEventListener('change', () => importJson(el.importFile.files[0]));
         el.mdFile.addEventListener('change', async () => { const fl = Array.from(el.mdFile.files || []); el.mdFile.value = ''; await importMarkdownFiles(fl, false); });
@@ -13269,6 +13596,7 @@
         el.storRefresh.addEventListener('click', renderStorBody);
         el.stor.querySelectorAll('[data-stor-tab]').forEach((b) => b.addEventListener('click', () => switchStorTab(b.dataset.storTab)));
         plInit();   // PDF Library: sidebar button + gear-menu entry
+        gaInit();   // Group A: health check, quick backup, templates button, Esc handling
 
         // density toggle (Comfortable / Compact row spacing in the list view)
         applyDensity();
@@ -15488,11 +15816,386 @@
         return out.slice(0, limit);
     }
 
+
+    /* ═════════════ Group A: Vault Health Check · Quick Backup · Context Pack · Note Templates ═════════════
+       Four additive features. None of them changes how existing notes are stored:
+         · Vault Health Check — read-only report (dead [[wikilinks]], dead entity links, orphan notes).
+         · Quick Backup       — the normal backup file minus attachment blobs (notes + versions + file-link hints).
+         · Context Pack       — merges a note, its Map sub-notes and linked notes into clean text for an AI chat.
+         · Templates          — notes in a "Templates" folder (+ 5 built-ins) with {{date}} {{title}} {{course}} {{skill}}… */
+    const GA = { el: null, scrim: null, kind: '', prevFocus: null, pack: null, tplTitle: '' };
+    const TPL_FOLDER = 'Templates';
+    const gaIsTemplate = (n) => looseFolderKey(n.type) === 'templates';
+    const gaPad = (x) => String(x).padStart(2, '0');
+    const gaToday = () => { const d = new Date(); return d.getFullYear() + '-' + gaPad(d.getMonth() + 1) + '-' + gaPad(d.getDate()); };
+    const gaTitleOf = (n) => (n.title || '').trim() || 'Untitled note';
+
+    /* ── generic overlay (reuses the Find-duplicates look) ── */
+    function gaOpen(kind, icon, title, actionsHtml) {
+        gaClose(true);
+        const host = document.getElementById('nvApp') || document.body;
+        GA.prevFocus = document.activeElement;
+        GA.kind = kind;
+        GA.scrim = document.createElement('div');
+        GA.scrim.className = 'nv-dup-scrim';
+        GA.scrim.addEventListener('click', () => gaClose());
+        GA.el = document.createElement('div');
+        GA.el.className = 'nv-dup nv-ga nv-ga-' + kind;
+        GA.el.setAttribute('role', 'dialog');
+        GA.el.setAttribute('aria-modal', 'true');
+        GA.el.setAttribute('aria-label', title);
+        GA.el.innerHTML = '<div class="nv-dup-bar"><span class="nv-dup-bartitle"><i class="fa-solid fa-' + icon + '" aria-hidden="true"></i> ' + esc(title) + '</span>'
+            + '<span class="nv-grow"></span>' + (actionsHtml || '')
+            + '<button class="nv-ib" type="button" data-ga-close title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>'
+            + '<div class="nv-dup-body nv-ga-body"></div>';
+        GA.el.addEventListener('click', (e) => { if (e.target.closest('[data-ga-close]')) gaClose(); });
+        host.appendChild(GA.scrim);
+        host.appendChild(GA.el);
+        const cb = GA.el.querySelector('[data-ga-close]');
+        if (cb) cb.focus({ preventScroll: true });
+        return GA.el.querySelector('.nv-ga-body');
+    }
+    function gaClose(silent) {
+        if (!GA.el) return;
+        GA.el.remove(); GA.scrim.remove();
+        GA.el = null; GA.scrim = null; GA.kind = ''; GA.pack = null;
+        if (!silent) { const f = GA.prevFocus; GA.prevFocus = null; refocus(f); }
+    }
+    function gaCopyText(text) {
+        const fallback = () => {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+            document.body.appendChild(ta); ta.select();
+            let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            ta.remove(); return ok;
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true, () => fallback());
+        return Promise.resolve(fallback());
+    }
+
+    /* ═════════════ 1) Vault Health Check ═════════════ */
+    function healthScan() {
+        const live = S.notes.filter((n) => !n.deletedAt);
+        const byId = new Map(live.map((n) => [n.id, n]));
+        const byTitle = new Map();
+        live.forEach((n) => { const k = fold((n.title || '').trim()); if (k && !byTitle.has(k)) byTitle.set(k, n); });
+        const trashTitles = new Set((S.trash || []).map((n) => fold((n.title || '').trim())).filter(Boolean));
+        const scanned = live.filter((n) => !gaIsTemplate(n));   // a template's {{variables}} would look like dead links
+        const incoming = new Set(), outgoing = new Set(), deadWiki = [];
+        for (const n of scanned) {
+            const seen = new Set(), missing = [];
+            for (const w of extractWikilinks(n.markdown)) {
+                const full = fold(w.title);
+                let tgt = byTitle.get(full);
+                if (!tgt && w.title.indexOf('#') > 0) tgt = byTitle.get(fold(w.title.split('#')[0].trim()));
+                if (tgt) { if (tgt.id !== n.id) { incoming.add(tgt.id); outgoing.add(n.id); } continue; }
+                if (seen.has(full)) continue;
+                seen.add(full);
+                missing.push({ target: w.title, inTrash: trashTitles.has(full) });
+            }
+            if (missing.length) deadWiki.push({ note: n, missing });
+        }
+        // Entity links: only judged when the Tracker data for that type is actually loaded in this page.
+        const tryT = (f) => { try { return !!f(); } catch (e) { return false; } };
+        const avail = {
+            skill: tryT(() => typeof skillsData !== 'undefined'), course: tryT(() => typeof courses !== 'undefined'),
+            resource: tryT(() => typeof resourceLibrary !== 'undefined'), analysis: tryT(() => typeof investmentAnalyses !== 'undefined'),
+            deal: tryT(() => typeof dealDiary !== 'undefined')
+        };
+        const deadEntity = [], skipped = [];
+        Object.keys(avail).forEach((t) => { if (!avail[t]) skipped.push(t); });
+        for (const n of scanned) {
+            const bad = [];
+            for (const l of (n.links || [])) {
+                if (!avail[l.type]) continue;
+                let ok = true;
+                try { ok = !!EntityLinks.resolve(n, l.type); } catch (e) { ok = true; }
+                if (ok) continue;
+                const label = l.type === 'skill' ? (l.id + (l.career ? ' (' + l.career + ')' : '')) : (n[l.type] || l.id);
+                bad.push({ type: l.type, label });
+            }
+            if (bad.length) deadEntity.push({ note: n, bad });
+        }
+        // Orphans: no Map parent/children/links AND no [[wikilink]] in or out to a live note.
+        const mapped = new Set();
+        live.forEach((n) => {
+            if (n.mapParent && byId.has(n.mapParent)) { mapped.add(n.id); mapped.add(n.mapParent); }
+            (n.mapLinks || []).forEach((l) => { if (byId.has(l.id)) { mapped.add(n.id); mapped.add(l.id); } });
+        });
+        const orphans = scanned.filter((n) => !mapped.has(n.id) && !incoming.has(n.id) && !outgoing.has(n.id))
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+        return { total: scanned.length, deadWiki, deadEntity, orphans, skipped };
+    }
+    function healthSection(title, icon, count, hint, rowsHtml) {
+        return '<details class="nv-ga-sec"' + (count ? ' open' : '') + '><summary><i class="fa-solid fa-' + icon + '" aria-hidden="true"></i> ' + esc(title)
+            + ' <span class="nv-ga-badge' + (count ? ' nv-ga-bad' : ' nv-ga-good') + '">' + count + '</span></summary>'
+            + '<p class="nv-dup-hint">' + hint + '</p>' + (rowsHtml || '<div class="nv-ga-none"><i class="fa-solid fa-circle-check"></i> Nothing to fix.</div>') + '</details>';
+    }
+    function healthRow(n, inner) {
+        return '<div class="nv-ga-row"><button type="button" class="nv-ga-open" data-ga-note="' + esc(n.id) + '">' + esc(gaTitleOf(n)) + '</button>'
+            + '<span class="nv-ga-meta">' + esc(normType(n.type)) + ' · ' + esc(fmtRel(n.updatedAt)) + '</span>' + (inner ? '<div class="nv-ga-sub">' + inner + '</div>' : '') + '</div>';
+    }
+    function renderHealth(body) {
+        let r;
+        try { r = healthScan(); } catch (e) { console.warn('Notes Vault: health scan failed', e); body.innerHTML = '<div class="nv-dup-empty">Couldn’t scan the vault.</div>'; return; }
+        const CAP = 150;
+        const wiki = r.deadWiki.slice(0, CAP).map((d) => healthRow(d.note, d.missing.map((m) => '<code>[[' + esc(m.target) + ']]</code>' + (m.inTrash ? ' <em>(note is in Trash)</em>' : '')).join(' · '))).join('');
+        const ent = r.deadEntity.slice(0, CAP).map((d) => healthRow(d.note, d.bad.map((b) => '<b>' + esc(b.type) + '</b>: ' + esc(b.label)).join(' · '))).join('');
+        const orp = r.orphans.slice(0, CAP).map((n) => healthRow(n, '')).join('');
+        const more = (arr) => arr.length > CAP ? '<p class="nv-dup-hint">Showing the first ' + CAP + ' of ' + arr.length + '.</p>' : '';
+        const issues = r.deadWiki.length + r.deadEntity.length;
+        body.innerHTML = '<p class="nv-dup-hint"><b>' + r.total + '</b> notes checked (notes in the “' + TPL_FOLDER + '” folder are skipped). '
+            + (issues ? '<b>' + issues + '</b> note' + (issues === 1 ? '' : 's') + ' with broken links.' : 'No broken links.') + ' This report only reads your notes — nothing is changed.</p>'
+            + (r.skipped.length ? '<p class="nv-dup-hint">Tracker data for <b>' + esc(r.skipped.join(', ')) + '</b> isn’t loaded on this page, so those links weren’t checked.</p>' : '')
+            + healthSection('Dead [[wikilinks]]', 'link-slash', r.deadWiki.length, 'The link points to a title that no live note has. Click a note to open it and fix or create the target.', wiki + more(r.deadWiki))
+            + healthSection('Dead entity links', 'plug-circle-xmark', r.deadEntity.length, 'A Skill / Course / Resource / Analysis / Deal that this note points to no longer exists in the Tracker.', ent + more(r.deadEntity))
+            + healthSection('Orphan notes', 'circle-nodes', r.orphans.length, 'Not on the Note Map and not connected by any [[wikilink]] in or out. Often fine for standalone notes; worth a look for the rest.', orp + more(r.orphans));
+    }
+    function openHealth() {
+        if (!S.open) return;
+        closeMenus();
+        const body = gaOpen('health', 'stethoscope', 'Vault health check', '<button class="nv-btn nv-btn-ghost" type="button" data-ga-rescan><i class="fa-solid fa-arrows-rotate"></i> Rescan</button>');
+        renderHealth(body);
+        GA.el.addEventListener('click', async (e) => {
+            if (e.target.closest('[data-ga-rescan]')) { renderHealth(GA.el.querySelector('.nv-ga-body')); return; }
+            const b = e.target.closest('[data-ga-note]');
+            if (!b) return;
+            const id = b.dataset.gaNote;
+            gaClose(true);
+            try { await openNote(id); } catch (err) { console.warn('Notes Vault: could not open note', err); }
+        });
+    }
+
+    /* ═════════════ 2) Quick Backup (text only) ═════════════ */
+    async function exportQuickBackup() {
+        try {
+            const backup = await getBackupParts({ noAttachments: true, extra: { app: 'FinanceTracker-NotesVault', exportedAt: new Date().toISOString(), textOnly: true } });
+            download(backup.parts, 'notes-vault-quick-backup-' + toLocalDateStr(new Date()) + '.json', 'application/json');
+            const c = backup.counts;
+            toast('Quick backup saved: ' + c.notes + ' notes, ' + c.revisions + ' versions. Images and PDFs are not included.');
+        } catch (e) {
+            console.error('Notes Vault: quick backup failed', e);
+            toast('Quick backup failed — try Export backup (JSON) instead.');
+        }
+    }
+
+    /* ═════════════ 3) Context Pack ("Copy for AI") ═════════════ */
+    const gaWords = (s) => (s.match(/\S+/g) || []).length;
+    // Rough token estimate: plain ASCII ≈ 3.8 chars/token, accented / CJK characters ≈ 1.4 chars/token. Good to ±25%.
+    function gaTokens(s) {
+        let a = 0, o = 0;
+        for (let i = 0; i < s.length; i++) { if (s.charCodeAt(i) < 128) a++; else o++; }
+        return Math.ceil(a / 3.8 + o / 1.4);
+    }
+    // Removes noise that is useless to a chat model but keeps LaTeX, tables and code untouched.
+    function gaClean(md) {
+        let s = String(md || '').replace(/\r\n/g, '\n');
+        s = s.replace(/!\[([^\]]*)\]\(\s*attachment:\/\/[^)]*\)/g, (m, a) => (a.trim() ? '[Image: ' + a.trim() + ']' : ''));
+        s = s.replace(/\[([^\]]*)\]\(\s*attachment:\/\/[^)]*\)/g, (m, t) => (t.trim() ? '[File: ' + t.trim() + ']' : ''));
+        s = s.replace(/<img\b[^>]*attachment:\/\/[^>]*>/gi, '');
+        s = s.replace(/attachment:\/\/[A-Za-z0-9_-]+/g, '');
+        s = s.replace(/data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+\/=]{200,}/gi, '[embedded data removed]');
+        s = s.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n');
+        return s.trim();
+    }
+    function gaPackCandidates(root, opt) {
+        const live = S.notes.filter((n) => !n.deletedAt);
+        const byId = new Map(live.map((n) => [n.id, n]));
+        const out = [{ note: root, role: 'main' }], seen = new Set([root.id]);
+        if (opt.subs) {
+            let level = [root.id];
+            for (let depth = 0; depth < 3 && level.length; depth++) {
+                const next = [];
+                live.filter((n) => n.mapParent && level.includes(n.mapParent) && !seen.has(n.id)).sort((a, b) => (a.mapOrder - b.mapOrder) || a.createdAt - b.createdAt)
+                    .forEach((n) => { seen.add(n.id); next.push(n.id); out.push({ note: n, role: 'sub-note' }); });
+                level = next;
+            }
+        }
+        if (opt.linked) {
+            const add = (n) => { if (n && !seen.has(n.id) && !n.deletedAt) { seen.add(n.id); out.push({ note: n, role: 'linked' }); } };
+            extractWikilinks(root.markdown).forEach((w) => add(findNoteByTitle(w.title.split('#')[0])));
+            (root.mapLinks || []).forEach((l) => add(byId.get(l.id)));
+        }
+        return out;
+    }
+    const gaAttr = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    function gaPackText(items, opt) {
+        const date = gaToday();
+        const parts = items.map((it, i) => {
+            const n = it.note;
+            const attrs = ' index="' + (i + 1) + '" role="' + it.role + '" title="' + gaAttr(gaTitleOf(n)) + '"'
+                + (opt.meta ? ' folder="' + gaAttr(normType(n.type)) + '"' + (n.tags.length ? ' tags="' + gaAttr(n.tags.join(', ')) + '"' : '') + ' updated="' + toLocalDateStr(new Date(n.updatedAt)) + '"' : '');
+            return '<note' + attrs + '>\n' + gaClean(n.markdown) + '\n</note>';
+        });
+        return '<context_pack main="' + gaAttr(gaTitleOf(items[0].note)) + '" notes="' + items.length + '" date="' + date + '">\n' + parts.join('\n\n') + '\n</context_pack>';
+    }
+    function renderPack(body) {
+        const P = GA.pack; if (!P) return;
+        const root = S.notes.find((n) => n.id === P.rootId);
+        if (!root) { body.innerHTML = '<div class="nv-dup-empty">That note is no longer available.</div>'; return; }
+        const cands = gaPackCandidates(root, P);
+        const chosen = cands.filter((c) => c.role === 'main' || !P.off.has(c.note.id));
+        const text = chosen.length ? gaPackText(chosen, P) : '';
+        P.text = text;
+        const w = gaWords(text), t = gaTokens(text);
+        const rows = cands.map((c) => {
+            const on = c.role === 'main' || !P.off.has(c.note.id);
+            return '<label class="nv-ga-pick"><input type="checkbox" data-ga-pick="' + esc(c.note.id) + '"' + (on ? ' checked' : '') + (c.role === 'main' ? ' disabled' : '') + '> '
+                + '<span class="nv-ga-role">' + esc(c.role) + '</span> ' + esc(gaTitleOf(c.note)) + ' <span class="nv-ga-meta">' + gaWords(c.note.markdown) + ' words</span></label>';
+        }).join('');
+        const warn = t > 100000 ? '<p class="nv-dup-hint nv-ga-warn"><i class="fa-solid fa-triangle-exclamation"></i> This is large (over ~100k tokens). Untick some notes or it may not fit in one chat.</p>' : '';
+        body.innerHTML = '<div class="nv-ga-opts">'
+            + '<label><input type="checkbox" data-ga-opt="subs"' + (P.subs ? ' checked' : '') + '> Sub-notes (Note Map)</label>'
+            + '<label><input type="checkbox" data-ga-opt="linked"' + (P.linked ? ' checked' : '') + '> Linked notes ([[wikilinks]] + Map links)</label>'
+            + '<label><input type="checkbox" data-ga-opt="meta"' + (P.meta ? ' checked' : '') + '> Folder, tags and date</label></div>'
+            + '<div class="nv-ga-picks">' + rows + '</div>'
+            + '<div class="nv-ga-stats" aria-live="polite"><b>' + chosen.length + '</b> note' + (chosen.length === 1 ? '' : 's') + ' · <b>' + w.toLocaleString() + '</b> words · <b>≈ ' + t.toLocaleString() + '</b> tokens <span class="nv-ga-meta">(estimate)</span></div>'
+            + warn
+            + '<p class="nv-dup-hint">Image and PDF links (<code>attachment://…</code>) are removed; LaTeX, tables and code are kept as written.</p>'
+            + '<div class="nv-ga-btns"><button class="nv-btn nv-btn-primary" type="button" data-ga-copy><i class="fa-regular fa-copy"></i> Copy for AI</button>'
+            + '<button class="nv-btn nv-btn-ghost" type="button" data-ga-dl><i class="fa-solid fa-download"></i> Save .md</button></div>'
+            + '<details class="nv-ga-prev"><summary>Preview</summary><pre>' + esc(text.slice(0, 3000)) + (text.length > 3000 ? '\n…' : '') + '</pre></details>';
+    }
+    function openContextPack() {
+        if (!S.open || !S.note) return;
+        closeMenus();
+        const root = S.note;
+        const body = gaOpen('pack', 'robot', 'Context pack — copy for AI');
+        GA.pack = { rootId: root.id, subs: true, linked: true, meta: true, off: new Set(), text: '' };
+        renderPack(body);
+        GA.el.addEventListener('change', (e) => {
+            const P = GA.pack; if (!P) return;
+            const o = e.target.closest('[data-ga-opt]'), p = e.target.closest('[data-ga-pick]');
+            if (o) { P[o.dataset.gaOpt] = o.checked; }
+            else if (p) { if (p.checked) P.off.delete(p.dataset.gaPick); else P.off.add(p.dataset.gaPick); }
+            else return;
+            renderPack(GA.el.querySelector('.nv-ga-body'));
+        });
+        GA.el.addEventListener('click', async (e) => {
+            const P = GA.pack; if (!P) return;
+            if (e.target.closest('[data-ga-copy]')) {
+                const ok = await gaCopyText(P.text);
+                toast(ok ? 'Context pack copied — paste it into your AI chat.' : 'Couldn’t copy automatically. Use Save .md instead.');
+            } else if (e.target.closest('[data-ga-dl]')) {
+                download(P.text, 'context-pack-' + slugify(gaTitleOf(S.notes.find((n) => n.id === P.rootId) || root)) + '.md', 'text/markdown');
+            }
+        });
+    }
+
+    /* ═════════════ 4) Note Templates ═════════════ */
+    const TPL_BUILTIN = [
+        { id: 'paper', name: 'Paper Teardown', icon: 'file-lines', desc: 'RQ → Identification → Findings → Limitations', tags: ['paper'],
+          body: '# {{title}}\n\n**Source:** \n**Authors / year:** \n**Read on:** {{date}} · **Skill:** {{skill}}\n\n## 1. Research question\n> [!QUESTION] What exactly is being asked?\n\n## 2. Identification & method\n- Data / sample:\n- Identification strategy:\n- Key assumptions:\n\n## 3. Findings\n| Result | Magnitude | Robust to |\n|---|---|---|\n|  |  |  |\n\n## 4. Limitations & threats to validity\n- \n\n## 5. So what? (use in my own work)\n- \n\n## Open questions\n- [ ] \n' },
+        { id: 'company', name: 'Company Analysis (BCTC)', icon: 'building', desc: 'Business · financials · earnings quality · valuation', tags: ['company-analysis'],
+          body: '# {{title}}\n\n**Date:** {{date}} · **Period analysed:** \n\n## 1. Business snapshot\n- What it sells, to whom, how it makes money:\n- Moat / competitive position:\n\n## 2. Financial statements\n| Metric | Y-2 | Y-1 | Y0 | Comment |\n|---|---|---|---|---|\n| Revenue growth |  |  |  |  |\n| Gross / EBIT margin |  |  |  |  |\n| ROE / ROIC |  |  |  |  |\n| Net debt / EBITDA |  |  |  |  |\n| CFO / Net income |  |  |  |  |\n\n## 3. Earnings quality\n- Accruals, receivables, inventory:\n- One-offs and adjustments:\n- Auditor opinion / notes to the accounts:\n\n## 4. Accounting policies & red flags\n- \n\n## 5. Valuation view\n- Method & key assumptions:\n\n## 6. Thesis · risks · catalysts\n- Thesis:\n- Risks:\n- Catalysts:\n\n## Next steps\n- [ ] \n' },
+        { id: 'deal', name: 'Deal Postmortem', icon: 'handshake', desc: 'What I expected, what happened, what the rule is now', tags: ['postmortem'],
+          body: '# {{title}}\n\n**Date:** {{date}}\n\n## 1. Deal summary\n- \n\n## 2. Thesis at entry\n- Why I believed it:\n- What would prove me wrong:\n\n## 3. What actually happened\n| When | Event | My reaction |\n|---|---|---|\n|  |  |  |\n\n## 4. Outcome vs expectation\n- \n\n## 5. Right for the right reasons / wrong for the wrong reasons\n- \n\n## 6. Process errors\n- \n\n## 7. Lessons → rules\n- [ ] Rule: \n' },
+        { id: 'cfa', name: 'CFA LOS & Exam Traps', icon: 'graduation-cap', desc: 'LOS, formulas, traps and self-test questions', tags: ['cfa'],
+          body: '# {{title}}\n\n**Course:** {{course}} · **Skill:** {{skill}} · **Studied:** {{date}}\n\n## Learning outcome (LOS)\n- \n\n## Core idea in 3 lines\n1. \n2. \n3. \n\n## Formulas\n$$\n\n$$\n\n## Worked example\n\n## Exam traps\n> [!WARNING] Common mistakes\n> - \n\n## Self-test\n> [!QUESTION] \n> \n\n## Connects to\n- [[ ]]\n' },
+        { id: 'model', name: 'Mental Model', icon: 'lightbulb', desc: 'Definition, mechanism, where it works and fails', tags: ['mental-model'],
+          body: '# {{title}}\n\n**Added:** {{date}}\n\n## One-line definition\n\n## Where it comes from\n\n## How it works\n1. \n\n## Example in finance\n\n## Where it fails\n- \n\n## Related models\n- [[ ]]\n\n## Test it\n> [!QUESTION] Next time I see __, will I think of this? What would I check?\n' }
+    ];
+    function gaTemplates() {
+        const mine = S.notes.filter((n) => !n.deletedAt && gaIsTemplate(n)).sort((a, b) => gaTitleOf(a).localeCompare(gaTitleOf(b)))
+            .map((n) => ({ id: 'user:' + n.id, name: gaTitleOf(n), icon: 'file', desc: 'Your template', tags: n.tags.slice(), body: n.markdown, mine: true }));
+        return { mine, builtin: TPL_BUILTIN };
+    }
+    function gaFillVars(text, ctx) {
+        const d = new Date();
+        const vars = { date: gaToday(), time: gaPad(d.getHours()) + ':' + gaPad(d.getMinutes()), datetime: gaToday() + ' ' + gaPad(d.getHours()) + ':' + gaPad(d.getMinutes()),
+            weekday: d.toLocaleDateString('en-US', { weekday: 'long' }), title: ctx.title || '', course: ctx.course || '', skill: ctx.skill || '', folder: ctx.folder || '' };
+        return String(text || '').replace(/\{\{\s*(date|time|datetime|weekday|title|course|skill|folder)\s*\}\}/gi, (m, k) => vars[k.toLowerCase()]);
+    }
+    async function gaNewFromTemplate(tpl, title) {
+        gaClose(true);
+        await newNote();
+        const n = S.note;
+        if (!n) return;
+        const ctx = { title: (title || '').trim(), course: n.course || '', skill: n.linkedSkill || '', folder: normType(n.type) };
+        if (looseFolderKey(n.type) === 'templates') n.type = 'General';    // a new note made while looking at the Templates folder isn't a template
+        ctx.folder = normType(n.type);
+        n.title = ctx.title;
+        n.markdown = gaFillVars(tpl.body, ctx);
+        (tpl.tags || []).forEach((t) => { if (!n.tags.some((x) => x.toLowerCase() === t.toLowerCase())) n.tags.push(t); });
+        fillDoc();
+        markDirty();
+        setTimeout(() => { try { (n.title ? el.src : el.title).focus(); } catch (e) { /* ignore */ } }, 80);
+    }
+    async function saveNoteAsTemplate() {
+        const n = S.note; if (!n) return;
+        await flushSave();
+        const now = Date.now();
+        const copy = Object.assign({}, n, {
+            id: uid(), title: gaTitleOf(n) + ' (template)', type: TPL_FOLDER, tags: n.tags.slice(), pinned: false, createdAt: now, updatedAt: now,
+            mapParent: '', mapOrder: 0, mapLinks: [], deadline: '', remindAt: '', remindState: '',
+            linkedCareer: '', linkedSkill: '', course: '', linkedCourseId: '', resource: '', linkedResourceId: '', analysis: '', linkedAnalysisId: '', deal: '', linkedDealId: ''
+        });
+        normalizeNote(copy);
+        await dbPut(copy);
+        await syncAttachmentRefs(copy.id, copy.markdown).catch(() => {});
+        S.notes.push(copy);
+        renderSide();
+        if (S.open) { try { renderLibrary(); } catch (e) { /* ignore */ } }
+        toast('Saved as a template in the “' + TPL_FOLDER + '” folder. Rename it there if you like.');
+    }
+    function tplCardHtml(t) {
+        return '<button type="button" class="nv-ga-tpl" data-ga-tpl="' + esc(t.id) + '"><i class="fa-solid fa-' + esc(t.icon) + '" aria-hidden="true"></i>'
+            + '<span class="nv-ga-tpl-name">' + esc(t.name) + '</span><span class="nv-ga-meta">' + esc(t.desc) + '</span></button>';
+    }
+    function openTemplates() {
+        if (!S.open) return;
+        closeMenus();
+        const body = gaOpen('tpl', 'file-circle-plus', 'New note from template');
+        const T = gaTemplates();
+        body.innerHTML = '<div class="nv-ga-titlerow"><label for="nvGaTplTitle">Title (optional)</label><input type="text" id="nvGaTplTitle" autocomplete="off" placeholder="Fills {{title}} in the template" value="' + esc(GA.tplTitle) + '"></div>'
+            + (T.mine.length ? '<h4 class="nv-ga-h">Your templates</h4><div class="nv-ga-tpls">' + T.mine.map(tplCardHtml).join('') + '</div>' : '')
+            + '<h4 class="nv-ga-h">Built-in</h4><div class="nv-ga-tpls">' + T.builtin.map(tplCardHtml).join('') + '</div>'
+            + '<p class="nv-dup-hint">Make your own: open any note → ⋯ menu → <b>Save as template</b>. Templates are ordinary notes in the “' + TPL_FOLDER + '” folder, so you can edit them any time. '
+            + 'Variables: <code>{{date}}</code> <code>{{time}}</code> <code>{{weekday}}</code> <code>{{title}}</code> <code>{{course}}</code> <code>{{skill}}</code> <code>{{folder}}</code>.</p>';
+        const inp = body.querySelector('#nvGaTplTitle');
+        inp.addEventListener('input', () => { GA.tplTitle = inp.value; });
+        GA.el.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-ga-tpl]'); if (!b) return;
+            const all = T.mine.concat(T.builtin), tpl = all.find((x) => x.id === b.dataset.gaTpl);
+            if (!tpl) return;
+            const title = inp.value; GA.tplTitle = '';
+            gaNewFromTemplate(tpl, title);
+        });
+        inp.focus({ preventScroll: true });
+    }
+
+    /* ── wiring: menu entries, a button next to "New note", Esc to close ── */
+    function gaInit() {
+        if (el.gearMenu && !el.gearMenu.querySelector('[data-gear="health"]')) {
+            const mk = (id, icon, label) => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.className = 'nv-act'; b.setAttribute('role', 'menuitem'); b.dataset.gear = id;
+                b.innerHTML = '<i class="fa-solid fa-' + icon + '"></i> ' + label;
+                return b;
+            };
+            const exp = el.gearMenu.querySelector('[data-gear="export"]'), dup = el.gearMenu.querySelector('[data-gear="dupes"]');
+            const qb = mk('quickbackup', 'bolt', 'Quick backup (text only)'), hc = mk('health', 'stethoscope', 'Vault health check…');
+            if (exp) exp.after(qb); else el.gearMenu.appendChild(qb);
+            if (dup) dup.after(hc); else el.gearMenu.appendChild(hc);
+        }
+        const nb = document.getElementById('nvNewBtn');
+        if (nb && !document.getElementById('nvTplOpen')) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.id = 'nvTplOpen'; b.className = 'nv-cmdhint nv-pl-open';
+            b.innerHTML = '<i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>From template…</span>';
+            b.addEventListener('click', () => { if (S.sideOpen) { S.sideOpen = false; applyLayout(); } openTemplates(); });
+            nb.after(b);
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && GA.el) { e.preventDefault(); e.stopPropagation(); gaClose(); }
+        }, true);
+    }
+
     window.NotesVault = {
         toggle, open, close, newNote, openNote,
         renderList: () => { if (S.open) renderAll(); },
-        exportAllJson, importJson, requestPersist,
-        getBackupData, restoreFromBackup,
+        exportAllJson, exportQuickBackup, importJson, requestPersist,
+        getBackupData, getBackupParts, readBackupStream, restoreAttachmentsList, restoreFromBackup,
         getLinkCounts, openForSkill,
         getCourseLinkCounts, openForCourse,
         getResourceLinkCounts, openForResource,

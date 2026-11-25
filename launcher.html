@@ -114,6 +114,8 @@ async function health(){
   // Optional separate exports (already included in a full backup, so shown muted)
   const nv = ago(+ls("nvLastBackup")||0), ll = ago(+ls("loanLedger.lastExport")||0);
   rows.push(`<div class="row faint"><span>Notes export (also in full backup)</span><span>${nv.t}</span></div>`);
+  const qb = ago(+ls("nvLastQuickBackup")||0);
+  rows.push(`<div class="row faint"><span>Notes quick backup (text only, no images/PDFs)</span><span>${qb.t}</span></div>`);
   rows.push(`<div class="row faint"><span>Loan Ledger export (also in full backup)</span><span>${ll.t}</span></div>`);
 
   // Persistent storage
@@ -129,8 +131,16 @@ async function health(){
     if(!("serviceWorker" in navigator) || !window.caches){ /* keep default */ }
     else if(!window.isSecureContext){ offTxt = "Needs https:// or localhost (not file://)"; }
     else {
-      const names = await caches.keys(); let libs = 0, files = 0;
-      for(const n of names){ if(n.indexOf("venus-")!==0) continue; const c = await caches.open(n); const k = (await c.keys()).length; if(n.indexOf("venus-cdn")===0) libs += k; else files += k; }
+      // "venus-*" caches are the service worker's; "nv-libs-*" is where the Notes Vault keeps its own copy of SheetJS.
+      // Libraries are counted by URL, so a file that sits in both places is only counted once.
+      const names = await caches.keys(); const libUrls = new Set(); let files = 0;
+      for(const n of names){
+        const isLib = n.indexOf("venus-cdn")===0 || n.indexOf("nv-libs-")===0;
+        if(!isLib && n.indexOf("venus-")!==0) continue;
+        const ks = await (await caches.open(n)).keys();
+        if(isLib) ks.forEach(r => libUrls.add(r.url)); else files += ks.length;
+      }
+      const libs = libUrls.size;
       if(navigator.serviceWorker.controller && files>0){ offTxt = "Ready · " + files + " app files, " + libs + " libraries saved"; offCls = "ok"; }
       else { offTxt = "Setting up — reload this page once while online"; }
     }

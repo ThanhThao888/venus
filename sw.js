@@ -10,7 +10,7 @@ const APP_CACHE = 'venus-app-' + CACHE_VERSION;
 const CDN_CACHE = 'venus-cdn-' + CACHE_VERSION;
 
 const CORE = [
-  './', './launcher.html', './index.html', './today.html',
+  './', './launcher.html', './index.html', './today.html', './prompts.html',
   './tracker.css', './vault.css', './vault.js', './vault-cm.js', './pwa.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
@@ -26,7 +26,10 @@ const CDN_PRECACHE = [
   'https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap',
   /* PDF reader (vault.js uses pdf.js 6.3.289 — keep in sync with PDFJS_VER there) */
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.min.mjs',
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs'
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs',
+  /* Spreadsheet preview (vault.js SHEETJS_URL) and Mermaid diagrams (vault.js MM_VER) — keep versions in sync with vault.js */
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+  'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js'
 ];
 const CDN_HOSTS = new Set(['cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com', 'cdn-icons-png.flaticon.com']);
 

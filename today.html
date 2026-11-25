@@ -261,13 +261,24 @@ function hhmm(h){ const m = Math.round(h * 60); return String(Math.floor(m/60)%2
 const validDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}/.test(s);
 
 /* ================== collect ================== */
+/* Opens the Notes Vault database only if it already exists (never creates an empty one from here).
+   Works without indexedDB.databases() (older Firefox/Safari): opening a missing DB triggers "upgradeneeded",
+   where we abort, so nothing is created and we resolve null. */
+function openVaultDbIfExists(){
+  return new Promise(res => {
+    let r;
+    try{ r = indexedDB.open('FinanceTrackerVaultDB'); }catch(e){ return res(null); }
+    r.onupgradeneeded = () => { try{ r.transaction.abort(); }catch(e){} };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => res(null);
+    r.onblocked = () => res(null);
+  });
+}
 async function notesReminders(){
   // Notes live in IndexedDB. Only read it if it already exists (never create it from here).
   try{
-    if(!indexedDB.databases) return [];
-    const dbs = await indexedDB.databases();
-    if(!dbs.some(d => d.name === 'FinanceTrackerVaultDB')) return [];
-    const db = await new Promise((res, rej) => { const r = indexedDB.open('FinanceTrackerVaultDB'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error('blocked')); });
+    const db = await openVaultDbIfExists();
+    if(!db) return [];
     try{
       if(!db.objectStoreNames.contains('notes')) return [];
       const all = await new Promise((res, rej) => { const q = db.transaction('notes', 'readonly').objectStore('notes').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
@@ -439,9 +450,15 @@ function noteDeadlineIDB(nid, date){
         try{
           if(!db.objectStoreNames.contains('notes')){ db.close(); return res(null); }
           const tx = db.transaction('notes', 'readwrite'), st = tx.objectStore('notes'), g = st.get(nid);
-          let prev = null;
-          g.onsuccess = () => { const n = g.result; if(n){ prev = n.deadline || ''; n.deadline = date; st.put(n); } };
-          tx.oncomplete = () => { db.close(); res(prev); };
+          let prev = null, stamp = 0;
+          // updatedAt moves with the change (as it does when the deadline is edited in the vault itself)
+          g.onsuccess = () => { const n = g.result; if(n){ prev = n.deadline || ''; n.deadline = date; n.updatedAt = stamp = Date.now(); st.put(n); } };
+          tx.oncomplete = () => {
+            db.close();
+            // Tell an open Notes Vault tab (index.html) so it doesn't keep — and later save back — the old deadline
+            if(prev !== null){ try{ const bc = new BroadcastChannel('venus-note-deadline'); bc.postMessage({ id: nid, deadline: date, updatedAt: stamp }); bc.close(); }catch(e){} }
+            res(prev);
+          };
           tx.onerror = tx.onabort = () => { db.close(); res(null); };
         }catch(e){ try{ db.close(); }catch(_){} res(null); }
       };
@@ -654,10 +671,8 @@ async function render(){
     if(Date.now() - notesAt < 20000) return Promise.resolve(notes);
     notesBusy = (async () => {
       try{
-        if(!indexedDB.databases) return notes;
-        const dbs = await indexedDB.databases();
-        if(!dbs.some(d => d.name === 'FinanceTrackerVaultDB')) return notes;
-        const db = await new Promise((res, rej) => { const r = indexedDB.open('FinanceTrackerVaultDB'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error('blocked')); });
+        const db = await openVaultDbIfExists();
+        if(!db) return notes;
         try{
           if(!db.objectStoreNames.contains('notes')) return notes;
           const all = await new Promise((res, rej) => { const q = db.transaction('notes', 'readonly').objectStore('notes').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
