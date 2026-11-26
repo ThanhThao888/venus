@@ -77372,7 +77372,9 @@ function importFlashcards(event) {
             vocab: (c.type === 'vocab' && c.vocab && typeof c.vocab === 'object') ? c.vocab : null,
             easeFactor: typeof c.easeFactor === 'number' ? c.easeFactor : 2.5,
             interval: typeof c.interval === 'number' ? c.interval : 0,
-            repetitions: typeof c.repetitions === 'number' ? c.repetitions : 0
+            repetitions: typeof c.repetitions === 'number' ? c.repetitions : 0,
+            sourceNoteId: typeof c.sourceNoteId === 'string' ? c.sourceNoteId : undefined,
+            sourceNoteTitle: typeof c.sourceNoteTitle === 'string' ? c.sourceNoteTitle : undefined
         }));
 
         const replaceAll = await skConfirm(
@@ -77456,6 +77458,15 @@ function getRandomFlashcard() {
     if (answerEl) {
         answerEl.innerHTML = formatFlashcardText(currentFlashcard.answer);
         renderLatex(answerEl);
+        // Cards made from a note (Notes Vault → Make flashcards) link back to it
+        if (currentFlashcard.sourceNoteId) {
+            const srcId = currentFlashcard.sourceNoteId, srcA = document.createElement('a');
+            srcA.href = '#'; srcA.className = 'fc-src-link';
+            srcA.textContent = '\u2197 From note: ' + (currentFlashcard.sourceNoteTitle || 'open note');
+            srcA.style.cssText = 'display:inline-block;margin-top:10px;font-size:.8rem;opacity:.8';
+            srcA.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); if (window.DLT && DLT.openLinkedNote) DLT.openLinkedNote(srcId); });
+            answerEl.appendChild(srcA);
+        }
     }
     
     // Handle image

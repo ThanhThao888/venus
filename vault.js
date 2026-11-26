@@ -453,6 +453,8 @@
         n.linkedSkill = typeof n.linkedSkill === 'string' ? n.linkedSkill : '';
         n.course = typeof n.course === 'string' ? n.course : '';
         n.deadline = typeof n.deadline === 'string' ? n.deadline : '';
+        // Review ladder step (see SRS_LADDER): -1 = none, otherwise the index of the step currently scheduled.
+        n.srsStep = (typeof n.srsStep === 'number' && n.srsStep >= 0) ? Math.min(Math.floor(n.srsStep), 4) : -1;
         // Reminder (local time, 'YYYY-MM-DDTHH:MM'); remindState 'fired' = it went off and is still waiting for you.
         n.remindAt = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(n.remindAt) ? String(n.remindAt).slice(0, 16) : '';
         n.remindState = n.remindAt && n.remindState === 'fired' ? 'fired' : '';
@@ -4382,6 +4384,7 @@
             + (EntityLinks.getId(n, 'resource') ? renderResourceLinkPill(n) : (n.resource ? `<span title="Resource"><i class="fa-solid fa-book-open" aria-hidden="true"></i> ${esc(n.resource)}</span>` : ''))
             + (EntityLinks.getId(n, 'analysis') ? renderAnalysisLinkPill(n) : (n.analysis ? `<span title="Analysis"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> ${esc(n.analysis)}</span>` : ''))
             + (EntityLinks.getId(n, 'deal') ? renderDealLinkPill(n) : (n.deal ? `<span title="Deal"><i class="fa-solid fa-handshake" aria-hidden="true"></i> ${esc(n.deal)}</span>` : ''))
+            + (srsIsOn(n) ? `<span title="Review ladder: step ${n.srsStep + 1} of ${SRS_LADDER.length}"><i class="fa-solid fa-repeat" aria-hidden="true"></i> Ladder ${n.srsStep + 1}/${SRS_LADDER.length}</span>` : '')
             + (n.deadline ? `<span title="Deadline"><i class="fa-solid fa-calendar" aria-hidden="true"></i> ${esc(nvFmtDate(n.deadline))}</span>` : '')
             + (n.remindAt ? `<span title="Reminder"><i class="fa-solid fa-bell" aria-hidden="true"></i> ${esc(remShort(n.remindAt))}</span>` : '')
             + '<span class="nv-grow"></span>'
@@ -4439,6 +4442,7 @@
             { id: 'ctxpack', icon: 'robot', label: 'Copy Context Pack (for AI)…' },
             { id: 'savetpl', icon: 'file-circle-plus', label: 'Save as template' }
         ];
+        list.push(...srsActionItems(n), { id: 'mkcards', icon: 'clone', label: 'Make flashcards…' });
         if (linked) {
             list.push({ id: 'savefsupdate', icon: 'floppy-disk', label: 'Save changes to file' });
             list.push({ id: 'savefs', icon: 'file-export', label: 'Save As .md…' });
@@ -5541,6 +5545,7 @@
             const n = S.notes.find((x) => x.id === d.id) || S.trash.find((x) => x.id === d.id);
             if (!n) return;
             n.deadline = d.deadline;
+            if (typeof d.srsStep === 'number') { n.srsStep = d.srsStep; if (S.note && S.note.id === n.id) { renderActions(); } }
             if (+d.updatedAt > n.updatedAt) n.updatedAt = +d.updatedAt;
             dlSeen.set(n.id, d.deadline);
             if (S.note && S.note.id === n.id) { if (el.deadline) el.deadline.value = n.deadline; renderDocMeta(); toast('Deadline changed in Today — now ' + (n.deadline || 'none') + '.'); }
@@ -6245,6 +6250,8 @@
     async function runAction(id) {
         const n = S.note;
         if (!n) return;
+        if (id === 'srsstart' || id === 'srsdone' || id === 'srsstop') { srsAction(id); return; }
+        if (id === 'mkcards') { await flushSave(); openCardsModal(); return; }
         if (id === 'ctxpack') { await flushSave(); openContextPack(); return; }
         if (id === 'savetpl') { await saveNoteAsTemplate(); return; }
         if (id === 'pin') {
@@ -6258,7 +6265,7 @@
             await flushSave();
             const now = Date.now();
             const copy = Object.assign({}, n, { id: uid(), title: (n.title || 'Untitled note') + ' (copy)', tags: n.tags.slice(), pinned: false, createdAt: now, updatedAt: now,
-                mapParent: '', mapOrder: 0, mapLinks: [] });   // a copy isn't part of the structure until you place it
+                mapParent: '', mapOrder: 0, mapLinks: [], srsStep: -1 });   // a copy isn't part of the structure (or the review ladder) until you place it
             await dbPut(copy);
             await syncAttachmentRefs(copy.id, copy.markdown).catch(() => {});
             S.notes.push(copy);
@@ -6883,6 +6890,7 @@
                 // shape as the revisions/fileLinks gap above. (normalizeNote rebuilds n.links
                 // from these legacy fields, so restoring the legacy fields is all that's needed.)
                 linkedCareer: raw.linkedCareer, linkedSkill: raw.linkedSkill,
+                srsStep: raw.srsStep,
                 course: raw.course, deadline: raw.deadline, remindAt: raw.remindAt, remindState: raw.remindState, linkedCourseId: raw.linkedCourseId,
                 resource: raw.resource, linkedResourceId: raw.linkedResourceId,
                 analysis: raw.analysis, linkedAnalysisId: raw.linkedAnalysisId,
@@ -13596,6 +13604,7 @@
         el.storRefresh.addEventListener('click', renderStorBody);
         el.stor.querySelectorAll('[data-stor-tab]').forEach((b) => b.addEventListener('click', () => switchStorTab(b.dataset.storTab)));
         plInit();   // PDF Library: sidebar button + gear-menu entry
+        gbInit();
         gaInit();   // Group A: health check, quick backup, templates button, Esc handling
 
         // density toggle (Comfortable / Compact row spacing in the list view)
@@ -16127,7 +16136,7 @@
         const now = Date.now();
         const copy = Object.assign({}, n, {
             id: uid(), title: gaTitleOf(n) + ' (template)', type: TPL_FOLDER, tags: n.tags.slice(), pinned: false, createdAt: now, updatedAt: now,
-            mapParent: '', mapOrder: 0, mapLinks: [], deadline: '', remindAt: '', remindState: '',
+            mapParent: '', mapOrder: 0, mapLinks: [], deadline: '', remindAt: '', remindState: '', srsStep: -1,
             linkedCareer: '', linkedSkill: '', course: '', linkedCourseId: '', resource: '', linkedResourceId: '', analysis: '', linkedAnalysisId: '', deal: '', linkedDealId: ''
         });
         normalizeNote(copy);
@@ -16189,6 +16198,148 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && GA.el) { e.preventDefault(); e.stopPropagation(); gaClose(); }
         }, true);
+    }
+
+
+    /* ═════════════ Group B: Review ladder (SRS) · Note → Flashcards ═════════════
+       · Review ladder — a note can follow 1d → 3d → 7d → 21d → 60d. "Reviewed" (here, or in Today) moves the note's
+         Due date to the next step, so it keeps landing in Today's "Notes to review" without choosing 3d/7d/30d by hand.
+         Stored as note.srsStep (-1 = no ladder, else the index of the step that is currently scheduled).
+       · Note → Flashcards — turns "> [!QUESTION]" blocks (or the text you selected in Read mode) into cards in the
+         Tracker's flashcard deck. Each card remembers its note (sourceNoteId) and links back to it. */
+    const SRS_LADDER = [1, 3, 7, 21, 60];
+    const srsIsOn = (n) => !!n && typeof n.srsStep === 'number' && n.srsStep >= 0;
+    const srsNextStep = (n) => (srsIsOn(n) ? Math.min(n.srsStep + 1, SRS_LADDER.length - 1) : 0);
+    function srsActionItems(n) {
+        if (!srsIsOn(n)) return [{ id: 'srsstart', icon: 'repeat', label: 'Start review ladder (' + SRS_LADDER.slice(0, 3).join('d → ') + 'd …)' }];
+        return [
+            { id: 'srsdone', icon: 'check-double', label: 'Reviewed → next in ' + SRS_LADDER[srsNextStep(n)] + 'd' },
+            { id: 'srsstop', icon: 'ban', label: 'Stop review ladder' }
+        ];
+    }
+    function srsAction(id) {
+        const n = S.note; if (!n) return;
+        if (id === 'srsstop') {
+            n.srsStep = -1;
+            toast('Review ladder stopped. The current review date stays as it is.');
+        } else {
+            const step = id === 'srsstart' ? 0 : srsNextStep(n);
+            n.srsStep = step;
+            const d = new Date(); d.setDate(d.getDate() + SRS_LADDER[step]);
+            n.deadline = remDay(d.getTime());
+            if (el.deadline) el.deadline.value = n.deadline;
+            toast((id === 'srsstart' ? 'Ladder started. ' : 'Reviewed. ') + 'Next review in ' + SRS_LADDER[step] + ' day' + (SRS_LADDER[step] === 1 ? '' : 's') + ' (step ' + (step + 1) + ' of ' + SRS_LADDER.length + ').');
+        }
+        renderDocMeta(); renderActions(); markDirty();
+    }
+
+    /* ── Note → Flashcards ── */
+    const fcOk = () => { try { return typeof flashcards !== 'undefined' && Array.isArray(flashcards) && typeof saveFlashcardsToStorage === 'function'; } catch (e) { return false; } };
+    const fcNorm = (s) => fold(String(s || '').replace(/\s+/g, ' ').trim());
+    const GB = { sel: { text: '', at: 0 }, cards: [], useTags: false };
+    // "> [!QUESTION] text" blocks. Answer = the part after a "---" (or "A:") line inside the block, otherwise the paragraph right under it.
+    function fcExtract(md) {
+        const lines = String(md || '').replace(/\r\n/g, '\n').split('\n'), out = [];
+        let i = 0, fence = false;
+        while (i < lines.length) {
+            const ln = lines[i];
+            if (/^\s*(```|~~~)/.test(ln)) { fence = !fence; i++; continue; }
+            const m = !fence && ln.match(/^\s*>\s*\[!QUESTION\][+-]?\s*(.*)$/i);
+            if (!m) { i++; continue; }
+            const body = [m[1]]; let j = i + 1;
+            while (j < lines.length && /^\s*>/.test(lines[j])) { body.push(lines[j].replace(/^\s*>\s?/, '')); j++; }
+            let q, a = '';
+            const sep = body.findIndex((l, k) => k > 0 && (/^\s*-{3,}\s*$/.test(l) || /^\s*(\*\*)?(A|Answer|Đáp án)(\*\*)?\s*[:：]/i.test(l)));
+            if (sep > 0) {
+                q = body.slice(0, sep).join('\n').trim();
+                const first = body[sep].replace(/^\s*(\*\*)?(A|Answer|Đáp án)(\*\*)?\s*[:：]\s*/i, '');
+                a = (/^\s*-{3,}\s*$/.test(body[sep]) ? '' : first + '\n') + body.slice(sep + 1).join('\n');
+                a = a.trim();
+            } else {
+                q = body.join('\n').trim();
+                let k = j; if (k < lines.length && !lines[k].trim()) k++;
+                const ans = [];
+                while (k < lines.length && lines[k].trim() && !/^\s*(#{1,6}\s|>|```|~~~)/.test(lines[k]) && ans.length < 40) { ans.push(lines[k]); k++; }
+                a = ans.join('\n').trim();
+            }
+            if (q) out.push({ q, a, line: i + 1 });
+            i = j;
+        }
+        return out;
+    }
+    function fcDraftFromNote(n) {
+        const have = new Set(fcOk() ? flashcards.filter((f) => f && f.sourceNoteId === n.id).map((f) => fcNorm(f.question)) : []);
+        const cards = fcExtract(n.markdown).map((c) => ({ q: gaClean(c.q), a: gaClean(c.a), on: true, dup: have.has(fcNorm(c.q)), src: 'callout' }));
+        cards.forEach((c) => { if (c.dup) c.on = false; });
+        const sel = (Date.now() - GB.sel.at < 60000) ? GB.sel.text : '';
+        if (sel) {
+            cards.unshift({ q: '', a: gaClean(sel), on: true, dup: false, src: 'selection' });   // rendered text, so no Markdown markers
+        }
+        return cards;
+    }
+    function renderCardsModal(body) {
+        const n = S.note;
+        const rows = GB.cards.map((c, i) => '<div class="nv-ga-fc' + (c.on ? '' : ' nv-ga-off') + '">'
+            + '<label class="nv-ga-pick"><input type="checkbox" data-fc-on="' + i + '"' + (c.on ? ' checked' : '') + '> <span class="nv-ga-role">' + (c.src === 'selection' ? 'selection' : c.src === 'blank' ? 'new' : 'line ' + (c.line || '')) + '</span>'
+            + (c.dup ? ' <span class="nv-ga-meta">already a flashcard from this note</span>' : '') + '</label>'
+            + '<textarea data-fc-q="' + i + '" rows="2" placeholder="Question (front)">' + esc(c.q) + '</textarea>'
+            + '<textarea data-fc-a="' + i + '" rows="3" placeholder="Answer (back)">' + esc(c.a) + '</textarea></div>').join('');
+        const ready = GB.cards.filter((c) => c.on && c.q.trim() && c.a.trim()).length;
+        body.innerHTML = '<p class="nv-dup-hint">Cards are added to your Tracker flashcard deck and link back to <b>' + esc(gaTitleOf(n)) + '</b>. '
+            + 'Write a question as <code>&gt; [!QUESTION] …</code> and put the answer under it (or after a <code>---</code> line inside the block) to make them in bulk. LaTeX and Markdown are kept.</p>'
+            + (rows || '<div class="nv-dup-empty"><i class="fa-regular fa-clone"></i>No <code>[!QUESTION]</code> blocks found.<br>Select text in Read mode first, or add a blank card.</div>')
+            + '<div class="nv-ga-btns"><button class="nv-btn nv-btn-ghost" type="button" data-fc-blank><i class="fa-solid fa-plus"></i> Blank card</button>'
+            + '<label class="nv-ga-pick"><input type="checkbox" data-fc-tags' + (GB.useTags ? ' checked' : '') + '> Use this note’s tags</label>'
+            + '<span class="nv-grow"></span><button class="nv-btn nv-btn-primary" type="button" data-fc-add' + (ready ? '' : ' disabled') + '><i class="fa-solid fa-clone"></i> Add ' + ready + ' flashcard' + (ready === 1 ? '' : 's') + '</button></div>';
+    }
+    function openCardsModal() {
+        if (!S.open || !S.note) return;
+        if (!fcOk()) { toast('The flashcard deck isn’t available on this page. Open the Tracker (index.html) first.'); return; }
+        closeMenus();
+        const n = S.note;
+        GB.cards = fcDraftFromNote(n);
+        const body = gaOpen('cards', 'clone', 'Make flashcards');
+        renderCardsModal(body);
+        const rerender = () => renderCardsModal(GA.el.querySelector('.nv-ga-body'));
+        GA.el.addEventListener('input', (e) => {   // typing must not rebuild the form (it would drop focus), only refresh the counter
+            const q = e.target.closest('[data-fc-q]'), a = e.target.closest('[data-fc-a]');
+            if (q) GB.cards[+q.dataset.fcQ].q = q.value; else if (a) GB.cards[+a.dataset.fcA].a = a.value; else return;
+            const btn = GA.el.querySelector('[data-fc-add]'); if (!btn) return;
+            const ready = GB.cards.filter((c) => c.on && c.q.trim() && c.a.trim()).length;
+            btn.disabled = !ready; btn.innerHTML = '<i class="fa-solid fa-clone"></i> Add ' + ready + ' flashcard' + (ready === 1 ? '' : 's');
+        });
+        GA.el.addEventListener('change', (e) => {
+            const on = e.target.closest('[data-fc-on]');
+            if (on) { GB.cards[+on.dataset.fcOn].on = on.checked; rerender(); return; }
+            if (e.target.closest('[data-fc-tags]')) GB.useTags = e.target.checked;
+        });
+        GA.el.addEventListener('click', (e) => {
+            if (e.target.closest('[data-fc-blank]')) { GB.cards.push({ q: '', a: '', on: true, dup: false, src: 'blank' }); rerender(); return; }
+            if (!e.target.closest('[data-fc-add]')) return;
+            const picked = GB.cards.filter((c) => c.on && c.q.trim() && c.a.trim());
+            if (!picked.length || !fcOk()) return;
+            const now = new Date().toISOString(), base = Date.now(), tags = GB.useTags ? n.tags.slice() : [];
+            picked.forEach((c, k) => flashcards.push({
+                id: String(base + k), question: c.q.trim(), answer: c.a.trim(), imageUrl: '', tags: tags.slice(), createdAt: now, lastReviewed: now,
+                mastery: 0, nextReview: now, reviewCount: 0, lastMasteryUpdate: now, type: 'general', vocab: null, easeFactor: 2.5, interval: 0, repetitions: 0,
+                sourceNoteId: n.id, sourceNoteTitle: gaTitleOf(n)
+            }));
+            saveFlashcardsToStorage();
+            try { if (typeof renderManageFlashcards === 'function') renderManageFlashcards(); } catch (err) { /* panel not built yet */ }
+            gaClose();
+            toast(picked.length + ' flashcard' + (picked.length === 1 ? '' : 's') + ' added to your deck.');
+        });
+    }
+    function gbInit() {
+        // Remember the last text selected in Read mode — clicking a menu item can collapse the selection before the action runs.
+        document.addEventListener('selectionchange', () => {
+            try {
+                const sel = window.getSelection();
+                if (!sel || sel.isCollapsed || !el.read) return;
+                const t = sel.toString().trim(), a = sel.anchorNode;
+                if (t && a && el.read.contains(a.nodeType === 1 ? a : a.parentNode)) GB.sel = { text: t, at: Date.now() };
+            } catch (e) { /* ignore */ }
+        });
     }
 
     window.NotesVault = {
