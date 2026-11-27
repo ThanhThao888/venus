@@ -19,7 +19,7 @@
     custom:     { label: 'Khác (OpenAI-compatible)', baseUrl: '', needsKey: false }
   };
   const DEFAULTS = {
-    provider: 'openrouter', baseUrl: PROVIDERS.openrouter.baseUrl, apiKey: '', model: '',
+    provider: 'openrouter', baseUrl: PROVIDERS.openrouter.baseUrl, apiKey: '', model: '', fallbackModels: '', backups: [], dailyLimit: 50,
     denyTraining: true, replyLang: 'tiếng Việt', maxChars: 30000, temperature: 0.4,
     instructions: 'Mình đang xây kiến thức về tài chính, đầu tư và tích hợp AI. Hãy trả lời có cấu trúc và đi sâu thay vì tóm tắt hời hợt: khái niệm nền tảng, ứng dụng thực tế, ví dụ, rủi ro/giới hạn, bước tiếp theo. Chính xác, không khen thừa; nếu dữ liệu không đủ để kết luận thì nói rõ thay vì đoán.'
   };
@@ -44,6 +44,32 @@
     try { await kvSet('settings', cfg); } catch (e) { persisted = false; console.warn('[VenusAI] could not persist settings', e); }
     return { cfg, persisted };
   }
+  /* ───────── daily request counter ─────────
+     Counts every request this app sends (a failed one still counts on OpenRouter). Free-model limits reset at 00:00 UTC.
+     It cannot see requests from other apps that share the same key (e.g. Copilot in Obsidian), so a 429 "per-day" answer
+     sets the counter to the limit. */
+  const utcDay = () => new Date().toISOString().slice(0, 10);
+  const resetTime = () => { const n = new Date(); const t = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1)); return t.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }); };
+  let memUse = null;
+  const freshUse = () => ({ day: utcDay(), n: 0, by: {} });
+  async function usageGet() {
+    let u = null; try { u = await kvGet('usage'); } catch (e) { u = memUse; }
+    return u && u.day === utcDay() ? u : freshUse();
+  }
+  async function usageEdit(fn) {
+    try {
+      const db = await openDb();
+      return await new Promise((res, rej) => {
+        const tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv'), g = st.get('usage');
+        let out = null;
+        g.onsuccess = () => { let u = g.result; if (!u || u.day !== utcDay()) u = freshUse(); out = fn(u) || u; st.put(out, 'usage'); };
+        tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+      });
+    } catch (e) { let u = memUse && memUse.day === utcDay() ? memUse : freshUse(); memUse = fn(u) || u; return memUse; }
+  }
+  const usageBump = (model) => usageEdit((u) => { u.n++; u.by[model] = (u.by[model] || 0) + 1; return u; });
+  const usageReset = () => usageEdit(() => freshUse());
+  const usageSync = (limit) => usageEdit((u) => { if (limit > 0 && u.n < limit) u.n = limit; return u; });
   const needsKey = (c) => (PROVIDERS[c.provider] || PROVIDERS.custom).needsKey;
   const isOpenRouter = (c) => /openrouter\.ai/i.test(c.baseUrl || '');
   const hostOf = (u) => { try { return new URL(u).host; } catch (e) { return u || '?'; } };
@@ -58,23 +84,79 @@
     if (status === 404 && /data policy|privacy|guardrail/i.test(d)) return aiErr('Không có nhà cung cấp nào của model này thỏa điều kiện “không dùng dữ liệu để train”. Bỏ tick mục đó trong ⚙ hoặc đổi model.', d, 'policy');
     if (status === 404) return aiErr('Không tìm thấy model — tên có thể gõ sai hoặc model free này đã bị gỡ. Đổi model trong ⚙.', d, 'model');
     if (status === 413 || /context|too long|maximum/i.test(d) && status === 400) return aiErr('Nội dung quá dài so với model này. Chọn ít mục hơn hoặc giảm giới hạn ký tự trong ⚙.', d, 'long');
+    if (status === 429 && /per[- ]?day|daily/i.test(d)) return aiErr('Hết lượt miễn phí của hôm nay. Giới hạn này tính chung cho cả tài khoản (kể cả Copilot trong Obsidian) và đặt lại lúc ' + resetTime() + ' giờ máy bạn. Đợi tới lúc đó, nạp credit, hoặc dùng Ollama.', d, 'rate');
     if (status === 429) return aiErr('Hết lượt hoặc gọi quá nhanh. Gói free thường giới hạn theo phút và theo ngày — đợi một lát hoặc đổi model.', d, 'rate');
     if (status >= 500 || status === 408) return aiErr('Nhà cung cấp đang lỗi hoặc quá tải. Thử lại sau, hoặc đổi model.', d, 'server');
     return aiErr('Yêu cầu bị từ chối (HTTP ' + status + ').', d, 'http');
   }
+  /* Fallback models: when the main model fails for a reason that ANOTHER model could fix (gone, no longer free, overloaded,
+     empty answer, provider policy), the next model in the list is tried. Not for a wrong key, a lost connection, a too-long
+     prompt, or a daily/minute limit: free-model limits on OpenRouter are shared by the whole account, so retrying would
+     only burn more requests. Nothing is retried once part of an answer has already arrived. */
+  const FB_MAX = 3;
+  function fallbackList(c) {
+    const seen = new Set([c.model]), out = [];
+    String(c.fallbackModels || '').split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean).forEach((m) => { if (!seen.has(m) && out.length < FB_MAX) { seen.add(m); out.push(m); } });
+    return out;
+  }
+  function canFallback(e) {
+    if (!e || !e.__ai) return false;
+    if (e.code === 'rate') return !/free-models-per|per[- ]?day|per[- ]?min|daily|quota|credits? (limit|required)/i.test(e.detail || '');
+    return ['credit', 'model', 'policy', 'server', 'timeout', 'empty', 'stream'].indexOf(e.code) >= 0;
+  }
+  /* Backup PROVIDERS (up to 2): another service with its own key and model. Tried after the main provider's own models,
+     and — unlike same-provider fallback — also when the main one is out of free requests (per day / per minute), the key is
+     wrong or the connection is down, because another service has its own limits. Still not tried for a too-long prompt,
+     and never once part of an answer has arrived. Only requests to the MAIN provider are counted in the daily counter. */
+  const BP_MAX = 2;
+  const SWITCH_CODES = ['rate', 'auth', 'network', 'credit', 'model', 'policy', 'server', 'timeout', 'empty', 'stream'];
+  const canSwitchProvider = (e) => !!e && !!e.__ai && SWITCH_CODES.indexOf(e.code) >= 0;
+  const bpReady = (b) => !!(b && b.baseUrl && b.model && (!(PROVIDERS[b.provider] || PROVIDERS.custom).needsKey || b.apiKey));
+  const bpActive = (c) => (Array.isArray(c.backups) ? c.backups : []).slice(0, BP_MAX).filter(bpReady);
+  const bpCfg = (c, b) => Object.assign({}, c, { provider: b.provider, baseUrl: b.baseUrl, apiKey: b.apiKey || '' });
+  const bpName = (b) => hostOf(b.baseUrl) + ' · ' + b.model;
   async function chat(opts) {
     const c = await getSettings();
-    if (!c.model) throw aiErr('Chưa chọn model — mở ⚙ và nhập tên model.', '', 'nomodel');
-    if (needsKey(c) && !c.apiKey) throw aiErr('Chưa có API key — mở ⚙ và dán key vào.', '', 'nokey');
+    let list;
+    if (opts.backup != null) {                                    // "Thử" button of one backup provider: only that one
+      const b = (c.backups || [])[opts.backup];
+      if (!b || !b.model || !b.baseUrl) throw aiErr('Chưa nhập địa chỉ API và model cho nhà dự phòng này.', '', 'nomodel');
+      if ((PROVIDERS[b.provider] || PROVIDERS.custom).needsKey && !b.apiKey) throw aiErr('Chưa có API key cho nhà dự phòng này.', '', 'nokey');
+      list = [{ cfg: bpCfg(c, b), model: b.model, prov: 1, name: bpName(b) }];
+    } else {
+      if (!c.model) throw aiErr('Chưa chọn model — mở ⚙ và nhập tên model.', '', 'nomodel');
+      if (needsKey(c) && !c.apiKey) throw aiErr('Chưa có API key — mở ⚙ và dán key vào.', '', 'nokey');
+      list = [c.model].concat(opts.noFallback ? [] : fallbackList(c)).map((m) => ({ cfg: c, model: m, prov: 0, name: m }));
+      if (!opts.noFallback) bpActive(c).forEach((b, i) => list.push({ cfg: bpCfg(c, b), model: b.model, prov: i + 1, name: bpName(b) }));
+    }
+    const tried = [];
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i], st = { got: false };
+      try {
+        const full = await callModel(a.cfg, a.model, opts, st, a.prov === 0 && opts.backup == null);
+        if (opts.onModel) opts.onModel(a.name, tried);
+        return full;
+      } catch (e) {
+        tried.push({ model: a.name, reason: (e && e.message) || 'lỗi', code: (e && e.code) || '' });
+        let j = -1;
+        for (let k = i + 1; k < list.length; k++) { if (list[k].prov === a.prov ? canFallback(e) : canSwitchProvider(e)) { j = k; break; } }
+        if (j < 0 || st.got) { if (e && e.__ai && tried.length > 1) e.tried = tried.map((t) => t.model); throw e; }
+        if (opts.onFallback) opts.onFallback({ from: a.name, to: list[j].name, reason: e.message });
+        i = j - 1;
+      }
+    }
+  }
+  async function callModel(c, model, opts, st, counted) {
     const url = String(c.baseUrl || '').replace(/\/+$/, '') + '/chat/completions';
     const headers = { 'Content-Type': 'application/json' };
     if (c.apiKey) headers.Authorization = 'Bearer ' + c.apiKey;
-    const body = { model: c.model, messages: opts.messages, stream: true, temperature: opts.temperature != null ? opts.temperature : c.temperature };
+    const body = { model, messages: opts.messages, stream: true, temperature: opts.temperature != null ? opts.temperature : c.temperature };
     if (isOpenRouter(c)) {
       body.provider = { data_collection: c.denyTraining ? 'deny' : 'allow' };
       headers['X-Title'] = 'Venus Hub';
       if (/^https?:/.test(location.origin)) headers['HTTP-Referer'] = location.origin;
     }
+    if (counted) await usageBump(model);
     const ctl = new AbortController(); let timedOut = false, idle = 0;
     if (opts.signal) { if (opts.signal.aborted) ctl.abort(); else opts.signal.addEventListener('abort', () => ctl.abort()); }
     const bump = () => { clearTimeout(idle); idle = setTimeout(() => { timedOut = true; ctl.abort(); }, opts.idleMs || 90000); };
@@ -91,6 +173,7 @@
         let d = '';
         try { const j = await res.json(); d = (j.error && (j.error.message || JSON.stringify(j.error))) || j.message || JSON.stringify(j).slice(0, 300); }
         catch (e) { try { d = (await res.text()).slice(0, 300); } catch (_) { /* ignore */ } }
+        if (counted && res.status === 429 && /per[- ]?day|daily/i.test(d)) usageSync(+c.dailyLimit || 0);
         throw httpErr(res.status, d);
       }
       let full = '';
@@ -116,7 +199,7 @@
             let j; try { j = JSON.parse(data); } catch (e) { continue; }
             if (j.error) throw aiErr('Nhà cung cấp báo lỗi giữa chừng.', j.error.message || JSON.stringify(j.error), 'stream');
             const d = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-            if (d) { full += d; if (opts.onDelta) opts.onDelta(d, full); }
+            if (d) { full += d; st.got = true; if (opts.onDelta) opts.onDelta(d, full); }
           }
         }
       }
@@ -175,7 +258,7 @@
       '.vai-turn{margin:0 0 14px}.vai-q{font-size:.82rem;color:var(--text-muted,#9a7686);margin-bottom:4px}.vai-q:before{content:"Bạn: "}',
       '.vai-a{border:1px solid var(--border-color,#f0d7de);border-radius:12px;padding:10px 14px;background:var(--bg-light,transparent);overflow-wrap:anywhere}',
       '.vai-md :first-child{margin-top:0}.vai-md :last-child{margin-bottom:0}.vai-md pre{overflow:auto;padding:8px;border-radius:8px;background:rgba(127,127,127,.12)}.vai-md table{border-collapse:collapse;display:block;overflow:auto}.vai-md td,.vai-md th{border:1px solid var(--border-color,#f0d7de);padding:3px 8px}.vai-md code{background:rgba(127,127,127,.15);padding:0 4px;border-radius:4px}',
-      '.vai-dots{color:var(--text-muted,#9a7686)}.vai-err{color:#b94a5a}.vai-err small{display:block;color:var(--text-muted,#9a7686);margin-top:4px;word-break:break-word}',
+      '.vai-use{font-size:.8rem;color:var(--text-muted,#9a7686);margin-top:2px}.vai-use.warn{color:#c0762f}.vai-use.bad{color:#b94a5a}.vai-fbinfo{font-size:.8rem;color:var(--text-muted,#9a7686);margin-top:4px}.vai-dots{color:var(--text-muted,#9a7686)}.vai-err{color:#b94a5a}.vai-err small{display:block;color:var(--text-muted,#9a7686);margin-top:4px;word-break:break-word}',
       '.vai-foot{border-top:1px solid var(--border-color,#f0d7de);padding:10px 14px}.vai-acts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.vai-acts:empty{display:none}',
       '.vai-btn,.vai-send{border:1px solid var(--primary,#d17b96);background:var(--bg-white,#fffbfc);color:inherit;border-radius:10px;padding:5px 12px;font:inherit;font-size:.88rem;cursor:pointer}.vai-btn.vai-main,.vai-send{background:var(--primary,#d17b96);color:#fff}',
       '.vai-comp{display:flex;gap:8px;align-items:flex-end}.vai-comp textarea{flex:1;min-width:0;resize:vertical;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--border-color,#f0d7de);background:var(--bg-white,#fffbfc);color:inherit}',
@@ -187,6 +270,15 @@
   }
 
   /* ───────── settings window ───────── */
+  function bpRow(c, i) {
+    const b = (c.backups || [])[i] || { provider: i ? 'ollama' : 'groq', baseUrl: (i ? PROVIDERS.ollama : PROVIDERS.groq).baseUrl, apiKey: '', model: '' };
+    const fld = 'margin-top:6px';
+    return '<div class="vai-bk" data-bk="' + i + '" style="border:1px solid var(--border-color,#f0d7de);border-radius:10px;padding:8px;margin-bottom:8px">'
+      + '<div class="vai-row"><select data-bf="provider" style="flex:1">' + Object.keys(PROVIDERS).map((k) => '<option value="' + k + '"' + (b.provider === k ? ' selected' : '') + '>' + esc(PROVIDERS[k].label) + '</option>').join('') + '</select><button type="button" class="vai-btn" data-a="testb' + i + '">Thử</button></div>'
+      + '<div style="' + fld + '"><input type="text" data-bf="baseUrl" value="' + esc(b.baseUrl) + '" placeholder="Địa chỉ API" autocomplete="off" spellcheck="false"></div>'
+      + '<div style="' + fld + '"><input type="password" data-bf="apiKey" value="' + esc(b.apiKey) + '" placeholder="API key (Ollama thì để trống)" autocomplete="off" spellcheck="false"></div>'
+      + '<div style="' + fld + '"><input type="text" data-bf="model" value="' + esc(b.model) + '" placeholder="Tên model (để trống = không dùng nhà này)" autocomplete="off" spellcheck="false"></div></div>';
+  }
   function openSettings(o) {
     o = o || {}; injectCss();
     const scrim = document.createElement('div'); scrim.className = 'vai-scrim vai-top';
@@ -206,24 +298,41 @@
         + '<div class="vai-hint">Key lưu riêng trong trình duyệt của máy này, <b>không</b> nằm trong file backup. Ai dùng máy này vẫn có thể thấy nó.</div></div>'
         + '<div class="vai-f"><label class="vai-l">Model (gõ hoặc dán tên bất kỳ — đổi lúc nào cũng được)</label><div class="vai-row"><input type="text" id="vaiModel" list="vaiModels" value="' + esc(c.model) + '" autocomplete="off" spellcheck="false" placeholder="vd: tên-model:free"><button type="button" class="vai-btn" data-a="models">Tải danh sách</button></div>'
         + '<datalist id="vaiModels"></datalist><label class="vai-chk" style="margin-top:6px"><input type="checkbox" id="vaiFree" checked> Chỉ hiện model miễn phí (OpenRouter), mới nhất lên đầu</label><div class="vai-hint" id="vaiModelsMsg"></div></div>'
+        + '<div class="vai-f"><label class="vai-l">Model dự phòng (mỗi dòng một tên, tối đa ' + FB_MAX + ')</label><textarea id="vaiFb" rows="3" spellcheck="false" placeholder="để trống = không dùng dự phòng">' + esc(c.fallbackModels) + '</textarea><div class="vai-hint">Khi model chính bị gỡ, hết free, quá tải hoặc trả rỗng, app tự thử lần lượt các model này. Mỗi lần thử tính là một lượt gọi. Không chuyển model khi hết lượt trong ngày hoặc trong phút, vì giới hạn free của OpenRouter tính chung cho cả tài khoản.</div></div>'
+        + '<div class="vai-f"><label class="vai-l">Nhà cung cấp dự phòng (tối đa ' + BP_MAX + ')</label>' + [0, 1].map((i) => bpRow(c, i)).join('')
+        + '<div class="vai-hint">Khi nhà chính hết lượt (ngày hoặc phút), sai key, mất kết nối hoặc lỗi, app tự chuyển sang nhà này, kể cả sau khi đã thử hết model dự phòng ở trên. Mỗi lần chuyển tính là một lượt gọi bên nhà đó. Lượt gọi nhà dự phòng không tính vào bộ đếm bên dưới. Để trống ô model = không dùng. Lưu ý riêng tư: gói free của vài nhà (nhất là Google Gemini) có thể dùng prompt để cải thiện sản phẩm, nên note nhạy cảm hãy gắn tag noai. Ollama chạy trên máy này thì riêng tư.</div></div>'
+        + '<div class="vai-f"><label class="vai-l">Giới hạn lượt free mỗi ngày (để app báo gần hết)</label><div class="vai-row"><input type="number" id="vaiLim" min="0" step="1" value="' + (+c.dailyLimit >= 0 ? +c.dailyLimit : 50) + '"><button type="button" class="vai-btn" data-a="resetuse">Đặt lại bộ đếm</button></div><div class="vai-hint" id="vaiUse"></div><div class="vai-hint">OpenRouter: 50 lượt/ngày nếu chưa nạp credit, 1000 nếu đã nạp từ 10 credits. 0 = không hiện giới hạn. Bộ đếm chỉ thấy các lượt gửi từ app này; Copilot trong Obsidian dùng chung key sẽ không được đếm, nhưng khi OpenRouter báo hết lượt ngày thì bộ đếm tự chỉnh lại.</div></div>'
         + '<div class="vai-f"><label class="vai-chk"><input type="checkbox" id="vaiDeny"' + (c.denyTraining ? ' checked' : '') + '><span>Không dùng nhà cung cấp có thể lấy prompt để huấn luyện (chỉ áp dụng cho OpenRouter)<div class="vai-hint">Khuyên bật vì ghi chú của bạn là dữ liệu riêng. Nếu model free nào đó báo lỗi “data policy”, bỏ tick hoặc đổi model.</div></span></label></div>'
         + '<div class="vai-f"><label class="vai-l">Trả lời bằng</label><input type="text" id="vaiLang" value="' + esc(c.replyLang) + '" placeholder="tiếng Việt / English / để trống = theo ngôn ngữ câu hỏi"></div>'
         + '<div class="vai-f"><label class="vai-l">Giới hạn ký tự gửi đi mỗi lần</label><input type="number" id="vaiMax" min="2000" step="1000" value="' + (+c.maxChars || 30000) + '"><div class="vai-hint">Model free thường có “bộ nhớ” nhỏ. Quá dài sẽ bị cắt bớt (khung AI sẽ báo).</div></div>'
         + '<div class="vai-f"><label class="vai-l">Hướng dẫn chung cho AI</label><textarea id="vaiInst" rows="4">' + esc(c.instructions) + '</textarea></div>'
         + '<div class="vai-row" style="flex-wrap:wrap"><button type="button" class="vai-btn vai-main" data-a="save">Lưu</button><button type="button" class="vai-btn" data-a="test">Lưu & thử</button><button type="button" class="vai-btn" data-a="forget">Xóa key</button><span id="vaiMsg" class="vai-hint" style="flex:1"></span></div></div>';
       const q = (s) => box.querySelector(s), msg = (t, cls) => { const m = q('#vaiMsg'); m.className = 'vai-hint ' + (cls || ''); m.textContent = t; };
-      const read = () => ({ provider: q('#vaiProv').value, baseUrl: q('#vaiBase').value.trim(), apiKey: q('#vaiKey').value.trim(), model: q('#vaiModel').value.trim(), denyTraining: q('#vaiDeny').checked, replyLang: q('#vaiLang').value.trim(), maxChars: Math.max(2000, +q('#vaiMax').value || 30000), instructions: q('#vaiInst').value.trim() });
+      const read = () => ({ provider: q('#vaiProv').value, baseUrl: q('#vaiBase').value.trim(), apiKey: q('#vaiKey').value.trim(), model: q('#vaiModel').value.trim(), fallbackModels: q('#vaiFb').value.trim(), dailyLimit: q('#vaiLim').value === '' ? 50 : Math.max(0, Math.round(+q('#vaiLim').value) || 0), denyTraining: q('#vaiDeny').checked, replyLang: q('#vaiLang').value.trim(), maxChars: Math.max(2000, +q('#vaiMax').value || 30000), instructions: q('#vaiInst').value.trim(),
+        backups: [0, 1].map((i) => { const r = box.querySelector('[data-bk="' + i + '"]'), g = (f) => r.querySelector('[data-bf="' + f + '"]').value.trim(); return { provider: g('provider'), baseUrl: g('baseUrl'), apiKey: g('apiKey'), model: g('model') }; }) });
       const persist = async () => { const r = await saveSettings(read()); if (!r.persisted) msg('Không lưu được lâu dài (trình duyệt chặn lưu trữ) — chỉ nhớ trong lần mở này.', 'vai-bad'); return r; };
       q('#vaiProv').addEventListener('change', () => { const p = PROVIDERS[q('#vaiProv').value]; if (p && p.baseUrl) q('#vaiBase').value = p.baseUrl; });
+      box.addEventListener('change', (e) => {
+        const t = e.target; if (!t.matches || !t.matches('[data-bf="provider"]')) return;
+        const p = PROVIDERS[t.value], row = t.closest('[data-bk]');
+        if (p && row) row.querySelector('[data-bf="baseUrl"]').value = p.baseUrl;
+      });
       box.addEventListener('click', async (e) => {
         const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a;
         if (a === 'close') close();
         else if (a === 'eye') { const k = q('#vaiKey'); k.type = k.type === 'password' ? 'text' : 'password'; b.textContent = k.type === 'password' ? 'Hiện' : 'Ẩn'; }
-        else if (a === 'forget') { q('#vaiKey').value = ''; await persist(); msg('Đã xóa key.', 'vai-ok'); if (o.onSave) o.onSave(); }
+        else if (a === 'resetuse') { await usageReset(); showUse(); }
+        else if (a === 'forget') { q('#vaiKey').value = ''; box.querySelectorAll('[data-bf="apiKey"]').forEach((x) => { x.value = ''; }); await persist(); msg('Đã xóa key.', 'vai-ok'); if (o.onSave) o.onSave(); }
         else if (a === 'save') { const r = await persist(); if (r.persisted) msg('Đã lưu.', 'vai-ok'); if (o.onSave) o.onSave(); }
+        else if (/^testb\d$/.test(a)) {
+          await persist(); b.disabled = true; msg('Đang thử nhà dự phòng…');
+          try { const t0 = Date.now(); const out = await chat({ messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }], idleMs: 45000, backup: +a.slice(5) }); msg('Nhà dự phòng chạy được ✓ (' + ((Date.now() - t0) / 1000).toFixed(1) + 's) — trả lời: ' + out.trim().slice(0, 40), 'vai-ok'); }
+          catch (err) { msg(err.message + (err.detail ? ' — ' + String(err.detail).slice(0, 200) : ''), 'vai-bad'); }
+          b.disabled = false;
+        }
         else if (a === 'test') {
           await persist(); b.disabled = true; msg('Đang thử…');
-          try { const t0 = Date.now(); const out = await chat({ messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }], idleMs: 45000 }); msg('Chạy được ✓ (' + ((Date.now() - t0) / 1000).toFixed(1) + 's) — model trả lời: ' + out.trim().slice(0, 40), 'vai-ok'); if (o.onSave) o.onSave(); }
+          try { const t0 = Date.now(); const out = await chat({ messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }], idleMs: 45000, noFallback: true }); msg('Chạy được ✓ (' + ((Date.now() - t0) / 1000).toFixed(1) + 's) — model trả lời: ' + out.trim().slice(0, 40), 'vai-ok'); if (o.onSave) o.onSave(); }
           catch (err) { msg(err.message + (err.detail ? ' — ' + String(err.detail).slice(0, 200) : ''), 'vai-bad'); }
           b.disabled = false;
         } else if (a === 'models') {
@@ -238,6 +347,8 @@
           b.disabled = false;
         }
       });
+      const showUse = async () => { const u = await usageGet(); const el = q('#vaiUse'); if (el) el.textContent = 'Hôm nay (tính theo ngày UTC, đặt lại lúc ' + resetTime() + '): đã đếm ' + u.n + ' lượt' + (Object.keys(u.by).length ? ' — ' + Object.keys(u.by).map((m) => m + ' ×' + u.by[m]).join(', ') : '') + '.'; };
+      showUse();
       q(c.apiKey ? '#vaiModel' : '#vaiKey').focus();
     });
     return { close };
@@ -258,12 +369,12 @@
     const scrim = document.createElement('div'); scrim.className = 'vai-scrim';
     const box = document.createElement('div'); box.className = 'vai'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', o.title || 'AI');
     box.innerHTML = '<div class="vai-head"><span class="vai-title">✨ ' + esc(o.title || 'AI') + '</span><span class="vai-grow"></span><button type="button" class="vai-ib" data-a="settings" title="Cài đặt AI (key, model)">⚙</button><button type="button" class="vai-ib" data-a="close" title="Đóng (Esc)">✕</button></div>'
-      + '<div class="vai-body"><div class="vai-ctx"><div class="vai-opts"></div><div class="vai-meta"></div><details class="vai-det" hidden><summary>Các mục sẽ được gửi</summary><ul></ul></details></div><div class="vai-presets"></div><div class="vai-log" aria-live="polite"></div></div>'
+      + '<div class="vai-body"><div class="vai-ctx"><div class="vai-opts"></div><div class="vai-meta"></div><div class="vai-use"></div><details class="vai-det" hidden><summary>Các mục sẽ được gửi</summary><ul></ul></details></div><div class="vai-presets"></div><div class="vai-log" aria-live="polite"></div></div>'
       + '<div class="vai-foot"><div class="vai-acts"></div><div class="vai-comp"><textarea rows="2" placeholder="Hỏi thêm về dữ liệu này… (Ctrl+Enter để gửi)"></textarea><button type="button" class="vai-send" data-a="send">Gửi</button></div></div>';
     document.body.appendChild(scrim); document.body.appendChild(box);
     const prevFocus = document.activeElement;
     const q = (s) => box.querySelector(s);
-    const optsEl = q('.vai-opts'), metaEl = q('.vai-meta'), detEl = q('.vai-det'), presetsEl = q('.vai-presets'), logEl = q('.vai-log'), actsEl = q('.vai-acts'), ta = q('textarea'), sendBtn = q('.vai-send');
+    const useEl = q('.vai-use'), optsEl = q('.vai-opts'), metaEl = q('.vai-meta'), detEl = q('.vai-det'), presetsEl = q('.vai-presets'), logEl = q('.vai-log'), actsEl = q('.vai-acts'), ta = q('textarea'), sendBtn = q('.vai-send');
     if (o.placeholder) ta.placeholder = o.placeholder;
     if (o.hint) logEl.innerHTML = '<div class="vai-ctx vai-hint0">' + esc(o.hint) + '</div>';
     let ctx = { text: '', label: '', details: [] }, turns = [], busy = false, abort = null, last = '', lastPrompt = '', closed = false;
@@ -282,7 +393,17 @@
       detEl.querySelector('summary').textContent = 'Các note đã gửi cho câu hỏi gần nhất';
       detEl.querySelector('ul').innerHTML = det.map((d) => '<li>' + esc(d) + '</li>').join('');
     }
+    async function paintUsage() {
+      try {
+        const c = await getSettings(), u = await usageGet(), lim = +c.dailyLimit || 0;
+        if (c.provider === 'ollama') { useEl.textContent = ''; return; }
+        const r = lim ? u.n / lim : 0;
+        useEl.className = 'vai-use' + (lim && r >= 1 ? ' bad' : lim && r >= 0.8 ? ' warn' : '');
+        useEl.textContent = 'Lượt gọi hôm nay: ' + u.n + (lim ? '/' + lim : '') + ' · đặt lại lúc ' + resetTime() + (lim && r >= 1 ? ' — có thể đã hết lượt free' : lim && r >= 0.8 ? ' — sắp hết lượt free' : '');
+      } catch (e) { useEl.textContent = ''; }
+    }
     async function refreshCtx() {
+      paintUsage();
       if (o.retrieve) {
         const c0 = await getSettings();
         metaEl.innerHTML = (o.idleLabel ? esc(o.idleLabel) + ' · ' : '') + 'mỗi câu hỏi chỉ gửi các đoạn liên quan tới <b>' + esc(hostOf(c0.baseUrl)) + '</b>' + (c0.model ? ' (' + esc(c0.model) + ')' : ' — <i>chưa chọn model, bấm ⚙</i>');
@@ -314,7 +435,7 @@
     }
     function errBox(e) {
       const d = document.createElement('div'); d.className = 'vai-err';
-      d.innerHTML = '<b>' + esc(e && e.message || 'Có lỗi') + '</b>' + (e && e.detail ? '<small>' + esc(String(e.detail).slice(0, 300)) + '</small>' : '');
+      d.innerHTML = '<b>' + esc(e && e.message || 'Có lỗi') + '</b>' + (e && e.detail ? '<small>' + esc(String(e.detail).slice(0, 300)) + '</small>' : '') + (e && e.tried ? '<small>Đã thử lần lượt: ' + e.tried.map(esc).join(' → ') + '</small>' : '');
       return d;
     }
     async function ask(prompt, shown) {
@@ -350,8 +471,12 @@
           msgs = [{ role: 'system', content: sysText(c) }].concat(...turns.map((t) => t.msgs), pending);
         }
         await ensureMd();
-        raw = await chat({ messages: msgs, signal: abort.signal, onDelta: (d, all) => { raw = all; if (!timer) timer = setTimeout(paint, 70); } });
+        let used = '', trail = [];
+        raw = await chat({ messages: msgs, signal: abort.signal, onDelta: (d, all) => { raw = all; if (!timer) timer = setTimeout(paint, 70); },
+          onFallback: (f) => { const dd = ans.querySelector('.vai-dots'); if (dd) dd.textContent = f.from + ' lỗi — đang thử ' + f.to + '…'; },
+          onModel: (m, t) => { used = m; trail = t; } });
         clearTimeout(timer); renderInto(ans, raw); after();
+        if (trail.length) { const fb = document.createElement('div'); fb.className = 'vai-fbinfo'; fb.innerHTML = '↪ Trả lời bởi <b>' + esc(used) + '</b> (model dự phòng). ' + trail.map((t) => esc(t.model) + ': ' + esc(t.reason)).join(' · '); turn.appendChild(fb); }
         turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw;
       } catch (e) {
         clearTimeout(timer);
@@ -360,7 +485,7 @@
           else turn.remove();
         } else { ans.innerHTML = ''; ans.classList.remove('vai-md'); ans.appendChild(errBox(e)); turn.dataset.failed = '1'; }
       }
-      abort = null; if (!closed) { setBusy(false); scroll(); }
+      abort = null; if (!closed) { setBusy(false); scroll(); paintUsage(); }
     }
     function resetChat() { turns = []; last = ''; logEl.innerHTML = ''; renderActs(); }
 
@@ -406,5 +531,5 @@
     return api;
   }
 
-  window.VenusAI = { version: 1, getSettings, saveSettings, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
+  window.VenusAI = { version: 1, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
 })();
