@@ -336,7 +336,47 @@
       '.vai-msep{height:1px;margin:4px 6px;background:var(--border-color,#f0d7de)}',
       '.vai-mfind{width:100%;box-sizing:border-box;margin:2px 0 4px;padding:7px 10px;font:inherit;font-size:.86rem;border:1px solid var(--border-color,#f0d7de);border-radius:8px;background:var(--bg-light,#faf3f6);color:inherit}',
       '.vai-mhint{padding:6px 10px;font-size:.78rem;color:var(--text-muted,#9a7686)}',
-      '@media (prefers-reduced-motion:reduce){.vai-ib,.vai-btn,.vai-chip,.vai-send,.vai-comp{transition:none}}'
+      /* ── Polish layer: options row, custom checkbox, selects, details, chips ── */
+      `.vai-opts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-bottom:12px}`,
+      `.vai-opt{position:relative;min-height:34px;gap:8px;font-size:.87rem;font-weight:500;color:var(--text-dark,#4a3240);cursor:pointer;user-select:none}`,
+      /* selects: same height / radius as the toggle chips, own chevron */
+      `.vai-opt select,.vai-f select{appearance:none;-webkit-appearance:none;height:34px;box-sizing:border-box;padding:0 30px 0 12px;font:inherit;font-size:.87rem;font-weight:600;border:1px solid var(--border-color,#f0d7de);border-radius:10px;background-color:var(--bg-white,#fffbfc);background-repeat:no-repeat;background-position:right 10px center;background-size:12px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6' fill='none' stroke='%239a7686' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");color:inherit;cursor:pointer;transition:border-color .12s,box-shadow .12s,background-color .12s}`,
+      `.vai-opt select:hover,.vai-f select:hover{border-color:var(--primary,#d17b96)}`,
+      `.vai-opt select:focus-visible,.vai-f select:focus-visible{outline:0;border-color:var(--primary,#d17b96);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.2)}`,
+      `.vai-opt select option,.vai-f select option{background:var(--bg-white,#fffbfc);color:var(--text-dark,#4a3240)}`,
+      /* custom checkbox (also used in the settings window) */
+      `.vai-opt input[type=checkbox],.vai-chk input[type=checkbox]{appearance:none;-webkit-appearance:none;flex:none;box-sizing:border-box;width:18px;height:18px;margin:0;border:1.5px solid color-mix(in srgb,var(--text-muted,#9a7686) 65%,transparent);border-radius:6px;background:var(--bg-white,#fffbfc) center/12px no-repeat;cursor:pointer;display:inline-grid;place-content:center;transition:background-color .14s,border-color .14s,box-shadow .14s,transform .1s}`,
+      `.vai .vai-opt input[type=checkbox],.vai .vai-chk input[type=checkbox],.vai-set .vai-chk input[type=checkbox]{width:18px !important;height:18px !important;min-width:18px;max-width:18px;padding:0;aspect-ratio:1/1}`,
+      `.dark-mode .vai-opt input[type=checkbox]:checked,.dark-mode .vai-chk input[type=checkbox]:checked{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4l3 3 6-6.6' fill='none' stroke='%23311624' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}`,
+      `.vai-opt input[type=checkbox]:hover,.vai-chk input[type=checkbox]:hover{border-color:var(--primary,#d17b96)}`,
+      `.vai-opt input[type=checkbox]:active,.vai-chk input[type=checkbox]:active{transform:scale(.9)}`,
+      `.vai-opt input[type=checkbox]:checked,.vai-chk input[type=checkbox]:checked{background-color:var(--primary,#d17b96);border-color:var(--primary,#d17b96);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4l3 3 6-6.6' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}`,
+      `.vai-opt input[type=checkbox]:focus-visible,.vai-chk input[type=checkbox]:focus-visible{outline:0;box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.28)}`,
+      `.vai-chk{align-items:flex-start;gap:10px;line-height:1.45;cursor:pointer}.vai-chk input[type=checkbox]{margin-top:2px}`,
+      /* a ticked option becomes a soft filled pill, so the state reads at a glance */
+      `.vai-opt:has(input[type=checkbox]){padding:0 13px 0 10px;border:1px solid var(--border-color,#f0d7de);border-radius:10px;background:var(--bg-white,#fffbfc);transition:background-color .14s,border-color .14s}`,
+      `.vai-opt:has(input[type=checkbox]):hover{border-color:var(--primary,#d17b96)}`,
+      `.vai-opt:has(input[type=checkbox]:checked){background:var(--primary-light,#fbe4ea);border-color:var(--primary,#d17b96)}`,
+      `.vai-opt:has(input[type=checkbox]:focus-visible){border-color:var(--primary,#d17b96)}`,
+      /* info lines */
+      `.vai-meta{margin-top:0;line-height:1.55}.vai-meta b{color:var(--text-dark,#4a3240);font-weight:700}`,
+      `.vai-use{margin-top:1px}`,
+      /* "Các mục sẽ được gửi": soft collapsible, no browser focus box */
+      `.vai-det{margin-top:10px;border:1px solid var(--border-color,#f0d7de);border-radius:12px;background:var(--bg-light,#faf3f6);overflow:hidden}`,
+      `.vai-det summary{display:flex;align-items:center;gap:8px;padding:8px 12px;list-style:none;cursor:pointer;font-size:.84rem;font-weight:600;color:var(--text-dark,#4a3240);user-select:none;border-radius:12px;outline:0}`,
+      `.vai-det summary::-webkit-details-marker{display:none}`,
+      `.vai-det summary::before{content:"";flex:none;width:7px;height:7px;margin:0 3px 2px 2px;border-right:2px solid var(--text-muted,#9a7686);border-bottom:2px solid var(--text-muted,#9a7686);transform:rotate(-45deg);transition:transform .18s}`,
+      `.vai-det[open] summary::before{transform:rotate(45deg);margin-bottom:4px}`,
+      `.vai-det summary:hover{background:rgba(var(--primary-rgb,209,123,150),.08)}`,
+      `.vai-det summary:focus-visible{box-shadow:inset 0 0 0 2px var(--primary,#d17b96)}`,
+      `.vai-det ul{margin:0;padding:2px 14px 12px 32px;columns:2 220px;column-gap:24px;font-size:.82rem;line-height:1.5;color:var(--text-muted,#9a7686)}`,
+      `.vai-det li{break-inside:avoid;padding:2px 0}.vai-det li::marker{color:var(--primary,#d17b96)}`,
+      /* preset chips */
+      `.vai-presets{gap:8px;margin:12px 0 10px}`,
+      `.vai-chip{padding:6px 14px;font-weight:600;border-radius:99px}`,
+      `.vai-chip:active:not(:disabled){transform:scale(.97)}`,
+      `@media (max-width:520px){.vai-det ul{columns:1}.vai-opt select{max-width:46vw}}`,
+      '@media (prefers-reduced-motion:reduce){.vai-ib,.vai-btn,.vai-chip,.vai-send,.vai-comp,.vai-opt,.vai-opt select,.vai-opt input,.vai-chk input,.vai-det summary::before{transition:none}}'
     ].join('');
     document.head.appendChild(s);
   }
