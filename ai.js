@@ -265,6 +265,78 @@
       '.vai-set .vai-body{display:block}.vai-f{margin:0 0 12px}.vai-f label.vai-l{display:block;font-size:.8rem;font-weight:700;color:var(--text-muted,#9a7686);margin-bottom:3px;letter-spacing:.02em}',
       '.vai-f input[type=text],.vai-f input[type=password],.vai-f input[type=number],.vai-f select,.vai-f textarea{width:100%;box-sizing:border-box;font:inherit;padding:7px 10px;border-radius:10px;border:1px solid var(--border-color,#f0d7de);background:var(--bg-white,#fffbfc);color:inherit}',
       '.vai-row{display:flex;gap:8px;align-items:center}.vai-row>input{flex:1;min-width:0}.vai-hint{font-size:.8rem;color:var(--text-muted,#9a7686);margin-top:3px}.vai-ok{color:#4f8a6b}.vai-bad{color:#b94a5a}.vai-chk{display:flex;gap:8px;align-items:flex-start;font-size:.9rem}.vai-chk input{margin-top:4px}'
+,
+      '.vai-scrim{backdrop-filter:blur(2px)}',
+      '.vai,.vai-set{border-radius:18px;box-shadow:0 24px 70px rgba(40,20,32,.32)}',
+      '.vai-head{padding:11px 14px;gap:4px}',
+      '.vai-title{font-size:.98rem;font-weight:700;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}',
+      '.vai-ib{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 6px;color:var(--text-muted,#9a7686);transition:background .12s,color .12s}',
+      '.vai-ib:hover{color:var(--text-dark,#4a3240)}',
+      '.vai-ib:focus-visible,.vai-btn:focus-visible,.vai-chip:focus-visible,.vai-send:focus-visible{outline:2px solid var(--primary,#d17b96);outline-offset:2px}',
+      '.vai-body{padding:14px 16px}',
+      '.vai-ctx{font-size:.83rem;line-height:1.5;color:var(--text-muted,#9a7686)}',
+      '.vai-hint0{padding:10px 12px;border-radius:12px;background:var(--bg-light,#faf3f6);border:1px dashed var(--border-color,#f0d7de)}',
+      '.vai-meta{margin-top:2px}',
+      '.vai-chip{border:1px solid var(--border-color,#f0d7de);background:var(--bg-white,#fffbfc);font-size:.83rem;padding:4px 11px;transition:background .12s,border-color .12s}',
+      '.vai-chip:hover:not(:disabled){background:var(--primary-light,#fbe4ea);border-color:var(--primary,#d17b96);filter:none}',
+      '.vai-turn{margin:0 0 20px;display:flex;flex-direction:column;gap:8px}',
+      '.vai-q{align-self:flex-end;max-width:90%;margin:0;padding:7px 12px;border-radius:14px 14px 4px 14px;background:var(--primary-light,#fbe4ea);color:var(--text-dark,#4a3240);font-size:.9rem;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}',
+      '.vai-q:before{content:none}',
+      '.vai-a{border:0;border-radius:0;background:transparent;padding:0 2px}',
+      '.vai-md{font-size:.93rem;line-height:1.62}',
+      '.vai-md h1,.vai-md h2,.vai-md h3,.vai-md h4,.vai-md h5,.vai-md h6{font-size:1rem;line-height:1.35;font-weight:700;margin:1.05em 0 .35em;color:var(--text-dark,#4a3240);border:0;padding:0}',
+      '.vai-md h1{font-size:1.08rem}',
+      '.vai-md p{margin:.5em 0}',
+      '.vai-md ul,.vai-md ol{margin:.45em 0;padding-left:1.35em}.vai-md li{margin:.18em 0}.vai-md li>p{margin:.15em 0}',
+      '.vai-md blockquote{margin:.6em 0;padding:.15em .9em;border-left:3px solid var(--primary,#d17b96);color:var(--text-muted,#9a7686);background:transparent}',
+      '.vai-md hr{border:0;border-top:1px solid var(--border-color,#f0d7de);margin:1em 0}',
+      '.vai-md a{color:var(--primary-dark,#a85870)}',
+      '.vai-md pre{font-size:.84rem;line-height:1.5;border:1px solid var(--border-color,#f0d7de);background:var(--bg-light,#faf3f6)}',
+      '.vai-md table{font-size:.86rem;max-width:100%}.vai-md th{background:var(--bg-light,#faf3f6);text-align:left}',
+      '.vai-md strong{font-weight:700}',
+      '.vai-use,.vai-fbinfo{font-size:.78rem}',
+      '.vai-fbinfo{padding:6px 10px;border-radius:10px;background:var(--bg-light,#faf3f6)}',
+      '.vai-err{padding:10px 12px;border-radius:12px;background:rgba(185,74,90,.09);border:1px solid rgba(185,74,90,.28)}',
+      '.vai-foot{border-top:1px solid var(--border-color,#f0d7de);padding:10px 14px 14px}',
+      '.vai-acts{margin-bottom:10px}',
+      '.vai-btn,.vai-send{border-color:var(--border-color,#f0d7de);border-radius:10px;transition:background .12s,border-color .12s}',
+      '.vai-btn:hover:not(:disabled){background:var(--primary-light,#fbe4ea);border-color:var(--primary,#d17b96)}',
+      '.vai-btn.vai-main{background:var(--primary,#d17b96);border-color:var(--primary,#d17b96);color:#fff}',
+      '.vai-btn.vai-main:hover:not(:disabled){filter:brightness(.95);background:var(--primary,#d17b96)}',
+      '.vai-comp{display:flex;align-items:flex-end;gap:6px;padding:6px 6px 6px 12px;border:1px solid var(--border-color,#f0d7de);border-radius:14px;background:var(--bg-white,#fffbfc);transition:border-color .12s,box-shadow .12s}',
+      '.vai-comp:focus-within{border-color:var(--primary,#d17b96);box-shadow:0 0 0 3px rgba(209,123,150,.18)}',
+      '.vai .vai-comp textarea,.vai .vai-comp textarea:focus,.vai .vai-comp textarea:focus-visible{flex:1;border:0 !important;outline:0 !important;box-shadow:none !important;border-radius:0;background:transparent !important;resize:none;padding:5px 0;max-height:160px;line-height:1.45;min-height:0}',
+      '.vai-send{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border-radius:10px;background:var(--primary,#d17b96);border-color:var(--primary,#d17b96);color:#fff}',
+      '.vai-send:hover:not(:disabled){filter:brightness(.95)}',
+      '.vai.vai-embed{position:static;transform:none;width:auto;max-width:none;max-height:none;height:100%;min-height:0;flex:1;border:0;border-radius:0;box-shadow:none;background:transparent;z-index:auto;font-size:14px}',
+      '.vai-embed .vai-head{padding:6px 8px 6px 14px;border-bottom:0}',
+      '.vai-embed .vai-title{font-size:.9rem}',
+      '.vai-embed .vai-body{padding:8px 14px 10px}',
+      '.vai-embed .vai-foot{padding:8px 10px 10px}',
+      '.vai-embed .vai-md{font-size:.9rem}',
+      '.vai-embed .vai-q{font-size:.86rem}',
+      '.vai-embed .vai-presets{flex-direction:column;align-items:stretch;gap:5px}',
+      '.vai-embed .vai-presets .vai-chip{text-align:left;border-radius:10px;padding:6px 10px}',
+      '.vai-embed.vai-has-turns .vai-presets{display:none}',
+      '.vai-embed .vai-meta{font-size:.76rem}',
+      '.vai-embed .vai-ctx:empty{display:none}',
+      '.vai-ctxbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:2px 12px 9px;border-bottom:1px solid var(--border-color,#f0d7de);position:relative}',
+      '.vai-cc{display:inline-flex;align-items:center;gap:2px;max-width:100%;padding:2px 3px 2px 9px;border-radius:99px;background:var(--primary-light,#fbe4ea);color:var(--text-dark,#4a3240);font-size:.79rem;line-height:1.5}',
+      '.vai-cc>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}',
+      '.vai-cc>button{border:0;background:transparent;color:inherit;opacity:.55;cursor:pointer;padding:0 5px;border-radius:99px;font-size:.9rem;line-height:1.4}',
+      '.vai-cc>button:hover{opacity:1;background:rgba(127,127,127,.18)}',
+      '.vai-cc.vai-live{background:transparent;border:1px dashed var(--primary,#d17b96)}',
+      '.vai-addctx{border:1px dashed var(--border-color,#f0d7de);background:transparent;color:var(--text-muted,#9a7686);border-radius:99px;padding:2px 10px;font:inherit;font-size:.79rem;cursor:pointer}',
+      '.vai-addctx:hover{border-color:var(--primary,#d17b96);color:var(--text-dark,#4a3240)}',
+      '.vai-menu{position:absolute;left:10px;right:10px;top:100%;z-index:5;margin-top:4px;max-height:min(340px,52vh);overflow:auto;padding:5px;border:1px solid var(--border-color,#f0d7de);border-radius:12px;background:var(--bg-white,#fffbfc);box-shadow:0 12px 32px rgba(40,20,32,.22)}',
+      '.vai-mi{display:flex;flex-direction:column;align-items:flex-start;width:100%;gap:1px;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--text-dark,#4a3240);font:inherit;font-size:.86rem;text-align:left;cursor:pointer}',
+      '.vai-mi small{color:var(--text-muted,#9a7686);font-size:.76rem}',
+      '.vai-mi:hover,.vai-mi:focus-visible{background:var(--primary-light,#fbe4ea);outline:none}',
+      '.vai-mi:disabled{opacity:.45;cursor:not-allowed}',
+      '.vai-msep{height:1px;margin:4px 6px;background:var(--border-color,#f0d7de)}',
+      '.vai-mfind{width:100%;box-sizing:border-box;margin:2px 0 4px;padding:7px 10px;font:inherit;font-size:.86rem;border:1px solid var(--border-color,#f0d7de);border-radius:8px;background:var(--bg-light,#faf3f6);color:inherit}',
+      '.vai-mhint{padding:6px 10px;font-size:.78rem;color:var(--text-muted,#9a7686)}',
+      '@media (prefers-reduced-motion:reduce){.vai-ib,.vai-btn,.vai-chip,.vai-send,.vai-comp{transition:none}}'
     ].join('');
     document.head.appendChild(s);
   }
@@ -365,13 +437,19 @@
   let current = null;
   function openPanel(o) {
     o = o || {}; injectCss();
-    if (current) current.close();
+    if (current && !o.embed) current.close();
     const scrim = document.createElement('div'); scrim.className = 'vai-scrim';
     const box = document.createElement('div'); box.className = 'vai'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', o.title || 'AI');
     box.innerHTML = '<div class="vai-head"><span class="vai-title">✨ ' + esc(o.title || 'AI') + '</span><span class="vai-grow"></span><button type="button" class="vai-ib" data-a="settings" title="Cài đặt AI (key, model)">⚙</button><button type="button" class="vai-ib" data-a="close" title="Đóng (Esc)">✕</button></div>'
       + '<div class="vai-body"><div class="vai-ctx"><div class="vai-opts"></div><div class="vai-meta"></div><div class="vai-use"></div><details class="vai-det" hidden><summary>Các mục sẽ được gửi</summary><ul></ul></details></div><div class="vai-presets"></div><div class="vai-log" aria-live="polite"></div></div>'
-      + '<div class="vai-foot"><div class="vai-acts"></div><div class="vai-comp"><textarea rows="2" placeholder="Hỏi thêm về dữ liệu này… (Ctrl+Enter để gửi)"></textarea><button type="button" class="vai-send" data-a="send">Gửi</button></div></div>';
-    document.body.appendChild(scrim); document.body.appendChild(box);
+      + '<div class="vai-foot"><div class="vai-acts"></div><div class="vai-comp"><textarea rows="2" placeholder="Hỏi thêm về dữ liệu này… (Ctrl+Enter để gửi)"></textarea><button type="button" class="vai-send" data-a="send" title="Gửi" aria-label="Gửi"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>';
+    if (o.embed) { box.classList.add('vai-embed'); o.embed.appendChild(box); } else { document.body.appendChild(scrim); document.body.appendChild(box); }
+    if (o.embed) {
+      const cl = box.querySelector('[data-a="close"]'); if (cl) cl.remove();
+      box.querySelector('.vai-title').textContent = o.title || 'AI';
+      box.querySelector('[data-a="settings"]').insertAdjacentHTML('beforebegin', '<button type="button" class="vai-ib" data-a="reset" title="Cuộc trò chuyện mới" aria-label="Cuộc trò chuyện mới"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>');
+      const cb = document.createElement('div'); cb.className = 'vai-ctxbar'; box.insertBefore(cb, box.querySelector('.vai-body'));
+    }
     const prevFocus = document.activeElement;
     const q = (s) => box.querySelector(s);
     const useEl = q('.vai-use'), optsEl = q('.vai-opts'), metaEl = q('.vai-meta'), detEl = q('.vai-det'), presetsEl = q('.vai-presets'), logEl = q('.vai-log'), actsEl = q('.vai-acts'), ta = q('textarea'), sendBtn = q('.vai-send');
@@ -379,7 +457,7 @@
     if (o.hint) logEl.innerHTML = '<div class="vai-ctx vai-hint0">' + esc(o.hint) + '</div>';
     let ctx = { text: '', label: '', details: [] }, turns = [], busy = false, abort = null, last = '', lastPrompt = '', closed = false;
 
-    (o.options || []).forEach((op) => {
+    (o.embed ? [] : (o.options || [])).forEach((op) => {
       if (op.type === 'select') optsEl.insertAdjacentHTML('beforeend', '<label class="vai-opt">' + esc(op.label) + ' <select data-opt="' + esc(op.id) + '">' + (op.choices || []).map((c) => '<option value="' + esc(c.v) + '"' + (String(c.v) === String(op.value) ? ' selected' : '') + '>' + esc(c.l) + '</option>').join('') + '</select></label>');
       else optsEl.insertAdjacentHTML('beforeend', '<label class="vai-opt"><input type="checkbox" data-opt="' + esc(op.id) + '"' + (op.checked ? ' checked' : '') + '> ' + esc(op.label) + '</label>');
     });
@@ -406,7 +484,7 @@
       paintUsage();
       if (o.retrieve) {
         const c0 = await getSettings();
-        metaEl.innerHTML = (o.idleLabel ? esc(o.idleLabel) + ' · ' : '') + 'mỗi câu hỏi chỉ gửi các đoạn liên quan tới <b>' + esc(hostOf(c0.baseUrl)) + '</b>' + (c0.model ? ' (' + esc(c0.model) + ')' : ' — <i>chưa chọn model, bấm ⚙</i>');
+        metaEl.innerHTML = (o.idleLabel ? esc(o.idleLabel) + ' · ' : '') + (o.idleText || 'mỗi câu hỏi chỉ gửi các đoạn liên quan tới') + ' <b>' + esc(hostOf(c0.baseUrl)) + '</b>' + (c0.model ? ' (' + esc(c0.model) + ')' : ' — <i>chưa chọn model, bấm ⚙</i>');
         return;
       }
       let r;
@@ -450,6 +528,7 @@
           : [{ role: 'user', content: prompt }];
         msgs = [].concat(...turns.map((t) => t.msgs), pending);
       }
+      ta.style.height = ''; box.classList.add('vai-has-turns');
       logEl.querySelectorAll('.vai-hint0').forEach((x) => x.remove());
       const turn = document.createElement('div'); turn.className = 'vai-turn';
       turn.innerHTML = '<div class="vai-q"></div><div class="vai-a vai-md"><span class="vai-dots">Đang suy nghĩ…</span></div>';
@@ -487,9 +566,14 @@
       }
       abort = null; if (!closed) { setBusy(false); scroll(); paintUsage(); }
     }
-    function resetChat() { turns = []; last = ''; logEl.innerHTML = ''; renderActs(); }
+    function resetChat() {
+      if (busy && abort) abort.abort();
+      turns = []; last = ''; logEl.innerHTML = ''; box.classList.remove('vai-has-turns');
+      if (o.hint) logEl.innerHTML = '<div class="vai-ctx vai-hint0">' + esc(o.hint) + '</div>';
+      detEl.hidden = true; refreshCtx(); renderActs();
+    }
 
-    function onKey(e) { if (e.key === 'Escape' && !document.querySelector('.vai-set')) { e.preventDefault(); e.stopPropagation(); close(); } }
+    function onKey(e) { if (e.key === 'Escape' && !o.embed && !document.querySelector('.vai-set')) { e.preventDefault(); e.stopPropagation(); close(); } }
     function close() {
       if (closed) return; closed = true;
       if (abort) abort.abort();
@@ -497,11 +581,12 @@
       scrim.remove(); box.remove(); if (current && current.box === box) current = null;
       try { prevFocus && prevFocus.focus && prevFocus.focus(); } catch (e) { /* ignore */ }
     }
-    const api = { close, ask: (p) => ask(p), box };
+    const api = { close, ask: (p) => ask(p), box, ctxbar: box.querySelector('.vai-ctxbar'), reset: () => resetChat(), refresh: () => refreshCtx() };
     document.addEventListener('keydown', onKey, true);
     scrim.addEventListener('click', close);
     box.addEventListener('change', (e) => { if (e.target.closest('[data-opt]')) { if (!o.retrieve) resetChat(); refreshCtx(); } });
-    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); const t = ta.value; ta.value = ''; ask(t); } });
+    ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; });
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (o.embed && !e.shiftKey && !e.isComposing && e.keyCode !== 229))) { e.preventDefault(); const t = ta.value; ta.value = ''; ask(t); } });
     box.addEventListener('click', async (e) => {
       const p = e.target.closest('[data-preset]');
       if (p) { const pr = o.presets[+p.dataset.preset]; ask(pr.prompt, pr.label); return; }
@@ -524,6 +609,7 @@
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'close') close();
       else if (b.dataset.a === 'settings') openSettings({ onSave: refreshCtx });
+      else if (b.dataset.a === 'reset') resetChat();
       else if (b.dataset.a === 'send') { const t = ta.value; ta.value = ''; ask(t); }
     });
     current = api; renderActs(); refreshCtx();
@@ -531,5 +617,5 @@
     return api;
   }
 
-  window.VenusAI = { version: 1, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
+  window.VenusAI = { version: 2, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
 })();

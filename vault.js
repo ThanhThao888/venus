@@ -5720,6 +5720,7 @@
         return `<li><button type="button" class="nv-lk-item" data-ctx-jump="${esc(type)}"${sk}><i class="fa-solid ${meta.icon}" aria-hidden="true"></i><span>${esc(label)}</span></button></li>`;
     }
     function renderContextPane() {
+        aiTabSync();
         if (!S.note || !S.inspOpen || S.inspTab !== 'context') return;
         const n = S.note;
         const linkedTypes = EntityLinks.TYPES.filter((t) => EntityLinks.getEntry(n, t));
@@ -11291,10 +11292,11 @@
     }
     function setInspTab(tab) {
         S.inspTab = tab;
-        [['info', el.tabInfo, el.paneInfo], ['outline', el.tabOutline, el.paneOutline], ['links', el.tabLinks, el.paneLinks], ['context', el.tabContext, el.paneContext], ['history', el.tabHistory, el.paneHistory]].forEach(([k, t, p]) => {
+        [['info', el.tabInfo, el.paneInfo], ['outline', el.tabOutline, el.paneOutline], ['links', el.tabLinks, el.paneLinks], ['context', el.tabContext, el.paneContext], ['history', el.tabHistory, el.paneHistory]].concat(el.tabAi ? [['ai', el.tabAi, el.paneAi]] : []).forEach(([k, t, p]) => {
             t.setAttribute('aria-selected', String(k === tab));
             p.hidden = k !== tab;
         });
+        aiTabOnTab(tab);
         renderOutline();
         renderLinksPane();
         renderMentions();
@@ -11574,6 +11576,7 @@
         if (window.BrainDump && document.getElementById('bdPanel')) add(V, 'bd', 'brain', 'Open Brain Dump', openBrainDump, { kw: 'inbox capture tracker thoughts' });
         add(V, 'exportmd', 'folder-tree', 'Export to Obsidian (.md files or ZIP)…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
         add(V, 'askvault', 'wand-magic-sparkles', 'Ask AI about the whole vault…', openAiForVault, { kw: 'ai chat all notes search ask question rag whole vault hỏi' });
+        add(V, 'aitab', 'wand-magic-sparkles', 'Open the AI chat panel (side panel)', aiTabOpen, { kw: 'ai chat side panel inspector copilot context hỏi trợ lý' });
         add(V, 'mapai', 'wand-magic-sparkles', 'AI organise the Note Map (suggest sub-notes and connections)…', maiOpen, { kw: 'ai map relations parent sub-note connect organise organize sắp xếp quan hệ cha con liên quan' });
         add(V, 'aiset', 'wand-magic-sparkles', 'AI settings (key, model)…', () => { ensureAi().then((a) => a.openSettings()).catch(aiLoadFail); }, { kw: 'ai openrouter api key model gemini groq ollama free' });
         add(V, 'exp', 'download', 'Export backup (JSON)', exportAllJson, { kw: 'backup save download all' });
@@ -13900,6 +13903,7 @@
         el.tabOutline.addEventListener('click', () => setInspTab('outline'));
         el.tabLinks.addEventListener('click', () => setInspTab('links'));
         el.tabContext.addEventListener('click', () => setInspTab('context'));
+        aiTabInit();
         el.tabHistory.addEventListener('click', () => setInspTab('history'));
         // Links tab: open the target note, or create it (for an unresolved outgoing link).
         [el.linksOut, el.linksBack, el.mentionsList].forEach((box) => box.addEventListener('click', (e) => {
@@ -17009,6 +17013,176 @@
             retrieve: vaultRetrieve, onRender: vaultLinkify,
             actions: [{ label: 'Lưu thành note mới', run: (t, api, q) => aiSaveVaultAnswer(t, q) }]
         });
+    }
+
+    /* ═════════════ AI chat in the right-hand inspector (like Obsidian Copilot) ═════════════
+       A tab next to Info / Outline / Links. The chat stays alive while you move between notes. What the AI may read is shown as
+       chips above the chat: "this note" always follows the note you have open; "+ Add context" adds sub-notes, linked notes,
+       ticked notes, a folder, one more note, or a search across the whole vault. Notes tagged noai are never sent. */
+    var AIT = { chat: null, host: null, ctx: [{ k: 'cur' }], menu: null, mounting: false };
+    const AI_TAB_SYSTEM = 'Bạn là trợ lý trong ứng dụng ghi chú cá nhân của người dùng. Trong <context> có thể có <context_pack> (các note đầy đủ do người dùng chọn) và/hoặc <vault_excerpts> (đoạn trích tìm theo câu hỏi, KHÔNG phải cả vault). Quy tắc: (1) ưu tiên dựa vào ghi chú; mỗi ý lấy từ note nào thì ghi [[Tên note]] ngay sau ý, chép đúng nguyên văn thuộc tính title; (2) điều gì ghi chú không nói thì nói “ghi chú chưa đề cập”, đừng bịa, và đừng kết luận vault không có vì chỉ thấy một phần; (3) nếu hai note mâu thuẫn nhau, chỉ rõ note nào nói gì; (4) kiến thức ngoài ghi chú chỉ để bổ sung và phải ghi rõ “ngoài ghi chú”; (5) <other_matching_notes> chỉ là danh sách tiêu đề, bạn chưa đọc nội dung; (6) nếu không có <context> thì trả lời chung và nói rõ câu trả lời không dựa trên ghi chú của người dùng.';
+    const AI_TAB_PRESETS = [
+        { label: 'Tóm tắt note này', prompt: 'Tóm tắt note đang mở theo cấu trúc: ý chính; khái niệm, định nghĩa, công thức quan trọng; lập luận then chốt. Giữ chính xác số liệu.' },
+        { label: 'Chỗ yếu và chỗ thiếu', prompt: 'Đọc phản biện note đang mở: lập luận nào yếu hoặc thiếu giả định, chỗ nào có thể sai cần kiểm chứng, khái niệm nào còn mơ hồ, và mình nên tự hỏi tiếp điều gì.' },
+        { label: 'Giải thích đơn giản', prompt: 'Giải thích lại nội dung note đang mở như cho người mới bắt đầu, dùng ví dụ đời thường, rồi nêu 3 điều dễ hiểu nhầm nhất.' },
+        { label: 'Việc cần làm tiếp', prompt: 'Từ note đang mở, rút ra việc cần làm, câu hỏi còn mở và thứ nên học tiếp, xếp theo ưu tiên và nói ngắn gọn vì sao.' }
+    ];
+    function aiTabCurrent() { const n = S.note && (S.notes.find((x) => x.id === S.note.id) || S.note); return n || null; }
+    function aiTabNote(id) { return S.notes.find((x) => x.id === id && !x.deletedAt) || null; }
+    function aiTabCss() {
+        if (document.getElementById('nvAiTabCss')) return;
+        const st = document.createElement('style'); st.id = 'nvAiTabCss';
+        st.textContent = '.nv-insp-ai:not([hidden]){display:flex;flex-direction:column;padding:0;overflow:hidden}.nv-insp-ai .vai-embed{flex:1;min-height:0}'
+            + '@media (min-width:1181px){.nv-app.nv-insp-on.nv-insp-wide{grid-template-columns:256px minmax(0,1fr) 380px}}';
+        document.head.appendChild(st);
+    }
+    function aiTabInit() {
+        if (el.tabAi) return;
+        aiTabCss();
+        const tab = document.createElement('button');
+        tab.className = 'nv-tab'; tab.type = 'button'; tab.id = 'nvTabAi'; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', 'false'); tab.dataset.tab = 'ai'; tab.textContent = 'AI';
+        el.tabHistory.parentNode.appendChild(tab);
+        const pane = document.createElement('div');
+        pane.className = 'nv-insp-body nv-insp-ai'; pane.id = 'nvPaneAi'; pane.setAttribute('role', 'tabpanel'); pane.setAttribute('aria-labelledby', 'nvTabAi'); pane.hidden = true;
+        el.paneHistory.parentNode.appendChild(pane);
+        el.tabAi = tab; el.paneAi = pane;
+        tab.addEventListener('click', () => setInspTab('ai'));
+    }
+    function aiTabOpen() {
+        if (!S.note) { toast('Mở một note trước, rồi mở khung AI ở thanh bên phải. Muốn hỏi cả vault thì dùng nút Ask AI ở thanh thư viện.'); return; }
+        if (!S.inspOpen) toggleInspector();
+        setInspTab('ai');
+    }
+    function aiTabOnTab(tab) {
+        el.app.classList.toggle('nv-insp-wide', tab === 'ai');
+        if (tab === 'ai') aiTabMount();
+    }
+    async function aiTabMount() {
+        if (AIT.chat || AIT.mounting) { aiTabSync(); return; }
+        AIT.mounting = true;
+        let ai; try { ai = await ensureAi(); } catch (e) { AIT.mounting = false; aiLoadFail(); return; }
+        AIT.mounting = false;
+        if (AIT.chat) return;
+        AIT.chat = ai.openPanel({
+            embed: el.paneAi, title: 'AI chat', system: AI_TAB_SYSTEM,
+            placeholder: 'Hỏi AI về ngữ cảnh này…',
+            hint: 'Ngữ cảnh ở trên là thứ AI được đọc. “Note đang mở” tự đổi theo note bạn mở. Bấm “+ Thêm ngữ cảnh” để thêm sub-note, note liên kết, một folder hoặc tìm trong cả vault. Note gắn noai không bao giờ được gửi.',
+            presets: AI_TAB_PRESETS, retrieve: aiTabRetrieve, idleText: 'chỉ gửi những gì nằm trong ngữ cảnh ở trên tới', onRender: vaultLinkify,
+            actions: [{ label: 'Lưu thành note mới', run: (t, api, q) => aiSaveVaultAnswer(t, q) }]
+        });
+        aiTabSync();
+    }
+    function aiTabSync() {
+        if (!AIT || !AIT.chat || !AIT.chat.ctxbar) return;
+        const bar = AIT.chat.ctxbar, cur = aiTabCurrent();
+        const chip = (c, i) => {
+            let label = '', live = false, title = '';
+            if (c.k === 'cur') { live = true; label = cur ? gaTitleOf(cur) + (nvNoAi(cur) ? ' (noai)' : '') : 'Chưa mở note'; title = 'Note đang mở: tự đổi khi bạn mở note khác'; }
+            else if (c.k === 'subs') label = 'Sub-note' + (cur ? ' của ' + gaTitleOf(cur) : '');
+            else if (c.k === 'linked') label = 'Note được link tới' + (cur ? ' từ ' + gaTitleOf(cur) : '');
+            else if (c.k === 'sel') label = selPlural(selNotes().length) + ' đã tick';
+            else if (c.k === 'folder') label = 'Folder ' + c.v;
+            else if (c.k === 'vault') label = 'Tìm trong cả vault';
+            else if (c.k === 'note') { const n = aiTabNote(c.id); label = n ? gaTitleOf(n) : '(note đã xóa)'; }
+            return '<span class="vai-cc' + (live ? ' vai-live' : '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '><span>' + esc(label) + '</span><button type="button" data-cx="' + i + '" aria-label="Bỏ ' + esc(label) + '">×</button></span>';
+        };
+        const old = bar.querySelector('.vai-menu'); if (old) old.remove();
+        AIT.menu = null;
+        bar.innerHTML = AIT.ctx.map(chip).join('') + '<button type="button" class="vai-addctx" data-cx-add="1" aria-haspopup="true">+ Thêm ngữ cảnh</button>';
+        if (!bar.__nv) {
+            bar.__nv = 1;
+            bar.addEventListener('click', (e) => {
+                const rm = e.target.closest('[data-cx]');
+                if (rm) { AIT.ctx.splice(+rm.dataset.cx, 1); aiTabSync(); return; }
+                if (e.target.closest('[data-cx-add]')) { if (AIT.menu) aiTabMenu(null); else aiTabMenu('main'); return; }
+                const mi = e.target.closest('[data-mi]');
+                if (mi) aiTabMenuPick(mi.dataset.mi, mi.dataset.v || '');
+            });
+            document.addEventListener('mousedown', (e) => { if (AIT.menu && !e.target.closest('.vai-menu') && !e.target.closest('[data-cx-add]')) aiTabMenu(null); });
+        }
+    }
+    const aiTabHas = (k, v) => AIT.ctx.some((c) => c.k === k && (v == null || c.v === v || c.id === v));
+    function aiTabMenu(view, q) {
+        const bar = AIT.chat && AIT.chat.ctxbar; if (!bar) return;
+        const old = bar.querySelector('.vai-menu'); if (old) old.remove();
+        if (!view) { AIT.menu = null; return; }
+        const cur = aiTabCurrent();
+        const item = (id, label, sub, v, dis) => '<button type="button" class="vai-mi" data-mi="' + id + '"' + (v != null ? ' data-v="' + esc(v) + '"' : '') + (dis ? ' disabled' : '') + '>' + esc(label) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</button>';
+        const live = S.notes.filter((n) => !n.deletedAt && !gaIsTemplate(n) && !nvNoAi(n));
+        let html = '';
+        if (view === 'main') {
+            const cands = cur ? gaPackCandidates(cur, { subs: true, linked: true }) : [];
+            const nSub = cands.filter((c) => c.role === 'sub-note').length, nLink = cands.filter((c) => c.role === 'linked').length, nSel = selNotes().filter((n) => !nvNoAi(n)).length;
+            html = item('subs', 'Sub-note của note này', nSub ? nSub + ' note trong Note Map' : 'Note này chưa có sub-note', null, !nSub || aiTabHas('subs'))
+                + item('linked', 'Note được [[link]] tới', nLink ? nLink + ' note' : 'Note này chưa link tới note nào', null, !nLink || aiTabHas('linked'))
+                + item('sel', 'Note đang tick trong thư viện', nSel ? nSel + ' note' : 'Chưa tick note nào', null, !nSel || aiTabHas('sel'))
+                + '<div class="vai-msep"></div>'
+                + item('note?', 'Một note khác…', 'Tìm theo tên', null)
+                + item('folder?', 'Cả một folder…', 'Tìm các đoạn khớp câu hỏi trong folder', null)
+                + item('vault', 'Tìm trong cả vault', live.length + ' note, chỉ gửi các đoạn khớp câu hỏi', null, aiTabHas('vault'));
+        } else if (view === 'folder') {
+            const f = new Map(); live.forEach((n) => { const k = normType(n.type); f.set(k, (f.get(k) || 0) + 1); });
+            html = '<div class="vai-mhint">Chọn folder</div>' + Array.from(f.keys()).sort((a, b) => a.localeCompare(b)).map((k) => item('folder', k, f.get(k) + ' note', k, aiTabHas('folder', k))).join('');
+        } else if (view === 'note') {
+            const t = vqFold(q || '');
+            const list = live.filter((n) => !t || vqFold(gaTitleOf(n)).indexOf(t) >= 0).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 8);
+            html = '<input type="text" class="vai-mfind" placeholder="Gõ tên note…" value="' + esc(q || '') + '" autocomplete="off">'
+                + (list.length ? list.map((n) => item('note', gaTitleOf(n), normType(n.type), n.id, aiTabHas('note', n.id))).join('') : '<div class="vai-mhint">Không có note nào khớp.</div>');
+        }
+        const m = document.createElement('div'); m.className = 'vai-menu'; m.setAttribute('role', 'menu'); m.dataset.view = view; m.innerHTML = html;
+        bar.appendChild(m); AIT.menu = m;
+        const inp = m.querySelector('.vai-mfind');
+        if (inp) {
+            inp.addEventListener('input', () => { const pos = inp.value; aiTabMenu('note', pos); const i2 = AIT.menu && AIT.menu.querySelector('.vai-mfind'); if (i2) { i2.focus(); i2.setSelectionRange(pos.length, pos.length); } });
+            inp.focus();
+        }
+        m.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); aiTabMenu(null); } });
+    }
+    function aiTabMenuPick(id, v) {
+        if (id === 'folder?') { aiTabMenu('folder'); return; }
+        if (id === 'note?') { aiTabMenu('note', ''); return; }
+        if (id === 'subs' || id === 'linked' || id === 'sel' || id === 'vault') { if (!aiTabHas(id)) AIT.ctx.push({ k: id }); }
+        else if (id === 'folder') { if (!aiTabHas('folder', v)) AIT.ctx.push({ k: 'folder', v }); }
+        else if (id === 'note') { if (!aiTabHas('note', v)) AIT.ctx.push({ k: 'note', id: v }); }
+        aiTabMenu(null); aiTabSync();
+    }
+    async function aiTabRetrieve(question, st, hist) {
+        try { await flushSave(); } catch (e) { /* ignore */ }
+        const cfg = await window.VenusAI.getSettings(), cap = Math.max(4000, +cfg.maxChars || 30000);
+        const cur = aiTabCurrent(), items = [], seen = new Set(), skipped = [];
+        const add = (n, role) => {
+            if (!n || n.deletedAt || seen.has(n.id)) return;
+            if (nvNoAi(n)) { skipped.push(gaTitleOf(n)); return; }
+            seen.add(n.id); items.push({ note: n, role });
+        };
+        AIT.ctx.forEach((c) => {
+            if (c.k === 'cur') add(cur, 'main');
+            else if (c.k === 'subs' || c.k === 'linked') { if (cur && !nvNoAi(cur)) gaPackCandidates(cur, { subs: c.k === 'subs', linked: c.k === 'linked' }).forEach((x) => { if (x.role !== 'main') add(x.note, x.role); }); }
+            else if (c.k === 'sel') selNotes().forEach((n) => add(n, 'selected'));
+            else if (c.k === 'note') add(aiTabNote(c.id), 'selected');
+        });
+        const vault = AIT.ctx.some((c) => c.k === 'vault'), folders = AIT.ctx.filter((c) => c.k === 'folder').map((c) => c.v);
+        const parts = [], details = [], labels = [];
+        let packLen = 0;
+        if (items.length) {
+            let t = gaPackText(items, { meta: true });
+            const lim = (vault || folders.length) ? Math.floor(cap * 0.65) : cap;
+            if (t.length > lim) { t = t.slice(0, lim) + '\n…[đã cắt bớt vì vượt giới hạn ký tự]</note>\n</context_pack>'; labels.push('đã cắt bớt'); }
+            parts.push(t); packLen = t.length;
+            items.forEach((i) => details.push(gaTitleOf(i.note) + (i.role === 'main' ? ' (note đang mở)' : ' (' + i.role + ')')));
+            labels.unshift(selPlural(items.length));
+        }
+        if (vault || folders.length) {
+            const scopes = vault ? ['*'] : folders.map((f) => 'f:' + f);
+            const k = items.length ? 8 : 12;
+            for (const sc of scopes) {
+                const r = await vaultRetrieve(question, { scope: sc, ai: false, k }, hist);
+                if (r && r.text) { parts.push(r.text); (r.details || []).forEach((d) => details.push('tìm: ' + d)); labels.push((sc === '*' ? 'vault' : sc.slice(2)) + ': ' + r.label); }
+            }
+        }
+        if (skipped.length) labels.push('bỏ ' + skipped.length + ' note noai');
+        if (!parts.length) return { text: '', label: skipped.length ? 'Không có ngữ cảnh (' + skipped.length + ' note noai bị bỏ)' : 'Không có ngữ cảnh: hỏi chung', details: [] };
+        return { text: parts.join('\n\n'), label: labels.join(' · '), details };
     }
 
     /* ═════════════ 4) Note Templates ═════════════ */
