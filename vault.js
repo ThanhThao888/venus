@@ -11572,6 +11572,7 @@
         add(V, 'fr', 'right-left', 'Find & Replace…', openFrModal, { kw: 'replace substitute rename text bulk change all', keys: IS_MAC ? ['mod', 'alt', 'F'] : ['mod', 'H'] });
         if (window.BrainDump && document.getElementById('bdPanel')) add(V, 'bd', 'brain', 'Open Brain Dump', openBrainDump, { kw: 'inbox capture tracker thoughts' });
         add(V, 'exportmd', 'folder-tree', 'Export to Obsidian (.md files or ZIP)…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
+        add(V, 'askvault', 'wand-magic-sparkles', 'Ask AI about the whole vault…', openAiForVault, { kw: 'ai chat all notes search ask question rag whole vault hỏi' });
         add(V, 'aiset', 'wand-magic-sparkles', 'AI settings (key, model)…', () => { ensureAi().then((a) => a.openSettings()).catch(aiLoadFail); }, { kw: 'ai openrouter api key model gemini groq ollama free' });
         add(V, 'exp', 'download', 'Export backup (JSON)', exportAllJson, { kw: 'backup save download all' });
         add(V, 'imp', 'upload', 'Import backup…', () => el.importFile.click(), { kw: 'backup restore load json', more: true });
@@ -16849,6 +16850,147 @@
         });
     }
 
+
+    /* ═════════════ Ask AI about the WHOLE vault: search first, send only the passages that match the question ═════════════
+       No embeddings and no extra API calls: every note is cut into passages, ranked with BM25 (diacritic-insensitive, so
+       "rui ro" finds "rủi ro"; word pairs count too), and only the best passages that fit the character limit are sent. */
+    const VQ = { sig: '', chunks: [], df: new Map(), avg: 1, notes: 0 };
+    const VQ_STOP = new Set('la va cua cho cac nhung mot nhu the nao gi khong co duoc trong de voi toi minh ban hay nay do khi thi ma ve tu den cung da dang se rat nhieu it hon nen neu vi sao tai bao nhieu o day kia no ho chung ta anh chi em and of to is in an for on that what how why about are was be with as by it this these those or from at does did my me you your tell'.split(' '));
+    const vqFold = (s) => String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+    const vqTokens = (s) => vqFold(s).split(/[^a-z0-9]+/).filter((x) => x.length > 1 && !VQ_STOP.has(x));
+    function vqTerms(s) { const t = vqTokens(s), out = t.slice(); for (let i = 0; i + 1 < t.length; i++) out.push(t[i] + '_' + t[i + 1]); return out; }
+    function vqSplit(text) {
+        const out = []; let head = '', buf = '', bufHead = '';
+        const flush = () => { const t = buf.trim(); if (t) out.push({ head: bufHead, text: t }); buf = ''; };
+        text.split('\n').forEach((ln) => {
+            const h = /^#{1,6}\s+(.*)$/.exec(ln);
+            if (h) { if (buf.trim().length >= 80) flush(); head = h[1].trim(); if (!buf.trim()) bufHead = head; buf += ln + '\n'; return; }
+            if ((buf.length > 1100 && !ln.trim()) || buf.length > 1800) { flush(); }
+            if (!buf.trim()) bufHead = head;
+            buf += ln + '\n';
+        });
+        flush();
+        return out;
+    }
+    function vqBuild() {
+        const live = S.notes.filter((n) => !n.deletedAt && !gaIsTemplate(n));
+        let h = live.length;
+        live.forEach((n) => { h = (h * 31 + ((n.updatedAt || 0) % 1000000007) + (n.markdown || '').length + (n.title || '').length) % 2147483647; });
+        const sig = live.length + ':' + h;
+        if (VQ.sig === sig) return;
+        const chunks = [], df = new Map(); let total = 0;
+        live.forEach((n) => {
+            const title = gaTitleOf(n), tt = vqTerms(title + ' ' + (n.tags || []).join(' '));
+            vqSplit(gaClean(n.markdown)).slice(0, 80).forEach((p, i) => {
+                const terms = vqTerms(p.head + ' ' + p.text).concat(tt, tt), tf = new Map();
+                terms.forEach((t) => tf.set(t, (tf.get(t) || 0) + 1));
+                tf.forEach((_, t) => df.set(t, (df.get(t) || 0) + 1));
+                chunks.push({ note: n, pos: i, head: p.head, text: p.text.slice(0, 2500), tf, len: terms.length });
+                total += terms.length;
+            });
+        });
+        VQ.sig = sig; VQ.chunks = chunks; VQ.df = df; VQ.avg = chunks.length ? total / chunks.length : 1; VQ.notes = live.length;
+    }
+    function vqRank(query, ok) {
+        const q = Array.from(new Set(vqTerms(query))), N = VQ.chunks.length, k1 = 1.2, b = 0.75;
+        const idf = q.map((t) => { const d = VQ.df.get(t) || 0; return d ? Math.log(1 + (N - d + 0.5) / (d + 0.5)) : 0; });
+        const res = [];
+        VQ.chunks.forEach((c) => {
+            if (!ok(c.note)) return;
+            let s = 0;
+            for (let i = 0; i < q.length; i++) { const f = c.tf.get(q[i]); if (f && idf[i]) s += idf[i] * (f * (k1 + 1)) / (f + k1 * (1 - b + b * c.len / VQ.avg)); }
+            if (s > 0) res.push({ c, s });
+        });
+        return { ranked: res.sort((a, b2) => b2.s - a.s), terms: q.filter((t) => t.indexOf('_') < 0) };
+    }
+    async function vaultRetrieve(question, st, hist) {
+        vqBuild();
+        const cfg = await window.VenusAI.getSettings();
+        const scope = String(st.scope || '*'), withAi = !!st.ai, K = +st.k || 12;
+        const ok = (n) => (withAi || !(n.tags || []).some((t) => String(t).toLowerCase() === 'ai-analysis')) && (scope === '*' || normType(n.type) === scope.slice(2));
+        const inScope = S.notes.filter((n) => !n.deletedAt && !gaIsTemplate(n) && ok(n)).length;
+        let query = String(question || '');
+        const prev = (hist && hist.prev) || [];
+        if (vqTokens(query).length < 3 && prev.length) query = prev[prev.length - 1] + ' ' + query;      // short follow-up: reuse the previous question's words
+        const { ranked, terms } = vqRank(query, ok);
+        if (!ranked.length) return { text: '(Không tìm thấy đoạn nào trong vault khớp với câu hỏi này.)', label: inScope + ' note trong phạm vi · 0 đoạn khớp', details: [] };
+        const budget = Math.max(3000, (+cfg.maxChars || 30000) - 1500), per = new Map(), pick = []; let used = 0;
+        for (const r of ranked) {
+            if (pick.length >= K) break;
+            if (r.s < ranked[0].s * 0.2) break;
+            const id = r.c.note.id, cnt = per.get(id) || 0; if (cnt >= 3) continue;
+            if (used + r.c.text.length > budget && pick.length) continue;
+            per.set(id, cnt + 1); pick.push(r); used += r.c.text.length;
+        }
+        const order = [], by = new Map();
+        pick.forEach((r) => { const id = r.c.note.id; if (!by.has(id)) { by.set(id, []); order.push(r.c.note); } by.get(id).push(r.c); });
+        const parts = order.map((n, i) => {
+            const cs = by.get(n.id).sort((a, b2) => a.pos - b2.pos);
+            return '<note index="' + (i + 1) + '" title="' + gaAttr(gaTitleOf(n)) + '" folder="' + gaAttr(normType(n.type)) + '"' + ((n.tags || []).length ? ' tags="' + gaAttr(n.tags.join(', ')) + '"' : '') + ' updated="' + toLocalDateStr(new Date(n.updatedAt)) + '">\n'
+                + cs.map((c) => (c.head ? '[mục: ' + c.head + ']\n' : '') + c.text).join('\n…\n') + '\n</note>';
+        });
+        const seen = new Set(order.map((n) => n.id)), others = [];
+        ranked.forEach((r) => { if (others.length < 15 && !seen.has(r.c.note.id)) { seen.add(r.c.note.id); others.push(gaTitleOf(r.c.note)); } });
+        const text = '<vault_excerpts notes_in_scope="' + inScope + '" matched_notes="' + new Set(ranked.map((r) => r.c.note.id)).size + '" search_words="' + gaAttr(terms.slice(0, 12).join(' ')) + '">\n' + parts.join('\n\n')
+            + (others.length ? '\n\n<other_matching_notes note="chỉ có tiêu đề, chưa đọc nội dung">' + others.map(gaAttr).join(' | ') + '</other_matching_notes>' : '') + '\n</vault_excerpts>';
+        return { text, label: order.length + ' note · ' + pick.length + ' đoạn (trên ' + inScope + ' note trong phạm vi)', details: order.map((n) => gaTitleOf(n) + ' — ' + by.get(n.id).length + ' đoạn') };
+    }
+    function vaultLinkify(root, api) {
+        if (!root.__nvRef) {
+            root.__nvRef = 1;
+            root.addEventListener('click', (e) => { const a = e.target.closest('[data-nv-note]'); if (!a) return; e.preventDefault(); const id = a.dataset.nvNote; api.close(); openNote(id); });
+        }
+        const re = /\[\[([^\[\]\n]{1,160})\]\]/g;
+        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (t) => ((t.parentElement && t.parentElement.closest('a,code,pre')) ? NodeFilter.FILTER_REJECT : (t.nodeValue.indexOf('[[') >= 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP)) });
+        const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+        nodes.forEach((t) => {
+            const txt = t.nodeValue, frag = document.createDocumentFragment(); let last = 0, m, hit = false; re.lastIndex = 0;
+            while ((m = re.exec(txt))) {
+                const n = findNoteByTitle(m[1].split('|')[0].split('#')[0]);
+                if (!n) continue;
+                hit = true; frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+                const a = document.createElement('a'); a.href = '#'; a.dataset.nvNote = n.id; a.title = 'Mở note này (đóng khung chat)'; a.textContent = gaTitleOf(n);
+                a.style.cssText = 'color:var(--primary,#d17b96);text-decoration:underline;cursor:pointer;font-weight:600';
+                frag.appendChild(a); last = m.index + m[0].length;
+            }
+            if (hit) { frag.appendChild(document.createTextNode(txt.slice(last))); t.parentNode.replaceChild(frag, t); }
+        });
+    }
+    const AI_VAULT_SYSTEM = 'Bạn trả lời câu hỏi của người dùng dựa trên ghi chú cá nhân của họ. <context> chứa các đoạn trích đã được tìm theo câu hỏi này, KHÔNG phải toàn bộ vault. Quy tắc: (1) chỉ dựa vào các đoạn trích; (2) mỗi ý lấy từ ghi chú nào thì ghi tên ghi chú đó ngay sau ý, dạng [[Tên note]], chép đúng nguyên văn thuộc tính title; (3) nếu đoạn trích không đủ để trả lời, nói “các đoạn tìm được chưa đề cập” và gợi ý từ khóa khác để hỏi lại, đừng bịa và đừng kết luận rằng vault không có điều đó vì mỗi lần chỉ tìm được một số đoạn; (4) nếu hai note mâu thuẫn nhau, chỉ rõ note nào nói gì; (5) kiến thức ngoài ghi chú chỉ để bổ sung và phải ghi rõ “ngoài ghi chú”; (6) <other_matching_notes> chỉ là danh sách tiêu đề, bạn chưa đọc nội dung của chúng, hãy nhắc người dùng hỏi riêng nếu cần.';
+    async function aiSaveVaultAnswer(text, question) {
+        const now = Date.now(), day = toLocalDateStr(new Date(now)), q = String(question || '').replace(/\s+/g, ' ').trim();
+        const note = normalizeNote({
+            id: uid(), title: 'AI · Hỏi vault · ' + (q.length > 50 ? q.slice(0, 49) + '…' : q || day),
+            markdown: '> AI trả lời từ các note của mình ngày ' + day + (q ? ' — câu hỏi: ' + q : '') + '. Kiểm tra lại thông tin quan trọng trước khi dùng.\n\n' + String(text).trim() + '\n',
+            type: 'General', tags: ['ai-analysis'], pinned: false, createdAt: now, updatedAt: now
+        });
+        try { await dbPut(note); } catch (e) { console.error('Notes Vault: could not save AI note', e); toast('Couldn’t save the note.'); return; }
+        S.notes.push(note); renderAll();
+        toast('Saved “' + shortName(note) + '”', 'Open', () => openNote(note.id));
+    }
+    async function openAiForVault() {
+        try { await flushSave(); } catch (e) { /* ignore */ }
+        let ai; try { ai = await ensureAi(); } catch (e) { aiLoadFail(); return; }
+        closeMenus();
+        const live = S.notes.filter((n) => !n.deletedAt && !gaIsTemplate(n));
+        if (!live.length) { toast('The vault has no notes yet.'); return; }
+        const folders = new Map(); live.forEach((n) => { const f = normType(n.type); folders.set(f, (folders.get(f) || 0) + 1); });
+        const choices = [{ v: '*', l: 'Tất cả (' + live.length + ' note)' }].concat(Array.from(folders.keys()).sort((a, b) => a.localeCompare(b)).map((f) => ({ v: 'f:' + f, l: f + ' (' + folders.get(f) + ')' })));
+        ai.openPanel({
+            title: 'Hỏi cả vault', system: AI_VAULT_SYSTEM,
+            idleLabel: live.length + ' note',
+            placeholder: 'Hỏi bất cứ điều gì về các note của bạn… (Ctrl+Enter để gửi)',
+            hint: 'Gõ câu hỏi bên dưới. Ví dụ: “Mình đã ghi gì về WACC?”, “Tổng hợp những gì mình biết về quản trị rủi ro”, “Có note nào mâu thuẫn nhau về định giá không?”. App tìm các đoạn khớp câu hỏi rồi chỉ gửi những đoạn đó, không gửi cả vault. Câu hỏi càng có từ khóa cụ thể thì càng tìm đúng; hỏi rộng kiểu “tóm tắt hết” sẽ chỉ thấy một phần.',
+            options: [
+                { id: 'scope', type: 'select', label: 'Phạm vi', value: '*', choices },
+                { id: 'k', type: 'select', label: 'Số đoạn tối đa', value: '12', choices: [{ v: '6', l: '6' }, { v: '12', l: '12' }, { v: '20', l: '20' }, { v: '30', l: '30' }] },
+                { id: 'ai', label: 'Gồm cả note AI đã lưu', checked: false }
+            ],
+            retrieve: vaultRetrieve, onRender: vaultLinkify,
+            actions: [{ label: 'Lưu thành note mới', run: (t, api, q) => aiSaveVaultAnswer(t, q) }]
+        });
+    }
+
     /* ═════════════ 4) Note Templates ═════════════ */
     const TPL_BUILTIN = [
         { id: 'paper', name: 'Paper Teardown', icon: 'file-lines', desc: 'RQ → Identification → Findings → Limitations', tags: ['paper'],
@@ -17418,6 +17560,13 @@
             b.type = 'button'; b.id = 'nvSelBtn'; b.className = 'nv-btn'; b.hidden = true;
             b.addEventListener('click', () => { if (SEL.on) selExit(); else { SEL.on = true; selPaint(); } });
             head.appendChild(b);
+            if (!document.getElementById('nvAskAllBtn')) {
+                const a = document.createElement('button');
+                a.type = 'button'; a.id = 'nvAskAllBtn'; a.className = 'nv-btn'; a.title = 'Ask AI a question across all your notes';
+                a.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Ask AI';
+                a.addEventListener('click', () => openAiForVault());
+                head.appendChild(a);
+            }
             const bar = document.createElement('div');
             bar.id = 'nvSelBar'; bar.className = 'nv-selbar'; bar.hidden = true; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Actions for the selected notes');
             el.list.parentNode.insertBefore(bar, el.list);

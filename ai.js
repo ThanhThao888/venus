@@ -264,6 +264,8 @@
     const prevFocus = document.activeElement;
     const q = (s) => box.querySelector(s);
     const optsEl = q('.vai-opts'), metaEl = q('.vai-meta'), detEl = q('.vai-det'), presetsEl = q('.vai-presets'), logEl = q('.vai-log'), actsEl = q('.vai-acts'), ta = q('textarea'), sendBtn = q('.vai-send');
+    if (o.placeholder) ta.placeholder = o.placeholder;
+    if (o.hint) logEl.innerHTML = '<div class="vai-ctx vai-hint0">' + esc(o.hint) + '</div>';
     let ctx = { text: '', label: '', details: [] }, turns = [], busy = false, abort = null, last = '', lastPrompt = '', closed = false;
 
     (o.options || []).forEach((op) => {
@@ -273,7 +275,19 @@
     const readOpts = () => { const st = {}; optsEl.querySelectorAll('[data-opt]').forEach((e) => { st[e.dataset.opt] = e.type === 'checkbox' ? e.checked : e.value; }); return st; };
     (o.presets || []).forEach((p, i) => presetsEl.insertAdjacentHTML('beforeend', '<button type="button" class="vai-chip" data-preset="' + i + '">' + esc(p.label) + '</button>'));
 
+    function showMeta(r, len, c) {
+      r = r || {};
+      metaEl.innerHTML = (r.label ? esc(r.label) + ' · ' : '') + 'đã gửi ' + len.toLocaleString() + ' ký tự tới <b>' + esc(hostOf(c.baseUrl)) + '</b>' + (c.model ? ' (' + esc(c.model) + ')' : '');
+      const det = r.details || []; detEl.hidden = !det.length;
+      detEl.querySelector('summary').textContent = 'Các note đã gửi cho câu hỏi gần nhất';
+      detEl.querySelector('ul').innerHTML = det.map((d) => '<li>' + esc(d) + '</li>').join('');
+    }
     async function refreshCtx() {
+      if (o.retrieve) {
+        const c0 = await getSettings();
+        metaEl.innerHTML = (o.idleLabel ? esc(o.idleLabel) + ' · ' : '') + 'mỗi câu hỏi chỉ gửi các đoạn liên quan tới <b>' + esc(hostOf(c0.baseUrl)) + '</b>' + (c0.model ? ' (' + esc(c0.model) + ')' : ' — <i>chưa chọn model, bấm ⚙</i>');
+        return;
+      }
       let r;
       try { r = o.build ? await o.build(readOpts()) : { text: o.contextText || '', label: o.contextLabel || '' }; }
       catch (e) { r = { text: '', label: 'Lỗi khi gom dữ liệu: ' + (e && e.message) }; }
@@ -307,11 +321,15 @@
       prompt = String(prompt || '').trim(); if (!prompt || busy || closed) return;
       const c = await getSettings();
       if (!c.model || (needsKey(c) && !c.apiKey)) { openSettings({ note: 'Nhập ' + (needsKey(c) && !c.apiKey ? 'API key' : 'tên model') + ' trước khi dùng AI.', onSave: refreshCtx }); return; }
-      const first = !turns.length;
-      const pending = first
-        ? [{ role: 'system', content: sysText(c) }, { role: 'user', content: (ctx.text ? '<context>\n' + ctx.text + '\n</context>\n\n' : '') + prompt }]
-        : [{ role: 'user', content: prompt }];
-      const msgs = [].concat(...turns.map((t) => t.msgs), pending);
+      const first = !turns.length, retr = typeof o.retrieve === 'function';
+      let pending = [], msgs = [], store = null;
+      if (!retr) {
+        pending = first
+          ? [{ role: 'system', content: sysText(c) }, { role: 'user', content: (ctx.text ? '<context>\n' + ctx.text + '\n</context>\n\n' : '') + prompt }]
+          : [{ role: 'user', content: prompt }];
+        msgs = [].concat(...turns.map((t) => t.msgs), pending);
+      }
+      logEl.querySelectorAll('.vai-hint0').forEach((x) => x.remove());
       const turn = document.createElement('div'); turn.className = 'vai-turn';
       turn.innerHTML = '<div class="vai-q"></div><div class="vai-a vai-md"><span class="vai-dots">Đang suy nghĩ…</span></div>';
       turn.querySelector('.vai-q').textContent = String(shown || prompt).slice(0, 200);
@@ -319,15 +337,26 @@
       const scroll = () => { q('.vai-body').scrollTop = q('.vai-body').scrollHeight; }; scroll();
       let raw = '', timer = 0; abort = new AbortController(); setBusy(true); lastPrompt = prompt;
       const paint = () => { timer = 0; renderInto(ans, raw); scroll(); };
+      const after = () => { if (o.onRender) { try { o.onRender(ans, api); } catch (e) { console.warn('[VenusAI] onRender', e); } } };
       try {
+        if (retr) {
+          // "Ask the whole vault": the context is searched fresh for every question; history keeps only the questions and answers.
+          let r; try { r = await o.retrieve(prompt, readOpts(), { prev: turns.map((t) => t.q).filter(Boolean) }); } catch (e) { r = { text: '', label: 'Lỗi khi tìm trong dữ liệu: ' + (e && e.message) }; }
+          let text = String((r && r.text) || '');
+          if (text.length > c.maxChars) text = text.slice(0, c.maxChars) + '\n…[đã cắt bớt vì vượt giới hạn ký tự]';
+          showMeta(r, text.length, c);
+          store = [{ role: 'user', content: prompt }];
+          pending = [{ role: 'user', content: (text ? '<context>\n' + text + '\n</context>\n\n' : '') + prompt }];
+          msgs = [{ role: 'system', content: sysText(c) }].concat(...turns.map((t) => t.msgs), pending);
+        }
         await ensureMd();
         raw = await chat({ messages: msgs, signal: abort.signal, onDelta: (d, all) => { raw = all; if (!timer) timer = setTimeout(paint, 70); } });
-        clearTimeout(timer); renderInto(ans, raw);
-        turns.push({ msgs: pending.concat([{ role: 'assistant', content: raw }]), el: turn }); last = raw;
+        clearTimeout(timer); renderInto(ans, raw); after();
+        turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw;
       } catch (e) {
         clearTimeout(timer);
         if (e && e.name === 'AbortError' && !e.__ai) {
-          if (raw.trim()) { renderInto(ans, raw + '\n\n*(đã dừng)*'); turns.push({ msgs: pending.concat([{ role: 'assistant', content: raw }]), el: turn }); last = raw; }
+          if (raw.trim()) { renderInto(ans, raw + '\n\n*(đã dừng)*'); after(); turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw; }
           else turn.remove();
         } else { ans.innerHTML = ''; ans.classList.remove('vai-md'); ans.appendChild(errBox(e)); turn.dataset.failed = '1'; }
       }
@@ -346,7 +375,7 @@
     const api = { close, ask: (p) => ask(p), box };
     document.addEventListener('keydown', onKey, true);
     scrim.addEventListener('click', close);
-    box.addEventListener('change', (e) => { if (e.target.closest('[data-opt]')) { resetChat(); refreshCtx(); } });
+    box.addEventListener('change', (e) => { if (e.target.closest('[data-opt]')) { if (!o.retrieve) resetChat(); refreshCtx(); } });
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); const t = ta.value; ta.value = ''; ask(t); } });
     box.addEventListener('click', async (e) => {
       const p = e.target.closest('[data-preset]');
@@ -364,7 +393,7 @@
           last = turns.length ? turns[turns.length - 1].msgs.slice(-1)[0].content : '';
           ask(lastPrompt);
         }
-        else if (k[0] === 'x') { const a = o.actions[+k.slice(1)]; if (a && a.run) { try { await a.run(last, api); } catch (err) { console.error(err); } } }
+        else if (k[0] === 'x') { const a = o.actions[+k.slice(1)]; if (a && a.run) { try { await a.run(last, api, lastPrompt); } catch (err) { console.error(err); } } }
         return;
       }
       const b = e.target.closest('[data-a]'); if (!b) return;
