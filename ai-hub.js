@@ -123,8 +123,8 @@
     const winAll = recs.filter((r) => r.dayNum >= startNum && r.dayNum <= todayNum + 1);
     // A night longer than this is almost always a forgotten Stop button: keep it out of every average, but report it.
     const maxNight = safe(() => SLEEP_DEBT_CFG.longNightHours, 14);
-    const win = winAll.filter((r) => r.hours <= maxNight);
-    const dropped = winAll.filter((r) => r.hours > maxNight);
+    const win = winAll.filter((r) => r.hours >= 0.5 && r.hours <= maxNight);
+    const dropped = winAll.filter((r) => r.hours > maxNight || r.hours < 0.5);
     const last = recs[recs.length - 1];
     const L = [], sect = [];
     const head = (name) => { L.push(''); L.push('## ' + name); sect.push(name); };
@@ -157,7 +157,7 @@
     if (qs.length) L.push('• Chất lượng tự chấm (1–5): trung bình ' + f1(avg(qs)) + ' (' + qs.length + ' đêm có chấm).');
     L.push('• Giờ lên giường (trung vị): ' + clockTxt(win.map((r) => r.startTs).filter(isNum)) + ' · Giờ dậy (trung vị): ' + clockTxt(win.map((r) => r.endTs).filter(isNum)));
     const l7 = win.slice(-7), cb = clockStats(l7.map((r) => r.startTs).filter(isNum)), cw = clockStats(l7.map((r) => r.endTs).filter(isNum));
-    if (cb && cw) L.push('• Độ đều đặn ' + l7.length + ' đêm gần nhất (độ lệch chuẩn giờ lên giường ' + f0(cb.sd) + ' phút, giờ dậy ' + f0(cw.sd) + ' phút; chỉ số = số tệ hơn = ' + f0(Math.max(cb.sd, cw.sd)) + ' phút; ≤30 tốt, 31–60 trung bình, >60 thiếu đều). Tính lại từ các đêm hợp lệ nên có thể lệch nhẹ so với số hiển thị trong app.');
+    if (cb && cw) L.push('• Độ đều đặn (' + l7.length + ' đêm gần nhất): độ lệch chuẩn giờ lên giường ±' + f0(cb.sd) + ' phút, giờ dậy ±' + f0(cw.sd) + ' phút (chỉ số = ±' + f0(Math.max(cb.sd, cw.sd)) + ' phút; ≤30 tốt, 31–60 trung bình, >60 thiếu đều).');
 
     /* — weekday vs weekend — */
     const wk = win.filter((r) => { const d = dowOf(r.date); return d >= 1 && d <= 5; }), we = win.filter((r) => { const d = dowOf(r.date); return d === 0 || d === 6; });
@@ -211,7 +211,7 @@
           L.push('• Baseline cá nhân (trung vị ' + c.baseline.sampleSize + ' đêm): lên giường ' + c.baseline.bedtimeClock + ' · dậy ' + c.baseline.wakeClock + ' · thời lượng ' + f1(c.baseline.durationHours) + 'h.');
         }
         if (c.regularity) {
-          L.push('• Độ lệch chuẩn lịch ngủ: lên giường ±' + c.regularity.sdBedMin + ' phút · dậy ±' + c.regularity.sdWakeMin + ' phút (chỉ số = ±' + c.regularity.scoreMin + ' phút; ≤30 tốt, 31–60 trung bình, >60 thất thường; bên lệch hơn: ' + c.regularity.driver + ').');
+          L.push('• Độ lệch chuẩn lịch ngủ (cả cửa sổ ' + (range === Infinity ? 'toàn bộ' : range + ' ngày') + ', ' + c.regularity.nights + ' đêm): lên giường ±' + c.regularity.sdBedMin + ' phút · dậy ±' + c.regularity.sdWakeMin + ' phút (chỉ số = ±' + c.regularity.scoreMin + ' phút; ≤30 tốt, 31–60 trung bình, >60 thất thường; bên lệch hơn: ' + c.regularity.driver + ').');
         }
         if (c.sri && c.sri.ok) {
           L.push('• Sleep Regularity Index (SRI, thang −100..100): ' + f1(c.sri.sri) + '/100 (' + c.sri.level.label + '; ≥80 đều, 60–79 trung bình, <60 thất thường) — tính trên ' + c.sri.pairedDays + ' cặp ngày liền kề cùng có log (độ tin cậy tăng khi ≥7 cặp).');
@@ -241,7 +241,7 @@
         circadianInfo = {
           baseline: (c.baseline && c.baseline.ok) ? { sampleSize: c.baseline.sampleSize, bedtimeClock: c.baseline.bedtimeClock, wakeClock: c.baseline.wakeClock, durationHours: c.baseline.durationHours } : null,
           regularity: c.regularity || null,
-          sri: c.sri ? { ok: c.sri.ok, sri: c.sri.sri, matchRate: c.sri.matchRate, pairedDays: c.sri.pairedDays, loggedDays: c.sri.loggedDays, windowDays: c.sri.windowDays, level: c.sri.level && c.sri.level.label } : null,
+          sri: c.sri ? { ok: c.sri.ok, sri: c.sri.sri, matchRate: c.sri.matchRate, pairedDays: c.sri.pairedDays, loggedDays: c.sri.loggedDays, windowDays: c.sri.windowDays === Infinity ? 'all' : c.sri.windowDays, level: c.sri.level && c.sri.level.label } : null,
           socialJetlag: (c.socialJetlag && c.socialJetlag.ok) ? {
             windowDays: sjWin === Infinity ? 'all' : sjWin, weekdayNights: c.socialJetlag.weekdayNights, weekendNights: c.socialJetlag.weekendNights,
             jetlagHours: Math.round(c.socialJetlag.jetlagHours * 100) / 100, jetlagMin: c.socialJetlag.jetlagMin, diffMin: c.socialJetlag.diffMin,

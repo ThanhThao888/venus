@@ -61107,10 +61107,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // getSleepWakeDateLocal/toLocalDateStr (giờ THIẾT BỊ), nên nếu máy/trình duyệt
             // đặt múi giờ khác VN, debtWeighted và fragmentCount bên dưới có thể gộp nhầm
             // đêm sang ngày liền kề so với debt7 (lấy từ computeSleepDebt(), luôn theo VN).
+            const validSorted = sorted.filter(isValidSleepSession);
             const byDate = {};
-            sorted.forEach(s => {
+            validSorted.forEach(s => {
                 const dateStr = getSleepWakeDateVN(s); // đêm gán theo ngày thức dậy (giờ VN)
-                byDate[dateStr] = (byDate[dateStr] || 0) + s.duration;
+                byDate[dateStr] = (byDate[dateStr] || 0) + getSessionTSTHours(s);
             });
             // Nợ ngủ hiển thị lấy từ Sleep Debt Engine (sổ 14 đêm); điểm bên dưới vẫn dùng
             // trung bình có trọng số gần (debtWeighted) vì đo "sleep pressure cấp tính".
@@ -66346,22 +66347,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            const sorted = getSortedSleepSessions();
-            
-            // Gom theo NGÀY trước khi tính — nếu không, ai ngủ nhiều pha/ngày sẽ bị
-            // "TB 7 đêm" tính nhầm trên <7 ngày thực tế, streak bị gãy giữa chừng dù
-            // tổng ngày đó đã đủ giấc, và nợ ngủ bị cộng dồn trùng nhiều lần trong 1 ngày.
-            // Ngày = ngày THỨC DẬY (giờ VN): gom theo ngày bắt đầu sẽ dồn 2 đêm vào 1 ngày khi
-            // bạn ngủ sau 0h hôm nay rồi lại ngủ trước 0h hôm sau.
-            const byDate = {};
-            sorted.forEach(s => {
-                const dateStr = getSleepWakeDateVN(s);
-                if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, duration: 0 };
-                byDate[dateStr].duration += s.duration;
-            });
-            const dailyTotals = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+            // Dùng nguồn chung getDailySleepTotalsVN() (đã gom theo ngày thức dậy VN,
+            // trừ awakenings_min và lọc đêm lỗi >14h / <0.5h) để đồng bộ với Goal Ring & Sleep Debt.
+            const dailyTotals = getDailySleepTotalsVN();
             const last7 = dailyTotals.slice(-7);
-            const avg7 = last7.reduce((sum, d) => sum + d.duration, 0) / last7.length;
+            const avg7 = last7.length ? (last7.reduce((sum, d) => sum + d.duration, 0) / last7.length) : 0;
 
             // Chuỗi ngày liên tiếp gần nhất đạt >= mục tiêu (tính từ ngày gần nhất lùi về trước)
             let streak = 0;
@@ -66377,7 +66367,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const streakColor = streak >= 3 ? '#10b981' : streak > 0 ? 'var(--primary)' : 'var(--text-muted)';
 
             // Sleep Efficiency: trung bình các đêm gần nhất có đủ dữ liệu SOL (tối đa 7 đêm gần nhất có SOL)
-            const sessionsWithSOL = getSortedSleepSessions().filter(s => typeof s.sol === 'number' && !isNaN(s.sol)).slice(-7);
+            const sessionsWithSOL = getSortedSleepSessions().filter(s => isValidSleepSession(s) && typeof s.sol === 'number' && !isNaN(s.sol)).slice(-7);
             const seValues = sessionsWithSOL.map(computeSleepEfficiency).filter(v => v !== null);
             const avgSE = seValues.length ? seValues.reduce((a, b) => a + b, 0) / seValues.length : null;
             const seBox = avgSE !== null
@@ -72711,11 +72701,10 @@ function getConfidenceColor(confidence) {
 // Legacy analyzeInsomniaPatterns() removed — replaced by computeSleepScienceSummary() (4-axis evidence-based engine).
 
 function formatTimeFromDecimal(decimal) {
-    // Callers may pass a midnight-shifted decimal (e.g. 25.5 for 01:30, see
-    // toBedtimeDecimal) so bedtimes spanning midnight average/compare correctly.
-    // Wrap back onto a normal 0-23h clock for display.
-    const hour = Math.floor(decimal) % 24;
-    const minute = Math.round((decimal - Math.floor(decimal)) * 60);
+    // Wrap safely onto a 0-23h59m clock (handles midnight-shifted >24h, negative values, and :60 rounding).
+    const totalMin = ((Math.round(decimal * 60) % 1440) + 1440) % 1440;
+    const hour = Math.floor(totalMin / 60);
+    const minute = totalMin % 60;
     return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 }
 
@@ -73267,35 +73256,46 @@ function computeSleepBaseline(opts = {}) {
         return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
     };
 
-    // startTs/endTs đã có sẵn trên mỗi "night" từ buildSleepNightsByWakeDate();
-    // dùng circularSleepHour() (xem chú thích ở định nghĩa) để giờ quanh nửa đêm
-    // không bị coi là cách xa nhau cả ngày khi tính median.
-    const bedHours = pool.map(n => circularSleepHour(vnMinuteOfDay(n.startTs) / 60));
-    const wakeHours = pool.map(n => circularSleepHour(vnMinuteOfDay(n.endTs) / 60));
+    // Dùng vnClockStats() (tự chọn điểm cắt vòng 24h tối ưu theo giờ VN) thay vì cắt cứng
+    // tại 12:00 trưa — tránh lỗi lệch 12 tiếng khi giờ dậy xoay quanh trưa (vd 11:40 và 12:40).
+    const bedStats = vnClockStats(pool.map(n => n.startTs));
+    const wakeStats = vnClockStats(pool.map(n => n.endTs));
+    if (!bedStats || !wakeStats) {
+        return { ok: false, reason: 'insufficient', have: pool.length, needed: cfg.minNights };
+    }
     const durations = pool.map(n => n.hours);
+    const bedMin = bedStats.medianMin;
+    const wakeMin = wakeStats.medianMin;
 
     return {
         ok: true,
         sampleSize: pool.length,
-        bedtimeHour: median(bedHours),
-        bedtimeClock: formatTimeFromDecimal(median(bedHours)),
-        wakeHour: median(wakeHours),
-        wakeClock: formatTimeFromDecimal(median(wakeHours)),
+        bedtimeMin: bedMin,
+        wakeMin: wakeMin,
+        bedtimeHour: bedMin / 60,
+        bedtimeClock: fmtClockMinHM(bedMin),
+        wakeHour: wakeMin / 60,
+        wakeClock: fmtClockMinHM(wakeMin),
         durationHours: parseFloat(median(durations).toFixed(2))
     };
 }
 
 // So một đêm cụ thể (dạng "night" từ buildSleepNightsByWakeDate) với baseline cá
-// nhân, trả về cả số phút lệch lẫn câu mô tả ngắn sẵn để hiển thị — người dùng
-// không phải tự trừ. VD: bedtimeLabel = "54 phút muộn hơn baseline".
+// nhân theo chênh lệch vòng 24h (±720 phút), trả về cả số phút lệch lẫn câu mô tả ngắn.
 function computeBaselineDeviation(night, baseline) {
     if (!baseline || !baseline.ok || !night) return null;
 
-    const bedHour = circularSleepHour(vnMinuteOfDay(night.startTs) / 60);
-    const wakeHour = circularSleepHour(vnMinuteOfDay(night.endTs) / 60);
+    const circularDeltaMin = (actualMin, baseMin) => {
+        let d = actualMin - baseMin;
+        while (d > 720) d -= 1440;
+        while (d <= -720) d += 1440;
+        return Math.round(d);
+    };
+    const baseBedMin = typeof baseline.bedtimeMin === 'number' ? baseline.bedtimeMin : (((baseline.bedtimeHour * 60) % 1440) + 1440) % 1440;
+    const baseWakeMin = typeof baseline.wakeMin === 'number' ? baseline.wakeMin : (((baseline.wakeHour * 60) % 1440) + 1440) % 1440;
 
-    const bedtimeDeltaMin = Math.round((bedHour - baseline.bedtimeHour) * 60);
-    const wakeDeltaMin = Math.round((wakeHour - baseline.wakeHour) * 60);
+    const bedtimeDeltaMin = circularDeltaMin(vnMinuteOfDay(night.startTs), baseBedMin);
+    const wakeDeltaMin = circularDeltaMin(vnMinuteOfDay(night.endTs), baseWakeMin);
     const durationDeltaH = parseFloat((night.hours - baseline.durationHours).toFixed(2));
 
     const fmtDelta = (min) => {
