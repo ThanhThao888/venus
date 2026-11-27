@@ -1,4 +1,4 @@
-/* Venus Hub — Memory core (venus-memory.js) · VPIS Phase 1B-i
+/* Venus Hub — Memory core (venus-memory.js) · VPIS Phase 1B-i · sync API added in Phase 3A
    Classic <script>, loaded AFTER venus-tools.js. Exposes window.VenusMemory.
 
    • Owns IndexedDB "VenusMemoryDB" v1 (independent of venus-ai and FinanceTrackerVaultDB). Nothing here touches localStorage.
@@ -10,7 +10,8 @@
    • AI reaches memory ONLY through VenusTools: get_memory_context (L0), save_memory_item and update_profile_item (L2).
      The write methods exposed here (approve, markVerified, remove, …) are for the Memory Review UI and demand
      {approvedByUser:true} + expected_revision just like the L2 tools. Never call them from model output.
-   • Not wired yet (later steps): exportProgress/importProgress (1B-ii), Memory Review modal (1B-iii), Supabase sync (Phase 3).
+   • Sync support (Phase 3A, consumed by venus-sync.js; NO network code here): onWrite · listOutbox · ackOutbox · touchOutbox · pendingByEntity · enqueueSnapshot ·
+     applyRemote · addConflicts · listConflicts · keepLocal · takeRemote · getSyncState · getSyncMeta/setSyncMeta (whitelisted keys). IndexedDB schema stays v1.
    • Export contains profile + decisions only — no outbox, audit_logs, device_id or sync cursor. */
 (function () {
   'use strict';
@@ -44,7 +45,7 @@
   const txDone = (tx) => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error || new Error('idb tx error')); tx.onabort = () => rej(tx.error || new Error('idb tx aborted')); });
 
   /* ───────── database ───────── */
-  let dbp = null, deviceId = null;
+  let dbp = null, deviceId = null, writeListeners = [];
   function openDB() {
     return new Promise((resolve, reject) => {
       let r;
@@ -82,7 +83,7 @@
   }
 
   /* Runs fn(tx) inside one readwrite transaction over `stores` (+ outbox + audit_logs). A throw aborts everything. */
-  async function mutate(stores, fn) {
+  async function mutate(stores, fn, quiet) {   // quiet = sync bookkeeping: must not fire onWrite (would wake the sync engine in a loop)
     const db = await getDB();
     const names = Array.from(new Set(stores.concat(['outbox', 'audit_logs'])));
     const tx = db.transaction(names, 'readwrite'), done = txDone(tx);
@@ -90,6 +91,7 @@
     try { out = await fn(tx); }
     catch (e) { try { tx.abort(); } catch (x) { /* already finished */ } done.catch(() => {}); throw e; }
     await done;
+    if (!quiet) writeListeners.slice().forEach((f) => { try { f(); } catch (e) { /* a listener must never break a write */ } });
     return out;
   }
 
@@ -336,7 +338,7 @@
 
   // mode 'merge' (default): per id, keep the record with the higher revision (equal ⇒ keep local); applied records are queued in outbox
   //   (revision-guarded pushes, so they cannot overwrite a newer cloud copy).
-  // mode 'replace': clears profile, decisions, outbox and last_sync_cursor, then loads the file. device_id is kept. Nothing is queued:
+  // mode 'replace': clears profile, decisions, outbox, conflicts and last_sync_cursor (sync_initialized ⇒ false, sync_enabled kept), then loads the file. device_id is kept. Nothing is queued:
   //   the sync layer must re-pull from cursor 0 and reconcile.
   async function importAll(data, opts) {
     const mode = opts && opts.mode === 'replace' ? 'replace' : 'merge';
@@ -357,7 +359,7 @@
       const sp = tx.objectStore('profile'), sd = tx.objectStore('decisions');
       if (mode === 'replace') {
         await Promise.all([req(sp.clear()), req(sd.clear()), req(tx.objectStore('outbox').clear())]);
-        const sm = tx.objectStore('syncMeta'); sm.put({ key: 'last_sync_cursor', value: 0 }); sm.put({ key: 'last_sync_at', value: null });
+        const sm = tx.objectStore('syncMeta'); sm.put({ key: 'last_sync_cursor', value: 0 }); sm.put({ key: 'last_sync_at', value: null }); sm.put({ key: 'conflicts', value: [] }); sm.put({ key: 'sync_initialized', value: false });   // sync_enabled is kept
         for (const r of inP) { await req(sp.put(r)); sum.profile.applied++; }
         for (const r of inD) { await req(sd.put(r)); sum.decisions.applied++; }
       } else {
@@ -438,13 +440,225 @@
     if (typeof VT.setAuditSink === 'function') VT.setAuditSink(auditSink);
   }
 
+  /* ───────── sync support (Phase 3A) — consumed by venus-sync.js; NO network code lives here ─────────
+     Push:   listOutbox → (network) → ackOutbox (ok/duplicate) · touchOutbox (failed/blocked) · addConflicts (server said conflict)
+     Pull:   (network) → applyRemote(changes): applies newer server copies WITHOUT queuing them back, advances the cursor in the same transaction,
+             and turns "server changed an item I still have unsent edits for" into a conflict entry instead of overwriting.
+     Resolve (UI, approvedByUser): keepLocal(key) = re-issue the local copy on top of the server revision · takeRemote(key) = adopt the server copy, drop local unsent ops.
+     Everything except keepLocal/takeRemote is "quiet": it does not fire onWrite, so sync bookkeeping can never wake the sync engine in a loop. */
+  const SYNC_DEFAULT = { sync_enabled: false, sync_initialized: false, last_sync_cursor: 0, last_sync_at: null, last_sync_error: null };
+  const SYNC_WRITABLE = ['sync_enabled', 'sync_initialized', 'last_sync_at', 'last_sync_error'];   // device_id, cursor, conflicts: owned by this module
+  const CONFLICT_MAX = 200;
+  const ek = (type, id) => type + ':' + id;
+  const storeOf = (type) => (type === 'profile' ? 'profile' : type === 'decision' ? 'decisions' : null);
+  const normOf = (type, r) => (type === 'profile' ? normProfile(r) : type === 'decision' ? normDecision(r) : null);
+  const readConflicts = async (tx) => { const r = await req(tx.objectStore('syncMeta').get('conflicts')); return r && Array.isArray(r.value) ? r.value.slice() : []; };
+  const writeConflicts = (tx, list) => { tx.objectStore('syncMeta').put({ key: 'conflicts', value: list }); };
+  function putConflict(list, c) { const i = list.findIndex((x) => x.key === c.key); if (i >= 0) list[i] = c; else list.push(c); while (list.length > CONFLICT_MAX) list.shift(); }
+  const mkConflict = (type, id, reason, localRev, server, extra) => Object.assign({ key: ek(type, id), entity_type: type, entity_id: id, reason, local_revision: localRev, detected_at: nowIso(), server }, extra || {});
+  function auditSync(tx, tool, detail) { tx.objectStore('audit_logs').add({ id: uuid(), ts: nowIso(), tool_name: tool, target_id: null, revision_checked: true, approved_by_user: false, status: 'ok', source: 'sync', detail }); }
+  function needApprovalOnly(opts) { if (!opts || opts.approvedByUser !== true) throw err('approval_required', 'Cần approvedByUser: true.'); }
+  async function discardOutbox(tx, type, id) {   // drops every unsent op of one entity (same transaction as the caller's other writes)
+    const st = tx.objectStore('outbox'); let n = 0;
+    for (const o of await req(st.getAll())) if (o.entity_type === type && o.entity_id === id) { st.delete(o.op_id); n++; }
+    return n;
+  }
+
+  function onWrite(cb) {   // cb() runs after every committed memory write except sync bookkeeping; returns an unsubscribe function
+    if (typeof cb !== 'function') throw err('bad_input', 'onWrite cần một hàm.');
+    writeListeners.push(cb);
+    return () => { writeListeners = writeListeners.filter((f) => f !== cb); };
+  }
+
+  async function getSyncMeta(key) {
+    if (!(key in SYNC_DEFAULT)) throw err('bad_input', 'Khóa syncMeta không được phép: ' + key);
+    const db = await getDB(), r = await req(db.transaction('syncMeta', 'readonly').objectStore('syncMeta').get(key));
+    return r && r.value !== undefined ? r.value : SYNC_DEFAULT[key];
+  }
+  async function setSyncMeta(key, value) {
+    if (SYNC_WRITABLE.indexOf(key) < 0) throw err('bad_input', 'Khóa syncMeta không được ghi: ' + key);
+    if (key === 'sync_enabled' || key === 'sync_initialized') { if (typeof value !== 'boolean') throw err('bad_input', key + ' phải là true/false.'); }
+    else if (key === 'last_sync_at') { if (value !== null && isoMs(value) == null) throw err('bad_input', 'last_sync_at phải là ISO UTC hoặc null.'); }
+    else { value = value === null ? null : str(String(value), 200); }
+    return mutate(['syncMeta'], async (tx) => { tx.objectStore('syncMeta').put({ key, value }); return true; }, true);
+  }
+  async function getSyncState() {
+    const db = await getDB(), tx = db.transaction(['syncMeta', 'outbox'], 'readonly');
+    const [rows, pending] = await Promise.all([req(tx.objectStore('syncMeta').getAll()), req(tx.objectStore('outbox').count())]);
+    const m = {}; rows.forEach((r) => { m[r.key] = r.value; });
+    return {
+      device_id: deviceId, sync_enabled: m.sync_enabled === true, sync_initialized: m.sync_initialized === true, last_sync_cursor: Number(m.last_sync_cursor) || 0,
+      last_sync_at: m.last_sync_at || null, last_sync_error: m.last_sync_error || null, outbox_pending: pending, conflicts: Array.isArray(m.conflicts) ? m.conflicts.length : 0
+    };
+  }
+
+  /* ── outbox ── */
+  async function listOutbox(limit) {   // oldest first; one entity's ops always in revision order (even if the clock jumped back between two writes)
+    limit = Math.max(1, Math.min(500, limit | 0 || 50));
+    const all = await readAll('outbox');
+    all.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.revision - b.revision));
+    const slots = new Map();
+    all.forEach((o, i) => { const k = ek(o.entity_type, o.entity_id); if (!slots.has(k)) slots.set(k, []); slots.get(k).push(i); });
+    slots.forEach((idx) => { if (idx.length < 2) return; const ops = idx.map((i) => all[i]).sort((a, b) => a.revision - b.revision); idx.forEach((i, j) => { all[i] = ops[j]; }); });
+    return all.slice(0, limit).map(clone);
+  }
+  const idList = (ids) => { if (!Array.isArray(ids) || ids.length > 500 || ids.some((x) => typeof x !== 'string')) throw err('bad_input', 'Cần mảng op_id (tối đa 500).'); return ids; };
+  async function ackOutbox(ids) {   // deletes the ops the server accepted (ok / duplicate); returns how many existed
+    idList(ids);
+    return mutate([], async (tx) => { const st = tx.objectStore('outbox'); let n = 0; for (const id of ids) { if ((await req(st.getKey(id))) !== undefined) { st.delete(id); n++; } } return n; }, true);
+  }
+  async function touchOutbox(ids, errText) {   // a failed attempt: count it and remember why (shown in the Sync Center)
+    idList(ids);
+    return mutate([], async (tx) => {
+      const st = tx.objectStore('outbox'); let n = 0;
+      for (const id of ids) { const o = await req(st.get(id)); if (!o) continue; o.attempts = (o.attempts | 0) + 1; o.last_attempt_at = nowIso(); o.last_error = errText ? str(String(errText), 120) : null; st.put(o); n++; }
+      return n;
+    }, true);
+  }
+  async function pendingByEntity() {   // { 'profile:<id>': { count, min_revision, max_revision } }
+    const out = {};
+    for (const o of await readAll('outbox')) { const k = ek(o.entity_type, o.entity_id), c = out[k] || (out[k] = { count: 0, min_revision: o.revision, max_revision: o.revision }); c.count++; c.min_revision = Math.min(c.min_revision, o.revision); c.max_revision = Math.max(c.max_revision, o.revision); }
+    return out;
+  }
+  // First sync: queue every local record the cloud does not have yet (or has at a lower revision). known = { 'profile:<id>': highest revision seen on the server }.
+  // Records that already have unsent ops are left alone. Marks sync_initialized in the same transaction.
+  async function enqueueSnapshot(known) {
+    known = known && typeof known === 'object' ? known : {};
+    return mutate(['profile', 'decisions', 'syncMeta'], async (tx) => {
+      const pend = new Set((await req(tx.objectStore('outbox').getAll())).map((o) => ek(o.entity_type, o.entity_id)));
+      let queued = 0;
+      for (const [sn, type] of [['profile', 'profile'], ['decisions', 'decision']]) {
+        for (const r of await req(tx.objectStore(sn).getAll())) {
+          const k = ek(type, r.id);
+          if (pend.has(k)) continue;
+          if (Number.isInteger(known[k]) && known[k] >= r.revision) continue;
+          enqueue(tx, sn, r); queued++;
+        }
+      }
+      tx.objectStore('syncMeta').put({ key: 'sync_initialized', value: true });
+      return { queued };
+    }, true);
+  }
+
+  /* ── pull ── */
+  // changes: rows of sync_changes ({ seq, entity_type, entity_id, revision, op, device_id, payload }). Processed in seq order inside ONE transaction.
+  //   skipped   : this device already has that revision or a newer one
+  //   conflicts : (distinct items) the server copy is newer but this device still has unsent edits for the item ⇒ recorded in syncMeta.conflicts, local copy untouched
+  //   key_clash : a live profile item with the same `key` but another id already exists here ⇒ recorded as a conflict (reason 'key_clash')
+  //   invalid   : corrupt row (counted, cursor moves on: it can never become valid)
+  //   halted    : 'too_new' = the row needs a newer app (schema_version); processing stops BEFORE it and the cursor stays behind it, so nothing is lost
+  async function applyRemote(changes) {
+    if (!Array.isArray(changes) || changes.length > 500) throw err('bad_input', 'changes phải là mảng, tối đa 500 phần tử.');
+    const valid = changes.filter((c) => c && typeof c === 'object'), res = { applied: 0, skipped: 0, invalid: changes.length - valid.length, conflicts: 0, key_clash: 0, halted: null, cursor: 0 };
+    valid.sort((a, b) => a.seq - b.seq);
+    return mutate(['profile', 'decisions', 'syncMeta'], async (tx) => {
+      const sm = tx.objectStore('syncMeta'), cur0 = await req(sm.get('last_sync_cursor'));
+      let cursor = cur0 && Number(cur0.value) > 0 ? Number(cur0.value) : 0; const start = cursor;
+      const pend = new Set((await req(tx.objectStore('outbox').getAll())).map((o) => ek(o.entity_type, o.entity_id)));
+      const conflicts = await readConflicts(tx), hit = new Set(); let touched = false, liveKeys = null;
+      for (const ch of valid) {
+        if (!(Number.isSafeInteger(ch.seq) && ch.seq > 0)) { res.invalid++; continue; }
+        if (ch.seq <= cursor) { res.skipped++; continue; }
+        const sn = storeOf(ch.entity_type), p = ch.payload;
+        if (p && typeof p === 'object' && Number.isInteger(p.schema_version) && p.schema_version > SCHEMA) { res.halted = 'too_new'; break; }
+        const norm = sn && p && typeof p === 'object' ? normOf(ch.entity_type, p) : null;
+        cursor = ch.seq;
+        if (!norm || norm.id !== ch.entity_id || norm.revision !== ch.revision) { res.invalid++; continue; }
+        const st = tx.objectStore(sn), k = ek(ch.entity_type, norm.id), cur = await req(st.get(norm.id));
+        if (cur && cur.revision >= norm.revision) { res.skipped++; continue; }   // includes our own echo; an equal-revision fork is caught by the server on push
+        const srv = { revision: norm.revision, payload: norm, deleted_at: norm.deleted_at, device_id: str(ch.device_id, 64) || null };
+        if (pend.has(k)) { putConflict(conflicts, mkConflict(ch.entity_type, norm.id, 'remote_changed_while_pending', cur ? cur.revision : 0, srv)); hit.add(k); touched = true; continue; }
+        if (sn === 'profile') {
+          if (!liveKeys) liveKeys = new Map((await req(st.getAll())).filter((r) => !r.deleted_at).map((r) => [r.key, r.id]));
+          if (cur && liveKeys.get(cur.key) === cur.id) liveKeys.delete(cur.key);
+          const holder = norm.deleted_at ? null : liveKeys.get(norm.key);
+          if (holder && holder !== norm.id) {
+            if (cur && !cur.deleted_at) liveKeys.set(cur.key, cur.id);
+            putConflict(conflicts, mkConflict('profile', norm.id, 'key_clash', 0, srv, { clash_with: holder })); hit.add(k); res.key_clash++; touched = true; continue;
+          }
+          if (!norm.deleted_at) liveKeys.set(norm.key, norm.id);
+        }
+        await req(st.put(norm)); res.applied++;
+      }
+      res.conflicts = hit.size - res.key_clash;   // distinct items, not number of changes
+      if (cursor > start) sm.put({ key: 'last_sync_cursor', value: cursor });
+      if (touched) writeConflicts(tx, conflicts);
+      if (res.applied || res.conflicts || res.key_clash || res.invalid) auditSync(tx, 'sync:apply', { applied: res.applied, conflicts: res.conflicts, key_clash: res.key_clash, invalid: res.invalid, cursor });
+      res.cursor = cursor;
+      return res;
+    }, true);
+  }
+
+  /* ── conflicts ── */
+  async function addConflicts(items) {   // from push results with status 'conflict' ({ entity_type, entity_id, reason, server:{revision,payload,device_id,deleted_at} })
+    if (!Array.isArray(items) || items.length > 100) throw err('bad_input', 'Cần mảng conflict (tối đa 100).');
+    return mutate(['profile', 'decisions', 'syncMeta'], async (tx) => {
+      const list = await readConflicts(tx); let n = 0;
+      for (const it of items) {
+        const sn = it && storeOf(it.entity_type), sv = it && it.server;
+        if (!sn || !ID_RE.test(it.entity_id || '') || !sv || !Number.isInteger(sv.revision) || sv.revision < 1) continue;
+        const local = await req(tx.objectStore(sn).get(it.entity_id)), norm = normOf(it.entity_type, sv.payload), good = norm && norm.id === it.entity_id && norm.revision === sv.revision;
+        putConflict(list, mkConflict(it.entity_type, it.entity_id, str(it.reason, 40) || 'conflict', local ? local.revision : 0,
+          { revision: sv.revision, payload: good ? norm : null, deleted_at: sv.deleted_at || null, device_id: str(sv.device_id, 64) || null }));
+        n++;
+      }
+      if (n) { writeConflicts(tx, list); auditSync(tx, 'sync:conflict', { added: n }); }
+      return n;
+    }, true);
+  }
+  async function listConflicts() {   // each entry + the current local copy, so the UI can show both versions side by side
+    const db = await getDB(), tx = db.transaction(['syncMeta', 'profile', 'decisions'], 'readonly'), list = await readConflicts(tx), out = [];
+    for (const c of list) { const sn = storeOf(c.entity_type), local = sn && c.reason !== 'key_clash' ? await req(tx.objectStore(sn).get(c.entity_id)) : null; out.push(Object.assign(clone(c), { local: local || null })); }
+    return out;
+  }
+  // Keep THIS device's version: one new op at (server revision + 1) carrying the local content; the item's older unsent ops are dropped.
+  // For a key_clash the cloud's duplicate is deleted instead (a tombstone at server revision + 1).
+  async function keepLocal(key, opts) {
+    needApprovalOnly(opts);
+    return mutate(['profile', 'decisions', 'syncMeta'], async (tx) => {
+      const list = await readConflicts(tx), i = list.findIndex((c) => c.key === key);
+      if (i < 0) throw notFound('xung đột ' + key);
+      const c = list[i], sn = storeOf(c.entity_type), S = c.server.revision, t = nowIso();
+      let rec;
+      if (c.reason === 'key_clash') {
+        const n = normOf(c.entity_type, c.server.payload); if (!n) throw err('remote_unavailable', 'Không đọc được bản cloud để xóa bản trùng.');
+        rec = Object.assign({}, n, { revision: S + 1, updated_at: t, device_id: deviceId, deleted_at: t, schema_version: SCHEMA });
+      } else {
+        const local = await req(tx.objectStore(sn).get(c.entity_id)); if (!local) throw notFound('bản ghi ' + c.entity_id);
+        rec = Object.assign({}, local, { revision: S + 1, updated_at: t, device_id: deviceId, schema_version: SCHEMA });
+      }
+      await discardOutbox(tx, c.entity_type, c.entity_id);
+      await put(tx, sn, rec);
+      list.splice(i, 1); writeConflicts(tx, list);
+      auditIn(tx, { tool_name: 'ui:sync_keep_local' }, c.entity_id, { reason: c.reason, revision: rec.revision });
+      return { id: rec.id, revision: rec.revision, entity_type: c.entity_type };
+    });
+  }
+  // Take the CLOUD version: adopt the server copy, drop this item's unsent ops. For a key_clash the local item with the same key is deleted (tombstone, synced).
+  async function takeRemote(key, opts) {
+    needApprovalOnly(opts);
+    return mutate(['profile', 'decisions', 'syncMeta'], async (tx) => {
+      const list = await readConflicts(tx), i = list.findIndex((c) => c.key === key);
+      if (i < 0) throw notFound('xung đột ' + key);
+      const c = list[i], sn = storeOf(c.entity_type), st = tx.objectStore(sn), n = c.server && c.server.payload ? normOf(c.entity_type, c.server.payload) : null;
+      if (!n || n.id !== c.entity_id) throw err('remote_unavailable', 'Không đọc được bản cloud. Hãy dùng "Giữ bản máy này" hoặc đồng bộ lại.');
+      if (c.reason === 'key_clash') { for (const r of await req(st.getAll())) if (!r.deleted_at && r.key === n.key && r.id !== n.id) await put(tx, sn, bump(r, { deleted_at: nowIso() })); }
+      else await discardOutbox(tx, c.entity_type, c.entity_id);
+      await req(st.put(n));
+      list.splice(i, 1); writeConflicts(tx, list);
+      auditIn(tx, { tool_name: 'ui:sync_take_remote' }, c.entity_id, { reason: c.reason, revision: n.revision });
+      return { id: n.id, revision: n.revision, entity_type: c.entity_type };
+    });
+  }
+
   window.VenusMemory = {
-    version: 1, SCHEMA, ENUMS: { PROFILE_CATEGORIES, DECISION_TYPES, DECISION_STATUSES }, LIMITS: L,
+    version: 2, SCHEMA, ENUMS: { PROFILE_CATEGORIES, DECISION_TYPES, DECISION_STATUSES }, LIMITS: L,
     ready: () => getDB().then(() => ({ ok: true, device_id: deviceId }), (e) => ({ ok: false, error: (e && e.message) || 'open failed' })),
     getDeviceId: () => getDB().then(() => deviceId),
     listProfile, listDecisions, getItem, getStaleMemories, listAudit, stats,
     saveProfileItem, saveDecisionItem, approve, markVerified, remove,
-    exportAll, importAll, auditSink
+    exportAll, importAll, auditSink,
+    onWrite, getSyncState, getSyncMeta, setSyncMeta, listOutbox, ackOutbox, touchOutbox, pendingByEntity, enqueueSnapshot, applyRemote, addConflicts, listConflicts, keepLocal, takeRemote
   };
   registerTools();
 })();

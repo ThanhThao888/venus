@@ -5,13 +5,13 @@
      from the device. Pinned versions never re-download; unpinned ones (chart.js, marked) refresh quietly.
    • Your notes/data are NOT touched here — they stay in IndexedDB / localStorage as before.
    Bump CACHE_VERSION only if you ever want to wipe and rebuild all caches. */
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const APP_CACHE = 'venus-app-' + CACHE_VERSION;
 const CDN_CACHE = 'venus-cdn-' + CACHE_VERSION;
 
 const CORE = [
   './', './launcher.html', './index.html', './today.html', './prompts.html', './insights.html',
-  './tracker.css', './vault.css', './vault.js', './vault-cm.js', './pwa.js', './ai.js', './ai-hub.js', './venus-tools.js', './venus-memory.js', './venus-memory-ui.js', './venus-account.js', './venus-sync.js',
+  './tracker.css', './vault.css', './vault.js', './vault-cm.js', './pwa.js', './ai.js', './ai-hub.js', './venus-tools.js', './venus-memory.js', './venus-memory-ui.js', './venus-account.js', './venus-sync.js', './venus-review.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
 const CDN_PRECACHE = [

@@ -297,8 +297,9 @@
     const st = S.stats, dec = S.decisions;
     const cnt = (s) => dec.filter((d) => d.status === s).length;
 
-    const accBtn = window.VenusAccount ? el('button', { id: 'vpisAccountBtn', type: 'button', class: 'vpis-btn', style: 'margin-left:auto', text: (window.VenusAccount.status && window.VenusAccount.status().signedIn) ? '☁ Tài khoản ✓' : '☁ Tài khoản', 'aria-haspopup': 'dialog', onclick: () => window.VenusAccount.open() }) : null;
-    sheet.appendChild(el('div', { class: 'vpis-head' }, [el('h2', { class: 'vpis-title', id: 'vpisTitle', text: 'Bộ nhớ Venus' }), accBtn, el('button', { type: 'button', class: 'vpis-x', 'aria-label': 'Đóng', text: '×', onclick: close })]));
+    const revBtn = window.VenusReview ? el('button', { id: 'vpisReviewBtn', type: 'button', class: 'vpis-btn', style: 'margin-left:auto', text: '📋 Review tháng', 'aria-haspopup': 'dialog', onclick: () => window.VenusReview.open() }) : null;
+    const accBtn = window.VenusAccount ? el('button', { id: 'vpisAccountBtn', type: 'button', class: 'vpis-btn', style: revBtn ? 'margin-left:6px' : 'margin-left:auto', text: (window.VenusAccount.status && window.VenusAccount.status().signedIn) ? '☁ Tài khoản ✓' : '☁ Tài khoản', 'aria-haspopup': 'dialog', onclick: () => window.VenusAccount.open() }) : null;
+    sheet.appendChild(el('div', { class: 'vpis-head' }, [el('h2', { class: 'vpis-title', id: 'vpisTitle', text: 'Bộ nhớ Venus' }), revBtn, accBtn, el('button', { type: 'button', class: 'vpis-x', 'aria-label': 'Đóng', text: '×', onclick: close })]));
     sheet.appendChild(el('div', { class: 'vpis-meta', text: st ? 'Hồ sơ ' + S.profile.length + ' · đang dùng ' + cnt('approved') + ' · chờ duyệt ' + cnt('proposed') + ' · chờ đồng bộ ' + st.outbox_pending + (st.device_id ? ' · thiết bị ' + String(st.device_id).slice(0, 6) : '') : (S.loading ? 'Đang tải…' : '') }));
     const m = el('div', { class: 'vpis-msg', role: 'status', 'aria-live': 'polite', hidden: true }); sheet.appendChild(m);
     if (S.stale.length) sheet.appendChild(el('div', { class: 'vpis-stale', text: S.stale.length + ' mục đang dùng đã hơn 90 ngày chưa được xác nhận. Nếu vẫn đúng, bấm "Còn đúng" trên mục đó.' }));
