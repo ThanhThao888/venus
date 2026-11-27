@@ -12,6 +12,7 @@
   ensure('link[rel="manifest"]', { rel: 'manifest', href: './manifest.json' });
   ensure('link[rel="apple-touch-icon"]', { rel: 'apple-touch-icon', href: './icons/apple-touch-icon.png' });
   ensure('meta[name="apple-mobile-web-app-capable"]', { name: 'apple-mobile-web-app-capable', content: 'yes' }, 'meta');
+  ensure('meta[name="mobile-web-app-capable"]', { name: 'mobile-web-app-capable', content: 'yes' }, 'meta');   // Chrome/Android standard; the apple- tag above stays for iOS Safari
   ensure('meta[name="apple-mobile-web-app-title"]', { name: 'apple-mobile-web-app-title', content: 'Venus Hub' }, 'meta');
   ensure('meta[name="theme-color"]', { name: 'theme-color', content: '#d17b96' }, 'meta');
 
