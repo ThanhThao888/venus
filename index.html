@@ -60520,22 +60520,429 @@ document.addEventListener('DOMContentLoaded', function() {
             return Math.sqrt(variance);
         }
 
-        // Trả về { sdBed, sdWake, score } tính theo phút, score = max(sdBed, sdWake)
-        // đúng công thức Regularity Index đã chốt trong roadmap.
-        function computeSleepRegularity(nights = 7) {
-            const sorted = getSortedSleepSessions().slice(-nights);
-            if (sorted.length < 3) return null; // cần tối thiểu vài đêm để độ lệch chuẩn có ý nghĩa
-            const bedMinutes = sorted.map(s => clockMinutesAnchored(s.start));
-            const wakeMinutes = sorted.map(s => clockMinutesAnchored(s.end));
-            const sdBed = stdDev(bedMinutes);
-            const sdWake = stdDev(wakeMinutes);
-            if (sdBed === null || sdWake === null) return null;
-            return { sdBed, sdWake, score: Math.max(sdBed, sdWake), nights: sorted.length };
+        // ===== Chuẩn hóa TST & lọc đêm lỗi (Single Source of Truth) =====
+        // Giờ ngủ thật = duration (đã trừ SOL) − số phút thức giữa đêm (WASO / awakenings_min).
+        function getSessionTSTHours(session) {
+            if (!session || typeof session.duration !== 'number' || isNaN(session.duration) || session.duration <= 0) return 0;
+            const awakeMin = (typeof session.awakenings_min === 'number' && !isNaN(session.awakenings_min))
+                ? Math.max(0, session.awakenings_min) : 0;
+            return Math.max(0, session.duration - awakeMin / 60);
+        }
+
+        // Lọc đêm bất thường (>14h nghi quên bấm Stop, hoặc <0.5h) khỏi các phép tính thống kê/nợ/baseline.
+        function isValidSleepNight(night) {
+            if (!night || typeof night.hours !== 'number' || isNaN(night.hours)) return false;
+            const maxH = (typeof SLEEP_DEBT_CFG !== 'undefined' && SLEEP_DEBT_CFG.longNightHours) ? SLEEP_DEBT_CFG.longNightHours : 14;
+            const maxSess = typeof night.maxSessionHours === 'number' ? night.maxSessionHours : night.hours;
+            return night.hours >= 0.5 && night.hours <= maxH && maxSess <= maxH;
+        }
+
+        function isValidSleepSession(session) {
+            if (!session || typeof session.start !== 'number' || typeof session.duration !== 'number' || isNaN(session.duration)) return false;
+            const maxH = (typeof SLEEP_DEBT_CFG !== 'undefined' && SLEEP_DEBT_CFG.longNightHours) ? SLEEP_DEBT_CFG.longNightHours : 14;
+            const tst = getSessionTSTHours(session);
+            return tst >= 0.5 && session.duration <= maxH && tst <= maxH;
+        }
+
+        // Thống kê giờ đồng hồ vòng quanh 24h theo giờ VN: thử mọi điểm cắt theo giờ để giữ cụm chặt nhất
+        // (xử lý chuẩn cả người ngủ qua nửa đêm lẫn người ngủ ca/sáng).
+        function vnClockStats(tsList) {
+            const valid = (tsList || []).filter(t => typeof t === 'number' && !isNaN(t));
+            if (valid.length < 2) return null;
+            const mins = valid.map(t => vnMinuteOfDay(t));
+            let best = null;
+            for (let p = 0; p < 1440; p += 60) {
+                const sh = mins.map(m => (m - p + 1440) % 1440);
+                const s = stdDev(sh);
+                if (best === null || s < best.sd) best = { sd: s, p, sh };
+            }
+            const sortedSh = best.sh.slice().sort((a, b) => a - b);
+            const midIdx = Math.floor(sortedSh.length / 2);
+            const medSh = sortedSh.length % 2 ? sortedSh[midIdx] : (sortedSh[midIdx - 1] + sortedSh[midIdx]) / 2;
+            const meanSh = best.sh.reduce((a, b) => a + b, 0) / best.sh.length;
+            return {
+                sd: best.sd,
+                medianMin: ((medSh + best.p) % 1440 + 1440) % 1440,
+                meanMin: ((meanSh + best.p) % 1440 + 1440) % 1440
+            };
+        }
+
+        function fmtClockMinHM(min) {
+            if (typeof min !== 'number' || isNaN(min)) return '—';
+            const x = ((Math.round(min) % 1440) + 1440) % 1440;
+            return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
+        }
+
+        // Trả về { sdBed, sdWake, score, medBedMin, medWakeMin, nights, driver } tính theo phút (giờ VN),
+        // lọc bỏ đêm lỗi >14h để đồng bộ giữa UI và AI Hub.
+        function computeSleepRegularity(nights = 7, opts = {}) {
+            const allNights = buildSleepNightsByWakeDate(opts.sessions || sleepSessions).filter(isValidSleepNight);
+            const slice = nights === Infinity ? allNights : allNights.slice(-nights);
+            if (slice.length < 3) return null;
+            const bedStats = vnClockStats(slice.map(n => n.startTs));
+            const wakeStats = vnClockStats(slice.map(n => n.endTs));
+            if (!bedStats || !wakeStats) return null;
+            const sdBed = bedStats.sd;
+            const sdWake = wakeStats.sd;
+            const driver = wakeStats.sd > bedStats.sd + 18 ? 'wake'
+                : bedStats.sd > wakeStats.sd + 18 ? 'bedtime' : 'both';
+            return {
+                sdBed, sdWake, score: Math.max(sdBed, sdWake),
+                medBedMin: bedStats.medianMin, medWakeMin: wakeStats.medianMin,
+                nights: slice.length, driver
+            };
         }
 
         function regularityColor(score) {
             if (score === null || score === undefined) return 'var(--text-muted)';
             return score <= 30 ? '#10b981' : score <= 60 ? '#f59e0b' : '#ef4444';
+        }
+
+        function sriLevel(sri) {
+            if (sri === null || sri === undefined || isNaN(sri)) return { key: 'unknown', label: 'N/A', color: 'var(--text-muted)' };
+            if (sri >= 80) return { key: 'regular', label: 'Regular', color: '#10b981' };
+            if (sri >= 60) return { key: 'moderate', label: 'Moderate', color: '#f59e0b' };
+            return { key: 'irregular', label: 'Irregular', color: '#ef4444' };
+        }
+
+        // ===== Sleep Regularity Index (SRI) — Phillips et al. (2017) =====
+        // Định nghĩa: xác suất trạng thái ngủ/thức giống nhau tại cùng thời điểm cách nhau đúng 24h.
+        // Công thức: SRI = 200 × (matchRate − 0.5), thang −100 đến 100 (100 = đều tuyệt đối).
+        // Mỗi chu kỳ 24h được neo từ 12:00 trưa hôm trước → 12:00 trưa ngày thức dậy (giờ VN), chia 96 ô (15 phút/ô),
+        // và CHỈ so sánh các cặp ngày liền kề (d, d+1) cùng có log hợp lệ để ngày quên log không làm tụt điểm giả.
+        function computeSleepRegularityIndex(opts = {}) {
+            const windowDays = opts.windowDays === Infinity ? Infinity : (opts.windowDays || 14);
+            const sessions = (opts.sessions || sleepSessions).filter(isValidSleepSession);
+            const naps = opts.naps || getSleepNapsSafe();
+            const allNights = buildSleepNightsByWakeDate(sessions).filter(isValidSleepNight);
+            const todayStr = opts.today || getVietnamDateStr();
+            const todayNum = sleepDateToDayNum(todayStr);
+
+            if (allNights.length < 2) {
+                return { ok: false, reason: 'insufficient', sri: null, matchRate: null, pairedDays: 0, loggedDays: allNights.length, windowDays, level: sriLevel(null) };
+            }
+
+            const startNum = windowDays === Infinity ? allNights[0].dayNum : todayNum - windowDays + 1;
+            const winNights = allNights.filter(n => n.dayNum >= startNum && n.dayNum <= todayNum + 1);
+            const loggedSet = new Set(winNights.map(n => n.dayNum));
+            if (loggedSet.size < 2) {
+                return { ok: false, reason: 'insufficient', sri: null, matchRate: null, pairedDays: 0, loggedDays: loggedSet.size, windowDays, level: sriLevel(null) };
+            }
+
+            // Thu thập tất cả khoảng [start, end] ngủ hợp lệ (giấc chính + nap) trong phạm vi cửa sổ
+            const intervals = [];
+            const minTs = (startNum - 2) * 86400000 - VN_UTC_OFFSET_MS;
+            const maxTs = (todayNum + 2) * 86400000 - VN_UTC_OFFSET_MS;
+            sessions.forEach(s => {
+                const endTs = getSleepSessionEndTs(s);
+                if (endTs === null || endTs <= s.start) return;
+                if (endTs < minTs || s.start > maxTs) return;
+                const solMs = (typeof s.sol === 'number' && !isNaN(s.sol) && s.sol > 0) ? s.sol * 60000 : 0;
+                const sleepStart = Math.min(endTs, s.start + solMs);
+                if (endTs > sleepStart) intervals.push([sleepStart, endTs]);
+            });
+            (naps || []).forEach(nap => {
+                if (!nap || typeof nap.start !== 'number' || isNaN(nap.start)) return;
+                const endTs = typeof nap.end === 'number' ? nap.end
+                    : (typeof nap.durationMin === 'number' ? nap.start + nap.durationMin * 60000 : null);
+                if (endTs === null || endTs <= nap.start) return;
+                if (endTs < minTs || nap.start > maxTs) return;
+                intervals.push([nap.start, endTs]);
+            });
+
+            // Tạo vector 96 ô (15 phút/ô) cho từng chu kỳ 24h [12:00 ngày d−1 → 12:00 ngày d) giờ VN
+            const BINS = 96;
+            const BIN_MS = 15 * 60000;
+            const gridByDay = new Map();
+            const sortedDays = [...loggedSet].sort((a, b) => a - b);
+            sortedDays.forEach(dayNum => {
+                // 00:00 VN của dayNum = dayNum * 86400000 − VN_UTC_OFFSET_MS; lùi 12h để lấy 12:00 VN hôm trước
+                const cycleStartMs = dayNum * 86400000 - VN_UTC_OFFSET_MS - 12 * 3600000;
+                const vec = new Uint8Array(BINS);
+                for (let b = 0; b < BINS; b++) {
+                    const midMs = cycleStartMs + b * BIN_MS + BIN_MS / 2;
+                    for (let k = 0; k < intervals.length; k++) {
+                        if (midMs >= intervals[k][0] && midMs < intervals[k][1]) {
+                            vec[b] = 1;
+                            break;
+                        }
+                    }
+                }
+                gridByDay.set(dayNum, vec);
+            });
+
+            let pairedDays = 0;
+            let matchedBins = 0;
+            let totalBins = 0;
+            for (let i = 0; i < sortedDays.length; i++) {
+                const d = sortedDays[i];
+                if (!gridByDay.has(d + 1)) continue;
+                const v1 = gridByDay.get(d);
+                const v2 = gridByDay.get(d + 1);
+                pairedDays++;
+                for (let b = 0; b < BINS; b++) {
+                    if (v1[b] === v2[b]) matchedBins++;
+                }
+                totalBins += BINS;
+            }
+
+            if (pairedDays < 3) {
+                return { ok: false, reason: 'few_pairs', sri: null, matchRate: null, pairedDays, loggedDays: sortedDays.length, windowDays, level: sriLevel(null) };
+            }
+            const matchRate = matchedBins / totalBins;
+            const sri = Math.round(200 * (matchRate - 0.5) * 10) / 10;
+            return {
+                ok: true, sri, matchRate: Math.round(matchRate * 1000) / 1000,
+                pairedDays, loggedDays: sortedDays.length, windowDays,
+                level: sriLevel(sri)
+            };
+        }
+
+        // ===== Social Jetlag & Chronotype (MSFsc) — Wittmann & Roenneberg (2006) =====
+        // Nguồn duy nhất cho toàn bộ app: lọc cửa sổ 28–30 ngày (mặc định 28), loại đêm lỗi >14h,
+        // phân loại T2–T6 vs T7–CN nhất quán theo NGÀY THỨC DẬY (giờ VN), tính hiệu điểm giữa giấc ngủ |MSF − MSW|.
+        function computeSocialJetlagVN(opts = {}) {
+            const windowDays = opts.windowDays === Infinity ? Infinity : (opts.windowDays || 28);
+            const minWd = opts.minWeekdayNights || 4;
+            const minWe = opts.minWeekendNights || 2;
+            const sessions = opts.sessions || sleepSessions;
+            const allNights = buildSleepNightsByWakeDate(sessions).filter(isValidSleepNight);
+            const todayStr = opts.today || getVietnamDateStr();
+            const todayNum = sleepDateToDayNum(todayStr);
+
+            if (!allNights.length) return { ok: false, reason: 'empty', windowDays, weekdayNights: 0, weekendNights: 0 };
+            const startNum = windowDays === Infinity ? allNights[0].dayNum : todayNum - windowDays + 1;
+            const winNights = allNights.filter(n => n.dayNum >= startNum && n.dayNum <= todayNum + 1);
+
+            const wd = { dur: [], bedTs: [], wakeTs: [], midTs: [] };
+            const we = { dur: [], bedTs: [], wakeTs: [], midTs: [] };
+
+            winNights.forEach(n => {
+                if (typeof n.startTs !== 'number' || typeof n.endTs !== 'number') return;
+                const dow = new Date(n.date + 'T00:00:00Z').getUTCDay(); // 0=CN, 6=T7 theo ngày thức dậy VN
+                const bucket = (dow === 0 || dow === 6) ? we : wd;
+                const midTs = (n.startTs + n.endTs) / 2;
+                bucket.dur.push(n.hours);
+                bucket.bedTs.push(n.startTs);
+                bucket.wakeTs.push(n.endTs);
+                bucket.midTs.push(midTs);
+            });
+
+            if (wd.dur.length < minWd || we.dur.length < minWe) {
+                return { ok: false, reason: 'insufficient', windowDays, weekdayNights: wd.dur.length, weekendNights: we.dur.length };
+            }
+
+            const avgArr = a => a.reduce((x, y) => x + y, 0) / a.length;
+            const wdBed = vnClockStats(wd.bedTs), weBed = vnClockStats(we.bedTs);
+            const wdWake = vnClockStats(wd.wakeTs), weWake = vnClockStats(we.wakeTs);
+            const wdMid = vnClockStats(wd.midTs), weMid = vnClockStats(we.midTs);
+            if (!wdMid || !weMid || !wdBed || !weBed || !wdWake || !weWake) {
+                return { ok: false, reason: 'insufficient', windowDays, weekdayNights: wd.dur.length, weekendNights: we.dur.length };
+            }
+
+            const avgWeekdayDur = avgArr(wd.dur);
+            const avgWeekendDur = avgArr(we.dur);
+            let diffMin = weMid.meanMin - wdMid.meanMin;
+            if (diffMin > 720) diffMin -= 1440;
+            if (diffMin < -720) diffMin += 1440;
+            const jetlagMin = Math.abs(diffMin);
+            const jetlagHours = jetlagMin / 60;
+
+            // MSFsc: hiệu chỉnh ngủ bù cuối tuần (Roenneberg et al.)
+            const sdWeek = (5 * avgWeekdayDur + 2 * avgWeekendDur) / 7;
+            const msfscMin = avgWeekendDur > avgWeekdayDur
+                ? (((weMid.meanMin - ((avgWeekendDur - sdWeek) * 60) / 2) % 1440) + 1440) % 1440
+                : weMid.meanMin;
+
+            const toAxis = (min) => {
+                const h = min / 60;
+                return h < 18 ? h + 24 : h;
+            };
+
+            return {
+                ok: true,
+                windowDays,
+                weekdayNights: wd.dur.length,
+                weekendNights: we.dur.length,
+                avgWeekdayDur,
+                avgWeekendDur,
+                avgWeekdayBed: toAxis(wdBed.meanMin),
+                avgWeekendBed: toAxis(weBed.meanMin),
+                avgWeekdayWake: toAxis(wdWake.meanMin),
+                avgWeekendWake: toAxis(weWake.meanMin),
+                mswMin: wdMid.meanMin,
+                msfMin: weMid.meanMin,
+                msfscMin,
+                mswClock: fmtClockMinHM(wdMid.meanMin),
+                msfClock: fmtClockMinHM(weMid.meanMin),
+                msfscClock: fmtClockMinHM(msfscMin),
+                diffMin: Math.round(diffMin),
+                jetlagMin: Math.round(jetlagMin),
+                jetlagHours,
+                weekendLater: diffMin > 0,
+                severity: typeof jetlagSeverity === 'function' ? jetlagSeverity(jetlagHours) : null
+            };
+        }
+
+        // ===== 4-AXIS EVIDENCE-BASED SLEEP SCIENCE ENGINE =====
+        // Thay thế hoàn toàn analyzeInsomniaPatterns(). Tách bạch 4 trục độc lập:
+        //  (1) Thời lượng & Nợ ngủ · (2) Hiệu quả & Liên tục (SOL/WASO/SE)
+        //  (3) Nhịp sinh học & Độ đều đặn (SD, SRI + pairedDays, Social Jetlag, MSFsc, Baseline)
+        //  (4) Sàng lọc dấu hiệu mất ngủ theo chuẩn định lượng (SOL/WASO ≥ 31p ≥ 3 đêm/tuần, SE < 85%)
+        function computeSleepScienceSummary(opts = {}) {
+            const windowDays = opts.windowDays === Infinity ? Infinity : (opts.windowDays || 14);
+            const jetlagWindowDays = opts.jetlagWindowDays === Infinity
+                ? Infinity
+                : (opts.jetlagWindowDays || (windowDays === Infinity ? Infinity : Math.max(28, windowDays)));
+            const sessions = opts.sessions || sleepSessions;
+            const naps = opts.naps || getSleepNapsSafe();
+            const goal = typeof opts.goal === 'number' ? opts.goal : getSleepGoal();
+            const todayStr = opts.today || getVietnamDateStr();
+            const todayNum = sleepDateToDayNum(todayStr);
+
+            const allNights = buildSleepNightsByWakeDate(sessions);
+            const startNum = (windowDays === Infinity || !allNights.length)
+                ? (allNights.length ? allNights[0].dayNum : todayNum)
+                : todayNum - windowDays + 1;
+            const winAllNights = allNights.filter(n => n.dayNum >= startNum && n.dayNum <= todayNum + 1);
+            const validNights = winAllNights.filter(isValidSleepNight);
+            const excludedNights = winAllNights.filter(n => !isValidSleepNight(n));
+
+            // Map mỗi ngày thức dậy → phiên ngủ chính dài nhất để đọc SOL / WASO / SE / quality
+            const mainByDate = new Map();
+            sessions.filter(isValidSleepSession).forEach(s => {
+                const d = getSleepWakeDateVN(s);
+                const cur = mainByDate.get(d);
+                if (!cur || getSessionTSTHours(s) > getSessionTSTHours(cur)) mainByDate.set(d, s);
+            });
+
+            const avgArr = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+            const medArr = a => {
+                if (!a.length) return null;
+                const s = a.slice().sort((x, y) => x - y);
+                const m = Math.floor(s.length / 2);
+                return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+            };
+
+            // Trục 1: Thời lượng & Nợ ngủ
+            const debt = computeSleepDebt({ goal, sessions, naps, today: todayStr });
+            const hrs = validNights.map(n => n.hours);
+            const okLimit = goal - (SLEEP_DEBT_CFG.tolerance || 0.25);
+            const duration = {
+                nights: validNights.length,
+                excludedCount: excludedNights.length,
+                avgHours: avgArr(hrs),
+                medianHours: medArr(hrs),
+                sdHours: stdDev(hrs),
+                goalReached: validNights.filter(n => n.hours >= okLimit).length,
+                under7hCount: hrs.filter(h => h < 7).length,
+                under6hCount: hrs.filter(h => h < 6).length
+            };
+
+            // Trục 2: Hiệu quả & Liên tục giấc ngủ (SOL / WASO / SE / Quality)
+            const sols = [], wasos = [], ses = [], quals = [];
+            let ratedAdequateCount = 0, nonRestorativeCount = 0, daytimeMainSleepCount = 0;
+            validNights.forEach(n => {
+                const s = mainByDate.get(n.date);
+                if (typeof n.startTs === 'number') {
+                    const startH = vnMinuteOfDay(n.startTs) / 60;
+                    if (startH >= 6 && startH <= 18 && n.hours > 3) daytimeMainSleepCount++;
+                }
+                if (!s) return;
+                if (typeof s.sol === 'number' && !isNaN(s.sol) && s.sol >= 0) sols.push(s.sol);
+                if (typeof s.awakenings_min === 'number' && !isNaN(s.awakenings_min) && s.awakenings_min >= 0) wasos.push(s.awakenings_min);
+                const se = computeSleepEfficiency(s);
+                if (typeof se === 'number' && !isNaN(se)) ses.push(se);
+                if (typeof s.quality === 'number' && s.quality > 0) {
+                    quals.push(s.quality);
+                    if (n.hours >= 7) {
+                        ratedAdequateCount++;
+                        if (s.quality <= 2) nonRestorativeCount++;
+                    }
+                }
+            });
+
+            // Ngưỡng định lượng Lichstein et al. (2003): SOL ≥ 31p và/hoặc WASO ≥ 31p ở ≥ 3 đêm/tuần (≥ 43%)
+            const solOver30 = sols.filter(v => v >= 31).length;
+            const wasoOver30 = wasos.filter(v => v >= 31).length;
+            const seUnder85 = ses.filter(v => v < 85).length;
+            const seUnder75 = ses.filter(v => v < 75).length;
+
+            const continuity = {
+                sol: { count: sols.length, avg: avgArr(sols), median: medArr(sols), over30Count: solOver30, over30Pct: sols.length ? Math.round((solOver30 / sols.length) * 100) : null },
+                waso: { count: wasos.length, avg: avgArr(wasos), median: medArr(wasos), over30Count: wasoOver30, over30Pct: wasos.length ? Math.round((wasoOver30 / wasos.length) * 100) : null },
+                se: { count: ses.length, avg: avgArr(ses), median: medArr(ses), under85Count: seUnder85, under75Count: seUnder75, under85Pct: ses.length ? Math.round((seUnder85 / ses.length) * 100) : null },
+                nonRestorative: { ratedAdequateCount, count: nonRestorativeCount, pct: ratedAdequateCount ? Math.round((nonRestorativeCount / ratedAdequateCount) * 100) : null },
+                avgQuality: avgArr(quals),
+                qualityCount: quals.length
+            };
+
+            // Trục 3: Nhịp sinh học & Độ đều đặn
+            const bedStats = validNights.length >= 3 ? vnClockStats(validNights.map(n => n.startTs)) : null;
+            const wakeStats = validNights.length >= 3 ? vnClockStats(validNights.map(n => n.endTs)) : null;
+            const regularity = (bedStats && wakeStats) ? {
+                sdBedMin: Math.round(bedStats.sd),
+                sdWakeMin: Math.round(wakeStats.sd),
+                scoreMin: Math.round(Math.max(bedStats.sd, wakeStats.sd)),
+                medBedClock: fmtClockMinHM(bedStats.medianMin),
+                medWakeClock: fmtClockMinHM(wakeStats.medianMin),
+                nights: validNights.length,
+                driver: wakeStats.sd > bedStats.sd + 18 ? 'wake' : bedStats.sd > wakeStats.sd + 18 ? 'bedtime' : 'both'
+            } : null;
+
+            const sri = computeSleepRegularityIndex({ windowDays, sessions, naps, today: todayStr });
+            const socialJetlag = computeSocialJetlagVN({ windowDays: jetlagWindowDays, sessions, today: todayStr });
+            const baseline = typeof computeSleepBaseline === 'function' ? computeSleepBaseline({ sessions }) : { ok: false };
+
+            // Trục 4: Sàng lọc dấu hiệu mất ngủ & phân tách 3 cờ nguyên nhân độc lập
+            const FREQ_CUTOFF = 3 / 7; // ≥ 3 đêm/tuần
+            const MIN_SIGNAL_SAMPLES = 5;
+            const solSignal = sols.length >= MIN_SIGNAL_SAMPLES && (solOver30 / sols.length) >= FREQ_CUTOFF;
+            const wasoSignal = wasos.length >= MIN_SIGNAL_SAMPLES && (wasoOver30 / wasos.length) >= FREQ_CUTOFF;
+            const lowSeSignal = ses.length >= MIN_SIGNAL_SAMPLES && (seUnder85 / ses.length) >= FREQ_CUTOFF;
+            const nonRestorativeSignal = ratedAdequateCount >= MIN_SIGNAL_SAMPLES && (nonRestorativeCount / ratedAdequateCount) >= FREQ_CUTOFF;
+
+            const hasEnoughInsomniaData = sols.length >= MIN_SIGNAL_SAMPLES || wasos.length >= MIN_SIGNAL_SAMPLES || ses.length >= MIN_SIGNAL_SAMPLES;
+            const insomniaStatus = !hasEnoughInsomniaData
+                ? 'insufficient_data'
+                : (solSignal || wasoSignal || lowSeSignal) ? 'signals_present' : 'no_insomnia_signals';
+
+            const flags = {
+                insomniaSignals: insomniaStatus === 'signals_present',
+                circadianIrregularity: Boolean(
+                    (regularity && regularity.scoreMin > 60) ||
+                    (sri.ok && sri.sri < 65) ||
+                    (socialJetlag.ok && socialJetlag.jetlagHours >= 1.5)
+                ),
+                sleepDebtBurden: Boolean(
+                    (debt.ok && debt.debt >= 5) ||
+                    (duration.avgHours !== null && duration.avgHours < goal - 0.5)
+                ),
+                daytimeMainSleep: daytimeMainSleepCount >= 3
+            };
+
+            const activeIssues = [];
+            if (flags.insomniaSignals) activeIssues.push('dấu hiệu khó vào/duy trì giấc (SOL/WASO/SE)');
+            if (flags.circadianIrregularity) activeIssues.push('lệch hoặc thất thường nhịp sinh học');
+            if (flags.sleepDebtBurden) activeIssues.push('thiếu ngủ / nợ ngủ');
+            const summaryLabel = activeIssues.length
+                ? activeIssues.join(' + ')
+                : (validNights.length < 3 ? 'chưa đủ dữ liệu' : 'chưa thấy vấn đề nổi bật');
+
+            return {
+                windowDays,
+                jetlagWindowDays,
+                duration,
+                debt,
+                continuity,
+                circadian: { regularity, sri, socialJetlag, baseline, daytimeMainSleepCount },
+                insomniaScreening: {
+                    status: insomniaStatus,
+                    signals: { solSignal, wasoSignal, lowSeSignal, nonRestorativeSignal },
+                    flags,
+                    summaryLabel
+                }
+            };
         }
 
         // ===== Auto-tag engine — đọc dữ liệu Wellness (caffeine/meal/workout) để tự
@@ -60617,6 +61024,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const goal = getSleepGoal();
             const se = computeSleepEfficiency(last);
             const reg = computeSleepRegularity(7);
+            const sri14 = computeSleepRegularityIndex({ windowDays: 14 });
 
             // Nợ ngủ lấy từ Sleep Debt Engine (sổ 14 đêm) — cùng số với card Nợ ngủ bên dưới
             const debtInfo = computeSleepDebt();
@@ -60652,7 +61060,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             body.innerHTML = `
                 <div><svg class="icon-svg" aria-hidden="true"><use href="#icon-moon"></use></svg> <b>${last.duration}h</b> last night ${se !== null ? `· SE <b>${se.toFixed(0)}%</b>` : ''}</div>
-                <div><svg class="icon-svg" aria-hidden="true"><use href="#icon-trending-down"></use></svg> Sleep debt: <b>${debtOk ? debt7.toFixed(1) + 'h' : '—'}</b> ${reg ? `· Regularity: <b>±${Math.round(reg.score)}m</b>` : ''}</div>
+                <div><svg class="icon-svg" aria-hidden="true"><use href="#icon-trending-down"></use></svg> Sleep debt: <b>${debtOk ? debt7.toFixed(1) + 'h' : '—'}</b> ${reg ? `· Regularity: <b>±${Math.round(reg.score)}m</b>` : ''}${sri14 && sri14.ok ? ` · SRI <b>${Math.round(sri14.sri)}</b>` : ''}</div>
                 ${targetCompareHtml}
                 <div style="margin-top:4px;">${insight}</div>
             `;
@@ -61399,42 +61807,36 @@ document.addEventListener('DOMContentLoaded', function() {
                 lines.push(`Sleep debt: not enough data yet (${debtInfo.logged} logged nights in the last ${SLEEP_DEBT_CFG.windowNights} days, need ${debtInfo.needed}).`);
             }
 
-            // ── INSOMNIA PATTERN ANALYSIS ──
-            // Reuses the app's analyzeInsomniaPatterns() engine (kept as a pure
-            // calculator; its on-screen card was removed) so the AI gets the
-            // already-computed severity/type/cognitive-efficiency read, not just
-            // raw durations.
+            // ── 4-AXIS SLEEP SCIENCE SUMMARY (CIRCADIAN + INSOMNIA SCREENING) ──
             lines.push('');
             lines.push(SEP);
             lines.push('');
-            lines.push('INSOMNIA PATTERN ANALYSIS');
+            lines.push('CIRCADIAN REGULARITY & INSOMNIA SIGNAL SCREENING (14d / SJL 28d)');
             lines.push(DIV);
 
-            const insomnia = (typeof analyzeInsomniaPatterns === 'function') ? analyzeInsomniaPatterns() : null;
-            if (!insomnia || insomnia.error) {
-                lines.push(`  ${insomnia?.message === 'Need at least 5 sleep sessions for analysis' ? 'Not enough sessions yet (need ≥5 logged nights) for insomnia analysis.' : 'Insomnia analysis unavailable.'}`);
+            const sci = (typeof computeSleepScienceSummary === 'function')
+                ? computeSleepScienceSummary({ windowDays: 14, jetlagWindowDays: 28 }) : null;
+            if (!sci) {
+                lines.push('  Sleep science summary unavailable.');
             } else {
-                lines.push(`All-nighter / extended-wake risk: ${insomnia.insomniaRisk}`);
-
-                if (insomnia.insomniaType) {
-                    lines.push(`Primary pattern: ${insomnia.insomniaType.primaryType} — ${insomnia.insomniaType.description}`);
-                    const p = insomnia.insomniaType.percentages || {};
-                    lines.push(`  Breakdown: sleep-onset ${p.sleepOnset}% · maintenance (frequent wake-ups) ${p.maintenance}% · early awakening ${p.earlyAwakening}% · non-restorative ${p.nonRestorative}%`);
+                const { circadian, continuity, insomniaScreening } = sci;
+                if (circadian.sri && circadian.sri.ok) {
+                    lines.push(`Sleep Regularity Index (SRI, 14d): ${circadian.sri.sri.toFixed(1)}/100 (${circadian.sri.level.label}) — based on ${circadian.sri.pairedDays} consecutive logged day pairs`);
+                } else {
+                    lines.push(`Sleep Regularity Index (SRI, 14d): not enough consecutive logged day pairs (pairedDays=${circadian.sri ? circadian.sri.pairedDays : 0}, need ≥3)`);
                 }
-
-                if (insomnia.insomniaSeverity) {
-                    const sev = insomnia.insomniaSeverity;
-                    lines.push(`Severity: ${sev.severityLevel} (score ${sev.severityScore}/100) — ${sev.interpretation}`);
+                if (circadian.socialJetlag && circadian.socialJetlag.ok) {
+                    const sj = circadian.socialJetlag;
+                    lines.push(`Social Jetlag (28d, wake-date VN): ${sj.jetlagHours.toFixed(1)}h (${sj.jetlagMin}m, weekend ${sj.weekendLater ? 'later' : 'earlier'}) · MSW ${sj.mswClock} vs MSF ${sj.msfClock} · MSFsc ${sj.msfscClock}`);
                 }
-
-                if (insomnia.cognitiveEfficiency) {
-                    const eff = insomnia.cognitiveEfficiency;
-                    lines.push(`Estimated learning efficiency right now: ${eff.efficiencyPercentage}% (${eff.efficiencyLevel})`);
-                    if (eff.studyROI && eff.studyROI.totalStudyHours > 0) {
-                        lines.push(`  Study ROI: of ${eff.studyROI.totalStudyHours}h logged studying, only ~${eff.studyROI.effectiveStudyHours}h was likely effective (${eff.studyROI.wastePercentage}% estimated wasted due to poor sleep)`);
-                    }
+                if (circadian.baseline && circadian.baseline.ok) {
+                    lines.push(`Personal baseline (${circadian.baseline.sampleSize}n median): bed ${circadian.baseline.bedtimeClock} · wake ${circadian.baseline.wakeClock} · duration ${circadian.baseline.durationHours.toFixed(1)}h`);
                 }
-
+                lines.push(`Insomnia signal screening (SOL/WASO ≥ 31m at ≥3 nights/wk, SE < 85%): ${insomniaScreening.status}`);
+                if (continuity.sol.count) lines.push(`  SOL: median ${Math.round(continuity.sol.median)}m (avg ${Math.round(continuity.sol.avg)}m), ≥31m on ${continuity.sol.over30Count}/${continuity.sol.count} logged nights`);
+                if (continuity.waso.count) lines.push(`  WASO: median ${Math.round(continuity.waso.median)}m (avg ${Math.round(continuity.waso.avg)}m), ≥31m on ${continuity.waso.over30Count}/${continuity.waso.count} logged nights`);
+                if (continuity.se.count) lines.push(`  SE: avg ${Math.round(continuity.se.avg)}%, <85% on ${continuity.se.under85Count}/${continuity.se.count} logged nights`);
+                lines.push(`  Primary flags: insomnia_signals=${insomniaScreening.flags.insomniaSignals} · circadian_irregularity=${insomniaScreening.flags.circadianIrregularity} · sleep_debt_burden=${insomniaScreening.flags.sleepDebtBurden}`);
             }
 
             // ── RECENT SLEEP SESSIONS ──
@@ -62382,7 +62784,7 @@ document.addEventListener('DOMContentLoaded', function() {
         function computeSleepDebtAsOfMap(opts = {}) {
             const cfg = SLEEP_DEBT_CFG;
             const goal = typeof opts.goal === 'number' ? opts.goal : getSleepGoal();
-            const nights = buildSleepNightsByWakeDate(opts.sessions || sleepSessions);
+            const nights = buildSleepNightsByWakeDate(opts.sessions || sleepSessions).filter(isValidSleepNight);
             attachNapsToNights(nights, opts.naps || getSleepNapsSafe());
             const byDay = new Map(nights.map(n => [n.dayNum, n]));
             const map = {};
@@ -62404,11 +62806,16 @@ document.addEventListener('DOMContentLoaded', function() {
             if (nights.length === 0) return { ok: false, reason: 'empty', logged: 0, needed: cfg.minLoggedNights, goal };
             const napInfo = attachNapsToNights(nights, opts.naps || getSleepNapsSafe());
 
-            const firstDay = nights[0].dayNum;
-            const lastDay = nights[nights.length - 1].dayNum;
+            const validNights = nights.filter(isValidSleepNight);
+            const excludedAll = nights.filter(n => !isValidSleepNight(n));
+            if (validNights.length === 0) return { ok: false, reason: 'insufficient', logged: 0, needed: cfg.minLoggedNights, goal, longNights: excludedAll.length };
+
+            const firstDay = validNights[0].dayNum;
+            const lastDay = validNights[validNights.length - 1].dayNum;
             const spanStart = Math.max(firstDay, lastDay - (cfg.windowNights - 1));
             const expected = lastDay - spanStart + 1;
-            const byDay = new Map(nights.filter(n => n.dayNum >= spanStart).map(n => [n.dayNum, n]));
+            const byDay = new Map(validNights.filter(n => n.dayNum >= spanStart).map(n => [n.dayNum, n]));
+            const excludedInWindow = excludedAll.filter(n => n.dayNum >= spanStart && n.dayNum <= lastDay).length;
             const logged = byDay.size;
             if (logged < cfg.minLoggedNights) {
                 return { ok: false, reason: 'insufficient', logged, needed: cfg.minLoggedNights, goal, lastDate: sleepDayNumToDateStr(lastDay) };
@@ -62452,7 +62859,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 windowNights: cfg.windowNights, expected, logged, missing: expected - logged,
                 lastDate: sleepDayNumToDateStr(lastDay), staleDays: Math.max(0, todayNum - lastDay),
                 avgHours, avgGap: avgHours - goal, shortNights, worst, shortStreak,
-                delta, trend, longNights: loggedPts.filter(p => p.long).length,
+                delta, trend, longNights: excludedInWindow,
                 napCreditMin, napCount, napMinutesTotal, napsUnattached, series
             };
         }
@@ -62505,7 +62912,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const debt = computeSleepDebt();
             const patterns = analyzeSleepPatterns(sleepSessions.slice(-14));
-            const consistency = patterns.insufficientData ? null : Math.round(patterns.consistencyScore);
+            const sri14 = computeSleepRegularityIndex({ windowDays: 14 });
+            const consistency = sri14.ok ? Math.round(sri14.sri) : (patterns.insufficientData ? null : Math.round(patterns.consistencyScore));
 
             // So đêm gần nhất với baseline (tính trên các đêm còn lại) để cảnh báo nếu lệch nhịp mạnh.
             // nights có thể RỖNG dù sleepSessions không rỗng (session cũ/hỏng có duration không hợp lệ
@@ -62523,11 +62931,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const debtHtml = debt.ok
                 ? `<span style="color:${debt.level.color};">${debt.debt.toFixed(1)}h</span>`
                 : '—';
-            const consColor = consistency === null ? undefined : consistency >= 70 ? '#10b981' : consistency >= 40 ? '#f59e0b' : '#ef4444';
-            // Breakdown giờ ngủ vs giờ dậy trong tooltip — bedtime có thể ổn trong khi
-            // giờ dậy lệch mạnh (hoặc ngược lại), số % gộp một mình không lộ ra điều đó.
+            const consColor = sri14.ok ? sri14.level.color
+                : (consistency === null ? undefined : consistency >= 70 ? '#10b981' : consistency >= 40 ? '#f59e0b' : '#ef4444');
             const consTitle = (!patterns.insufficientData && typeof patterns.bedtimeStdDev === 'number')
-                ? `Bedtime varies ~±${(patterns.bedtimeStdDev * 60).toFixed(0)}m · Wake time varies ~±${(patterns.wakeStdDev * 60).toFixed(0)}m (14 nights)`
+                ? `Bedtime ±${(patterns.bedtimeStdDev * 60).toFixed(0)}m · Wake ±${(patterns.wakeStdDev * 60).toFixed(0)}m (14d)${sri14.ok ? ` · SRI ${sri14.sri.toFixed(0)}/100 (${sri14.pairedDays} paired days)` : ''}`
                 : undefined;
 
             let warningHtml = '';
@@ -62544,7 +62951,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${tile('Target wake time', targetWakeClock)}
                     ${tile('Sleep goal', `${goal}h`)}
                     ${tile('Current sleep debt', debtHtml)}
-                    ${consistency !== null ? tile('Sleep regularity', `${consistency}%`, consColor, consTitle) : ''}
+                    ${consistency !== null ? tile(sri14.ok ? 'Regularity (SRI)' : 'Sleep regularity', sri14.ok ? `${consistency}/100` : `${consistency}%`, consColor, consTitle) : ''}
                 </div>
                 ${warningHtml}
                 <div style="font-size:0.72rem; color:var(--text-muted); margin-top:10px; border-top:1px dashed var(--border-color); padding-top:8px;">
@@ -62574,7 +62981,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const debt = computeSleepDebt();
             const patterns = analyzeSleepPatterns(sleepSessions.slice(-14));
-            const consistency = patterns.insufficientData ? null : Math.round(patterns.consistencyScore);
+            const sri14 = computeSleepRegularityIndex({ windowDays: 14 });
+            const consistency = sri14.ok ? Math.round(sri14.sri) : (patterns.insufficientData ? null : Math.round(patterns.consistencyScore));
 
             const baseline = computeSleepBaseline({ excludeDayNum: lastNight.dayNum });
             const dev = baseline.ok ? computeBaselineDeviation(lastNight, baseline) : null;
@@ -62585,11 +62993,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const durColor = dev
                 ? (dev.durationDeltaH >= -0.5 ? '#10b981' : dev.durationDeltaH >= -1.5 ? '#f59e0b' : '#ef4444')
                 : undefined;
-            const consColor = consistency === null ? undefined : consistency >= 70 ? '#10b981' : consistency >= 40 ? '#f59e0b' : '#ef4444';
-            // Breakdown giờ ngủ vs giờ dậy — cùng lý do như ở renderTonightPlanCard: % gộp
-            // một mình có thể che mất việc giờ dậy (hay giờ ngủ) mới là bên đang lệch.
+            const consColor = sri14.ok ? sri14.level.color
+                : (consistency === null ? undefined : consistency >= 70 ? '#10b981' : consistency >= 40 ? '#f59e0b' : '#ef4444');
             const consTitle = (!patterns.insufficientData && typeof patterns.bedtimeStdDev === 'number')
-                ? `Bedtime varies ~±${(patterns.bedtimeStdDev * 60).toFixed(0)}m · Wake time varies ~±${(patterns.wakeStdDev * 60).toFixed(0)}m (14 nights)`
+                ? `Bedtime ±${(patterns.bedtimeStdDev * 60).toFixed(0)}m · Wake ±${(patterns.wakeStdDev * 60).toFixed(0)}m (14d)${sri14.ok ? ` · SRI ${sri14.sri.toFixed(0)}/100 (${sri14.pairedDays} paired days)` : ''}`
                 : undefined;
 
             const tile = (label, value, color, title) => `
@@ -62605,7 +63012,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // trường hợp cần chỉnh khác nhau (đi ngủ thất thường vs. dậy thất thường dù ngủ đúng giờ).
             let mainIssue = null;
             if (debt.ok && debt.debt >= 5) mainIssue = 'Sleep debt is fairly high.';
-            else if (consistency !== null && consistency < 50) {
+            else if ((sri14.ok && sri14.sri < 60) || (!sri14.ok && consistency !== null && consistency < 50)) {
                 mainIssue = patterns.irregularDriver === 'wake'
                     ? 'Wake times vary between nights, even though bedtime is fairly steady.'
                     : patterns.irregularDriver === 'bedtime'
@@ -62619,7 +63026,7 @@ document.addEventListener('DOMContentLoaded', function() {
             body.innerHTML = `
                 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(80px,1fr)); gap:6px;">
                     ${tile('Duration', `${lastNight.hours.toFixed(1)}h`, durColor)}
-                    ${tile('Regularity', consistency !== null ? `${consistency}%` : '—', consColor, consTitle)}
+                    ${tile(sri14.ok ? 'Regularity (SRI)' : 'Regularity', consistency !== null ? (sri14.ok ? `${consistency}` : `${consistency}%`) : '—', consColor, consTitle)}
                     ${tile('Efficiency', se !== null ? `${Math.round(se)}%` : '—', se !== null ? seColor(se) : undefined)}
                     ${tile('Quality', quality > 0 ? `${quality}/5` : '—')}
                     ${tile('Sleep debt', debt.ok ? `${debt.debt.toFixed(1)}h` : '—', debt.ok ? debt.level.color : undefined)}
@@ -64833,12 +65240,15 @@ document.addEventListener('DOMContentLoaded', function() {
         // Gom theo ngày thức dậy (giờ VN) — tái dùng bucket đã xây cho Sleep Heatmap để khỏi lặp
         // logic gom nhóm, và đảm bảo mọi nơi tính "theo ngày" đều thống nhất 1 múi giờ VN.
         function getDailySleepTotalsVN() {
+            const maxH = (typeof SLEEP_DEBT_CFG !== 'undefined' && SLEEP_DEBT_CFG.longNightHours) ? SLEEP_DEBT_CFG.longNightHours : 14;
             const buckets = buildSleepHeatmapBuckets();
-            return Object.keys(buckets).sort().map(dateStr => ({
-                date: dateStr,
-                duration: buckets[dateStr].duration,
-                qualities: buckets[dateStr].qualities
-            }));
+            return Object.keys(buckets).sort()
+                .filter(dateStr => buckets[dateStr].duration >= 0.5 && buckets[dateStr].duration <= maxH)
+                .map(dateStr => ({
+                    date: dateStr,
+                    duration: buckets[dateStr].duration,
+                    qualities: buckets[dateStr].qualities
+                }));
         }
 
         function getSleepDurationTrendVN() {
@@ -65542,7 +65952,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (typeof s.start !== 'number' || typeof s.duration !== 'number') return;
                 const key = getSleepWakeDateVN(s); // đêm gán theo ngày thức dậy
                 if (!map[key]) map[key] = { duration: 0, qualities: [], sessions: [], targets: [] };
-                map[key].duration += s.duration;
+                map[key].duration += getSessionTSTHours(s);
                 if (s.quality) map[key].qualities.push(s.quality);
                 map[key].sessions.push(s);
                 // Target snapshot của từng session (targetAtDate nếu có, fallback goal hiện tại
@@ -65788,43 +66198,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const SOCIAL_JETLAG_MIN_WEEKEND_NIGHTS = 3;  // tối thiểu 3 đêm cuối tuần (ít cơ hội hơn/tuần)
 
         function computeWeekdayWeekendComparison() {
-            const weekday = { duration: [], bedtime: [], midSleep: [] };
-            const weekend = { duration: [], bedtime: [], midSleep: [] };
-
-            sleepSessions.forEach(s => {
-                if (typeof s.start !== 'number' || typeof s.duration !== 'number') return;
-                const p = getVNDateTimeParts(s.start);
-                const weekdayIdx = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay(); // 0=CN...6=T7, tính thuần theo lịch, không lệch múi giờ
-                const bedtimeAxis = sleepTimeToAxisHour(s.start);
-                const midSleep = bedtimeAxis + s.duration / 2;
-                const bucket = (weekdayIdx === 0 || weekdayIdx === 6) ? weekend : weekday;
-                bucket.duration.push(s.duration);
-                bucket.bedtime.push(bedtimeAxis);
-                bucket.midSleep.push(midSleep);
-            });
-
-            if (weekday.duration.length < SOCIAL_JETLAG_MIN_WEEKDAY_NIGHTS || weekend.duration.length < SOCIAL_JETLAG_MIN_WEEKEND_NIGHTS) {
-                return null;
-            }
-
-            const avgWeekdayDur = avgOf(weekday.duration);
-            const avgWeekendDur = avgOf(weekend.duration);
-            const avgWeekdayBed = avgOf(weekday.bedtime);
-            const avgWeekendBed = avgOf(weekend.bedtime);
-            const avgWeekdayWake = avgWeekdayBed + avgWeekdayDur;
-            const avgWeekendWake = avgWeekendBed + avgWeekendDur;
-            const avgWeekdayMid = avgOf(weekday.midSleep);
-            const avgWeekendMid = avgOf(weekend.midSleep);
-
-            // Social jetlag đúng định nghĩa khoa học (Roenneberg): |điểm giữa giấc ngủ cuối
-            // tuần − điểm giữa giấc ngủ ngày thường|. Cuối tuần thường ngủ trễ hơn (dương).
-            const jetlagHours = Math.abs(avgWeekendMid - avgWeekdayMid);
-            const weekendLater = avgWeekendMid > avgWeekdayMid;
-
+            const sj = computeSocialJetlagVN({ windowDays: 28, minWeekdayNights: 4, minWeekendNights: 2 });
+            if (!sj || !sj.ok) return null;
             return {
-                weekdayNights: weekday.duration.length, weekendNights: weekend.duration.length,
-                avgWeekdayDur, avgWeekendDur, avgWeekdayBed, avgWeekendBed, avgWeekdayWake, avgWeekendWake,
-                jetlagHours, weekendLater
+                weekdayNights: sj.weekdayNights, weekendNights: sj.weekendNights,
+                avgWeekdayDur: sj.avgWeekdayDur, avgWeekendDur: sj.avgWeekendDur,
+                avgWeekdayBed: sj.avgWeekdayBed, avgWeekendBed: sj.avgWeekendBed,
+                avgWeekdayWake: sj.avgWeekdayWake, avgWeekendWake: sj.avgWeekendWake,
+                jetlagHours: sj.jetlagHours, weekendLater: sj.weekendLater,
+                mswClock: sj.mswClock, msfClock: sj.msfClock, msfscClock: sj.msfscClock
             };
         }
 
@@ -66002,11 +66384,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 ? sleepTile('zap', seColor(avgSE), `${avgSE.toFixed(0)}%`, `SE (${seValues.length}d)`)
                 : sleepTile('zap', MUTED, '—', 'SE (not enough data)', 'SOL must be entered when adding/editing a session');
 
-            // Regularity Index: max(SD giờ lên giường, SD giờ dậy) trong 7 đêm gần nhất
+            // Regularity Index (7d SD) + SRI (14d, Phillips et al. 2017) hiển thị gọn trong cùng 1 ô
             const reg = computeSleepRegularity(7);
+            const sri14 = computeSleepRegularityIndex({ windowDays: 14 });
+            const regLabel = sri14.ok ? `Regularity · SRI ${Math.round(sri14.sri)}` : (reg ? `Regularity (${reg.nights}d)` : 'Regularity (needs ≥3d)');
+            const regTip = reg
+                ? `Bedtime ±${Math.round(reg.sdBed)}m · Wake ±${Math.round(reg.sdWake)}m (${reg.nights}d)${sri14.ok ? ` · SRI ${sri14.sri.toFixed(1)}/100 (${sri14.pairedDays} paired days, 14d)` : ''}`
+                : 'Needs ≥3 logged nights';
             const regBox = reg
-                ? sleepTile('activity', regularityColor(reg.score), `±${Math.round(reg.score)}m`, `Regularity (${reg.nights}d)`,
-                    `Bedtime ±${Math.round(reg.sdBed)}m · Wake time ±${Math.round(reg.sdWake)}m`)
+                ? sleepTile('activity', regularityColor(reg.score), `±${Math.round(reg.score)}m`, regLabel, regTip)
                 : sleepTile('activity', MUTED, '—', 'Regularity (needs ≥3d)');
 
             // Wake Anchor Streak (#5) — badge riêng, thưởng đều đặn chứ không thưởng thời lượng
@@ -72322,467 +72708,7 @@ function getConfidenceColor(confidence) {
 // ====== INSOMNIA ANALYSIS SYSTEM ======
 
 // Main analysis function
-function analyzeInsomniaPatterns() {
-    if (!sleepSessions || sleepSessions.length < 5) {
-        return {
-            error: true,
-            message: 'Need at least 5 sleep sessions for analysis',
-            insomniaRisk: 'unknown'
-        };
-    }
-    
-    try {
-        const analysis = {
-            insomniaRisk: detectAllNighterRisk(),
-            insomniaType: classifyInsomniaType(),
-            sleepFragmentation: analyzeSleepFragmentation(),
-            circadianDisruption: analyzeCircadianDisruption(),
-            recoveryPatterns: analyzeRecoveryPatterns()
-        };
-        
-        // Calculate derived metrics
-        analysis.insomniaPenalty = calculateInsomniaPenalty(analysis);
-        analysis.cognitiveEfficiency = calculateCognitiveEfficiency(analysis);
-        analysis.insomniaSeverity = calculateInsomniaSeverity(analysis);
-        
-        return analysis;
-        
-    } catch (error) {
-        console.error('Insomnia analysis error:', error);
-        return {
-            error: true,
-            message: error.message,
-            insomniaRisk: 'error'
-        };
-    }
-}
-
-// 1. Detect All-Nighter Risk
-function detectAllNighterRisk() {
-    if (!sleepSessions || sleepSessions.length < 2) return 'normal';
-    
-    const sortedSessions = [...sleepSessions].sort((a, b) => a.start - b.start);
-    let maxAwakeHours = 0;
-    let allNighterCount = 0;
-    
-    for (let i = 1; i < sortedSessions.length; i++) {
-        const prevEnd = new Date(sortedSessions[i-1].end);
-        const currStart = new Date(sortedSessions[i].start);
-        const awakeHours = (currStart - prevEnd) / (1000 * 60 * 60);
-        maxAwakeHours = Math.max(maxAwakeHours, awakeHours);
-        if (awakeHours > 24) allNighterCount++;
-    }
-    
-    if (maxAwakeHours > 36) return 'critical';
-    if (maxAwakeHours > 24) return 'extreme';
-    if (maxAwakeHours > 20) return 'high';
-    return 'normal';
-}
-
-// 2. Classify Insomnia Type
-function classifyInsomniaType() {
-    const sessions = [...sleepSessions].sort((a, b) => a.start - b.start);
-    const total = sessions.length;
-    if (total === 0) {
-        return { primaryType: 'unknown', allTypes: [], percentages: { sleepOnset: 0, maintenance: 0, earlyAwakening: 0, nonRestorative: 0 }, description: 'No data' };
-    }
-    
-    let sleepOnset = 0, maintenance = 0, earlyAwake = 0, nonRestorative = 0;
-    
-    sessions.forEach(session => {
-        const startHour = new Date(session.start).getHours();
-        const endHour = new Date(session.end).getHours();
-        const duration = session.duration;
-        
-        // Sleep onset insomnia: bắt đầu ngủ sau 0h (23h+) - late sleep start
-        // BUG FIX: điều kiện cũ (startHour >= 0 && startHour <= 4) không bao giờ bắt được
-        // giờ 23h vì getHours() luôn >= 0 — nghĩa là những đêm đi ngủ lúc 23h-23h59 (rất phổ
-        // biến với sleep-onset insomnia) chưa từng được tính, dù comment đã ghi rõ "23h+".
-        if (startHour >= 23 || startHour <= 4) sleepOnset++; // went to sleep 23:00–4:59am
-        // Sleep maintenance: duration ngắn dưới 5h
-        if (duration < 5) maintenance++;
-        // Early awakening: thức dậy 3h-6h sáng và ngủ < 6h tổng
-        if (endHour >= 3 && endHour <= 6 && duration < 6) earlyAwake++;
-        // Non-restorative: đủ giờ nhưng quality thấp
-        if (duration >= 7 && duration <= 10 && hasLowQualityIndicators(session)) {
-            nonRestorative++;
-        }
-    });
-    
-    const types = [];
-    if (sleepOnset / total >= 0.3) types.push('sleep_onset');
-    if (maintenance / total >= 0.3) types.push('maintenance');
-    if (earlyAwake / total >= 0.3) types.push('early_awakening');
-    if (nonRestorative / total >= 0.3) types.push('non_restorative');
-    
-    const typeDescriptions = {
-        'sleep_onset': 'Difficulty falling asleep',
-        'maintenance': 'Frequent nighttime awakenings',
-        'early_awakening': 'Waking up too early',
-        'non_restorative': 'Poor sleep quality despite duration'
-    };
-    
-    return {
-        primaryType: types[0] || 'mixed',
-        allTypes: types,
-        percentages: {
-            sleepOnset: Math.round((sleepOnset / total) * 100),
-            maintenance: Math.round((maintenance / total) * 100),
-            earlyAwakening: Math.round((earlyAwake / total) * 100),
-            nonRestorative: Math.round((nonRestorative / total) * 100)
-        },
-        description: types.map(t => typeDescriptions[t] || t).join(', ') || 'No specific pattern detected'
-    };
-}
-
-// 3. Analyze Sleep Fragmentation
-function analyzeSleepFragmentation() {
-    const sorted = [...sleepSessions].sort((a, b) => a.start - b.start);
-    const intervals = [];
-    
-    for (let i = 1; i < sorted.length; i++) {
-        const interval = (new Date(sorted[i].start) - new Date(sorted[i-1].end)) / (1000 * 60 * 60);
-        intervals.push(interval);
-    }
-    
-    const fragmentedSessions = sorted.filter((session, idx) => {
-        if (idx === 0) return false;
-        const interval = intervals[idx-1];
-        // Fragmented = went back to sleep within 8h AND sleep was short
-        return interval < 8 && session.duration < 6;
-    });
-    
-    const avgDuration = sorted.reduce((sum, s) => sum + s.duration, 0) / sorted.length;
-    
-    // Per-day total is what actually matters for "am I getting enough sleep" checks —
-    // averaging raw session durations understates polyphasic sleepers (e.g. 3 naps of
-    // 2.5h each looks like "2.5h avg sleep" per session even though the day totals 7.5h).
-    const byDate = {};
-    sorted.forEach(s => {
-        const dateStr = getSleepWakeDateVN(s); // đêm gán theo ngày thức dậy (giờ VN — hàm này không ghép với dữ liệu học tập nên dùng VN, không phải Local)
-        if (!byDate[dateStr]) byDate[dateStr] = 0;
-        byDate[dateStr] += s.duration;
-    });
-    const dailyDurations = Object.values(byDate);
-    const avgDailyDuration = dailyDurations.length > 0
-        ? dailyDurations.reduce((sum, d) => sum + d, 0) / dailyDurations.length
-        : avgDuration;
-    
-    // Guard against empty intervals array (only 1 session)
-    const avgInterval = intervals.length > 0 ? 
-        intervals.reduce((sum, i) => sum + i, 0) / intervals.length : 24;
-    
-    return {
-        isFragmented: fragmentedSessions.length >= sorted.length * 0.3,
-        fragmentationScore: Math.round((fragmentedSessions.length / sorted.length) * 100),
-        averageDuration: parseFloat(avgDuration.toFixed(1)),
-        averageDailyDuration: parseFloat(avgDailyDuration.toFixed(1)),
-        averageInterval: parseFloat(avgInterval.toFixed(1)),
-        napPatterns: detectNapPatterns()
-    };
-}
-
-// 4. Analyze Circadian Disruption
-function analyzeCircadianDisruption() {
-    const bedtimes = sleepSessions.map(s => {
-        const d = new Date(s.start);
-        return {
-            hour: d.getHours(),
-            minute: d.getMinutes(),
-            weekday: d.getDay(),
-            date: d
-        };
-    });
-    
-    // Use shifted hours to handle midnight crossover (23h vs 1h avg should not be 12h noon)
-    const bedtimeHoursRaw = bedtimes.map(b => b.hour + b.minute/60);
-    const bedtimeHours = bedtimeHoursRaw.map(h => h < 12 ? h + 24 : h); // 1am→25, 2am→26
-    const avgBedtimeShifted = bedtimeHours.reduce((sum, h) => sum + h, 0) / bedtimeHours.length;
-    const avgBedtime = avgBedtimeShifted >= 24 ? avgBedtimeShifted - 24 : avgBedtimeShifted;
-    const stdDev = calculateStandardDeviation(bedtimeHours);
-    
-    const weekdayBedtimes = bedtimes.filter(b => b.weekday >= 1 && b.weekday <= 5);
-    const weekendBedtimes = bedtimes.filter(b => b.weekday === 0 || b.weekday === 6);
-    
-    const shiftH = h => h < 12 ? h + 24 : h; // same circular shift
-    const avgWeekday = weekdayBedtimes.length > 0 ? 
-        weekdayBedtimes.reduce((sum, b) => sum + shiftH(b.hour + b.minute/60), 0) / weekdayBedtimes.length : null;
-    const avgWeekend = weekendBedtimes.length > 0 ? 
-        weekendBedtimes.reduce((sum, b) => sum + shiftH(b.hour + b.minute/60), 0) / weekendBedtimes.length : null;
-    
-    const socialJetlag = avgWeekday && avgWeekend ? Math.abs(avgWeekend - avgWeekday) : 0;
-    const daytimeSessions = sleepSessions.filter(s => {
-        const hour = new Date(s.start).getHours();
-        return hour >= 6 && hour <= 18;
-    });
-    // Weighted by actual hours slept, not just session count — a few long daytime
-    // sessions (or many short ones) should move this % by how much sleep they
-    // actually represent, since downstream text reports it as "% of recorded sleep".
-    const daytimeSleepHours = daytimeSessions.reduce((sum, s) => sum + s.duration, 0);
-    const totalSleepHours = sleepSessions.reduce((sum, s) => sum + s.duration, 0);
-    
-    return {
-        circadianDisruption: stdDev > 3 ? 'severe' : stdDev > 2 ? 'moderate' : 'mild',
-        bedtimeConsistency: Math.round(Math.max(0, 100 - (stdDev * 10))),
-        averageBedtime: formatTimeFromDecimal(avgBedtime),
-        standardDeviation: parseFloat(stdDev.toFixed(1)),
-        socialJetlag: parseFloat(socialJetlag.toFixed(1)),
-        daytimeSleepPercentage: totalSleepHours > 0 ? Math.round((daytimeSleepHours / totalSleepHours) * 100) : 0,
-        phaseShift: daytimeSleepHours > totalSleepHours * 0.5 ? 'daytime_sleeper' : 'nighttime_sleeper'
-    };
-}
-
-// 5. Analyze Recovery Patterns
-function analyzeRecoveryPatterns() {
-    if (sleepSessions.length < 7) return { insufficientData: true };
-    
-    const sorted = [...sleepSessions].sort((a, b) => a.start - b.start);
-    const idealSleep = getSleepGoal(); // mục tiêu bạn đặt, không còn cứng 7.5h
-    // Nợ tích luỹ lấy từ Sleep Debt Engine (sổ 14 đêm, ngủ dư trả dần) — cùng số với card "Nợ ngủ".
-    // Bản cũ cộng dồn toàn bộ lịch sử và không bao giờ trừ, nên gần như luôn vượt ngưỡng cảnh báo.
-    const debtInfo = computeSleepDebt();
-    const cumulativeDebt = debtInfo.ok ? debtInfo.debt : 0;
-    let totalDeficit = 0;
-    const recoveryCycles = [];
-    const debtPatterns = [];
-    
-    // Gom theo ngày thức dậy trước khi so với mục tiêu — tránh phạt trùng khi ngủ đa pha
-    // (polyphasic) và không dồn 2 đêm vào 1 ngày.
-    const byDate = {};
-    sorted.forEach(session => {
-        const dateStr = getSleepWakeDateVN(session); // giờ VN — hàm này không ghép với dữ liệu học tập
-        if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, duration: 0 };
-        byDate[dateStr].duration += session.duration;
-    });
-    const dailyTotals = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-    
-    for (let i = 0; i < dailyTotals.length; i++) {
-        const deficit = idealSleep - dailyTotals[i].duration;
-        if (deficit > 0) totalDeficit += deficit;
-        
-        if (i < dailyTotals.length - 2 && deficit > 0) {
-            const next = dailyTotals[i + 1];
-            const nextNext = dailyTotals[i + 2];
-            if (next.duration > idealSleep + 1 || nextNext.duration > idealSleep + 1) {
-                recoveryCycles.push({
-                    deficitDay: dailyTotals[i].date,
-                    deficitHours: parseFloat(deficit.toFixed(1)),
-                    recoveryHours: Math.max(next.duration, nextNext.duration)
-                });
-            }
-        }
-        
-        debtPatterns.push({
-            duration: dailyTotals[i].duration,
-            deficit: deficit > 0 ? parseFloat(deficit.toFixed(1)) : 0
-        });
-    }
-    
-    const recoveryEfficiency = recoveryCycles.length > 0 ? 
-        recoveryCycles.reduce((sum, r) => sum + r.recoveryHours, 0) / 
-        recoveryCycles.reduce((sum, r) => sum + r.deficitHours, 0) : 0;
-    
-    return {
-        hasRecoveryPatterns: recoveryCycles.length > 0,
-        averageSleepDebt: parseFloat((totalDeficit / dailyTotals.length).toFixed(1)), // thiếu TB mỗi đêm (toàn lịch sử)
-        cumulativeDebt: parseFloat(cumulativeDebt.toFixed(1)),
-        recoveryEfficiency: parseFloat(recoveryEfficiency.toFixed(2)),
-        recoveryCycles: recoveryCycles.slice(0, 3),
-        debtAccumulationRate: parseFloat((cumulativeDebt / SLEEP_DEBT_CFG.windowNights).toFixed(2))
-    };
-}
-
-// 6. Calculate Insomnia Penalty
-function calculateInsomniaPenalty(analysis) {
-    let totalPenalty = 0;
-    const reasons = [];
-    
-    // Daytime sleep penalty
-    const daytimeSleep = sleepSessions.filter(s => {
-        const hour = new Date(s.start).getHours();
-        return hour >= 6 && hour <= 18 && s.duration > 1;
-    });
-    
-    if (daytimeSleep.length > 0) {
-        const daySleepHours = daytimeSleep.reduce((sum, s) => sum + s.duration, 0);
-        const penalty = Math.min(30, daySleepHours * 3);
-        totalPenalty += penalty;
-        reasons.push({
-            type: 'daytime_sleep',
-            hours: parseFloat(daySleepHours.toFixed(1)),
-            penalty: Math.round(penalty * 10) / 10,
-            message: `${daySleepHours.toFixed(1)}h of daytime sleep disrupts circadian rhythm`
-        });
-    }
-    
-    // All-nighter penalty
-    const sorted = [...sleepSessions].sort((a, b) => a.start - b.start);
-    for (let i = 1; i < sorted.length; i++) {
-        const awakeHours = (new Date(sorted[i].start) - new Date(sorted[i-1].end)) / (1000 * 60 * 60);
-        if (awakeHours > 24) {
-            const penalty = Math.min(50, (awakeHours - 24) * 2);
-            totalPenalty += penalty;
-            reasons.push({
-                type: 'all_nighter',
-                awakeHours: parseFloat(awakeHours.toFixed(1)),
-                penalty: Math.round(penalty * 10) / 10,
-                message: `Awake for ${awakeHours.toFixed(1)}h - brain needs 48h to recover`
-            });
-        }
-    }
-    
-    // Irregular schedule penalty
-    const stdDev = analysis.circadianDisruption?.standardDeviation || 0;
-    if (stdDev > 3) {
-        const penalty = Math.min(20, (stdDev - 2) * 5);
-        totalPenalty += penalty;
-        reasons.push({
-            type: 'irregular_schedule',
-            stdDev: parseFloat(stdDev.toFixed(1)),
-            penalty: Math.round(penalty * 10) / 10,
-            message: `Bedtime varies by ${stdDev.toFixed(1)}h daily - brain cannot adapt`
-        });
-    }
-    
-    // Sleep debt penalty
-    const sleepDebt = analysis.recoveryPatterns?.cumulativeDebt || 0;
-    if (sleepDebt > 5) {
-        const penalty = Math.min(40, sleepDebt * 2);
-        totalPenalty += penalty;
-        reasons.push({
-            type: 'sleep_debt',
-            debtHours: parseFloat(sleepDebt.toFixed(1)),
-            penalty: Math.round(penalty * 10) / 10,
-            message: `${sleepDebt.toFixed(1)}h sleep debt - reduces learning ability by 40%`
-        });
-    }
-    
-    return {
-        totalPenalty: Math.round(Math.min(100, totalPenalty) * 10) / 10,
-        penaltyScore: Math.round(totalPenalty),
-        penaltyLevel: totalPenalty >= 60 ? 'severe' : totalPenalty >= 30 ? 'moderate' : 'mild',
-        reasons: reasons
-    };
-}
-
-// 7. Calculate Cognitive Efficiency
-function calculateCognitiveEfficiency(analysis) {
-    const penalty = analysis.insomniaPenalty?.totalPenalty || 0;
-    // Use fragmentation and risk as proxy since severity may not be set yet
-    const avgDuration = analysis.sleepFragmentation?.averageDailyDuration || 7;
-    const fragScore = analysis.sleepFragmentation?.fragmentationScore || 0;
-    const riskLevel = analysis.insomniaRisk;
-    
-    let baseEfficiency = 1.0;
-    // Penalize for short sleep duration
-    if (avgDuration < 4) baseEfficiency -= 0.5;
-    else if (avgDuration < 5) baseEfficiency -= 0.35;
-    else if (avgDuration < 6) baseEfficiency -= 0.2;
-    else if (avgDuration < 7) baseEfficiency -= 0.1;
-    
-    // Penalize for all-nighters
-    if (riskLevel === 'critical') baseEfficiency -= 0.3;
-    else if (riskLevel === 'extreme') baseEfficiency -= 0.2;
-    else if (riskLevel === 'high') baseEfficiency -= 0.1;
-    
-    // Penalize for high fragmentation
-    if (fragScore > 50) baseEfficiency -= 0.15;
-    else if (fragScore > 30) baseEfficiency -= 0.08;
-    
-    // Additional penalty from penalty score
-    const penaltyReduction = penalty / 250;
-    baseEfficiency -= penaltyReduction;
-    
-    const finalEfficiency = Math.max(0.1, Math.min(1.0, baseEfficiency));
-    
-    const totalStudyHours = Object.values(dailyStudyData || {}).reduce((a, b) => a + (parseFloat(b) || 0), 0);
-    const effectiveStudyHours = totalStudyHours * finalEfficiency;
-    const wastedStudyHours = totalStudyHours - effectiveStudyHours;
-    
-    const efficiencyLevel = finalEfficiency >= 0.9 ? 'peak_performance' :
-                          finalEfficiency >= 0.7 ? 'optimal' :
-                          finalEfficiency >= 0.5 ? 'moderate' :
-                          finalEfficiency >= 0.3 ? 'impaired' : 'severe_impairment';
-    
-    const brainStatus = {
-        'peak_performance': '<i class="fa-solid fa-brain status-ok"></i> Brain at peak performance - Learn 1 understand 1',
-        'optimal': '<i class="fa-solid fa-thumbs-up status-ok"></i> Good efficiency - Stable knowledge absorption',
-        'moderate': '<i class="fa-solid fa-triangle-exclamation status-warn"></i> Moderate efficiency - Need more effort',
-        'impaired': '<i class="fa-solid fa-face-tired status-warn"></i> Brain fatigued - Learn 10 remember 5',
-        'severe_impairment': '<i class="fa-solid fa-triangle-exclamation status-bad"></i> Brain exhausted - Learning is ineffective, need sleep now'
-    }[efficiencyLevel] || '';
-    
-    return {
-        efficiencyScore: parseFloat(finalEfficiency.toFixed(2)),
-        efficiencyPercentage: Math.round(finalEfficiency * 100),
-        efficiencyLevel: efficiencyLevel,
-        brainStatus: brainStatus,
-        studyROI: {
-            totalStudyHours: parseFloat(totalStudyHours.toFixed(1)),
-            effectiveStudyHours: parseFloat(effectiveStudyHours.toFixed(1)),
-            wastedStudyHours: parseFloat(wastedStudyHours.toFixed(1)),
-            wastePercentage: Math.round((wastedStudyHours / totalStudyHours) * 100) || 0
-        }
-    };
-}
-
-// 8. Calculate Insomnia Severity
-function calculateInsomniaSeverity(analysis) {
-    let severityScore = 0;
-    const factors = [];
-    
-    const avgDuration = analysis.sleepFragmentation?.averageDailyDuration || 0;
-    if (avgDuration < 4) severityScore += 40, factors.push('very_short_sleep');
-    else if (avgDuration < 6) severityScore += 30, factors.push('short_sleep');
-    
-    const fragScore = analysis.sleepFragmentation?.fragmentationScore || 0;
-    if (fragScore > 50) severityScore += 30, factors.push('high_fragmentation');
-    else if (fragScore > 30) severityScore += 20, factors.push('moderate_fragmentation');
-    
-    const circDisruption = analysis.circadianDisruption?.circadianDisruption;
-    if (circDisruption === 'severe') severityScore += 40, factors.push('severe_circadian');
-    else if (circDisruption === 'moderate') severityScore += 25, factors.push('moderate_circadian');
-    
-    const sleepDebt = analysis.recoveryPatterns?.cumulativeDebt || 0;
-    if (sleepDebt > 10) severityScore += 35, factors.push('high_sleep_debt');
-    else if (sleepDebt > 5) severityScore += 20, factors.push('moderate_sleep_debt');
-    
-    const insomniaType = analysis.insomniaType?.primaryType;
-    if (insomniaType === 'mixed') severityScore += 25, factors.push('mixed_type');
-    
-    const severityLevel = severityScore >= 100 ? 'severe' :
-                         severityScore >= 70 ? 'moderate_severe' :
-                         severityScore >= 50 ? 'moderate' :
-                         severityScore >= 30 ? 'mild' : 'subclinical';
-    
-    const interpretations = {
-        'severe': 'Significant impact on daily functioning.',
-        'moderate_severe': 'Noticeable impact on energy and mood.',
-        'moderate': 'Regular sleep difficulties affecting quality of life.',
-        'mild': 'Occasional sleep problems with minimal functional impact.',
-        'subclinical': 'Minor sleep variations within normal range.'
-    };
-    
-    return {
-        severityScore: Math.min(100, severityScore),
-        severityLevel: severityLevel,
-        contributingFactors: factors,
-        interpretation: interpretations[severityLevel] || 'Unable to determine severity.'
-    };
-}
-
-// ====== UTILITY FUNCTIONS ======
-
-function hasLowQualityIndicators(session) {
-    // Ưu tiên dùng đánh giá chất lượng người dùng tự chọn (1-5, từ 😫 đến 😄) nếu có.
-    // (Heuristic cũ "duration/1.5 > 4" thực chất LUÔN đúng với mọi duration > 6h,
-    // nên khi gọi trong khoảng 7-10h nó luôn trả về true — không lọc được gì cả.)
-    if (session.quality && session.quality > 0) {
-        return session.quality <= 2; // 😫 Rất tệ / 😞 Tệ
-    }
-    // Không có dữ liệu chất lượng -> không tự suy đoán là kém, tránh dương tính giả.
-    return false;
-}
+// Legacy analyzeInsomniaPatterns() removed — replaced by computeSleepScienceSummary() (4-axis evidence-based engine).
 
 function formatTimeFromDecimal(decimal) {
     // Callers may pass a midnight-shifted decimal (e.g. 25.5 for 01:30, see
@@ -72793,18 +72719,7 @@ function formatTimeFromDecimal(decimal) {
     return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 }
 
-function detectNapPatterns() {
-    const naps = sleepSessions.filter(s => {
-        const hour = new Date(s.start).getHours();
-        return (hour >= 6 && hour <= 18) && s.duration <= 3;
-    });
-    
-    return {
-        napCount: naps.length,
-        totalNapHours: parseFloat(naps.reduce((sum, s) => sum + s.duration, 0).toFixed(1)),
-        isCompensatory: naps.some(n => n.duration > 2)
-    };
-}
+// Legacy detectNapPatterns() removed (naps tracked separately via napSessions).
 
 // ====== FIX ALL MISSING FUNCTIONS ======
 
@@ -73207,59 +73122,42 @@ function circularSleepHour(hour) {
 
 function analyzeSleepPatterns(sleepSessions = []) {
     try {
-        if (!sleepSessions || sleepSessions.length < 3) {
-            return { insufficientData: true, message: 'Need at least 3 sleep sessions' };
+        const nights = (typeof buildSleepNightsByWakeDate === 'function' && typeof isValidSleepNight === 'function')
+            ? buildSleepNightsByWakeDate(sleepSessions || []).filter(isValidSleepNight)
+            : [];
+        if (nights.length < 3) {
+            return { insufficientData: true, message: 'Need at least 3 valid sleep nights' };
         }
-        
-        const sorted = [...sleepSessions].sort((a, b) => new Date(a.start) - new Date(b.start));
-        
-        // Calculate basic stats
-        const durations = sorted.map(s => s.duration);
+
+        const durations = nights.map(n => n.hours);
         const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
         const minDuration = Math.min(...durations);
         const maxDuration = Math.max(...durations);
-        
-        // Analyze bedtime consistency. Dùng circularSleepHour() để giờ ngủ quanh
-        // nửa đêm (23:30, 00:30, 01:00...) được tính là một cụm gần nhau thay vì
-        // bị coi là cách xa nhau cả ngày — xem chú thích ở circularSleepHour().
-        const bedtimes = sorted.map(s => {
-            const d = new Date(s.start);
-            return circularSleepHour(d.getHours() + d.getMinutes() / 60);
-        });
-        const bedtimeStdDev = calculateStandardDeviation(bedtimes);
 
-        // Giờ dậy cũng cần tính riêng: bedtime có thể trông ổn (SD thấp) trong khi giờ
-        // dậy lại lệch mạnh giữa các đêm (vd ngủ lúc 01:00 mỗi đêm nhưng dậy lúc 7h/10h/8h/11h
-        // tuỳ hôm) — nếu chỉ nhìn bedtimeStdDev sẽ đánh giá nhầm là "đều đặn". Dùng session.end
-        // khi có (chính xác hơn), fallback start+duration cho session cũ chưa có field end.
-        const wakeTimes = sorted.map(s => {
-            const endTs = typeof s.end === 'number' ? s.end : (s.start + s.duration * 3600000);
-            const d = new Date(endTs);
-            return circularSleepHour(d.getHours() + d.getMinutes() / 60);
-        });
-        const wakeStdDev = calculateStandardDeviation(wakeTimes);
-        // "Đều đặn" thực tế = chiều lệch nào TỆ HƠN (bedtime hay wake time), không phải chỉ
-        // riêng bedtime — cùng triết lý với computeSleepRegularity() (Regularity Index).
+        const bedStats = vnClockStats(nights.map(n => n.startTs));
+        const wakeStats = vnClockStats(nights.map(n => n.endTs));
+        const bedtimeStdDev = bedStats ? bedStats.sd / 60 : 0;
+        const wakeStdDev = wakeStats ? wakeStats.sd / 60 : 0;
         const regularityStdDev = Math.max(bedtimeStdDev, wakeStdDev);
-        
-        // Detect patterns
+        // Thang thực tế theo phút: SD=0p → 100, SD=30p → 75, SD=60p → 50, SD≥120p → 0
+        const consistencyScore = Math.max(0, Math.round(100 - (regularityStdDev * 60) / 1.2));
+
         const shortSleeps = durations.filter(d => d < 5).length;
         const longSleeps = durations.filter(d => d > 9).length;
         const normalSleeps = durations.filter(d => d >= 5 && d <= 9).length;
-        
-        // Analyze sleep timing
-        const daySleeps = sorted.filter(s => {
-            const hour = new Date(s.start).getHours();
-            return hour >= 6 && hour <= 18;
+        const daySleeps = nights.filter(n => {
+            const h = typeof n.startTs === 'number' ? vnMinuteOfDay(n.startTs) / 60 : -1;
+            return h >= 6 && h <= 18 && n.hours > 3;
         }).length;
-        
+        const sorted = nights;
+
         return {
             insufficientData: false,
-            totalSessions: sorted.length,
+            totalSessions: nights.length,
             avgDuration: parseFloat(avgDuration.toFixed(1)),
             minDuration: parseFloat(minDuration.toFixed(1)),
             maxDuration: parseFloat(maxDuration.toFixed(1)),
-            consistencyScore: Math.max(0, 100 - (regularityStdDev * 10)),
+            consistencyScore,
             bedtimeStdDev: parseFloat(bedtimeStdDev.toFixed(1)),
             wakeStdDev: parseFloat(wakeStdDev.toFixed(1)),
             regularityStdDev: parseFloat(regularityStdDev.toFixed(1)),
@@ -73353,7 +73251,7 @@ const SLEEP_BASELINE_CFG = {
 function computeSleepBaseline(opts = {}) {
     const cfg = SLEEP_BASELINE_CFG;
     const sessions = opts.sessions || sleepSessions;
-    const nights = buildSleepNightsByWakeDate(sessions);
+    const nights = buildSleepNightsByWakeDate(sessions).filter(isValidSleepNight);
     // Bỏ đêm đang xét ra khỏi rổ tính baseline (nếu có), để không tự so sánh
     // đêm đó với chính nó khi tính deviation.
     const excludeDayNum = typeof opts.excludeDayNum === 'number' ? opts.excludeDayNum : null;
@@ -73372,14 +73270,8 @@ function computeSleepBaseline(opts = {}) {
     // startTs/endTs đã có sẵn trên mỗi "night" từ buildSleepNightsByWakeDate();
     // dùng circularSleepHour() (xem chú thích ở định nghĩa) để giờ quanh nửa đêm
     // không bị coi là cách xa nhau cả ngày khi tính median.
-    const bedHours = pool.map(n => {
-        const d = new Date(n.startTs);
-        return circularSleepHour(d.getHours() + d.getMinutes() / 60);
-    });
-    const wakeHours = pool.map(n => {
-        const d = new Date(n.endTs);
-        return circularSleepHour(d.getHours() + d.getMinutes() / 60);
-    });
+    const bedHours = pool.map(n => circularSleepHour(vnMinuteOfDay(n.startTs) / 60));
+    const wakeHours = pool.map(n => circularSleepHour(vnMinuteOfDay(n.endTs) / 60));
     const durations = pool.map(n => n.hours);
 
     return {
@@ -73399,8 +73291,8 @@ function computeSleepBaseline(opts = {}) {
 function computeBaselineDeviation(night, baseline) {
     if (!baseline || !baseline.ok || !night) return null;
 
-    const bedHour = circularSleepHour(new Date(night.startTs).getHours() + new Date(night.startTs).getMinutes() / 60);
-    const wakeHour = circularSleepHour(new Date(night.endTs).getHours() + new Date(night.endTs).getMinutes() / 60);
+    const bedHour = circularSleepHour(vnMinuteOfDay(night.startTs) / 60);
+    const wakeHour = circularSleepHour(vnMinuteOfDay(night.endTs) / 60);
 
     const bedtimeDeltaMin = Math.round((bedHour - baseline.bedtimeHour) * 60);
     const wakeDeltaMin = Math.round((wakeHour - baseline.wakeHour) * 60);
@@ -89990,13 +89882,12 @@ document.addEventListener('keydown', function (e) {
     function hhmm(m) { m = (m + 1080) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(Math.round(m % 60)).padStart(2, '0'); }
 
     function socialJetLag() {
-        var cut = Date.now() - 28 * 864e5;
-        var n = sess().filter(function (s) { return ok(s) && s.duration > 0 && s.duration <= 16 && s.end >= cut; });
-        var wd = [], we = [];
-        n.forEach(function (s) { var dow = new Date(s.end).getDay(); (dow === 0 || dow === 6 ? we : wd).push(midMin(s)); });
-        if (wd.length < 4 || we.length < 2) return null;
-        var a = mean(wd), b = mean(we);
-        return { diff: b - a, wd: a, we: b };
+        if (typeof window.computeSocialJetlagVN === 'function') {
+            var r = window.computeSocialJetlagVN({ windowDays: 28, minWeekdayNights: 4, minWeekendNights: 2 });
+            if (!r || !r.ok) return null;
+            return { diff: r.diffMin, wd: (r.mswMin - 1080 + 1440) % 1440, we: (r.msfMin - 1080 + 1440) % 1440 };
+        }
+        return null;
     }
     function dataIssues() {
         var all = sess().filter(ok), bad = 0, sorted = all.slice().sort(function (x, y) { return x.start - y.start; });

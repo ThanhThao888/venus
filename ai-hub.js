@@ -1,7 +1,7 @@
 /* Venus Hub — AI for Tracker data (ai-hub.js)
    Sits next to index.html. Gives the Sleep tracker and the Skills/study progress an "✨ AI" window.
-   • It does NOT send raw history. It re-uses the app's own calculators (sleep debt, efficiency, regularity,
-     insomnia analysis…) and sends a compact summary of numbers, so the free models' small memory is enough,
+   • It does NOT send raw history. It re-uses the app's own calculators (sleep debt, efficiency, regularity/SRI,
+     social jetlag, SOL/WASO screening…) and sends a compact summary of numbers, so the free models' small memory is enough,
      the numbers match what you see on screen, and less personal data leaves your device.
    • The window itself (key, model, streaming, errors) is ai.js — loaded on demand, shared with Notes Vault.
    • Public API:  VenusAIHub.sleep()   VenusAIHub.skills()
@@ -130,7 +130,7 @@
     const head = (name) => { L.push(''); L.push('## ' + name); sect.push(name); };
     // Structured twin of the text pack (same numbers, machine-readable) — lets a future chart/table renderer
     // draw from data instead of parsing prose. Filled below, returned as `data`.
-    const weekly = []; let debtInfo = null, insInfo = null;
+    const weekly = []; let debtInfo = null, circadianInfo = null, screeningInfo = null;
     const spanDays = Math.max(1, todayNum - Math.max(startNum, recs[0].dayNum) + 1);
 
     L.push('DỮ LIỆU GIẤC NGỦ — gói tóm tắt do app tính sẵn (giờ Việt Nam)');
@@ -151,8 +151,8 @@
     L.push('• Giờ ngủ thật: trung bình ' + f1(avg(hrs)) + 'h, trung vị ' + f1(median(hrs)) + 'h, độ lệch chuẩn ' + f1(sd(hrs)) + 'h; ngắn nhất ' + f1(lo.hours) + 'h (' + dm(lo.date) + '), dài nhất ' + f1(hi.hours) + 'h (' + dm(hi.date) + ').');
     const reach = win.filter((r) => r.hours >= okLimit).length;
     L.push('• Đạt mục tiêu: ' + reach + '/' + win.length + ' đêm (' + Math.round(reach / win.length * 100) + '%); dưới 6h: ' + hrs.filter((h) => h < 6).length + ' đêm; trên 9h: ' + hrs.filter((h) => h > 9).length + ' đêm.');
-    if (sols.length) L.push('• Thời gian chờ vào giấc (SOL): trung bình ' + f0(avg(sols)) + ' phút, trung vị ' + f0(median(sols)) + '; >30 phút ở ' + sols.filter((v) => v > 30).length + '/' + sols.length + ' đêm có ghi SOL.');
-    if (awk.length) L.push('• Thức giữa đêm: trung bình ' + f0(avg(awk)) + ' phút (' + awk.length + ' đêm có ghi).');
+    if (sols.length) L.push('• Thời gian chờ vào giấc (SOL): trung bình ' + f0(avg(sols)) + ' phút, trung vị ' + f0(median(sols)) + '; ≥31 phút ở ' + sols.filter((v) => v >= 31).length + '/' + sols.length + ' đêm có ghi SOL.');
+    if (awk.length) L.push('• Thức giữa đêm (WASO): trung bình ' + f0(avg(awk)) + ' phút, trung vị ' + f0(median(awk)) + '; ≥31 phút ở ' + awk.filter((v) => v >= 31).length + '/' + awk.length + ' đêm có ghi.');
     if (ses.length) L.push('• Hiệu quả giấc ngủ (SE): trung bình ' + f0(avg(ses)) + '%; dưới 85% ở ' + ses.filter((v) => v < 85).length + '/' + ses.length + ' đêm có SE (≥90 rất tốt, 85–90 tốt, 75–85 trung bình, <75 rời rạc).');
     if (qs.length) L.push('• Chất lượng tự chấm (1–5): trung bình ' + f1(avg(qs)) + ' (' + qs.length + ' đêm có chấm).');
     L.push('• Giờ lên giường (trung vị): ' + clockTxt(win.map((r) => r.startTs).filter(isNum)) + ' · Giờ dậy (trung vị): ' + clockTxt(win.map((r) => r.endTs).filter(isNum)));
@@ -200,22 +200,66 @@
       }
     }
 
-    /* — app's own insomnia analysis — */
-    if (hasFn('analyzeInsomniaPatterns')) {
-      const ins = safe(() => analyzeInsomniaPatterns(), null);
-      if (ins && !ins.error && (ins.insomniaRisk || ins.insomniaType || ins.insomniaSeverity)) {
-        head('Phân tích mất ngủ của app (tính trên các đêm gần đây)');
-        insInfo = { risk: ins.insomniaRisk || null, type: ins.insomniaType ? ins.insomniaType.primaryType : null, percentages: ins.insomniaType ? ins.insomniaType.percentages || null : null,
-          severityLevel: ins.insomniaSeverity ? ins.insomniaSeverity.severityLevel : null, severityScore: ins.insomniaSeverity ? ins.insomniaSeverity.severityScore : null,
-          learningEfficiencyPct: ins.cognitiveEfficiency ? ins.cognitiveEfficiency.efficiencyPercentage : null };
-        if (ins.insomniaRisk) L.push('• Nguy cơ thức trắng / thức kéo dài: ' + ins.insomniaRisk);
-        if (ins.insomniaType) {
-          L.push('• Kiểu chính: ' + ins.insomniaType.primaryType + ' — ' + ins.insomniaType.description);
-          const p = ins.insomniaType.percentages || {};
-          L.push('• Tỷ trọng: khó vào giấc ' + p.sleepOnset + '% · thức giữa đêm ' + p.maintenance + '% · dậy quá sớm ' + p.earlyAwakening + '% · ngủ không phục hồi ' + p.nonRestorative + '%');
+    /* — 4-axis sleep science summary: circadian regularity (SRI, SJL, MSFsc, baseline) + evidence-based insomnia screening — */
+    if (hasFn('computeSleepScienceSummary')) {
+      const sjWin = range === Infinity ? Infinity : Math.max(28, range);
+      const sci = safe(() => computeSleepScienceSummary({ windowDays: range, jetlagWindowDays: sjWin }), null);
+      if (sci) {
+        const c = sci.circadian || {}, cont = sci.continuity || {}, scr = sci.insomniaScreening || {};
+        head('Nhịp sinh học & Độ đều đặn (cửa sổ ' + (range === Infinity ? 'toàn bộ' : range + ' ngày') + ' · Social Jetlag ' + (sjWin === Infinity ? 'toàn bộ' : sjWin + ' ngày') + ')');
+        if (c.baseline && c.baseline.ok) {
+          L.push('• Baseline cá nhân (trung vị ' + c.baseline.sampleSize + ' đêm): lên giường ' + c.baseline.bedtimeClock + ' · dậy ' + c.baseline.wakeClock + ' · thời lượng ' + f1(c.baseline.durationHours) + 'h.');
         }
-        if (ins.insomniaSeverity) L.push('• Mức độ: ' + ins.insomniaSeverity.severityLevel + ' (' + ins.insomniaSeverity.severityScore + '/100) — ' + ins.insomniaSeverity.interpretation);
-        if (ins.cognitiveEfficiency) L.push('• Hiệu suất học ước tính: ' + ins.cognitiveEfficiency.efficiencyPercentage + '% (' + ins.cognitiveEfficiency.efficiencyLevel + ')');
+        if (c.regularity) {
+          L.push('• Độ lệch chuẩn lịch ngủ: lên giường ±' + c.regularity.sdBedMin + ' phút · dậy ±' + c.regularity.sdWakeMin + ' phút (chỉ số = ±' + c.regularity.scoreMin + ' phút; ≤30 tốt, 31–60 trung bình, >60 thất thường; bên lệch hơn: ' + c.regularity.driver + ').');
+        }
+        if (c.sri && c.sri.ok) {
+          L.push('• Sleep Regularity Index (SRI, thang −100..100): ' + f1(c.sri.sri) + '/100 (' + c.sri.level.label + '; ≥80 đều, 60–79 trung bình, <60 thất thường) — tính trên ' + c.sri.pairedDays + ' cặp ngày liền kề cùng có log (độ tin cậy tăng khi ≥7 cặp).');
+        } else if (c.sri) {
+          L.push('• Sleep Regularity Index (SRI): chưa đủ cặp ngày liền kề có log (pairedDays = ' + c.sri.pairedDays + ', cần ≥3 cặp).');
+        }
+        if (c.socialJetlag && c.socialJetlag.ok) {
+          const sj = c.socialJetlag;
+          L.push('• Social Jetlag (' + (sjWin === Infinity ? 'toàn bộ' : sjWin + ' ngày') + ', phân loại theo ngày thức dậy): lệch ' + f1(sj.jetlagHours) + 'h (' + sj.jetlagMin + ' phút, cuối tuần ' + (sj.weekendLater ? 'muộn hơn' : 'sớm hơn') + '; <1h ổn, 1–2h lệch rõ, ≥2h lệch mạnh). Điểm giữa giấc ngủ ngày thường (MSW) ' + sj.mswClock + ' vs cuối tuần (MSF) ' + sj.msfClock + '; chronotype hiệu chỉnh ngủ bù (MSFsc): ' + sj.msfscClock + '.');
+        } else {
+          L.push('• Social Jetlag: chưa đủ số đêm ngày thường/cuối tuần trong cửa sổ ' + (sjWin === Infinity ? 'toàn bộ' : sjWin + ' ngày') + ' (cần ≥4 đêm T2–T6 và ≥2 đêm T7–CN).');
+        }
+        if (c.daytimeMainSleepCount > 0) {
+          L.push('• Giấc ngủ chính ban ngày (>3h, bắt đầu 06:00–18:00) trong cửa sổ: ' + c.daytimeMainSleepCount + ' lần.');
+        }
+
+        head('Sàng lọc dấu hiệu mất ngủ (dựa trên SOL / WASO / SE — không phải chẩn đoán)');
+        L.push('• Trạng thái sàng lọc: ' + scr.status + ' (ngưỡng tham chiếu: SOL ≥31 phút và/hoặc WASO ≥31 phút ở ≥3 đêm/tuần, hoặc SE <85% kéo dài; cần ≥5 đêm có log để kết luận).');
+        if (cont.sol && cont.sol.count) L.push('• Khó vào giấc (SOL ≥31p): ' + cont.sol.over30Count + '/' + cont.sol.count + ' đêm (' + cont.sol.over30Pct + '%) · trung vị ' + f0(cont.sol.median) + ' phút.');
+        if (cont.waso && cont.waso.count) L.push('• Khó duy trì giấc (WASO ≥31p): ' + cont.waso.over30Count + '/' + cont.waso.count + ' đêm (' + cont.waso.over30Pct + '%) · trung vị ' + f0(cont.waso.median) + ' phút.');
+        if (cont.se && cont.se.count) L.push('• Hiệu quả giấc ngủ thấp (SE <85%): ' + cont.se.under85Count + '/' + cont.se.count + ' đêm (' + cont.se.under85Pct + '%) · SE <75%: ' + cont.se.under75Count + ' đêm.');
+        if (cont.nonRestorative && cont.nonRestorative.ratedAdequateCount) L.push('• Ngủ đủ ≥7h nhưng chất lượng thấp (≤2/5): ' + cont.nonRestorative.count + '/' + cont.nonRestorative.ratedAdequateCount + ' đêm.');
+        if (scr.flags) {
+          L.push('• Phân tách 3 nhóm vấn đề độc lập: dấu hiệu mất ngủ (SOL/WASO/SE) = ' + (scr.flags.insomniaSignals ? 'CÓ' : 'không') + ' · lệch/thất thường nhịp sinh học = ' + (scr.flags.circadianIrregularity ? 'CÓ' : 'không') + ' · thiếu ngủ/nợ ngủ = ' + (scr.flags.sleepDebtBurden ? 'CÓ' : 'không') + ' → Tóm tắt: ' + scr.summaryLabel + '.');
+        }
+
+        circadianInfo = {
+          baseline: (c.baseline && c.baseline.ok) ? { sampleSize: c.baseline.sampleSize, bedtimeClock: c.baseline.bedtimeClock, wakeClock: c.baseline.wakeClock, durationHours: c.baseline.durationHours } : null,
+          regularity: c.regularity || null,
+          sri: c.sri ? { ok: c.sri.ok, sri: c.sri.sri, matchRate: c.sri.matchRate, pairedDays: c.sri.pairedDays, loggedDays: c.sri.loggedDays, windowDays: c.sri.windowDays, level: c.sri.level && c.sri.level.label } : null,
+          socialJetlag: (c.socialJetlag && c.socialJetlag.ok) ? {
+            windowDays: sjWin === Infinity ? 'all' : sjWin, weekdayNights: c.socialJetlag.weekdayNights, weekendNights: c.socialJetlag.weekendNights,
+            jetlagHours: Math.round(c.socialJetlag.jetlagHours * 100) / 100, jetlagMin: c.socialJetlag.jetlagMin, diffMin: c.socialJetlag.diffMin,
+            mswClock: c.socialJetlag.mswClock, msfClock: c.socialJetlag.msfClock, msfscClock: c.socialJetlag.msfscClock
+          } : null,
+          daytimeMainSleepCount: c.daytimeMainSleepCount || 0
+        };
+        screeningInfo = {
+          status: scr.status || 'insufficient_data',
+          windowDays: range === Infinity ? 'all' : range,
+          sol: cont.sol || null,
+          waso: cont.waso || null,
+          se: cont.se || null,
+          nonRestorative: cont.nonRestorative || null,
+          signals: scr.signals || null,
+          flags: scr.flags || null,
+          summaryLabel: scr.summaryLabel || null
+        };
       }
     }
 
@@ -302,7 +346,7 @@
     head('Chất lượng dữ liệu');
     const odd = winAll.filter((r) => r.hours < 3 || r.hours > maxNight);
     L.push('• Đêm bất thường (<3h hoặc >' + maxNight + 'h; dài thường là quên bấm Stop): ' + (odd.length ? odd.map((r) => dm(r.date) + ' ' + f1(r.hours) + 'h' + (r.hours > maxNight ? ' [đã loại khỏi thống kê]' : '')).join('; ') : 'không có') + '.');
-    if (dropped.length) L.push('• Lưu ý: số nợ ngủ ở trên do app tính và vẫn gồm các đêm đã loại, nên có thể lệch.');
+    if (dropped.length) L.push('• Lưu ý: các đêm >' + maxNight + 'h đã được loại đồng bộ khỏi cả thống kê tổng quan, nợ ngủ, baseline và SRI.');
     L.push('• Số đêm có ghi SOL: ' + sols.length + '/' + win.length + '; có chấm chất lượng: ' + qs.length + '/' + win.length + '; có gắn thẻ thói quen: ' + win.filter((r) => Object.keys(r.tags).length).length + '/' + win.length + '.');
 
     const night = (r) => ({
@@ -313,7 +357,7 @@
       note: st.notes && r.notes ? r.notes : null
     });
     const data = {
-      schema: 'venus.sleep.v1', generated: todayStr, tz: 'Asia/Ho_Chi_Minh',
+      schema: 'venus.sleep.v2', generated: todayStr, tz: 'Asia/Ho_Chi_Minh',
       window: { days: range === Infinity ? 'all' : range, nights: win.length, excluded: dropped.map((r) => r.date) },
       goalHours: goal, okLimitHours: okLimit,
       summary: {
@@ -321,7 +365,7 @@
         avgSolMin: avg(sols), avgAwakeMin: avg(awk), avgSePct: avg(ses), avgQuality: avg(qs),
         bedMedian: clockTxt(win.map((r) => r.startTs).filter(isNum)), wakeMedian: clockTxt(win.map((r) => r.endTs).filter(isNum))
       },
-      debt: debtInfo, insomnia: insInfo, weekly,
+      debt: debtInfo, circadian: circadianInfo, insomniaScreening: screeningInfo, weekly,
       nights: win.slice(-365).map(night)
     };
 
@@ -467,7 +511,7 @@
   }
 
   /* ═══════════════════════════ the two windows ═══════════════════════════ */
-  const SLEEP_SYSTEM = 'Bạn đang đọc dữ liệu giấc ngủ cá nhân của người dùng (đã được app tính sẵn) trong <context>. Quy tắc: (1) chỉ dựa vào số liệu trong đó và trích số cụ thể khi nhận xét; (2) phân biệt tương quan với nhân quả, và nói rõ độ tin cậy khi mẫu nhỏ (ít đêm, nhóm <5 đêm); (3) không chẩn đoán y khoa — nếu số liệu gợi ý vấn đề kéo dài nghiêm trọng (vd chờ vào giấc >30 phút rất thường xuyên, ngủ <5h kéo dài nhiều tuần, SE thấp kéo dài) thì nói thẳng nên gặp bác sĩ hoặc chuyên gia giấc ngủ; (4) khi đề xuất thay đổi, chỉ chọn tối đa 3 thay đổi, mỗi thay đổi có giờ giấc hoặc hành động cụ thể và cách tự kiểm tra trong chính app; (5) nếu thiếu dữ liệu để kết luận thì nói rõ cần log thêm gì. Mặc định trả lời gọn (khoảng 300–400 từ) với tiêu đề ngắn, trừ khi được yêu cầu chi tiết.';
+  const SLEEP_SYSTEM = 'Bạn đang đọc dữ liệu giấc ngủ cá nhân của người dùng (đã được app tính sẵn theo 4 trục khoa học) trong <context>. Quy tắc: (1) chỉ dựa vào số liệu trong đó và trích số cụ thể khi nhận xét; (2) phân biệt rạch ròi 3 nhóm vấn đề khác nhau: dấu hiệu mất ngủ thật (dựa trên SOL ≥31p, WASO ≥31p, SE <85% dù đủ cơ hội ngủ), lệch/thất thường nhịp sinh học (SRI, SD giờ ngủ/dậy, Social Jetlag), và thiếu ngủ/nợ ngủ — không gán nhãn mất ngủ nếu SOL/WASO bình thường; (3) phân biệt tương quan với nhân quả, nói rõ độ tin cậy khi mẫu nhỏ (ít đêm, nhóm <5 đêm, hoặc SRI có ít cặp ngày liền kề pairedDays <7); (4) không chẩn đoán y khoa — nếu số liệu gợi ý vấn đề kéo dài nghiêm trọng thì khuyên gặp bác sĩ hoặc chuyên gia giấc ngủ; (5) khi đề xuất thay đổi, chỉ chọn tối đa 3 thay đổi cụ thể kèm cách tự kiểm tra trong chính app; (6) nếu thiếu dữ liệu để kết luận thì nói rõ cần log thêm gì. Mặc định trả lời gọn (khoảng 300–400 từ) với tiêu đề ngắn, trừ khi được yêu cầu chi tiết.';
   const SLEEP_PRESETS = [
     { label: 'Bức tranh tổng thể', prompt: 'Tóm tắt tình trạng giấc ngủ của mình: (1) 3 phát hiện quan trọng nhất kèm số liệu cụ thể; (2) điều đang ổn; (3) điều đáng lo nhất, và mức chắc chắn của nhận định này dựa trên bao nhiêu đêm dữ liệu.' },
     { label: 'Vì sao ngủ thiếu?', prompt: 'Tìm nguyên nhân khiến mình ngủ thiếu hoặc ngủ kém: so sánh các thói quen (thẻ), ngày thường với cuối tuần, giờ lên giường với giờ dậy. Chỉ nêu điều có số liệu hỗ trợ, nói rõ chỗ nào mẫu quá nhỏ. Xếp hạng tối đa 3 nguyên nhân theo mức ảnh hưởng và nói mình tự kiểm chứng từng cái bằng cách nào.' },
