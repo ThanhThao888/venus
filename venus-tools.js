@@ -143,12 +143,28 @@
   }
   const DATE_RANGE_SCHEMA = { from: { type: 'date', optional: true }, to: { type: 'date', optional: true } };
 
+  /* ───────── data-source probe (audit F2) ─────────
+     The Tracker's data lives in page-level let/const/var (studyHours, goals, …), read here by bare name. If index.html ever renames one or moves it out of
+     the script scope, the read throws ReferenceError — and safe() would turn that into "empty", i.e. a fake zero. probeVar() tells "absent" from "empty":
+     it only answers whether the name can be read at all. Each tool reports what it could not read in `missing_sources`. Pure reads; no side effects. */
+  const VAR_PROBES = {
+    studyHours: () => studyHours, dailyStudyBreakdown: () => dailyStudyBreakdown, skillsData: () => skillsData, goals: () => goals,
+    gamification: () => gamification, SLEEP_DEBT_CFG: () => SLEEP_DEBT_CFG, Wellness: () => Wellness
+  };
+  const probeVar = (n) => { try { const v = VAR_PROBES[n](); return v !== undefined && v !== null; } catch (e) { return false; } };
+  const SOURCE_NEEDS = {
+    study: { vars: ['studyHours', 'dailyStudyBreakdown', 'skillsData'], fns: ['getStudyHoursByLocalDate'] },
+    sleep: { vars: ['SLEEP_DEBT_CFG', 'Wellness'], fns: ['getSortedSleepSessions', 'buildSleepNightsByWakeDate', 'getSleepGoal', 'getSleepWakeDateVN', 'computeSleepEfficiency', 'computeSleepDebt', 'vnMinuteOfDay'] },
+    goals: { vars: ['goals', 'skillsData'], fns: [] }
+  };
+  function missingSources(group) { const g = SOURCE_NEEDS[group]; return g.vars.filter((n) => !probeVar(n)).concat(g.fns.filter((n) => !hasFn(n))); }
+
   /* ═════════════════════════ TOOL 1: study ═════════════════════════ */
   register({
     name: 'get_study_summary', level: LEVELS.L0_READ,
     description: 'Giờ học trong khoảng ngày (mặc định 30 ngày gần nhất), đọc từ getStudyHoursByLocalDate() + dailyStudyBreakdown của Tracker.',
     input: DATE_RANGE_SCHEMA,
-    output: '{ range, total_hours, span_days, active_days, avg_hours_per_day, avg_hours_per_active_day, best_day, daily[], by_skill[], breakdown_covers_from, all_time_hours, gamification }',
+    output: '{ range, total_hours, span_days, active_days, avg_hours_per_day, avg_hours_per_active_day, best_day, daily[], by_skill[], breakdown_covers_from, all_time_hours, gamification, missing_sources[] }',
     handler: async (inp) => {
       if (!hasFn('getStudyHoursByLocalDate')) throw toolErr('tracker_missing', 'Không tìm thấy getStudyHoursByLocalDate của Tracker (index.html chưa tải xong?).');
       const rg = range(inp);
@@ -177,7 +193,8 @@
         best_day: best, daily, by_skill: bySkill,
         breakdown_covers_from: bdDates[0] || null,   // per-skill daily hours only exist from this date on
         all_time_hours: r1(allTime),
-        gamification: G ? { streak: G.streak || 0, longest_streak: G.longestStreak || 0, level: G.level || 1, points: G.points || 0 } : null
+        gamification: G ? { streak: G.streak || 0, longest_streak: G.longestStreak || 0, level: G.level || 1, points: G.points || 0 } : null,
+        missing_sources: missingSources('study')   // [] = every source readable; otherwise a 0 above may mean "could not read", not "not logged"
       };
     }
   });
@@ -187,7 +204,7 @@
     name: 'get_sleep_wellness_summary', level: LEVELS.L0_READ,
     description: 'Giấc ngủ + wellness trong khoảng ngày (mặc định 30 ngày): số liệu có cấu trúc để so sánh giữa các kỳ, kèm summaryText (gọi lại VenusAIHub.sleepText) khi khoảng kết thúc hôm nay.',
     input: Object.assign({ include_text: { type: 'boolean', optional: true, def: true } }, DATE_RANGE_SCHEMA),
-    output: '{ range, sleep:{nights_logged,span_days,effective_span_days,logged_pct,avg_hours,median_hours,min,max,goal_hours,nights_meeting_goal,pct_meeting_goal,nights_under_6h,avg_sol_min,avg_se_pct,avg_quality,excluded_long_nights}, sleep_debt_now, wellness:{…}, summaryText }',
+    output: '{ range, sleep:{nights_logged,span_days,effective_span_days,logged_pct,avg_hours,median_hours,min,max,goal_hours,nights_meeting_goal,pct_meeting_goal,nights_under_6h,avg_sol_min,avg_se_pct,avg_quality,excluded_long_nights}, sleep_debt_now, wellness:{…}, summaryText, missing_sources[] }',
     handler: async (inp) => {
       const need = ['getSortedSleepSessions', 'buildSleepNightsByWakeDate', 'getSleepGoal'];
       const miss = need.filter((n) => !hasFn(n));
@@ -269,7 +286,7 @@
           if (r && r.text) summaryText = r.text; else summaryNote = 'VenusAIHub.sleepText không trả về nội dung.';
         }
       }
-      return { range: { from: rg.from, to: rg.to }, sleep, sleep_debt_now: debt, wellness, summaryText, summaryNote };
+      return { range: { from: rg.from, to: rg.to }, sleep, sleep_debt_now: debt, wellness, summaryText, summaryNote, missing_sources: missingSources('sleep') };
     }
   });
 
@@ -278,7 +295,7 @@
     name: 'get_goals_and_deadlines', level: LEVELS.L0_READ,
     description: 'Mục tiêu (goals) và deadline thủ công hiện có, kèm số ngày còn lại. Không lọc theo ngày; không trả nội dung ghi chú của deadline.',
     input: {},
-    output: '{ today, counts, goals[], deadlines[] }',
+    output: '{ today, counts, goals[], deadlines[], missing_sources[] }',
     handler: async () => {
       const today = todayVN(), tNum = dayNum(today);
       const left = (d) => (typeof d === 'string' && ISO_DATE.test(d) ? dayNum(d) - tNum : null);
@@ -321,7 +338,8 @@
           deadlines_due_7d: cnt(dOut, (x) => x.status === 'active' && x.days_left != null && x.days_left >= 0 && x.days_left <= 7),
           deadlines_done_state_known: doneKnown
         },
-        goals: gOut, deadlines: dOut
+        goals: gOut, deadlines: dOut,
+        missing_sources: missingSources('goals')   // 'goals' listed here = the live array was unreadable and localStorage was used instead
       };
     }
   });
@@ -420,6 +438,19 @@
         if (navigator.storage && navigator.storage.persisted) { browser.supported = true; browser.persisted = await navigator.storage.persisted(); }
       } catch (e) { browser.error = 'estimate failed'; }
       return { localStorage: ls, browser };
+    }
+  });
+
+  /* ═════════════════════════ TOOL 6: data-source wiring check (audit F2) ═════════════════════════ */
+  register({
+    name: 'get_data_sources_status', level: LEVELS.L0_READ,
+    description: 'Tự kiểm tra đấu nối (chỉ đọc): mỗi nhóm tool (study, sleep, goals) có đọc được các biến/hàm của Tracker mà nó cần không. "Không đọc được" khác với "rỗng": nếu một nguồn vắng mặt, số 0 của tool có thể là lỗi đấu nối chứ không phải chưa log. Không trả giá trị dữ liệu.',
+    input: {},
+    output: '{ ok, groups:{ study|sleep|goals: { ok, missing[] } } }',
+    handler: async () => {
+      const groups = {}; let ok = true;
+      Object.keys(SOURCE_NEEDS).forEach((g) => { const missing = missingSources(g); groups[g] = { ok: !missing.length, missing }; if (missing.length) ok = false; });
+      return { ok, groups };
     }
   });
 

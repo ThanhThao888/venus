@@ -1,5 +1,5 @@
 /* Venus Hub — Monthly Personal Review (venus-review.js) · VPIS Phase 4
-   Classic <script>, loaded AFTER venus-sync.js. Exposes window.VenusReview { open, close, isOpen, buildPacket, _t }.
+   Classic <script>, loaded AFTER venus-sync.js. Exposes window.VenusReview { open, close, isOpen, buildPacket, checkReminder, _t }.
 
    Workflow: deterministic packet (JS computes every number) → ONE structured-JSON AI call (2nd call only to repair broken JSON) → validation
    → Draft Actions → the user approves each one. Nothing here writes anything by itself.
@@ -54,7 +54,11 @@
     return out;
   }
   function prevMonth(label) { let y = +label.slice(0, 4), m = +label.slice(5, 7) - 1; if (m < 1) { m = 12; y--; } return y + '-' + pad(m); }
-  function rangeOf(label) { const y = +label.slice(0, 4), m = +label.slice(5, 7), last = new Date(Date.UTC(y, m, 0)).getUTCDate(); return { from: label + '-01', to: label + '-' + pad(last), days: last }; }
+  function rangeOf(label, upTo) {   // upTo (optional) = last day to include, clamped to the month length (31 → Feb 28/29)
+    const y = +label.slice(0, 4), m = +label.slice(5, 7), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const end = isNum(upTo) && upTo >= 1 ? Math.min(Math.floor(upTo), last) : last;
+    return { from: label + '-01', to: label + '-' + pad(end), days: end };
+  }
 
   /* ───────── packet (deterministic) ───────── */
   async function tool(name, input) {
@@ -67,7 +71,14 @@
   async function buildPacket(label, opts) {
     opts = opts || {};
     if (!MONTH_RE.test(String(label))) throw new Error('bad_month');
-    const cur = rangeOf(label), pl = prevMonth(label), prv = rangeOf(pl), unavailable = [];
+    const partial = !!opts.partial;
+    let upTo = null;
+    if (partial) {   // only the CURRENT month can be partial; the range ends today (Vietnam date)
+      const today = todayVN();
+      if (label !== today.slice(0, 7)) throw new Error('bad_month');
+      upTo = +today.slice(8, 10);
+    }
+    const cur = rangeOf(label, upTo), pl = prevMonth(label), prv = rangeOf(pl, upTo), unavailable = [];
     const sc = await tool('get_study_summary', { from: cur.from, to: cur.to });
     const sp = await tool('get_study_summary', { from: prv.from, to: prv.to });
     const zc = await tool('get_sleep_wellness_summary', { from: cur.from, to: cur.to, include_text: false });
@@ -76,9 +87,11 @@
     const mem = opts.memory === false ? null : await tool('get_memory_context', { limit: LIM.memDecisions });
 
     const P = { v: 1, period: { label, from: cur.from, to: cur.to, days: cur.days }, previous: { label: pl, from: prv.from, to: prv.to } };
+    if (partial) { P.period.partial = true; P.previous.days = prv.days; }   // v stays 1: the flag is additive
 
     if (sc.ok) {
       const d = sc.data, p = sp.ok ? sp.data : null;
+      (Array.isArray(d.missing_sources) ? d.missing_sources : []).forEach((n) => unavailable.push('study:missing_' + clip(n, 40)));   // unreadable ≠ empty (audit F2)
       P.study = {
         total_hours: d.total_hours, active_days: d.active_days, avg_hours_per_active_day: d.avg_hours_per_active_day,
         best_day: d.best_day ? { date: d.best_day.date, hours: d.best_day.hours } : null,
@@ -90,6 +103,7 @@
 
     if (zc.ok) {
       const s = zc.data.sleep || {}, ps = zp.ok && zp.data.sleep ? zp.data.sleep : null;
+      (Array.isArray(zc.data.missing_sources) ? zc.data.missing_sources : []).forEach((n) => unavailable.push('sleep:missing_' + clip(n, 40)));
       P.sleep = {
         nights_logged: s.nights_logged, logged_pct: s.logged_pct, avg_hours: s.avg_hours, goal_hours: s.goal_hours, pct_meeting_goal: s.pct_meeting_goal,
         nights_under_6h: s.nights_under_6h, avg_sol_min: s.avg_sol_min, avg_se_pct: s.avg_se_pct,
@@ -102,6 +116,7 @@
 
     if (gd.ok) {
       const g = gd.data, c = g.counts || {}, rank = (x) => (x.status === 'overdue' ? 0 : 1);
+      (Array.isArray(g.missing_sources) ? g.missing_sources : []).forEach((n) => unavailable.push('goals:missing_' + clip(n, 40)));
       P.goals = {
         as_of: g.today,
         counts: { goals_active: c.goals_active, goals_overdue: c.goals_overdue, goals_done: c.goals_done, deadlines_active: c.deadlines_active, deadlines_overdue: c.deadlines_overdue, deadlines_due_7d: c.deadlines_due_7d },
@@ -133,14 +148,18 @@
 
     const st = P.study, sl = P.sleep;
     const empty = !((st && st.total_hours > 0) || (sl && sl.nights_logged > 0) || (P.wellness && P.wellness.days_with_any_log > 0));
-    return { packet: P, json: JSON.stringify(P), empty, unavailable };
+    const degraded = unavailable.some((u) => /^(study|sleep):/.test(u));   // a study/sleep source could not be read: zeros may be wiring, not "not logged"
+    return { packet: P, json: JSON.stringify(P), empty, degraded, unavailable };
   }
 
   function digestLines(P) {   // human-readable version of the packet: what the user is about to send
     const L = [], s = P.study, z = P.sleep, g = P.goals, sg = (v, u) => (v == null ? '' : (v > 0 ? ' (+' : ' (') + v + (u || '') + ')');
-    L.push('Kỳ: ' + P.period.from + ' → ' + P.period.to + ' (so với ' + P.previous.label + ')');
-    if (s) L.push('Học: ' + s.total_hours + ' giờ trong ' + s.active_days + ' ngày có học' + (s.prev_total_hours != null ? ' · tháng trước ' + s.prev_total_hours + sg(s.delta_pct, '%') : '') + (s.top_skills.length ? ' · nhiều nhất: ' + s.top_skills.slice(0, 3).map((x) => x.skill + ' ' + x.hours + 'h').join(', ') : ''));
-    if (z) L.push('Ngủ: ' + z.nights_logged + ' đêm có log, TB ' + (z.avg_hours == null ? '—' : z.avg_hours + ' giờ') + (z.prev_avg_hours != null ? ' · tháng trước ' + z.prev_avg_hours + sg(z.delta_avg_hours, ' giờ') : '') + ' · đạt mục tiêu ' + (z.pct_meeting_goal == null ? '—' : z.pct_meeting_goal + '%'));
+    const part = !!P.period.partial, pv = part ? 'cùng kỳ tháng trước' : 'tháng trước';
+    L.push(part
+      ? 'Kỳ: ' + P.period.from + ' → ' + P.period.to + ' (tháng chưa kết thúc, ' + P.period.days + ' ngày) · so với cùng kỳ ' + P.previous.from + ' → ' + P.previous.to
+      : 'Kỳ: ' + P.period.from + ' → ' + P.period.to + ' (so với ' + P.previous.label + ')');
+    if (s) L.push('Học: ' + s.total_hours + ' giờ trong ' + s.active_days + ' ngày có học' + (s.prev_total_hours != null ? ' · ' + pv + ' ' + s.prev_total_hours + sg(s.delta_pct, '%') : '') + (s.top_skills.length ? ' · nhiều nhất: ' + s.top_skills.slice(0, 3).map((x) => x.skill + ' ' + x.hours + 'h').join(', ') : ''));
+    if (z) L.push('Ngủ: ' + z.nights_logged + ' đêm có log, TB ' + (z.avg_hours == null ? '—' : z.avg_hours + ' giờ') + (z.prev_avg_hours != null ? ' · ' + pv + ' ' + z.prev_avg_hours + sg(z.delta_avg_hours, ' giờ') : '') + ' · đạt mục tiêu ' + (z.pct_meeting_goal == null ? '—' : z.pct_meeting_goal + '%'));
     if (P.wellness) L.push('Wellness: ' + P.wellness.days_with_any_log + ' ngày có log');
     if (g) L.push('Mục tiêu & deadline (tính tới ' + g.as_of + '): ' + g.counts.goals_active + ' mục tiêu đang chạy, ' + g.counts.goals_overdue + ' quá hạn; ' + g.counts.deadlines_active + ' deadline đang chạy, ' + g.counts.deadlines_overdue + ' quá hạn, ' + g.counts.deadlines_due_7d + ' trong 7 ngày tới');
     if (P.memory) L.push('Bộ nhớ đã duyệt kèm theo: ' + P.memory.profile.length + ' mục hồ sơ, ' + P.memory.decisions.length + ' quyết định');
@@ -156,12 +175,14 @@
     + '(2) mỗi nhận định ghi "evidence" là 1–4 đường dẫn trường CÓ THẬT trong context (ví dụ study.total_hours, sleep.avg_hours, goals.counts.goals_overdue); '
     + '(3) không chẩn đoán y khoa; (4) mục goals và deadlines là tình trạng tại ngày as_of, không riêng tháng; '
     + '(5) draft_actions là đề xuất để người dùng tự duyệt, tối đa 4, mỗi mục cụ thể và kiểm tra được ngay trong app; mỗi wins/risks/insights tối đa 4; '
-    + '(6) viết tiếng Việt, ngắn gọn. '
+    + '(6) viết tiếng Việt, ngắn gọn; '
+    + '(7) nếu period.partial là true thì đây là tháng CHƯA kết thúc: so sánh với cùng số ngày đầu của tháng trước, ngày cuối có thể chưa log đủ, nên không kết luận như một tháng trọn vẹn và nói rõ đây là review giữa tháng. '
+    + '(8) nếu context có mục "unavailable" thì các nguồn đó app KHÔNG đọc được: tuyệt đối không coi số liệu của nguồn đó là 0 hay là chưa log, chỉ nói rõ là thiếu số liệu và đừng rút ra kết luận từ nó. '
     + 'Chỉ trả về MỘT đối tượng JSON hợp lệ, không có chữ hay code fence nào bên ngoài, đúng dạng: ' + SCHEMA_HINT;
 
   function buildMessages(packet, label, prevRaw) {
     const ctx = JSON.stringify(packet).replace(/</g, '\\u003c');   // still valid JSON; a "</context>" typed in a memory item cannot close the block
-    const msgs = [{ role: 'system', content: SYSTEM }, { role: 'user', content: '<context>\n' + ctx + '\n</context>\n\nViết bản review cho tháng ' + label + '.' }];
+    const msgs = [{ role: 'system', content: SYSTEM }, { role: 'user', content: '<context>\n' + ctx + '\n</context>\n\n' + (packet && packet.period && packet.period.partial ? 'Viết bản review giữa tháng cho tháng ' + label + ' (đến ' + packet.period.to + ', tháng chưa kết thúc).' : 'Viết bản review cho tháng ' + label + '.') }];
     if (prevRaw != null) {
       msgs.push({ role: 'assistant', content: String(prevRaw).slice(0, 3000) });
       msgs.push({ role: 'user', content: 'Phản hồi trên không phải JSON hợp lệ đúng dạng yêu cầu. Chỉ trả lại một đối tượng JSON, không thêm chữ nào khác.' });
@@ -229,10 +250,23 @@
   }
 
   /* ───────── state ───────── */
-  const S = { view: 'setup', month: null, memory: true, packet: null, json: '', empty: false, digest: [], reply: null, err: null, busy: false, ctl: null, ai: null, existing: null, review: { saved: null, err: null, busy: false }, copied: false };
+  const S = { view: 'setup', month: null, partial: false, memory: true, packet: null, json: '', empty: false, degraded: false, digest: [], reply: null, err: null, busy: false, ctl: null, ai: null, existing: null, review: { saved: null, err: null, busy: false }, copied: false };
   let dlg = null, box = null;
 
+  let aiLoading = null;
+  function loadAi() {   // ai.js is loaded on demand (ai-hub.js and vault.js do the same) and ignores a second load; give up after 10 s
+    if (window.VenusAI) return Promise.resolve(window.VenusAI);
+    if (!aiLoading) aiLoading = new Promise((res, rej) => {
+      const t = setTimeout(() => { aiLoading = null; rej(new Error('timeout')); }, 10000);
+      const s = document.createElement('script'); s.src = './ai.js';
+      s.onload = () => { clearTimeout(t); if (window.VenusAI) res(window.VenusAI); else { aiLoading = null; rej(new Error('missing')); } };
+      s.onerror = () => { clearTimeout(t); aiLoading = null; rej(new Error('not_found')); };
+      document.head.appendChild(s);
+    });
+    return aiLoading;
+  }
   async function aiInfo() {
+    if (!window.VenusAI) { try { await loadAi(); } catch (e) { return { ready: false, why: 'Không tải được ai.js (kiểm tra file ai.js nằm cạnh index.html và kết nối mạng).' }; } }
     const A = window.VenusAI; if (!A) return { ready: false, why: 'Chưa tải ai.js.' };
     try {
       if (typeof A.isConfigured === 'function' && !(await A.isConfigured())) return { ready: false, why: 'Chưa cấu hình AI (cần model và API key nếu nhà cung cấp yêu cầu).' };
@@ -244,13 +278,13 @@
 
   /* ───────── actions ───────── */
   const abort = () => { if (S.ctl) { try { S.ctl.abort(); } catch (e) { /* ignore */ } S.ctl = null; } };
-  function reset(view) { abort(); S.view = view || 'setup'; S.packet = null; S.json = ''; S.empty = false; S.digest = []; S.reply = null; S.err = null; S.busy = false; S.existing = null; S.review = { saved: null, err: null, busy: false }; S.copied = false; }
+  function reset(view) { abort(); S.view = view || 'setup'; S.packet = null; S.json = ''; S.empty = false; S.degraded = false; S.digest = []; S.reply = null; S.err = null; S.busy = false; S.existing = null; S.review = { saved: null, err: null, busy: false }; S.copied = false; }
 
   async function prepare() {
     if (S.busy) return; S.busy = true; S.err = null; S.view = 'building'; paint();
     try {
-      const r = await buildPacket(S.month, { memory: S.memory });
-      S.packet = r.packet; S.json = r.json; S.empty = r.empty; S.digest = digestLines(r.packet); S.ai = await aiInfo(); S.view = 'packet';
+      const r = await buildPacket(S.month, { memory: S.memory, partial: S.partial });
+      S.packet = r.packet; S.json = r.json; S.empty = r.empty; S.degraded = !!r.degraded; S.digest = digestLines(r.packet); S.ai = await aiInfo(); S.view = 'packet';
     } catch (e) { S.err = 'Không tạo được gói số liệu.'; S.view = 'setup'; }
     S.busy = false; paint();
   }
@@ -279,7 +313,13 @@
   async function checkExisting() {   // only a hint: saving again just creates another proposed item
     try { const list = await window.VenusMemory.listDecisions(); const t = reviewTitle(); const hit = (list || []).find((d) => d && d.type === 'review_summary' && d.title === t && !d.deleted_at); S.existing = hit ? hit.id : null; paint(); } catch (e) { /* ignore */ }
   }
-  const reviewTitle = () => 'Review tháng ' + S.month;
+  const reviewTitle = () => {
+    if (!S.partial) return 'Review tháng ' + S.month;
+    const to = (S.packet && S.packet.period && S.packet.period.to) || '';
+    return 'Review tháng ' + S.month + (ISO.test(to) ? ' (đến ' + to.slice(8, 10) + '/' + to.slice(5, 7) + ')' : ' (đến hôm nay)');
+  };
+  const srcTag = () => 'venus-review ' + S.month + (S.partial ? ' partial' : '');
+  const tagsFor = () => (S.partial ? ['review', S.month, 'partial'] : ['review', S.month]);
 
   async function save(input) {   // the ONLY write path: always from a user click, always through the registry
     const T = window.VenusTools; if (!T || typeof T.run !== 'function') return { ok: false, message: 'Thiếu venus-tools.js.' };
@@ -288,7 +328,7 @@
   }
   async function saveAction(a) {
     if (a.busy || a.saved || a.dropped) return; a.busy = true; a.err = null; paint();
-    const r = await save({ type: a.type, title: clip(a.title, 200), content: clipMl(a.content, 4000), rationale: a.rationale ? clipMl(a.rationale, 2000) : undefined, source: 'venus-review ' + S.month, confidence: 0.6, status: 'proposed', tags: ['review', S.month] });
+    const r = await save({ type: a.type, title: clip(a.title, 200), content: clipMl(a.content, 4000), rationale: a.rationale ? clipMl(a.rationale, 2000) : undefined, source: srcTag(), confidence: 0.6, status: 'proposed', tags: tagsFor() });
     a.busy = false; if (r.ok) a.saved = { id: r.id || '' }; else a.err = r.message; paint();
   }
   function plainText() {
@@ -301,8 +341,8 @@
   async function saveReview() {
     const rv = S.review; if (rv.busy || rv.saved || !S.reply) return; rv.busy = true; rv.err = null; paint();
     const text = plainText().split('\n').slice(2).join('\n').trim();
-    const r = await save({ type: 'review_summary', title: reviewTitle(), content: clipMl(text, 4000), source: 'venus-review ' + S.month, confidence: 0.6, status: 'proposed', tags: ['review', S.month] });
-    rv.busy = false; if (r.ok) rv.saved = { id: r.id || '' }; else rv.err = r.message; paint();
+    const r = await save({ type: 'review_summary', title: reviewTitle(), content: clipMl(text, 4000), source: srcTag(), confidence: 0.6, status: 'proposed', tags: tagsFor() });
+    rv.busy = false; if (r.ok) { rv.saved = { id: r.id || '' }; removeBanner(); } else rv.err = r.message; paint();
   }
   async function copyText() {
     const t = plainText();
@@ -341,6 +381,40 @@
       '.vpis-rev-btn:disabled{opacity:.5;cursor:default}',
       '.vpis-rev-btn--pri{background:var(--primary);border-color:var(--primary);color:var(--bg-white);font-weight:700}',
       '.vpis-rev-pre{margin:6px 0 0;padding:8px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-white);font:.72rem/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto}',
+      '.vpis-rev-dlg::backdrop{background:rgba(40,20,32,.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}',
+      '.vpis-rev-dlg[open]{animation:vpis-rev-pop .18s ease-out}',
+      '@keyframes vpis-rev-pop{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}',
+      '@media (prefers-reduced-motion:reduce){.vpis-rev-dlg[open]{animation:none}}',
+      '.vpis-rev-box{border-radius:20px;box-shadow:var(--shadow-lg,0 18px 48px rgba(0,0,0,.28));line-height:1.55}',
+      '.vpis-rev-box>*{flex:0 0 auto}.vpis-rev-box>.vpis-rev-body{flex:1 1 auto;min-height:0}',
+      '.dark-mode .vpis-rev-box{color-scheme:dark}',
+      '.vpis-rev-head{padding:16px 18px 8px;background:linear-gradient(180deg,rgba(var(--primary-rgb,209,123,150),.08),transparent)}',
+      '.vpis-rev-title{font-size:1.15rem;letter-spacing:-.01em}',
+      '.vpis-rev-x{transition:background .15s,color .15s}.vpis-rev-x:hover{background:rgba(var(--primary-rgb,209,123,150),.14);color:var(--text-dark)}',
+      '.vpis-rev-body{padding:6px 18px 16px}',
+      '.vpis-rev-card{border-radius:16px;padding:12px 14px;background:var(--bg-light);background:color-mix(in srgb,var(--primary) 4%,var(--bg-light))}',
+      '.vpis-rev-btn{transition:background .15s,border-color .15s,filter .15s}',
+      '.vpis-rev-btn:hover:not(:disabled){border-color:var(--primary);background:rgba(var(--primary-rgb,209,123,150),.1)}',
+      '.vpis-rev-btn--pri{box-shadow:0 2px 8px rgba(var(--primary-rgb,209,123,150),.35)}',
+      '.vpis-rev-btn--pri:hover:not(:disabled){background:var(--primary);filter:brightness(1.07)}',
+      '.vpis-rev-btn--danger:hover:not(:disabled){border-color:#b94a5a;background:rgba(185,74,90,.1)}',
+      '.vpis-rev-btn--confirm:hover:not(:disabled){background:#b94a5a;border-color:#b94a5a;filter:brightness(1.08)}',
+      '.vpis-rev-in:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.22)}',
+      '.vpis-rev-box :focus-visible,.vpis-rev-x:focus-visible{outline:2px solid var(--primary);outline-offset:2px}',
+      '.vpis-rev-body::-webkit-scrollbar,.vpis-rev-pre::-webkit-scrollbar,textarea.vpis-rev-in::-webkit-scrollbar{width:12px;height:12px}',
+      '.vpis-rev-body::-webkit-scrollbar-track,.vpis-rev-pre::-webkit-scrollbar-track,textarea.vpis-rev-in::-webkit-scrollbar-track{background:transparent}',
+      '.vpis-rev-body::-webkit-scrollbar-thumb,.vpis-rev-pre::-webkit-scrollbar-thumb,textarea.vpis-rev-in::-webkit-scrollbar-thumb{background:rgba(var(--primary-rgb,209,123,150),.45);border-radius:99px;border:3px solid transparent;background-clip:padding-box}',
+      '.vpis-rev-body::-webkit-scrollbar-thumb:hover,.vpis-rev-pre::-webkit-scrollbar-thumb:hover,textarea.vpis-rev-in::-webkit-scrollbar-thumb:hover{background:rgba(var(--primary-rgb,209,123,150),.75);background-clip:padding-box}',
+      '.vpis-rev-body::-webkit-scrollbar-button,.vpis-rev-pre::-webkit-scrollbar-button,textarea.vpis-rev-in::-webkit-scrollbar-button{display:none;width:0;height:0}',
+      '.vpis-rev-body::-webkit-scrollbar-corner,.vpis-rev-pre::-webkit-scrollbar-corner,textarea.vpis-rev-in::-webkit-scrollbar-corner{background:transparent}',
+      '@supports (-moz-appearance:none){.vpis-rev-body,.vpis-rev-pre,textarea.vpis-rev-in{scrollbar-width:thin;scrollbar-color:rgba(var(--primary-rgb,209,123,150),.55) transparent}}',
+      'body.ft-clean-on #vpisRevBanner{display:none!important}',
+      '#vpisRevBanner.vpis-rev-banner{position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:1000;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-sizing:border-box;max-width:min(440px,calc(100vw - 32px));padding:12px 14px 12px 16px;background:var(--bg-white);color:var(--text-dark);border:1px solid var(--border-color);border-left:4px solid var(--primary);border-radius:16px;box-shadow:var(--shadow-lg,0 12px 28px rgba(0,0,0,.25));font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;animation:vpis-rev-pop .18s ease-out}',
+      '.vpis-rev-banner-txt{display:flex;flex-direction:column;gap:2px;flex:1 1 180px;min-width:0}',
+      '.vpis-rev-banner-txt span{font-size:.8rem;color:var(--text-muted)}',
+      '.vpis-rev-banner-act{display:flex;gap:8px}',
+      '@media (prefers-reduced-motion:reduce){.vpis-rev-banner{animation:none}}',
+      '@media (max-width:640px){#vpisRevBanner.vpis-rev-banner{left:12px;right:12px;max-width:none}}',
       '@media (max-width:640px){.vpis-rev-dlg{width:100vw;height:100vh;height:100dvh;margin:0}.vpis-rev-box{height:100%;max-height:none;border-radius:0;border:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}.vpis-rev-btn{min-height:44px}}'
     ].join('\n');
     const st = document.createElement('style'); st.id = 'vpis-rev-style'; st.textContent = css; document.head.appendChild(st);
@@ -373,11 +447,13 @@
   }
 
   function viewSetup() {
-    const sel = el('select', { class: 'vpis-rev-in', onchange: (e) => { S.month = e.target.value; } }, monthOptions(todayVN()).map((m) => { const o = el('option', { value: m, text: 'Tháng ' + m.slice(5) + '/' + m.slice(0, 4) }); if (m === S.month) o.selected = true; return o; }));
+    const today = todayVN(), cm = today.slice(0, 7);
+    const mtd = el('option', { value: 'mtd', text: 'Tháng ' + cm.slice(5) + '/' + cm.slice(0, 4) + ' — đến hôm nay (' + today.slice(8, 10) + '/' + today.slice(5, 7) + ')' }); if (S.partial) mtd.selected = true;
+    const sel = el('select', { class: 'vpis-rev-in', onchange: (e) => { const v = e.target.value; S.partial = v === 'mtd'; S.month = S.partial ? cm : v; } }, [mtd].concat(monthOptions(today).map((m) => { const o = el('option', { value: m, text: 'Tháng ' + m.slice(5) + '/' + m.slice(0, 4) }); if (!S.partial && m === S.month) o.selected = true; return o; })));
     const chk = el('input', { type: 'checkbox', onchange: (e) => { S.memory = e.target.checked; } }); chk.checked = S.memory;
     return [
       S.err ? el('p', { class: 'vpis-rev-err', text: S.err }) : null,
-      el('p', { class: 'vpis-rev-note', text: 'Review tháng: app tự tính số liệu (học, ngủ, mục tiêu, deadline), AI chỉ viết nhận định từ số liệu đó. Bước tiếp theo bạn sẽ thấy chính xác dữ liệu nào sẽ được gửi đi.' }),
+      el('p', { class: 'vpis-rev-note', text: 'Review tháng: app tự tính số liệu (học, ngủ, mục tiêu, deadline), AI chỉ viết nhận định từ số liệu đó. Có thể chọn tháng đang chạy (đến hôm nay) hoặc một tháng đã trọn vẹn. Bước tiếp theo bạn sẽ thấy chính xác dữ liệu nào sẽ được gửi đi.' }),
       el('label', { class: 'vpis-rev-note', style: 'display:block' }, ['Chọn tháng', sel]),
       el('label', { class: 'vpis-rev-note', style: 'display:flex;gap:6px;align-items:center' }, [chk, el('span', { text: 'Kèm bộ nhớ đã duyệt (hồ sơ & quyết định) để review bám định hướng của bạn' })]),
       el('div', { class: 'vpis-rev-row' }, [btn('Chuẩn bị số liệu', 'vpis-rev-btn--pri', prepare, S.busy)])
@@ -389,7 +465,9 @@
       S.err ? el('p', { class: 'vpis-rev-err', text: S.err }) : null,
       el('div', { class: 'vpis-rev-card' }, [el('p', { class: 'vpis-rev-h', text: 'Số liệu app đã tính' })].concat(S.digest.map((l) => el('p', { class: 'vpis-rev-p', text: l })))),
       el('details', null, [el('summary', { class: 'vpis-rev-note', text: 'Xem nguyên văn gói sẽ gửi (' + S.json.length + ' ký tự)' }), el('pre', { class: 'vpis-rev-pre', text: JSON.stringify(S.packet, null, 1) })]),
-      S.empty ? el('p', { class: 'vpis-rev-warn', text: 'Tháng này chưa có dữ liệu học, ngủ hay wellness nào để review, nên mình không gọi AI. Chọn tháng khác hoặc log thêm dữ liệu.' })
+      S.empty ? el('p', { class: 'vpis-rev-warn', text: S.degraded
+        ? 'Số liệu đang trống, nhưng app không đọc được một số nguồn dữ liệu (xem dòng "Không đọc được" ở trên). Đây có thể là lỗi đấu nối của app chứ không phải bạn chưa log. Mình không gọi AI. Chạy VenusTools.run("get_data_sources_status") trong Console để xem chi tiết.'
+        : 'Tháng này chưa có dữ liệu học, ngủ hay wellness nào để review, nên mình không gọi AI. Chọn tháng khác hoặc log thêm dữ liệu.' })
         : ai.ready ? el('p', { class: 'vpis-rev-warn', text: 'Khi bấm "Gửi cho AI", gói số liệu trên sẽ rời khỏi máy này tới ' + (ai.host || 'nhà cung cấp AI đã cấu hình') + (ai.model ? ' (model ' + ai.model + ')' : '') + '. Notes Vault, API key và token không nằm trong gói. Tối đa 2 lời gọi.' })
           : el('p', { class: 'vpis-rev-warn', text: (ai.why || 'AI chưa sẵn sàng.') + (window.VenusAI && window.VenusAI.openSettings ? ' Mở ⚙ ở khung chat AI để cấu hình.' : '') }),
       el('div', { class: 'vpis-rev-row' }, [
@@ -439,12 +517,53 @@
     document.body.appendChild(dlg);
   }
   const isOpen = () => !!(dlg && dlg.open);
-  function open() {
+  function open(opts) {   // opts.month (a finished month, from the reminder banner) is optional; the default is "this month so far"
     if (!dlg) build();
-    reset('setup'); S.month = monthOptions(todayVN())[0]; paint();
+    reset('setup');
+    if (opts && typeof opts.month === 'string' && MONTH_RE.test(opts.month) && monthOptions(todayVN()).indexOf(opts.month) >= 0) { S.partial = false; S.month = opts.month; }
+    else { S.partial = true; S.month = todayVN().slice(0, 7); }
+    paint();
     if (!dlg.open) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
   }
   function close() { if (dlg && dlg.open) { try { dlg.close(); } catch (e) { dlg.removeAttribute('open'); } } }
 
-  window.VenusReview = { version: 1, open, close, isOpen, buildPacket, _t: { extractJson, normalizeReply, resolvePath, buildMessages, monthOptions, prevMonth, rangeOf, digestLines, LIM } };
+  /* ───────── start-of-month reminder ─────────
+     On days 1–REMIND_DAYS (Vietnam date), if last month has data and no FULL review of it exists in the Memory,
+     show one small banner. Nothing is stored: "Để sau" hides it until the next page load, and it stops by itself after day 5
+     or once a review is saved. Read-only (listDecisions + buildPacket); never calls the AI and never writes. */
+  const REMIND_DAYS = 5;
+  let bannerEl = null, bannerDismissed = false;
+  function removeBanner() { if (bannerEl && bannerEl.parentNode) bannerEl.parentNode.removeChild(bannerEl); bannerEl = null; }
+  function showBanner(label) {
+    removeBanner(); injectStyle();
+    bannerEl = el('div', { id: 'vpisRevBanner', class: 'vpis-rev-banner', role: 'status' }, [
+      el('div', { class: 'vpis-rev-banner-txt' }, [el('strong', { text: 'Review tháng ' + label.slice(5) + '/' + label.slice(0, 4) + ' đã sẵn sàng' }), el('span', { text: 'Có số liệu tháng trước để xem lại.' })]),
+      el('div', { class: 'vpis-rev-banner-act' }, [
+        el('button', { type: 'button', class: 'vpis-rev-btn vpis-rev-btn--pri', text: 'Làm review', onclick: () => { removeBanner(); open({ month: label }); } }),
+        el('button', { type: 'button', class: 'vpis-rev-btn', text: 'Để sau', onclick: () => { bannerDismissed = true; removeBanner(); } })
+      ])
+    ]);
+    document.body.appendChild(bannerEl);
+  }
+  async function checkReminder() {
+    try {
+      if (bannerDismissed) return { shown: false, why: 'dismissed' };
+      if (bannerEl) return { shown: true, why: 'already_shown' };
+      if (!window.VenusMemory || !window.VenusTools || !document.body) return { shown: false, why: 'not_ready' };
+      const today = todayVN();
+      if (+today.slice(8, 10) > REMIND_DAYS) return { shown: false, why: 'outside_window' };
+      const label = prevMonth(today.slice(0, 7)), title = 'Review tháng ' + label;
+      const list = await window.VenusMemory.listDecisions();
+      const done = (list || []).some((d) => d && d.type === 'review_summary' && !d.deleted_at && (d.title === title || (Array.isArray(d.tags) && d.tags.indexOf(label) >= 0 && d.tags.indexOf('partial') < 0)));
+      if (done) return { shown: false, why: 'already_reviewed' };
+      const r = await buildPacket(label, { memory: false });
+      if (r.empty) return { shown: false, why: r.degraded ? 'sources_unavailable' : 'no_data' };
+      showBanner(label);
+      return { shown: true, label };
+    } catch (e) { return { shown: false, why: 'error' }; }
+  }
+  function scheduleReminder() { setTimeout(() => { checkReminder(); }, 5000); }   // after the first paint and after sync's own +3 s start
+  if (document.readyState === 'complete') scheduleReminder(); else window.addEventListener('load', scheduleReminder, { once: true });
+
+  window.VenusReview = { version: 1, open, close, isOpen, buildPacket, checkReminder, _t: { extractJson, normalizeReply, resolvePath, buildMessages, monthOptions, prevMonth, rangeOf, digestLines, LIM } };
 })();
