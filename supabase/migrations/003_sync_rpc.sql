@@ -169,4 +169,3 @@ grant execute on function public.vpis_push(jsonb) to authenticated;
 -- Single write path: a direct INSERT/UPDATE would skip sync_changes, so other devices would never see it.
 -- (The insert/update RLS policies from 001 stay in place but are unreachable without the grant.) Reads are unchanged.
 revoke insert, update on table public.user_profile, public.decisions from authenticated;
-

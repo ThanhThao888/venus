@@ -25,4 +25,3 @@ create policy sync_changes_select on public.sync_changes for select to authentic
 
 revoke all on table public.sync_changes from anon, authenticated;
 grant select on table public.sync_changes to authenticated;
-

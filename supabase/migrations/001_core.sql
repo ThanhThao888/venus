@@ -86,4 +86,3 @@ create policy user_devices_update on public.user_devices for update to authentic
 -- ───────── privileges: not signed in = nothing; signed in = select/insert/update only ─────────
 revoke all on table public.user_profile, public.decisions, public.user_devices from anon, authenticated;
 grant select, insert, update on table public.user_profile, public.decisions, public.user_devices to authenticated;
-
