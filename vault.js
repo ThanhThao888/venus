@@ -4682,6 +4682,7 @@
             { id: 'pin', icon: 'star', label: n.pinned ? 'Unpin note' : 'Pin note' },
             { id: 'dup', icon: 'copy', label: 'Duplicate' },
             { id: 'copy', icon: 'clipboard', label: 'Copy Markdown' },
+            { id: 'ai', icon: 'wand-magic-sparkles', label: 'Analyze with AI…' },
             { id: 'ctxpack', icon: 'robot', label: 'Copy Context Pack (for AI)…' },
             { id: 'savetpl', icon: 'file-circle-plus', label: 'Save as template' }
         ];
@@ -6013,7 +6014,7 @@
         if (opts.mode === 'folder') {
             const filename = id + '.' + extFromMime(rec.mime);
             if (opts.onAttachment) await opts.onAttachment(rec, filename);
-            return 'attachments/' + filename;
+            return (opts.attachPrefix || '') + 'attachments/' + filename;
         }
         // PDFs / spreadsheets are NOT embedded as base64 in a single .md (huge line, links browsers won't open):
         // the reference stays as-is — use Export to folder to take the real files along.
@@ -6047,7 +6048,7 @@
         const fm = ['---',
             'title: ' + yamlStr(n.title || 'Untitled note'),
             'type: ' + yamlStr(normType(n.type)),
-            'tags: [' + n.tags.map(yamlStr).join(', ') + ']',
+            'tags: [' + n.tags.map((t) => yamlStr(opts && opts.obsTags ? obsTag(t) : t)).join(', ') + ']',
             ...(n.course ? ['course: ' + yamlStr(n.course)] : []),
             ...(n.deadline ? ['deadline: ' + yamlStr(n.deadline)] : []),
             ...(n.remindAt ? ['remind: ' + yamlStr(n.remindAt)] : []),
@@ -6064,7 +6065,8 @@
         // Obsidian note copied in as-is), drop it here — its fields were already folded into
         // title/type/tags when it was pasted (see applyFrontmatterFill), so keeping it would
         // just export two frontmatter blocks back to back.
-        const body = await portableizeAttachments(extractFrontmatter(n.markdown).body, opts);
+        let body = await portableizeAttachments(extractFrontmatter(n.markdown).body, opts);
+        if (opts && opts.linkName) body = rewriteWikilinks(body, opts.linkName);
         const hasH1 = /^\s*#\s/.test(body);
         return fm + ((n.title && !hasH1) ? '# ' + n.title + '\n\n' : '') + body;
     }
@@ -6168,6 +6170,209 @@
         }
         const imgMsg = written.size ? ' + ' + written.size + (written.size === 1 ? ' image' : ' images') : '';
         flash('Exported ' + ok + ' of ' + list.length + (label ? ' notes (' + label + ')' : ' notes') + imgMsg);
+    }
+
+    /* ───────── Export to Obsidian ─────────
+       One dialog for "selected notes" (Select → tick → Obsidian) and "whatever the list shows now".
+       • Notes go into a folder of the vault (File System Access API, desktop Chrome/Edge) or into one .zip
+         (phones, Firefox, Safari) that you unzip into the vault.
+       • File name = note title, so [[links]] resolve in Obsidian (it matches links by file name, not by the
+         `title:` property). Every [[link]] is also rewritten to the exact exported file name, so links that
+         only matched here because Vault ignores case/accents still work there.
+       • Re-export is safe: by default an existing file is kept, so edits made in Obsidian are never overwritten. */
+    const OBS_LOG_KEY = 'nvObsidianExported', OBS_OPT_KEY = 'nvObsidianOpts';
+    const DIR_PICKER = typeof window.showDirectoryPicker === 'function';
+    const obsRead = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } };
+    const obsWrite = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } };
+
+    // A file name that is legal on Windows/macOS/Linux and in an Obsidian [[link]] (no \ / : * ? " < > | # ^ [ ]).
+    function obsFileBase(title) {
+        let s = String(title || '').normalize('NFC').replace(/:/g, ' -').replace(/[\\\/*?"<>|#^\[\]]/g, '-')
+            .replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().replace(/^\.+/, '').replace(/[. ]+$/, '');
+        if (s.length > 100) s = s.slice(0, 100).trim();
+        if (!s) s = 'Untitled note';
+        if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(s)) s += '_';
+        return s;
+    }
+    const obsFolderName = (type) => normType(type).replace(/[\\\/:*?"<>|]/g, '-').trim() || 'Notes';
+    // Obsidian tags cannot contain spaces and cannot be digits only.
+    function obsTag(t) {
+        const s = String(t).trim().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_\-\/]/gu, '') || 'tag';
+        return /^\d+$/.test(s) ? 't' + s : s;
+    }
+    function rewriteWikilinks(md, nameFor) {
+        if (!md || md.indexOf('[[') === -1) return md;
+        let out = '', last = 0;
+        for (const l of extractWikilinks(md)) {
+            const note = findNoteByTitle(l.title);
+            if (!note) continue;                                   // unresolved link: leave exactly as written
+            const target = nameFor(note);
+            const alias = l.alias || (l.title !== target ? l.title : '');
+            out += md.slice(last, l.index) + '[[' + target + (l.heading ? '#' + l.heading : '') + (alias ? '|' + alias : '') + ']]';
+            last = l.index + l.len;
+        }
+        return out + md.slice(last);
+    }
+    // Notes that the given notes link to (via [[…]]) but that are not themselves in the list.
+    function obsOutside(list) {
+        const ids = new Set(list.map((n) => n.id)), out = new Map();
+        for (const n of list) {
+            for (const l of extractWikilinks(n.markdown || '')) {
+                const t = findNoteByTitle(l.title);
+                if (t && !ids.has(t.id)) out.set(t.id, t);
+            }
+        }
+        return [...out.values()];
+    }
+
+    /* Minimal ZIP writer (no compression, UTF-8 names): no library to load, works offline. */
+    const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let i = 0; i < 256; i++) { let c = i; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[i] = c >>> 0; } return t; })();
+    function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+    async function zipBlob(entries) {
+        const enc = new TextEncoder(), parts = [], central = [];
+        let offset = 0;
+        for (const e of entries) {
+            const name = enc.encode(e.name);
+            const data = (typeof Blob !== 'undefined' && e.data instanceof Blob) ? new Uint8Array(await e.data.arrayBuffer()) : (typeof e.data === 'string' ? enc.encode(e.data) : e.data);
+            const d = new Date(e.mtime || Date.now()), yr = Math.max(1980, d.getFullYear());
+            const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dosDate = ((yr - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+            const crc = crc32(data), size = data.length;
+            const lh = new DataView(new ArrayBuffer(30));
+            lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+            lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true);
+            lh.setUint32(18, size, true); lh.setUint32(22, size, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+            parts.push(lh.buffer, name, data);
+            const ch = new DataView(new ArrayBuffer(46));
+            ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+            ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true);
+            ch.setUint32(20, size, true); ch.setUint32(24, size, true); ch.setUint16(28, name.length, true);
+            ch.setUint32(42, offset, true);
+            central.push(ch.buffer, name);
+            offset += 30 + name.length + size;
+        }
+        let cdSize = 0; central.forEach((p) => { cdSize += p.byteLength; });
+        const end = new DataView(new ArrayBuffer(22));
+        end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+        end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+        return new Blob(parts.concat(central, [end.buffer]), { type: 'application/zip' });
+    }
+
+    async function obsRun(list, o) {
+        let dir = null;
+        if (o.dest === 'dir') {
+            try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+            catch (e) { return false; }                                      // cancelled
+        }
+        gaClose();
+        const nameOf = (n) => (o.titleNames ? obsFileBase(n.title) : slugify(n.title));
+        const used = new Set(), plan = [];
+        for (const n of list) {
+            const raw = nameOf(n); let base = raw, i = 2;
+            while (used.has(base.toLowerCase())) { base = raw + (o.titleNames ? ' ' : '-') + i; i++; }   // same title twice; also case-insensitive file systems
+            used.add(base.toLowerCase());
+            plan.push({ n, base, folder: o.subfolders ? obsFolderName(n.type) : '' });
+        }
+        const byId = new Map(plan.map((p) => [p.n.id, p.base]));
+        const linkName = (note) => byId.get(note.id) || nameOf(note);
+        const log = obsRead(OBS_LOG_KEY);
+        const entries = [], written = new Set(), dirCache = new Map();
+        let attachDir = null, ok = 0, skipped = 0, failed = 0;
+        const onAttachment = async (rec, filename) => {
+            if (written.has(filename)) return;
+            written.add(filename);
+            try {
+                if (!dir) { entries.push({ name: 'attachments/' + filename, data: rec.blob, mtime: rec.createdAt }); return; }
+                if (!attachDir) attachDir = await dir.getDirectoryHandle('attachments', { create: true });
+                if (o.exists !== 'all') { try { await attachDir.getFileHandle(filename); return; } catch (e) { /* not there yet */ } }
+                const fh = await attachDir.getFileHandle(filename, { create: true });
+                await writeToHandle(fh, rec.blob);
+            } catch (e) { console.error('Notes Vault: could not export attachment', filename, e); written.delete(filename); }
+        };
+        const mkOpts = (p) => ({ mode: 'folder', onAttachment, obsTags: o.tags, linkName, attachPrefix: p.folder ? '../' : '' });
+        let done = 0;
+        for (const p of plan) {
+            done++; if (done % 5 === 0) flash('Exporting ' + done + ' / ' + plan.length + '…');
+            try {
+                if (dir) {
+                    let target = dir;
+                    if (p.folder) { target = dirCache.get(p.folder); if (!target) { target = await dir.getDirectoryHandle(p.folder, { create: true }); dirCache.set(p.folder, target); } }
+                    const fname = p.base + '.md';
+                    let exists = false;
+                    try { await target.getFileHandle(fname); exists = true; } catch (e) { /* not there yet */ }
+                    if (exists && (o.exists === 'keep' || (o.exists === 'changed' && !(log[p.n.id] && p.n.updatedAt > log[p.n.id])))) { skipped++; continue; }
+                    const text = await toMarkdownFile(p.n, mkOpts(p));
+                    const fh = await target.getFileHandle(fname, { create: true });
+                    await writeToHandle(fh, text);
+                    log[p.n.id] = p.n.updatedAt;
+                } else {
+                    entries.push({ name: (p.folder ? p.folder + '/' : '') + p.base + '.md', data: await toMarkdownFile(p.n, mkOpts(p)), mtime: p.n.updatedAt });
+                }
+                ok++;
+            } catch (e) { failed++; console.error('Notes Vault: could not export', p.n.title, e); }
+        }
+        if (dir) obsWrite(OBS_LOG_KEY, log);
+        else if (entries.length) {
+            if (entries.length > 65000) { toast('Too many files for one ZIP — export in smaller batches.'); return false; }
+            try { download(await zipBlob(entries), 'obsidian-notes-' + toLocalDateStr(new Date()) + '.zip', 'application/zip'); }
+            catch (e) { console.error(e); toast('Couldn’t build the ZIP — try a smaller selection.'); return false; }
+        }
+        const img = written.size ? ' + ' + written.size + (written.size === 1 ? ' image' : ' images') : '';
+        toast((dir ? 'Exported ' : 'ZIP ready: ') + selPlural(ok) + img
+            + (skipped ? ' · kept ' + skipped + ' existing' : '') + (failed ? ' · ' + failed + ' failed' : '')
+            + (dir ? '' : ' — unzip it into your Obsidian vault.'));
+        return true;
+    }
+    function obsStyle() {
+        if (document.getElementById('nvObsStyle')) return;
+        const s = document.createElement('style'); s.id = 'nvObsStyle';
+        s.textContent = '.nvo-sec{margin:0 0 14px}.nvo-h{font-size:.76rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin:0 0 4px}'
+            + '.nvo-opt{display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:.92rem;cursor:pointer}.nvo-opt input{margin-top:4px;flex-shrink:0}'
+            + '.nvo-opt small{display:block;color:var(--text-muted);font-size:.8rem;line-height:1.35}.nvo-opt.nvo-off{opacity:.55;cursor:not-allowed}'
+            + '.nvo-warn{font-size:.84rem;line-height:1.4;padding:8px 10px;border-radius:10px;background:var(--warn-soft,#fdf1e3);color:var(--text-dark);margin:0 0 12px}'
+            + '.nvo-go{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}';
+        document.head.appendChild(s);
+    }
+    function openObsidianExport(list) {
+        if (!list.length) { flash('Nothing to export here'); return; }
+        obsStyle();
+        const base = list.slice(), extra = obsOutside(base);
+        const saved = obsRead(OBS_OPT_KEY);
+        const pick = (k, d) => (saved[k] === undefined ? d : saved[k]);
+        const dest = DIR_PICKER ? pick('dest', 'dir') : 'zip';
+        const body = gaOpen('obsidian', 'gem', 'Export to Obsidian');
+        const opt = (type, name, val, on, text, small, id, off) => '<label class="nvo-opt' + (off ? ' nvo-off' : '') + '"><input type="' + type + '"' + (name ? ' name="' + name + '"' : '') + (val ? ' value="' + val + '"' : '') + (id ? ' id="' + id + '"' : '') + (on ? ' checked' : '') + (off ? ' disabled' : '') + '><span>' + text + (small ? '<small>' + small + '</small>' : '') + '</span></label>';
+        body.innerHTML = '<p class="nv-dup-hint"><b>' + selPlural(base.length) + '</b> will be saved as Markdown files.</p>'
+            + '<div class="nvo-sec"><div class="nvo-h">Save to</div>'
+            + opt('radio', 'nvoDest', 'dir', dest === 'dir', 'A folder in my Obsidian vault', DIR_PICKER ? 'Pick your vault folder (or a sub-folder of it); the files are written straight in.' : 'Not available in this browser — use the ZIP.', '', !DIR_PICKER)
+            + opt('radio', 'nvoDest', 'zip', dest === 'zip', 'One ZIP file', 'Download it, then unzip into the vault folder (works on phones too).')
+            + '</div><div class="nvo-sec"><div class="nvo-h">Options</div>'
+            + opt('checkbox', '', '', pick('titleNames', true), 'File names = note titles', 'Needed for [[links]] to work in Obsidian. Off = lowercase-with-dashes names.', 'nvoTitle')
+            + opt('checkbox', '', '', pick('subfolders', false), 'Sub-folders by Vault folder', 'Each Vault folder becomes a folder in Obsidian. Images stay in one “attachments” folder.', 'nvoSub')
+            + opt('checkbox', '', '', pick('tags', true), 'Make tags Obsidian-safe', 'Spaces become dashes (“risk management” → risk-management).', 'nvoTags')
+            + (extra.length ? opt('checkbox', '', '', false, 'Also include the ' + extra.length + (extra.length === 1 ? ' note' : ' notes') + ' these notes link to', 'One level of [[links]], so none of them point to nothing.', 'nvoInc') : '')
+            + '</div><div class="nvo-sec" id="nvoExists"><div class="nvo-h">If a file already exists</div>'
+            + opt('radio', 'nvoEx', 'keep', pick('exists', 'keep') === 'keep', 'Keep it (safest)', 'Edits you made in Obsidian are never overwritten. Only new notes are added.')
+            + opt('radio', 'nvoEx', 'changed', pick('exists', 'keep') === 'changed', 'Update only notes I edited here since the last export', 'Replaces those files; a note edited in both places keeps the Vault version.')
+            + opt('radio', 'nvoEx', 'all', pick('exists', 'keep') === 'all', 'Overwrite everything')
+            + '</div>'
+            + (extra.length ? '<div class="nvo-warn" id="nvoWarn">' + extra.length + (extra.length === 1 ? ' linked note is' : ' linked notes are') + ' not in this export. Links to ' + (extra.length === 1 ? 'it' : 'them') + ' will show as unresolved in Obsidian unless they are already in the vault.</div>' : '')
+            + '<div class="nvo-go"><button type="button" class="nv-btn" data-ga-close>Cancel</button><button type="button" class="nv-btn nv-btn-primary" id="nvoGo"><i class="fa-solid fa-file-export" aria-hidden="true"></i> Export ' + selPlural(base.length) + '</button></div>';
+        const q = (s) => body.querySelector(s);
+        const sync = () => {
+            q('#nvoExists').hidden = q('input[name=nvoDest]:checked').value !== 'dir';
+            const inc = q('#nvoInc'), w = q('#nvoWarn');
+            if (w) w.hidden = !!(inc && inc.checked);
+            if (inc) q('#nvoGo').lastChild.nodeValue = ' Export ' + selPlural(base.length + (inc.checked ? extra.length : 0));
+        };
+        body.addEventListener('change', sync); sync();
+        q('#nvoGo').addEventListener('click', async (e) => {
+            const o = { dest: q('input[name=nvoDest]:checked').value, titleNames: q('#nvoTitle').checked, subfolders: q('#nvoSub').checked, tags: q('#nvoTags').checked, exists: q('input[name=nvoEx]:checked').value };
+            obsWrite(OBS_OPT_KEY, o);
+            const inc = q('#nvoInc'), btn = e.currentTarget;
+            btn.disabled = true;
+            const r = await obsRun(inc && inc.checked ? base.concat(extra) : base, o);
+            if (!r && btn.isConnected) btn.disabled = false;       // picker cancelled: keep the dialog open
+        });
     }
     async function copyText(t) {
         try { await navigator.clipboard.writeText(t); return true; }
@@ -6675,6 +6880,7 @@
         if (!n) return;
         if (id === 'srsstart' || id === 'srsdone' || id === 'srsstop') { srsAction(id); return; }
         if (id === 'mkcards') { await flushSave(); openCardsModal(); return; }
+        if (id === 'ai') { await flushSave(); openAiForNote(); return; }
         if (id === 'ctxpack') { await flushSave(); openContextPack(); return; }
         if (id === 'savetpl') { await saveNoteAsTemplate(); return; }
         if (id === 'pin') {
@@ -6728,8 +6934,8 @@
     // exported as one real .md file per note into a folder on disk.
     async function exportCurrentView() {
         await flushSave();
-        const list = filterNotes(qTokens());
-        await exportNotesToFolder(list, el.libTitle ? el.libTitle.textContent : '');
+        const list = (SEL.on && SEL.ids.size) ? selNotes() : filterNotes(qTokens());
+        openObsidianExport(list);
     }
     async function exportAllJson() {
         // Written as a list of parts (small strings + one Blob per attachment) instead of JSON.stringify-ing
@@ -11365,7 +11571,8 @@
         add(V, 'pdflib', 'file-pdf', 'PDF Library…', openPdfLib, { kw: 'pdf library books documents upload drag drop files read' });
         add(V, 'fr', 'right-left', 'Find & Replace…', openFrModal, { kw: 'replace substitute rename text bulk change all', keys: IS_MAC ? ['mod', 'alt', 'F'] : ['mod', 'H'] });
         if (window.BrainDump && document.getElementById('bdPanel')) add(V, 'bd', 'brain', 'Open Brain Dump', openBrainDump, { kw: 'inbox capture tracker thoughts' });
-        add(V, 'exportmd', 'folder-tree', 'Export notes as .md files…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
+        add(V, 'exportmd', 'folder-tree', 'Export to Obsidian (.md files or ZIP)…', exportCurrentView, { kw: 'save disk folder obsidian bulk backup' });
+        add(V, 'aiset', 'wand-magic-sparkles', 'AI settings (key, model)…', () => { ensureAi().then((a) => a.openSettings()).catch(aiLoadFail); }, { kw: 'ai openrouter api key model gemini groq ollama free' });
         add(V, 'exp', 'download', 'Export backup (JSON)', exportAllJson, { kw: 'backup save download all' });
         add(V, 'imp', 'upload', 'Import backup…', () => el.importFile.click(), { kw: 'backup restore load json', more: true });
         add(V, 'impmd', 'file-import', 'Import .md files…', () => el.mdFile.click(), { kw: 'import markdown obsidian open upload txt' });
@@ -16573,6 +16780,75 @@
         });
     }
 
+
+    /* ═════════════ AI analysis (uses ai.js: key + model are set in ⚙ inside the AI window) ═════════════ */
+    let aiLoading = null;
+    function ensureAi() {
+        if (window.VenusAI) return Promise.resolve(window.VenusAI);
+        if (!aiLoading) aiLoading = new Promise((res, rej) => {
+            const s = document.createElement('script'); s.src = './ai.js';
+            s.onload = () => (window.VenusAI ? res(window.VenusAI) : rej(new Error('ai.js loaded but VenusAI is missing')));
+            s.onerror = () => { aiLoading = null; rej(new Error('ai.js not found')); };
+            document.head.appendChild(s);
+        });
+        return aiLoading;
+    }
+    const aiLoadFail = () => toast('Couldn’t load ai.js — make sure the file ai.js sits next to index.html.');
+    const AI_NOTES_SYSTEM = 'Bạn đang đọc ghi chú cá nhân của người dùng, đưa trong <context_pack> (mỗi <note> là một ghi chú). Chỉ dựa vào nội dung đó; khi nhắc tới ý nào hãy nêu tên note chứa nó. Điều gì không có trong ghi chú thì nói “ghi chú chưa đề cập”, không bịa. Kiến thức bên ngoài chỉ dùng để bổ sung và phải ghi rõ là ngoài ghi chú.';
+    const AI_NOTE_PRESETS = [
+        { label: 'Tóm tắt sâu', prompt: 'Tóm tắt nội dung theo cấu trúc: luận điểm chính; khái niệm, định nghĩa, công thức quan trọng; các lập luận then chốt. Giữ chính xác và không bỏ số liệu.' },
+        { label: 'Điểm yếu & chỗ thiếu', prompt: 'Đọc phản biện ghi chú này: chỗ nào lập luận yếu hoặc thiếu giả định, chỗ nào có thể sai hoặc cần kiểm chứng, khái niệm nào còn mơ hồ, và những câu hỏi mình nên tự hỏi tiếp.' },
+        { label: 'Ứng dụng & rủi ro', prompt: 'Phân tích theo khung: khái niệm nền tảng → ứng dụng thực tế → ví dụ thực tế → rủi ro và giới hạn → bước hành động tiếp theo.' },
+        { label: 'Giải thích đơn giản', prompt: 'Giải thích lại nội dung như cho người mới bắt đầu, dùng ví dụ đời thường, rồi nêu 3 điều dễ hiểu nhầm nhất.' },
+        { label: 'Liên kết & mâu thuẫn', multi: true, prompt: 'Tìm mối liên hệ, mẫu hình lặp lại và chỗ mâu thuẫn giữa các note. Chỉ rõ note nào nói gì, và ý nào bổ sung hoặc phản bác ý nào.' },
+        { label: 'Việc cần làm tiếp', prompt: 'Rút ra các việc cần làm, câu hỏi còn mở và thứ nên học tiếp từ ghi chú, xếp theo mức ưu tiên và nói ngắn gọn vì sao.' }
+    ];
+    async function aiSaveAsNote(root, text, api) {
+        const now = Date.now(), t = gaTitleOf(root), day = toLocalDateStr(new Date(now));
+        const ref = /^[^\[\]|#^]+$/.test(t) ? '[[' + t + ']]' : '“' + t + '”';
+        const note = normalizeNote({
+            id: uid(), title: 'AI · ' + t + ' · ' + day,
+            markdown: '> AI analysis of ' + ref + ' on ' + day + ' — verify important facts before relying on them.\n\n' + String(text).trim() + '\n',
+            type: root.type, tags: ['ai-analysis'], pinned: false, createdAt: now, updatedAt: now
+        });
+        try { await dbPut(note); } catch (e) { console.error('Notes Vault: could not save AI note', e); toast('Couldn’t save the note.'); return; }
+        S.notes.push(note); renderAll();
+        toast('Saved “' + shortName(note) + '”', 'Open', () => { if (api && api.close) api.close(); openNote(note.id); });
+    }
+    async function openAiForNote() {
+        const root = S.note; if (!root) return;
+        let ai; try { ai = await ensureAi(); } catch (e) { aiLoadFail(); return; }
+        closeMenus();
+        const live = () => S.notes.find((n) => n.id === root.id) || root;
+        const probe = gaPackCandidates(live(), { subs: true, linked: true });
+        const nSubs = probe.filter((c) => c.role === 'sub-note').length, nLinked = probe.filter((c) => c.role === 'linked').length;
+        const options = [];
+        if (nSubs) options.push({ id: 'subs', label: 'Cả ' + nSubs + ' sub-note (Note Map)', checked: false });
+        if (nLinked) options.push({ id: 'linked', label: 'Cả ' + nLinked + ' note được [[link]] tới', checked: false });
+        ai.openPanel({
+            title: gaTitleOf(root), system: AI_NOTES_SYSTEM, options,
+            presets: AI_NOTE_PRESETS.filter((p) => !p.multi || options.length),
+            build: async (st) => {
+                const items = gaPackCandidates(live(), { subs: !!st.subs, linked: !!st.linked });
+                const text = gaPackText(items, { meta: true });
+                return { text, label: selPlural(items.length) + ' · ' + gaWords(text).toLocaleString() + ' words', details: items.map((i) => gaTitleOf(i.note) + (i.role === 'main' ? '' : ' (' + i.role + ')')) };
+            },
+            actions: [{ label: 'Lưu thành note mới', run: (text, api) => aiSaveAsNote(live(), text, api) }]
+        });
+    }
+    async function openAiForSelection() {
+        const notes = selNotes().sort((a, b) => gaTitleOf(a).localeCompare(gaTitleOf(b))); if (!notes.length) return;
+        let ai; try { ai = await ensureAi(); } catch (e) { aiLoadFail(); return; }
+        const items = notes.map((n) => ({ note: n, role: 'selected' }));
+        const text = gaPackText(items, { meta: true });
+        ai.openPanel({
+            title: selPlural(notes.length), system: AI_NOTES_SYSTEM,
+            presets: AI_NOTE_PRESETS.filter((p) => !p.multi || notes.length > 1),
+            build: async () => ({ text, label: selPlural(notes.length) + ' · ' + gaWords(text).toLocaleString() + ' words', details: notes.map(gaTitleOf) }),
+            actions: [{ label: 'Lưu thành note mới', run: (t, api) => aiSaveAsNote(notes[0], t, api) }]
+        });
+    }
+
     /* ═════════════ 4) Note Templates ═════════════ */
     const TPL_BUILTIN = [
         { id: 'paper', name: 'Paper Teardown', icon: 'file-lines', desc: 'RQ → Identification → Findings → Limitations', tags: ['paper'],
@@ -16969,7 +17245,7 @@
         return '<span class="nv-selcount" aria-live="polite"><b>' + c + '</b> selected</span>'
             + '<button type="button" class="nv-btn nv-btn-ghost nv-selbtn" data-sel="all">All ' + SEL.list.length + '</button>'
             + '<button type="button" class="nv-btn nv-btn-ghost nv-selbtn" data-sel="none"' + none + '>Clear</button><span class="nv-selsep"></span>'
-            + b('move', 'folder-tree', 'Move') + b('addtag', 'hashtag', 'Add tag') + b('rmtag', 'tag', 'Remove tag') + b('pin', 'star', 'Pin') + b('export', 'file-export', 'Export') + b('merge', 'code-merge', 'Merge') + b('trash', 'trash', 'Trash', ' nv-danger');
+            + b('move', 'folder-tree', 'Move') + b('addtag', 'hashtag', 'Add tag') + b('rmtag', 'tag', 'Remove tag') + b('pin', 'star', 'Pin') + b('export', 'file-export', 'Export') + b('obsidian', 'gem', 'Obsidian') + b('ai', 'wand-magic-sparkles', 'AI') + b('merge', 'code-merge', 'Merge') + b('trash', 'trash', 'Trash', ' nv-danger');
     }
     function selPaint() {
         const btn = document.getElementById('nvSelBtn'), bar = document.getElementById('nvSelBar');
@@ -17153,6 +17429,8 @@
                 else if (k === 'move' || k === 'addtag' || k === 'rmtag') selPickModal(k);
                 else if (k === 'pin') selPin();
                 else if (k === 'export') selExport();
+                else if (k === 'obsidian') flushSave().then(() => openObsidianExport(selNotes()));
+                else if (k === 'ai') flushSave().then(() => openAiForSelection());
                 else if (k === 'merge') selMerge();
                 else if (k === 'trash') selTrash();
             });
