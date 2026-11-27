@@ -6,6 +6,8 @@
    • The window itself (key, model, streaming, errors) is ai.js — loaded on demand, shared with Notes Vault.
    • Public API:  VenusAIHub.sleep()   VenusAIHub.skills()
                   VenusAIHub.sleepText(opts) / skillsText(opts)  → returns the exact text that would be sent
+                  (sleepText also returns `data`: the same numbers as structured JSON, for charts/tables later)
+                  VenusAIHub.sleepData(opts)                      → just that JSON
    • To add another topic later (goals, courses, books…): write a  xxxText(opts)  function and an  openXxx()  like the two below. */
 (function () {
   'use strict';
@@ -91,7 +93,7 @@
     const tol = safe(() => SLEEP_DEBT_CFG.tolerance, 0.25), okLimit = goal - tol;
     const todayStr = getVietnamDateStr(), todayNum = sleepDateToDayNum(todayStr);
     const all = getSortedSleepSessions().filter((s) => s && isNum(s.start) && isNum(s.duration) && s.duration > 0);
-    if (!all.length) return { text: 'Chưa có dữ liệu giấc ngủ nào được ghi.', label: 'Chưa có dữ liệu', details: [] };
+    if (!all.length) return { text: 'Chưa có dữ liệu giấc ngủ nào được ghi.', label: 'Chưa có dữ liệu', details: [], data: null };
 
     /* one record per night (wake-up date, Vietnam time) */
     const nightsAll = buildSleepNightsByWakeDate(all);
@@ -126,6 +128,9 @@
     const last = recs[recs.length - 1];
     const L = [], sect = [];
     const head = (name) => { L.push(''); L.push('## ' + name); sect.push(name); };
+    // Structured twin of the text pack (same numbers, machine-readable) — lets a future chart/table renderer
+    // draw from data instead of parsing prose. Filled below, returned as `data`.
+    const weekly = []; let debtInfo = null, insInfo = null;
     const spanDays = Math.max(1, todayNum - Math.max(startNum, recs[0].dayNum) + 1);
 
     L.push('DỮ LIỆU GIẤC NGỦ — gói tóm tắt do app tính sẵn (giờ Việt Nam)');
@@ -134,7 +139,7 @@
     L.push('Mục tiêu của mình: ' + goal + 'h/đêm (đêm dưới ' + f1(okLimit) + 'h tính là thiếu).');
     if (!win.length) {
       L.push(''); L.push(winAll.length ? 'Mọi đêm trong cửa sổ này đều dài bất thường (nghi quên bấm Stop). Đừng phân tích số giờ ngủ; hãy nhắc mình sửa dữ liệu.' : 'Không có đêm nào được log trong cửa sổ này. Đừng phân tích gì thêm — hãy nói rõ là thiếu dữ liệu.');
-      return { text: L.join('\n'), label: winAll.length ? 'Chỉ có đêm nghi sai' : 'Không có đêm nào trong cửa sổ', details: [] };
+      return { text: L.join('\n'), label: winAll.length ? 'Chỉ có đêm nghi sai' : 'Không có đêm nào trong cửa sổ', details: [], data: null };
     }
 
     /* — overview — */
@@ -171,6 +176,7 @@
     const nWeeks = Math.min(8, Math.max(2, Math.ceil(spanDays / 7)));
     for (let w = nWeeks - 1; w >= 0; w--) {
       const rs = win.filter((r) => Math.floor((todayNum - r.dayNum) / 7) === w);
+      if (rs.length) { const b = bucket(rs); weekly.push({ weekEnd: sleepDayNumToDateStr(todayNum - w * 7), nights: b.n, avgHours: b.h, avgSol: b.sol, avgSe: b.se, bed: b.bed, wake: b.wake }); }
       L.push(rs.length ? bLine('Tuần kết thúc ' + dm(sleepDayNumToDateStr(todayNum - w * 7)), bucket(rs)) : '• Tuần kết thúc ' + dm(sleepDayNumToDateStr(todayNum - w * 7)) + ': không có log');
     }
     if (spanDays > 45) {
@@ -182,6 +188,7 @@
     /* — sleep debt (same engine as the Sleep debt card) — */
     if (hasFn('computeSleepDebt')) {
       const d = safe(() => computeSleepDebt(), null);
+      if (d && d.ok) debtInfo = { debtHours: d.debt, level: d.level && d.level.label, equivNights: d.equivNights, avgHours: d.avgHours, avgGap: d.avgGap, shortNights: d.shortNights, deltaVs7d: d.delta, trend: d.trend, missingDays: d.missing, napCreditMin: d.napCreditMin };
       if (d) {
         head('Nợ ngủ (sổ ' + safe(() => SLEEP_DEBT_CFG.windowNights, 14) + ' đêm gần nhất của app)');
         if (d.ok) {
@@ -198,6 +205,9 @@
       const ins = safe(() => analyzeInsomniaPatterns(), null);
       if (ins && !ins.error && (ins.insomniaRisk || ins.insomniaType || ins.insomniaSeverity)) {
         head('Phân tích mất ngủ của app (tính trên các đêm gần đây)');
+        insInfo = { risk: ins.insomniaRisk || null, type: ins.insomniaType ? ins.insomniaType.primaryType : null, percentages: ins.insomniaType ? ins.insomniaType.percentages || null : null,
+          severityLevel: ins.insomniaSeverity ? ins.insomniaSeverity.severityLevel : null, severityScore: ins.insomniaSeverity ? ins.insomniaSeverity.severityScore : null,
+          learningEfficiencyPct: ins.cognitiveEfficiency ? ins.cognitiveEfficiency.efficiencyPercentage : null };
         if (ins.insomniaRisk) L.push('• Nguy cơ thức trắng / thức kéo dài: ' + ins.insomniaRisk);
         if (ins.insomniaType) {
           L.push('• Kiểu chính: ' + ins.insomniaType.primaryType + ' — ' + ins.insomniaType.description);
@@ -277,6 +287,17 @@
       win.slice(-nRecent).forEach((r) => L.push(nightLine(r)));
     }
 
+    /* — free-text notes: a dedicated section, so a note is not lost just because its night is not in the lists above — */
+    if (st.notes) {
+      const withNote = win.filter((r) => r.notes);
+      head('Ghi chú tự viết');
+      if (!withNote.length) L.push('• Không có đêm nào trong cửa sổ này có ghi chú.');
+      else {
+        L.push('• ' + withNote.length + '/' + win.length + ' đêm có ghi chú' + (withNote.length > 15 ? ' (hiện 15 đêm gần nhất)' : '') + '. Đây là lời mình tự viết, không phải số đo; dùng để giải thích bối cảnh, đừng coi là sự thật đã kiểm chứng.');
+        withNote.slice(-15).forEach((r) => L.push('  - ' + dm(r.date) + ' (' + DOW[dowOf(r.date)] + ', ' + f1(r.hours) + 'h): “' + r.notes + '”'));
+      }
+    }
+
     /* — data quality — */
     head('Chất lượng dữ liệu');
     const odd = winAll.filter((r) => r.hours < 3 || r.hours > maxNight);
@@ -284,7 +305,27 @@
     if (dropped.length) L.push('• Lưu ý: số nợ ngủ ở trên do app tính và vẫn gồm các đêm đã loại, nên có thể lệch.');
     L.push('• Số đêm có ghi SOL: ' + sols.length + '/' + win.length + '; có chấm chất lượng: ' + qs.length + '/' + win.length + '; có gắn thẻ thói quen: ' + win.filter((r) => Object.keys(r.tags).length).length + '/' + win.length + '.');
 
-    return { text: L.join('\n'), label: win.length + ' đêm · ' + (range === Infinity ? 'toàn bộ' : range + ' ngày'), details: sect };
+    const night = (r) => ({
+      date: r.date, dow: DOW[dowOf(r.date)],
+      bed: isNum(r.startTs) ? hm(vnMinuteOfDay(r.startTs)) : null, wake: isNum(r.endTs) ? hm(vnMinuteOfDay(r.endTs)) : null,
+      hours: isNum(r.hours) ? Math.round(r.hours * 100) / 100 : null, solMin: r.sol, awakeMin: r.awake, sePct: isNum(r.se) ? Math.round(r.se * 10) / 10 : null,
+      quality: r.quality, napMin: r.napMin || 0, studyHours: r.studyNext, tags: Object.keys(r.tags).filter((k) => TAG_LABEL[k]).map((k) => TAG_LABEL[k]),
+      note: st.notes && r.notes ? r.notes : null
+    });
+    const data = {
+      schema: 'venus.sleep.v1', generated: todayStr, tz: 'Asia/Ho_Chi_Minh',
+      window: { days: range === Infinity ? 'all' : range, nights: win.length, excluded: dropped.map((r) => r.date) },
+      goalHours: goal, okLimitHours: okLimit,
+      summary: {
+        avgHours: avg(hrs), medianHours: median(hrs), sdHours: sd(hrs), goalReached: reach, shortest: { date: lo.date, hours: lo.hours }, longest: { date: hi.date, hours: hi.hours },
+        avgSolMin: avg(sols), avgAwakeMin: avg(awk), avgSePct: avg(ses), avgQuality: avg(qs),
+        bedMedian: clockTxt(win.map((r) => r.startTs).filter(isNum)), wakeMedian: clockTxt(win.map((r) => r.endTs).filter(isNum))
+      },
+      debt: debtInfo, insomnia: insInfo, weekly,
+      nights: win.slice(-365).map(night)
+    };
+
+    return { text: L.join('\n'), label: win.length + ' đêm · ' + (range === Infinity ? 'toàn bộ' : range + ' ngày'), details: sect, data };
   }
 
   /* ═══════════════════════════ SKILLS / STUDY ═══════════════════════════ */
@@ -473,5 +514,7 @@
     });
   }
 
-  window.VenusAIHub = { version: 1, sleep: openSleep, skills: openSkills, sleepText, skillsText };
+  window.VenusAIHub = { version: 1, sleep: openSleep, skills: openSkills, sleepText, skillsText,
+    // structured twin of sleepText(): the same numbers as plain JSON (null when there is nothing to analyse)
+    sleepData: (opts) => { const r = sleepText(opts); return r && r.data ? r.data : null; } };
 })();
