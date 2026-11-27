@@ -48851,7 +48851,7 @@ const EnglishDaily = (function () {
             const ph = `<div class="book-cover book-cover--ph" aria-hidden="true"><span>${initial}</span></div>`;
             if (!book.cover) return ph;
             const cands = bookCoverCandidates(book.cover);
-            return `<div class="book-cover-wrap" data-initial="${initial}"><img class="book-cover" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(cands[0])}" data-cover="${escapeHtml(book.cover)}" data-ci="0" alt="${escapeHtml(book.title)} cover" onload="rlCoverOk(this)" onerror="rlCoverFail(this)"></div>`;
+            return `<div class="book-cover-wrap" data-initial="${initial}"><img class="book-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" src="${escapeHtml(cands[0])}" data-cover="${escapeHtml(book.cover)}" data-ci="0" alt="${escapeHtml(book.title)} cover" onload="rlCoverOk(this)" onerror="rlCoverFail(this)"></div>`;
         }
         // Cover sources, tried in order. Open Library answers "no cover" with a 1x1 transparent GIF
         // (which fires onload, not onerror) so the image silently looks empty; ?default=false makes it
@@ -49618,8 +49618,9 @@ const EnglishDaily = (function () {
                 if (dirty) localStorage.setItem('rlProgressStamp', JSON.stringify(S));
 
                 const wants = [];
+                const _byId = new Map(readingList.map(x => [x.id, x]));
                 box.querySelectorAll('.book-item').forEach(el => {
-                    const b = readingList.find(x => x.id === +el.dataset.id); if (!b) return;
+                    const b = _byId.get(+el.dataset.id); if (!b) return;
                     if (b.status === 'reading') {
                         const days = Math.max(1, Math.round((now - dayMs(b.startedAt)) / DAY)), cp = b.currentPage || 0, bits = [];
                         if (cp > 0 && days >= 2) {
@@ -49637,7 +49638,7 @@ const EnglishDaily = (function () {
                         if (sp) sp.insertAdjacentHTML('beforebegin', `<button class="book-action-btn${b.upNext ? ' is-pinned' : ''}" onclick="rlTogglePin(${b.id}); event.stopPropagation();" title="${b.upNext ? 'Remove from Up next' : 'Pin as Up next'}" aria-label="Pin as Up next"><svg class="icon-svg" aria-hidden="true"><use href="#icon-pin"></use></svg></button>`);
                     }
                 });
-                const pinned = wants.find(el => readingList.find(x => x.id === +el.dataset.id && x.upNext));
+                const pinned = wants.find(el => { const x = _byId.get(+el.dataset.id); return x && x.upNext; });
                 if (pinned && wants[0] !== pinned) wants[0].before(pinned);   // pinned book leads the Want group
                 if (wants.length && (rlStatusFilter === 'all' || rlStatusFilter === 'want'))
                     box.insertAdjacentHTML('afterbegin', `<div class="rl-pickbar"><button type="button" class="rl-pickbtn" title="Can't decide? Pick my next book" onclick="rlPickNext()"><svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-shuffle"></use></svg> Pick next</button></div>`);
@@ -49949,8 +49950,9 @@ const EnglishDaily = (function () {
             renderReadingList = function () {
                 _r.apply(this, arguments);
                 try {
+                    const _m2 = new Map(readingList.map(x => [x.id, x]));
                     document.querySelectorAll('#readingListContainer .book-item').forEach(el => {
-                        const b = get(el.dataset.id); if (!b) return;
+                        const b = _m2.get(+el.dataset.id); if (!b) return;
                         const t = b.takeaways, d = el.querySelector('.book-details');
                         const sp = el.querySelector('.book-actions-spacer');
                         if (sp) sp.insertAdjacentHTML('beforebegin', `<button class="book-action-btn${t ? ' has-tk' : ''}" onclick="rlOpenTakeaways(${b.id}); event.stopPropagation();" title="${t ? 'Edit takeaways' : 'Add takeaways'}" aria-label="Takeaways"><svg class="icon-svg" aria-hidden="true"><use href="#icon-sparkles"></use></svg></button>`);
@@ -50088,10 +50090,12 @@ const EnglishDaily = (function () {
             console.log('Adding book:', book);
             readingList.push(book);
             localStorage.setItem('readingList', JSON.stringify(readingList));
-            renderReadingList();
-            updateReadingCounts();
             closeAddBookModal();
-            showUndoAddToast([book.id], 'Added “' + (title.length > 32 ? title.slice(0, 32) + '…' : title) + '”');
+            requestAnimationFrame(() => {
+                renderReadingList();
+                updateReadingCounts();
+                showUndoAddToast([book.id], 'Added “' + (title.length > 32 ? title.slice(0, 32) + '…' : title) + '”');
+            });
         }
 
         function updateReadingCounts() {
@@ -92602,4 +92606,139 @@ body .course-controls .rl-pick-btn .rl-pick-chev { width: 12px; height: 12px; }
 <script src="./venus-account.js"></script>
 <script src="./venus-sync.js"></script>
 <script src="./venus-review.js"></script>
+<style id="bookModalPerfFix">
+/* ═══ Books: modal redesign + scroll/add performance ═══════════════════════
+   Appended last so it wins over the older stacked layers (rounds 1-5).
+   Root causes of the jank it removes:
+   - backdrop-filter:blur over the whole (huge) page behind the Add/Edit modal
+   - every card replays a staggered fade-in animation on each render
+   - large blurred shadows on every card + cover, repainted while scrolling
+   - the workspace nav bar blurring the page behind it
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* 1) Overlay: flat dim, no blur */
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background: rgba(36, 18, 30, .6) !important;
+    overscroll-behavior: contain;
+}
+html body :is(#addBookModal, #editBookModal) {
+    padding: clamp(12px, 3vh, 40px) clamp(12px, 3vw, 48px) !important;
+}
+html body.dark-mode :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) { color-scheme: dark; }
+
+/* page behind does not scroll while a book dialog is open */
+html body:has(:is(#addBookModal, #editBookModal)[style*="flex"]) { overflow: hidden; }
+
+/* 2) Add / Edit Book: wide card, fixed header + footer, one themed scrollbar */
+html body :is(#addBookModal, #editBookModal) .modal-content {
+    display: flex !important;
+    flex-direction: column;
+    padding: 0 !important;
+    width: min(980px, 100%) !important;
+    max-width: 980px !important;
+    max-height: min(92vh, 940px) !important;
+    overflow: hidden !important;
+    border-radius: 22px !important;
+    box-shadow: 0 18px 48px -18px rgba(74, 50, 64, .55) !important;
+}
+html body :is(#addBookModal, #editBookModal) .modal-header {
+    flex: 0 0 auto;
+    margin: 0 !important;
+    padding: 20px 32px 16px !important;
+    border-bottom: 1px solid var(--border-color) !important;
+}
+html body :is(#addBookModal, #editBookModal) .modal-header h3 { font-size: 1.25rem !important; }
+html body :is(#addBookModal, #editBookModal) .modal-close {
+    width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 12px; font-size: 24px; line-height: 1; padding: 0;
+}
+html body :is(#addBookForm, #editBookForm) {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    align-content: start;
+    padding: 22px 32px 0;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0 16px;
+}
+/* Title + Author side by side */
+html body #addBookForm .form-group:has(> #bookTitle),
+html body #addBookForm .form-group:has(> #bookAuthor),
+html body #editBookForm .form-group:has(> #editBookTitle),
+html body #editBookForm .form-group:has(> #editBookAuthor) { grid-column: span 3; }
+html body :is(#addBookForm, #editBookForm) textarea { min-height: 112px; }
+html body #addBookForm #bookPasteBox { min-height: 64px; }
+html body :is(#addBookForm, #editBookForm) .form-group { margin-bottom: 16px; }
+
+/* footer stays visible while the fields scroll */
+html body :is(#addBookModal, #editBookModal) .modal-actions {
+    position: sticky; bottom: 0; z-index: 3;
+    grid-column: 1 / -1;
+    display: flex; justify-content: flex-end; gap: 12px;
+    margin: 6px -32px 0 !important;
+    padding: 14px 32px !important;
+    background: var(--bg-white) !important;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 3) Scrollbars: thin, rose, no arrows (replaces the white default) */
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal),
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--primary-rgb, 209, 123, 150), .5) transparent;
+}
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) ::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) ::-webkit-scrollbar-track { background: transparent; }
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) ::-webkit-scrollbar-corner { background: transparent; }
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) ::-webkit-scrollbar-thumb {
+    background: rgba(var(--primary-rgb, 209, 123, 150), .45);
+    border-radius: 99px; border: 2px solid transparent; background-clip: padding-box;
+}
+html body :is(#addBookModal, #editBookModal, #fullReviewModal, #bookDetailsModal) ::-webkit-scrollbar-thumb:hover {
+    background: rgba(var(--primary-rgb, 209, 123, 150), .75); background-clip: padding-box;
+}
+
+/* 4) Small screens: bottom-sheet style, single column */
+@media (max-width: 640px) {
+    html body :is(#addBookModal, #editBookModal) { padding: 0 !important; align-items: flex-end !important; }
+    html body :is(#addBookModal, #editBookModal) .modal-content {
+        width: 100% !important; max-height: 96dvh !important; border-radius: 20px 20px 0 0 !important;
+    }
+    html body :is(#addBookModal, #editBookModal) .modal-header { padding: 16px 18px 12px !important; }
+    html body :is(#addBookForm, #editBookForm) { padding: 16px 18px 0; }
+    html body :is(#addBookForm, #editBookForm) > * { grid-column: 1 / -1 !important; }
+    html body :is(#addBookModal, #editBookModal) .modal-actions {
+        margin: 6px -18px 0 !important; padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+}
+
+/* 5) Book list: cheap to paint, no replayed entrance animation */
+html body #readingListCard .book-item {
+    animation: none !important;
+    transition: border-color .15s ease, background-color .15s ease !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .07) !important;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 170px;
+}
+html body #readingListCard .book-item:hover {
+    transform: none !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .1) !important;
+}
+html body #readingListCard .book-cover {
+    box-shadow: 0 3px 8px -2px rgba(0, 0, 0, .3) !important;
+    transition: none !important;
+}
+html body #readingListCard .book-item:hover .book-cover {
+    transform: none !important;
+    box-shadow: 0 3px 8px -2px rgba(0, 0, 0, .3) !important;
+}
+html body #readingListCard #readingListContainer { max-height: min(76vh, 840px) !important; }
+
+/* workspace nav bar: already ~92% opaque, the blur only costs paint time */
+html body #swNavShell { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+</style>
 </body>
