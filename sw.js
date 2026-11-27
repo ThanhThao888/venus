@@ -11,7 +11,7 @@ const CDN_CACHE = 'venus-cdn-' + CACHE_VERSION;
 
 const CORE = [
   './', './launcher.html', './index.html', './today.html', './prompts.html', './insights.html',
-  './tracker.css', './vault.css', './vault.js', './vault-cm.js', './pwa.js', './ai.js', './ai-hub.js', './venus-tools.js', './venus-memory.js', './venus-memory-ui.js',
+  './tracker.css', './vault.css', './vault.js', './vault-cm.js', './pwa.js', './ai.js', './ai-hub.js', './venus-tools.js', './venus-memory.js', './venus-memory-ui.js', './venus-account.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
 const CDN_PRECACHE = [
@@ -29,7 +29,9 @@ const CDN_PRECACHE = [
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs',
   /* Spreadsheet preview (vault.js SHEETJS_URL) and Mermaid diagrams (vault.js MM_VER) — keep versions in sync with vault.js */
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js'
+  'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js',
+  /* Venus Account sign-in (venus-account.js LIB_URL) — keep the version in sync with venus-account.js */
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js'
 ];
 const CDN_HOSTS = new Set(['cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com', 'cdn-icons-png.flaticon.com']);
 
