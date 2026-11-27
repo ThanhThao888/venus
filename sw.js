@@ -11,7 +11,7 @@ const CDN_CACHE = 'venus-cdn-' + CACHE_VERSION;
 
 const CORE = [
   './', './launcher.html', './index.html', './today.html', './prompts.html', './insights.html',
-  './tracker.css', './vault.css', './vault.js', './vault-cm.js', './pwa.js', './ai.js', './ai-hub.js', './venus-tools.js', './venus-memory.js',
+  './tracker.css', './vault.css', './vault.js', './vault-cm.js', './pwa.js', './ai.js', './ai-hub.js', './venus-tools.js', './venus-memory.js', './venus-memory-ui.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
 const CDN_PRECACHE = [
