@@ -89,7 +89,8 @@
         filters: {                           // advanced filter panel — additive (AND) on top of the current scope/search
             type: '', folder: '', tags: [],    // tags: lowercased, all must match
             createdDays: '', updatedDays: '',  // '' | '7' | '30' | '90' | '365'
-            checklist: false, code: false, link: false, pinnedOnly: false
+            checklist: false, code: false, link: false, pinnedOnly: false,
+            openTasks: false, noSkill: false   // Group C: unfinished tasks / not linked to a skill
         },
         query: '',
         limit: PAGE,
@@ -451,6 +452,7 @@
         // deadline are free-form and don't need to resolve against anything.
         n.linkedCareer = typeof n.linkedCareer === 'string' ? n.linkedCareer : '';
         n.linkedSkill = typeof n.linkedSkill === 'string' ? n.linkedSkill : '';
+        // n.extraSkills (the 2nd, 3rd… skill) is cleaned inside rebuildLinksFromLegacy below.
         n.course = typeof n.course === 'string' ? n.course : '';
         n.deadline = typeof n.deadline === 'string' ? n.deadline : '';
         // Review ladder step (see SRS_LADDER): -1 = none, otherwise the index of the step currently scheduled.
@@ -505,13 +507,150 @@
     // immediately in-session, without waiting for a reload).
     function rebuildLinksFromLegacy(n) {
         const links = [];
+        cleanExtraSkills(n);
         if (n.linkedSkill) links.push({ type: 'skill', id: n.linkedSkill, career: n.linkedCareer || '' });
+        n.extraSkills.forEach((x) => links.push({ type: 'skill', id: x.id, career: x.career }));
+        cleanExtraLinks(n);
         if (n.linkedCourseId) links.push({ type: 'course', id: n.linkedCourseId });
         if (n.linkedResourceId) links.push({ type: 'resource', id: n.linkedResourceId });
         if (n.linkedAnalysisId) links.push({ type: 'analysis', id: n.linkedAnalysisId });
         if (n.linkedDealId) links.push({ type: 'deal', id: n.linkedDealId });
+        n.extraLinks.forEach((x) => links.push({ type: x.type, id: x.id }));     // after the main ones, so getLinked(type)[0] is still the main link
         n.links = links;
         return n;
+    }
+    /* ───────── Several skills per note ─────────
+       linkedCareer + linkedSkill stay the note's MAIN skill, so everything that reads them (the Tracker's deadline sync,
+       the skill badges, YAML export, older backups) keeps working untouched. Any further skills live in extraSkills:
+       [{ career, id }]. A note links to each skill at most once; links[] lists the main skill first, then the rest. */
+    function cleanExtraSkills(n) {
+        const seen = new Set();
+        if (n.linkedSkill) seen.add((n.linkedCareer || '') + '::' + n.linkedSkill);
+        const out = [];
+        (Array.isArray(n.extraSkills) ? n.extraSkills : []).forEach((x) => {
+            if (!x || typeof x.id !== 'string' || !x.id || typeof x.career !== 'string' || !x.career) return;
+            const k = x.career + '::' + x.id;
+            if (seen.has(k)) return;
+            seen.add(k); out.push({ career: x.career, id: x.id });
+        });
+        n.extraSkills = out;
+        return out;
+    }
+    /* ───────── Several courses / resources / analyses / deals per note (same idea as extraSkills) ─────────
+       The legacy field pair (course + linkedCourseId, …) stays the MAIN link, so the Tracker badges, YAML export and older
+       backups keep working. Any further links of those types live in extraLinks: [{ type, id }], ids always as text. */
+    const MULTI_LINK_TYPES = ['course', 'resource', 'analysis', 'deal'];
+    const NV_ENTITY_META = {
+        course:   { label: 'Course',   icon: 'book',       where: 'Courses',              jump: 'jumpFromNoteToCourse',   all: () => (typeof courses !== 'undefined' ? courses : []),                    title: (x) => x.title },
+        resource: { label: 'Resource', icon: 'book-open',  where: 'the Resource Library', jump: 'jumpFromNoteToResource', all: () => (typeof resourceLibrary !== 'undefined' ? resourceLibrary : []),    title: (x) => x.title },
+        analysis: { label: 'Analysis', icon: 'chart-line', where: 'Investment Analysis',  jump: 'jumpFromNoteToAnalysis', all: () => (typeof investmentAnalyses !== 'undefined' ? investmentAnalyses : []), title: (x) => x.title },
+        deal:     { label: 'Deal',     icon: 'handshake',  where: 'Deal Diary',           jump: 'jumpFromNoteToDeal',     all: () => (typeof dealDiary !== 'undefined' ? dealDiary : []),                title: (x) => x.dealName }
+    };
+    const LINK_ID_FIELD = { course: 'linkedCourseId', resource: 'linkedResourceId', analysis: 'linkedAnalysisId', deal: 'linkedDealId' };
+    function entityLive(type, id) { const m = NV_ENTITY_META[type]; return m ? (m.all().find((x) => String(x.id) === String(id)) || null) : null; }
+    function entityTitleOf(type, id) { const x = entityLive(type, id); return x ? (NV_ENTITY_META[type].title(x) || '') : ''; }
+    function cleanExtraLinks(n) {
+        const seen = new Set();
+        MULTI_LINK_TYPES.forEach((t) => { const id = n[LINK_ID_FIELD[t]]; if (id) seen.add(t + '::' + String(id)); });
+        const out = [];
+        (Array.isArray(n.extraLinks) ? n.extraLinks : []).forEach((x) => {
+            if (!x || MULTI_LINK_TYPES.indexOf(x.type) < 0 || (typeof x.id !== 'string' && typeof x.id !== 'number') || x.id === '') return;
+            const k = x.type + '::' + String(x.id);
+            if (seen.has(k)) return;
+            seen.add(k); out.push({ type: x.type, id: String(x.id) });
+        });
+        n.extraLinks = out;
+        return out;
+    }
+    const hasEntityLink = (n, type, id) => EntityLinks.getLinked(n, type).some((l) => String(l.id) === String(id));
+    // Adds a link without touching the others of that type. Returns 'main' (it became the main one), 'added' or 'exists'.
+    // The caller sets the free-text label (note.course …) when the result is 'main'.
+    function addEntityLink(n, type, id) {
+        if (!n || !id || MULTI_LINK_TYPES.indexOf(type) < 0) return '';
+        rebuildLinksFromLegacy(n);                          // links[] may be stale (e.g. mid-merge)
+        if (hasEntityLink(n, type, id)) return 'exists';
+        if (!n[LINK_ID_FIELD[type]]) { n[LINK_ID_FIELD[type]] = String(id); rebuildLinksFromLegacy(n); return 'main'; }
+        n.extraLinks.push({ type, id: String(id) });
+        rebuildLinksFromLegacy(n);
+        return 'added';
+    }
+    // Removes one link. Removing the main one hands that role to the next of the same type (its title becomes the label).
+    function removeEntityLink(n, type, id) {
+        if (!n || MULTI_LINK_TYPES.indexOf(type) < 0) return false;
+        cleanExtraLinks(n);
+        const f = LINK_ID_FIELD[type];
+        if (n[f] && String(n[f]) === String(id)) {
+            const i = n.extraLinks.findIndex((x) => x.type === type);
+            if (i >= 0) { const next = n.extraLinks.splice(i, 1)[0]; n[f] = next.id; n[type] = entityTitleOf(type, next.id); }
+            else { n[f] = ''; n[type] = ''; }
+            rebuildLinksFromLegacy(n);
+            return true;
+        }
+        const j = n.extraLinks.findIndex((x) => x.type === type && x.id === String(id));
+        if (j < 0) return false;
+        n.extraLinks.splice(j, 1);
+        rebuildLinksFromLegacy(n);
+        return true;
+    }
+    function promoteEntityLink(n, type, id) {
+        if (!n || MULTI_LINK_TYPES.indexOf(type) < 0) return false;
+        cleanExtraLinks(n);
+        const f = LINK_ID_FIELD[type];
+        const j = n.extraLinks.findIndex((x) => x.type === type && x.id === String(id));
+        if (j < 0) return false;
+        n.extraLinks.splice(j, 1);
+        if (n[f]) n.extraLinks.unshift({ type, id: String(n[f]) });
+        n[f] = String(id); n[type] = entityTitleOf(type, id);
+        rebuildLinksFromLegacy(n);
+        return true;
+    }
+    function skillEntries(n) {
+        if (!n) return [];
+        cleanExtraSkills(n);
+        const out = [];
+        if (n.linkedSkill) out.push({ career: n.linkedCareer || '', id: n.linkedSkill });
+        return out.concat(n.extraSkills);
+    }
+    // loose: a main skill saved without a career (very old data) counts as a match for that skill name in any career.
+    function hasSkillLinkTo(n, career, skill, loose) {
+        return skillEntries(n).some((e) => e.id === skill && (e.career === (career || '') || (loose && !e.career)));
+    }
+    // Adds a skill without touching the ones already there. Returns 'main' (became the main skill), 'added', or 'exists'.
+    function addSkillLink(n, career, skill) {
+        if (!n || !career || !skill) return '';
+        if (hasSkillLinkTo(n, career, skill, true)) return 'exists';
+        if (!n.linkedSkill) { n.linkedCareer = career; n.linkedSkill = skill; rebuildLinksFromLegacy(n); return 'main'; }
+        n.extraSkills.push({ career, id: skill });
+        rebuildLinksFromLegacy(n);
+        return 'added';
+    }
+    // Removes one skill. Removing the main skill hands that role to the next one, if any.
+    function removeSkillLink(n, career, skill) {
+        if (!n) return false;
+        cleanExtraSkills(n);
+        if (n.linkedSkill === skill && ((n.linkedCareer || '') === (career || '') || !n.linkedCareer)) {
+            const next = n.extraSkills.shift();
+            if (next) { n.linkedCareer = next.career; n.linkedSkill = next.id; } else n.linkedSkill = '';
+            rebuildLinksFromLegacy(n);
+            return true;
+        }
+        const i = n.extraSkills.findIndex((x) => x.id === skill && x.career === career);
+        if (i < 0) return false;
+        n.extraSkills.splice(i, 1);
+        rebuildLinksFromLegacy(n);
+        return true;
+    }
+    // Makes an extra skill the main one; the old main skill moves into the extras.
+    function promoteSkillLink(n, career, skill) {
+        if (!n) return false;
+        cleanExtraSkills(n);
+        const i = n.extraSkills.findIndex((x) => x.id === skill && x.career === career);
+        if (i < 0) return false;
+        const picked = n.extraSkills.splice(i, 1)[0];
+        if (n.linkedSkill) n.extraSkills.unshift({ career: n.linkedCareer || '', id: n.linkedSkill });
+        n.linkedCareer = picked.career; n.linkedSkill = picked.id;
+        rebuildLinksFromLegacy(n);
+        return true;
     }
     // Writes an entity link's legacy fields — the one place per type that knows which
     // flat field(s) that type maps to. `skill` is composite (career + skill name); a skill
@@ -553,7 +692,10 @@
         },
         getEntry(note, type) { return this.getLinked(note, type)[0] || null; },
         getId(note, type) { const e = this.getEntry(note, type); return e ? e.id : ''; },
-        has(note, type, id) { return this.getLinked(note, type).some((l) => l.id === id); },
+        has(note, type, id) { return this.getLinked(note, type).some((l) => String(l.id) === String(id)); },
+        hasSkill(note, career, id) { return hasSkillLinkTo(note, career, id); },
+        // Resolves one specific link entry (needed for skill, where a note can hold several).
+        resolveEntry(entry, note) { const r = entry && EntityLinks.RESOLVERS[entry.type || 'skill']; return r ? r(entry, note) : null; },
         count(note) { return (note && Array.isArray(note.links)) ? note.links.length : 0; },
         // Same lookup as getId, but for a raw IndexedDB record that may predate normalizeNote
         // (used by the getXLinkCounts family, which reads straight from the DB so the other
@@ -585,7 +727,7 @@
                     (cat.skills || []).some((sk) => sk.name === entry.id));
                 return found ? { id: entry.id, career: entry.career, name: entry.id } : null;
             },
-            course: (entry) => (typeof courses !== 'undefined') ? (courses.find((c) => c.id === entry.id) || null) : null,
+            course: (entry) => (typeof courses !== 'undefined') ? (courses.find((c) => String(c.id) === String(entry.id)) || null) : null,
             resource: (entry) => (typeof resourceLibrary !== 'undefined') ? (resourceLibrary.find((r) => r.id == entry.id) || null) : null,
             analysis: (entry) => (typeof investmentAnalyses !== 'undefined') ? (investmentAnalyses.find((a) => a.id == entry.id) || null) : null,
             deal: (entry) => (typeof dealDiary !== 'undefined') ? (dealDiary.find((d) => d.id == entry.id) || null) : null
@@ -609,10 +751,10 @@
 
     function filtersActive() {
         const f = S.filters;
-        return !!(f.type || f.folder || f.tags.length || f.createdDays || f.updatedDays || f.checklist || f.code || f.link || f.pinnedOnly);
+        return !!(f.type || f.folder || f.tags.length || f.createdDays || f.updatedDays || f.checklist || f.code || f.link || f.pinnedOnly || f.openTasks || f.noSkill);
     }
-    function passesFilters(n) {
-        const f = S.filters;
+    function passesFilters(n, fOverride) {
+        const f = fOverride || S.filters;   // fOverride: a saved view's filters, for its sidebar count
         if (f.pinnedOnly && !n.pinned) return false;
         if (f.folder && typeKey(n.type) !== f.folder) return false;
         if (f.tags.length) {
@@ -623,6 +765,8 @@
         if (f.checklist && !hasChecklistSyntax(n.markdown)) return false;
         if (f.code && !hasCodeSyntax(n.markdown)) return false;
         if (f.link && !hasLinkSyntax(n.markdown)) return false;
+        if (f.openTasks && !hasOpenTasks(n.markdown)) return false;
+        if (f.noSkill && hasSkillLink(n)) return false;
         if (f.createdDays && n.createdAt < Date.now() - Number(f.createdDays) * 864e5) return false;
         if (f.updatedDays && n.updatedAt < Date.now() - Number(f.updatedDays) * 864e5) return false;
         return true;
@@ -1312,7 +1456,7 @@
                 fg: fold(n.tags.join(' ').normalize('NFC')),
                 fy: fold(normType(n.type).normalize('NFC')),
                 // course + linked career/skill, so e.g. "MIT 14.13" or a skill name finds its notes too
-                fc: fold([n.course, n.linkedCareer, n.linkedSkill].filter(Boolean).join(' ').normalize('NFC'))
+                fc: fold([n.course, n.linkedCareer, n.linkedSkill].concat((n.extraSkills || []).map((x) => x.id)).filter(Boolean).join(' ').normalize('NFC'))
             };
             foldCache.set(n.id, e);
         }
@@ -1389,19 +1533,111 @@
         WIKILINK_RE.lastIndex = 0;
         let m;
         while ((m = WIKILINK_RE.exec(clean))) {
-            const title = m[1].trim();
-            if (!title) continue;
-            out.push({ title, alias: (m[2] || '').trim() || null, index: m.index, len: m[0].length });
+            const raw = m[1].trim();
+            if (!raw) continue;
+            const t = splitWikiTarget(raw);
+            if (!t.title) continue;                       // [[#Heading]] points inside the same note: not a link to another note
+            // title = the NOTE part only, so every caller that compares it with a note title keeps working unchanged.
+            out.push({ title: t.title, heading: t.heading, raw, alias: (m[2] || '').trim() || null, index: m.index, len: m[0].length });
         }
         return out;
     }
     function plainSnippetWiki(md) {
-        return plainSnippet(md.replace(WIKILINK_RE, (mm, t, a) => (a || t).trim()));
+        return plainSnippet(md.replace(WIKILINK_RE, (mm, t, a) => wikiLabel(t, a)));
     }
     function findNoteByTitle(title) {
         const key = fold(String(title || '').trim());
         if (!key) return null;
         return S.notes.find((n) => fold((n.title || '').trim()) === key) || null;
+    }
+
+    /* ───────── Heading links: [[Note#Heading]], [[Note#Heading|Text]] and [[#Heading]] (same note) ─────────
+       Nothing extra is stored: like title links, a heading link is resolved fresh each time it is drawn or clicked.
+       A note that is really called "C# basics" still wins over the split, so titles containing "#" keep working. */
+    function splitWikiTarget(raw) {
+        const r = String(raw == null ? '' : raw).trim();
+        const i = r.indexOf('#');
+        if (i === -1) return { title: r, heading: '' };
+        if (findNoteByTitle(r)) return { title: r, heading: '' };
+        if (i === 0) { const h0 = r.slice(1).trim(); return h0 ? { title: '', heading: h0 } : { title: r, heading: '' }; }
+        for (let k = i; k !== -1; k = r.indexOf('#', k + 1)) {
+            const t = r.slice(0, k).trim(), h = r.slice(k + 1).trim();
+            if (t && h && findNoteByTitle(t)) return { title: t, heading: h };
+        }
+        // The note doesn't exist (yet, or any more): still read "Note#Heading" as a heading link, but not "C# tutorial".
+        const t = r.slice(0, i).trim(), h = r.slice(i + 1).trim();
+        if (t && h && !/^[\s#]/.test(r.slice(i + 1))) return { title: t, heading: h };
+        return { title: r, heading: '' };
+    }
+    // What a link shows when it has no |alias.
+    function wikiLabel(raw, alias) {
+        const a = String(alias || '').trim();
+        if (a) return a;
+        const r = String(raw || '').trim(), t = splitWikiTarget(r);
+        if (!t.heading) return r;
+        return t.title ? t.title + ' \u203a ' + t.heading : t.heading;
+    }
+    // Headings are compared without markup, case or accents, so "## The **WACC** formula" matches [[Note#the wacc formula]].
+    function wikiHeadingKey(s) {
+        return fold(String(s == null ? '' : s)
+            .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+            .replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2')
+            .replace(/\[\[([^\]]*)\]\]/g, '$1')
+            .replace(/[*_`~=]/g, '').replace(/\s+/g, ' ').trim());
+    }
+    // Index of the heading a link means, or -1. Exact match first; unless `strict`, then "starts with", then "contains".
+    // "Note#Chapter#Section" (Obsidian's nested form) falls back to the last part.
+    function pickHeadingIdx(texts, heading, strict) {
+        const h = String(heading || '').trim();
+        if (!h) return -1;
+        const segs = [h], parts = h.split('#').map((x) => x.trim()).filter(Boolean);
+        if (parts.length > 1) segs.push(parts[parts.length - 1]);
+        const keys = texts.map(wikiHeadingKey);
+        for (const sg of segs) { const k = wikiHeadingKey(sg); if (!k) continue; const i = keys.indexOf(k); if (i >= 0) return i; }
+        if (strict) return -1;
+        for (const sg of segs) {
+            const k = wikiHeadingKey(sg); if (k.length < 3) continue;
+            let i = keys.findIndex((x) => x.indexOf(k) === 0); if (i >= 0) return i;
+            i = keys.findIndex((x) => x.indexOf(k) >= 0); if (i >= 0) return i;
+        }
+        return -1;
+    }
+    // Scrolls a rendered (Read) pane to the heading and flashes it. Returns true if it found one.
+    function wikiGoIn(root, heading) {
+        if (!root || root.hidden || !heading) return false;
+        const hs = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6')];
+        const k = pickHeadingIdx(hs.map((x) => x.textContent), heading, false);
+        if (k < 0) { flash('No heading \u201c' + heading + '\u201d in this note'); return false; }
+        const h = hs[k];
+        h.scrollIntoView({ block: 'start' });
+        h.classList.remove('nv-hl-flash'); void h.offsetWidth; h.classList.add('nv-hl-flash');
+        setTimeout(() => h.classList.remove('nv-hl-flash'), 1800);
+        return true;
+    }
+    // Same, for the note open on the left: Read pane when it is showing, else put the caret on that heading in the editor.
+    function wikiGoLeft(heading) {
+        if (!heading || !S.note) return;
+        if (!el.read.hidden) { wikiGoIn(el.read, heading); return; }
+        if (el.src.hidden) { flash('Switch to Read mode to jump to a heading'); return; }
+        const items = outlineFromMd(S.note.markdown || '');
+        const k = pickHeadingIdx(items.map((x) => x.text), heading, false);
+        if (k < 0) { flash('No heading \u201c' + heading + '\u201d in this note'); return; }
+        el.src.focus();
+        el.src.setSelectionRange(items[k].off, items[k].off);
+        scrollSrcTo(items[k].off);
+    }
+    // [[#Heading]] links written inside a note (they point at the note itself).
+    function extractSelfHeadingLinks(md) {
+        const clean = stripFences(md || ''), out = [];
+        WIKILINK_RE.lastIndex = 0;
+        let m;
+        while ((m = WIKILINK_RE.exec(clean))) {
+            const r = m[1].trim();
+            if (r.charAt(0) !== '#' || findNoteByTitle(r)) continue;
+            const h = r.slice(1).trim();
+            if (h) out.push(h);
+        }
+        return out;
     }
 
     /* ═════════════ Duplicate title guard ═════════════
@@ -1732,7 +1968,7 @@
             await snapshot({ id: n.id, title: n.title, markdown: n.markdown }, { label: 'before-relink' });   // never throws; keeps the old text one click away in History
             let md = n.markdown;
             hits.sort((a, b) => b.index - a.index).forEach((h) => {
-                const repl = h.alias ? ('[[' + newTitle + '|' + h.alias + ']]') : ('[[' + newTitle + ']]');
+                const repl = '[[' + newTitle + (h.heading ? '#' + h.heading : '') + (h.alias ? '|' + h.alias : '') + ']]';
                 md = md.slice(0, h.index) + repl + md.slice(h.index + h.len);
             });
             n.markdown = md;
@@ -1970,9 +2206,14 @@
                 if (raw.deletedAt) continue;                       // trashed notes don't count
                 const skill = EntityLinks.idFromRaw(raw, 'skill');
                 const career = raw.linkedCareer;
-                if (!career || !skill) continue;
-                if (!counts[career]) counts[career] = {};
-                counts[career][skill] = (counts[career][skill] || 0) + 1;
+                const mine = new Set();                               // a note counts once per skill, however many times it lists it
+                if (career && skill) mine.add(career + '\u0001' + skill);
+                (Array.isArray(raw.extraSkills) ? raw.extraSkills : []).forEach((x) => { if (x && x.career && typeof x.id === 'string' && x.id) mine.add(x.career + '\u0001' + x.id); });
+                mine.forEach((k) => {
+                    const [c, sk] = k.split('\u0001');
+                    if (!counts[c]) counts[c] = {};
+                    counts[c][sk] = (counts[c][sk] || 0) + 1;
+                });
             }
             return counts;
         } catch (e) { console.warn('Notes Vault: could not compute skill link counts', e); return {}; }
@@ -1992,9 +2233,11 @@
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = EntityLinks.idFromRaw(raw, 'course');
-                if (!id) continue;
-                counts[id] = (counts[id] || 0) + 1;
+                const ids = new Set();                                 // once per note per course, however many times it is listed
+                const main = EntityLinks.idFromRaw(raw, 'course');
+                if (main) ids.add(String(main));
+                (Array.isArray(raw.extraLinks) ? raw.extraLinks : []).forEach((x) => { if (x && x.type === 'course' && x.id !== '' && x.id != null) ids.add(String(x.id)); });
+                ids.forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
             }
             return counts;
         } catch (e) { console.warn('Notes Vault: could not compute course link counts', e); return {}; }
@@ -2015,9 +2258,11 @@
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = EntityLinks.idFromRaw(raw, 'resource');
-                if (!id) continue;
-                counts[id] = (counts[id] || 0) + 1;
+                const ids = new Set();                                 // once per note per resource, however many times it is listed
+                const main = EntityLinks.idFromRaw(raw, 'resource');
+                if (main) ids.add(String(main));
+                (Array.isArray(raw.extraLinks) ? raw.extraLinks : []).forEach((x) => { if (x && x.type === 'resource' && x.id !== '' && x.id != null) ids.add(String(x.id)); });
+                ids.forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
             }
             return counts;
         } catch (e) { console.warn('Notes Vault: could not compute resource link counts', e); return {}; }
@@ -2041,9 +2286,11 @@
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = EntityLinks.idFromRaw(raw, 'analysis');
-                if (!id) continue;
-                counts[id] = (counts[id] || 0) + 1;
+                const ids = new Set();                                 // once per note per analysis, however many times it is listed
+                const main = EntityLinks.idFromRaw(raw, 'analysis');
+                if (main) ids.add(String(main));
+                (Array.isArray(raw.extraLinks) ? raw.extraLinks : []).forEach((x) => { if (x && x.type === 'analysis' && x.id !== '' && x.id != null) ids.add(String(x.id)); });
+                ids.forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
             }
             return counts;
         } catch (e) { console.warn('Notes Vault: could not compute analysis link counts', e); return {}; }
@@ -2067,9 +2314,11 @@
             const counts = {};
             for (const raw of all) {
                 if (raw.deletedAt) continue;
-                const id = EntityLinks.idFromRaw(raw, 'deal');
-                if (!id) continue;
-                counts[id] = (counts[id] || 0) + 1;
+                const ids = new Set();                                 // once per note per deal, however many times it is listed
+                const main = EntityLinks.idFromRaw(raw, 'deal');
+                if (main) ids.add(String(main));
+                (Array.isArray(raw.extraLinks) ? raw.extraLinks : []).forEach((x) => { if (x && x.type === 'deal' && x.id !== '' && x.id != null) ids.add(String(x.id)); });
+                ids.forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
             }
             return counts;
         } catch (e) { console.warn('Notes Vault: could not compute deal link counts', e); return {}; }
@@ -2137,16 +2386,13 @@
     }
     function noteCanBeLinkedToTarget(note, type, id) {
         if (!note || note.deletedAt || !id) return false;
-        return !EntityLinks.has(note, type, id);
+        if (type === 'skill') return !hasSkillLinkTo(note, S.linkPicker && S.linkPicker.career, id, true);   // a skill adds to the others
+        return !hasEntityLink(note, type, id);
     }
     // A note holds ONE link per type (see EntityLinks). If it is already linked to a different target of this type,
     // linking it again replaces that link — returns the title of what it currently points to, or '' if there is none.
     function linkReplacesTitle(note, type, id) {
-        const cur = EntityLinks.getId(note, type);
-        if (!cur || String(cur) === String(id)) return '';
-        // skill id IS the skill name; the other types keep a text label of what they were linked to (note.course etc.).
-        const t = String(type === 'skill' ? cur : (note[type] || '')).trim();
-        return t || ('another ' + type);
+        return '';                                            // every type accumulates now: linking never replaces a link
     }
     function linkPickerMatches(note, query) {
         if (!query) return true;
@@ -2234,17 +2480,18 @@
         if (replaced && !confirm('This note is already linked to “' + replaced + '”. A note can have only one ' + lp.type + ' link, so linking it to “' + lp.title + '” will replace that link.\n\nContinue?')) return;
         const before = { title: note.title, updatedAt: note.updatedAt };
         try {
-            EntityLinks.link(note, lp.type, lp.id, lp.type === 'skill' ? { career: lp.career } : {});
-            if (lp.type === 'skill') { note.linkedCareer = lp.career || note.linkedCareer || ''; note.linkedSkill = lp.id; }
-            else if (lp.type === 'course') { note.course = lp.title || note.course || ''; if (lp.career && !note.linkedSkill) note.linkedCareer = lp.career; }   // keep the career a linked Skill depends on
-            else if (lp.type === 'resource') note.resource = lp.title || note.resource || '';
-            else if (lp.type === 'analysis') note.analysis = lp.title || note.analysis || '';
-            else if (lp.type === 'deal') note.deal = lp.title || note.deal || '';
+            if (lp.type === 'skill') addSkillLink(note, lp.career, lp.id);      // adds; never replaces the skills it already has
+            else {
+                const r = addEntityLink(note, lp.type, lp.id);      // adds; never replaces the links it already has
+                if (r === 'main') note[lp.type] = lp.title || note[lp.type] || '';             // only the main link carries the text label
+                if (lp.type === 'course' && lp.career && !note.linkedSkill) note.linkedCareer = lp.career;   // keep the career a linked Skill depends on
+            }
             note.updatedAt = Date.now();
             await dbPut(note);
             rebuildLinksFromLegacy(note);
             if (S.note && S.note.id === note.id) {
                 S.note = note; S.savedAt = note.updatedAt; S.dirty = false; renderDocMeta(); renderContextPane(); renderAll();
+                nvSyncLinkFields();
             } else {
                 renderSide(); renderLibrary();
             }
@@ -2263,15 +2510,11 @@
         if (!note) return;
         const targetTitle = scopedEntityTitle(sc.kind, sc.value);
         try {
-            EntityLinks.unlink(note, sc.kind);
-            if (sc.kind === 'course') note.course = '';
-            if (sc.kind === 'resource') note.resource = '';
-            if (sc.kind === 'analysis') note.analysis = '';
-            if (sc.kind === 'deal') note.deal = '';
-            if (sc.kind === 'skill') note.linkedSkill = '';
+            if (sc.kind === 'skill') removeSkillLink(note, sc.value.career, sc.value.skill);   // only this skill; the note's others stay
+            else removeEntityLink(note, sc.kind, sc.value.id);          // only this link; the note's others stay (and the text label follows the main link)
             note.updatedAt = Date.now();
             await dbPut(note);
-            if (S.note && S.note.id === note.id) { renderDocMeta(); renderContextPane(); }
+            if (S.note && S.note.id === note.id) { renderDocMeta(); renderContextPane(); nvSyncLinkFields(); }
             renderAll();
             afterEntityLinkChanged(sc.kind);
             flash('Unlinked “' + (note.title.trim() || 'Untitled note') + '” from ' + targetTitle);
@@ -2325,13 +2568,13 @@
         else if (kind === 'pinned') list = S.notes.filter((n) => n.pinned);
         else if (kind === 'folder') list = S.notes.filter((n) => typeKey(n.type) === value);
         else if (kind === 'tag') list = S.notes.filter((n) => n.tags.some((t) => t.toLowerCase() === value));
-        else if (kind === 'skill') list = S.notes.filter((n) => n.linkedCareer === value.career && EntityLinks.has(n, 'skill', value.skill));
-        else if (kind === 'course') list = S.notes.filter((n) => EntityLinks.has(n, 'course', value.id));
-        else if (kind === 'resource') list = S.notes.filter((n) => EntityLinks.has(n, 'resource', value.id));
-        else if (kind === 'analysis') list = S.notes.filter((n) => EntityLinks.has(n, 'analysis', value.id));
-        else if (kind === 'deal') list = S.notes.filter((n) => EntityLinks.has(n, 'deal', value.id));
+        else if (kind === 'skill') list = S.notes.filter((n) => hasSkillLinkTo(n, value.career, value.skill));
+        else if (kind === 'course') list = S.notes.filter((n) => hasEntityLink(n, 'course', value.id));
+        else if (kind === 'resource') list = S.notes.filter((n) => hasEntityLink(n, 'resource', value.id));
+        else if (kind === 'analysis') list = S.notes.filter((n) => hasEntityLink(n, 'analysis', value.id));
+        else if (kind === 'deal') list = S.notes.filter((n) => hasEntityLink(n, 'deal', value.id));
         else list = S.notes.slice();
-        if (active) list = list.filter(passesFilters);
+        if (active) list = list.filter((n) => passesFilters(n));
         return sortList(list);
     }
 
@@ -2386,7 +2629,8 @@
         let html = item('all', '', 'layer-group', 'All notes', S.notes.length)
             + item('recent', '', 'clock', 'Recent', recent)
             + item('pinned', '', 'star', 'Pinned', pinned)
-            + item('trash', '', 'trash', 'Trash', S.trash.length);
+            + item('trash', '', 'trash', 'Trash', S.trash.length)
+            + svSideHtml();
 
         const fl = [...folders.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
         html += '<div class="nv-side-h nv-side-h-row"><span>Folders</span><button type="button" class="nv-side-h-add" data-new-folder title="New folder" aria-label="New folder"><i class="fa-solid fa-plus" aria-hidden="true"></i>New</button>'
@@ -2513,10 +2757,11 @@
         el.libSub.textContent = sub;
         el.emptyTrash.hidden = !(inTrash && list.length);
         renderScopeActions();
-        if (!list.length) { el.list.innerHTML = emptyHtml(tokens.length > 0); updateStatusRight(); return; }
+        if (!list.length) { el.list.innerHTML = emptyHtml(tokens.length > 0); selSync(list, inTrash); updateStatusRight(); return; }
         const shown = list.slice(0, S.limit);
         el.list.innerHTML = shown.map((n) => inTrash ? trashRowHtml(n) : rowHtml(n, tokens)).join('')
             + (list.length > shown.length ? `<button type="button" class="nv-btn nv-more" data-more>Show ${Math.min(PAGE, list.length - shown.length)} more</button>` : '');
+        selSync(list, inTrash);
         updateStatusRight();
     }
 
@@ -2570,18 +2815,22 @@
             let m, last = 0, hit = false;
             const frag = document.createDocumentFragment();
             while ((m = WIKILINK_RE.exec(text))) {
-                const title = m[1].trim();
-                if (!title) continue;
+                const raw = m[1].trim();
+                if (!raw) continue;
                 hit = true;
                 if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
                 const alias = (m[2] || '').trim();
-                const resolved = findNoteByTitle(title);
+                const wt = splitWikiTarget(raw), title = wt.title;
+                const resolved = title ? findNoteByTitle(title) : true;          // [[#Heading]] is always "this note"
                 const a = document.createElement('a');
                 a.href = '#';
                 a.className = resolved ? 'nv-wikilink' : 'nv-wikilink nv-wikilink-new';
-                a.dataset.wikilink = title;
-                a.title = resolved ? 'Open “' + title + '”' : 'Create note “' + title + '”';
-                a.textContent = alias || title;
+                a.dataset.wikilink = title;                                       // '' for [[#Heading]]
+                if (wt.heading) a.dataset.wikiheading = wt.heading;
+                a.title = !title ? 'Jump to “' + wt.heading + '”'
+                    : resolved ? 'Open “' + title + '”' + (wt.heading ? ' at “' + wt.heading + '”' : '')
+                    : 'Create note “' + title + '”';
+                a.textContent = alias || wikiLabel(raw);
                 frag.appendChild(a);
                 last = m.index + m[0].length;
             }
@@ -4245,15 +4494,37 @@
     function nvLinkedSkillLive(n) {
         return !!EntityLinks.resolve(n, 'skill');
     }
-    function renderSkillLinkPill(n) {
-        const skillName = EntityLinks.getId(n, 'skill');
-        if (!n.linkedCareer || !skillName) return '';
-        const live = nvLinkedSkillLive(n);
-        const careerTitle = (typeof skillsData !== 'undefined' && skillsData[n.linkedCareer]) ? skillsData[n.linkedCareer].title : n.linkedCareer;
+    // One pill per linked entity of that type. A dead link shows the note's own text label if it is the main link.
+    function renderEntityPills(n, type) {
+        const m = NV_ENTITY_META[type], main = String(EntityLinks.getId(n, type));
+        return EntityLinks.getLinked(n, type).map((e) => {
+            const x = entityLive(type, e.id);
+            if (!x) {
+                const label = (String(e.id) === main && n[type]) || m.label;
+                return `<span class="nv-folder-pill nv-skill-pill-dead" title="This ${m.label.toLowerCase()} no longer exists in ${m.where}"><i class="fa-solid fa-link-slash"></i>${esc(label)}</span>`;
+            }
+            const t = m.title(x);
+            return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(t)}” in ${m.where}" onclick="window.${m.jump}('${esc(String(x.id))}')"><i class="fa-solid fa-${m.icon}"></i>${esc(t)}</button>`;
+        }).join('');
+    }
+    // Pills for the links, plus the plain text label when the note only has free text (nothing linked as its main entry).
+    function renderEntityMeta(n, type) {
+        const m = NV_ENTITY_META[type];
+        const text = (!EntityLinks.getId(n, type) && n[type]) ? `<span title="${m.label}"><i class="fa-solid fa-${m.icon}" aria-hidden="true"></i> ${esc(n[type])}</span>` : '';
+        return text + renderEntityPills(n, type);
+    }
+    function renderSkillPillFor(career, skillName) {
+        if (!career || !skillName) return '';
+        const live = !!EntityLinks.RESOLVERS.skill({ career, id: skillName });
+        const careerTitle = (typeof skillsData !== 'undefined' && skillsData[career]) ? skillsData[career].title : career;
         if (!live) {
             return `<span class="nv-folder-pill nv-skill-pill-dead" title="“${esc(skillName)}” no longer exists in the Tracker"><i class="fa-solid fa-link-slash"></i>${esc(skillName)}</span>`;
         }
-        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(skillName)}” in Tracker — ${esc(careerTitle)}" onclick="window.jumpFromNoteToSkill('${esc(n.linkedCareer)}', '${esc(skillName).replace(/'/g, "&#39;")}')"><i class="fa-solid fa-bullseye"></i>${esc(skillName)}</button>`;
+        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(skillName)}” in Tracker — ${esc(careerTitle)}" onclick="window.jumpFromNoteToSkill('${esc(career)}', '${esc(skillName).replace(/'/g, "&#39;")}')"><i class="fa-solid fa-bullseye"></i>${esc(skillName)}</button>`;
+    }
+    // One pill per linked skill: the main skill first, then the others.
+    function renderSkillLinkPill(n) {
+        return skillEntries(n).map((e) => renderSkillPillFor(e.career, e.id)).join('');
     }
     // Does n.linkedCourseId still exist in the Courses tracker? A course can be deleted
     // after a note already links to it, so the chip needs to degrade gracefully instead
@@ -4261,14 +4532,7 @@
     function nvLinkedCourseLive(n) {
         return EntityLinks.resolve(n, 'course');
     }
-    function renderCourseLinkPill(n) {
-        if (!EntityLinks.getId(n, 'course')) return '';
-        const course = nvLinkedCourseLive(n);
-        if (!course) {
-            return `<span class="nv-folder-pill nv-skill-pill-dead" title="This course no longer exists in the Courses tracker"><i class="fa-solid fa-link-slash"></i>${esc(n.course || 'Course')}</span>`;
-        }
-        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(course.title)}” in Courses" onclick="window.jumpFromNoteToCourse('${esc(course.id)}')"><i class="fa-solid fa-book"></i>${esc(course.title)}</button>`;
-    }
+    function renderCourseLinkPill(n) { return renderEntityPills(n, 'course'); }
     // Best-effort resolver for the free-text Course field against the live Courses tracker —
     // same philosophy as findSkillMatch: only auto-link on an exact, unambiguous title match
     // (case-insensitive), otherwise leave it as a plain text label rather than guessing.
@@ -4284,14 +4548,7 @@
     function nvLinkedResourceLive(n) {
         return EntityLinks.resolve(n, 'resource');
     }
-    function renderResourceLinkPill(n) {
-        if (!EntityLinks.getId(n, 'resource')) return '';
-        const resource = nvLinkedResourceLive(n);
-        if (!resource) {
-            return `<span class="nv-folder-pill nv-skill-pill-dead" title="This resource no longer exists in the Resource Library"><i class="fa-solid fa-link-slash"></i>${esc(n.resource || 'Resource')}</span>`;
-        }
-        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(resource.title)}” in the Resource Library" onclick="window.jumpFromNoteToResource('${esc(resource.id)}')"><i class="fa-solid fa-book-open"></i>${esc(resource.title)}</button>`;
-    }
+    function renderResourceLinkPill(n) { return renderEntityPills(n, 'resource'); }
     // Best-effort resolver for the free-text Resource field against the live Resource
     // Library — same philosophy as resolveCourseLink: only auto-link on an exact,
     // unambiguous title match (case-insensitive), otherwise leave it as plain text.
@@ -4308,14 +4565,7 @@
     function nvLinkedAnalysisLive(n) {
         return EntityLinks.resolve(n, 'analysis');
     }
-    function renderAnalysisLinkPill(n) {
-        if (!EntityLinks.getId(n, 'analysis')) return '';
-        const analysis = nvLinkedAnalysisLive(n);
-        if (!analysis) {
-            return `<span class="nv-folder-pill nv-skill-pill-dead" title="This analysis no longer exists in Investment Analysis"><i class="fa-solid fa-link-slash"></i>${esc(n.analysis || 'Analysis')}</span>`;
-        }
-        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(analysis.title)}” in Investment Analysis" onclick="window.jumpFromNoteToAnalysis('${esc(analysis.id)}')"><i class="fa-solid fa-chart-line"></i>${esc(analysis.title)}</button>`;
-    }
+    function renderAnalysisLinkPill(n) { return renderEntityPills(n, 'analysis'); }
     // Best-effort resolver for the free-text Analysis field against the live Investment
     // Analysis tracker — same philosophy as resolveResourceLink: only auto-link on an
     // exact, unambiguous title match (case-insensitive), otherwise leave it as plain text.
@@ -4332,14 +4582,7 @@
     function nvLinkedDealLive(n) {
         return EntityLinks.resolve(n, 'deal');
     }
-    function renderDealLinkPill(n) {
-        if (!EntityLinks.getId(n, 'deal')) return '';
-        const deal = nvLinkedDealLive(n);
-        if (!deal) {
-            return `<span class="nv-folder-pill nv-skill-pill-dead" title="This deal no longer exists in Deal Diary"><i class="fa-solid fa-link-slash"></i>${esc(n.deal || 'Deal')}</span>`;
-        }
-        return `<button type="button" class="nv-folder-pill nv-skill-pill" title="Open “${esc(deal.dealName)}” in Deal Diary" onclick="window.jumpFromNoteToDeal('${esc(deal.id)}')"><i class="fa-solid fa-handshake"></i>${esc(deal.dealName)}</button>`;
-    }
+    function renderDealLinkPill(n) { return renderEntityPills(n, 'deal'); }
     // Best-effort resolver for the free-text Deal field against the live Deal
     // Diary — same philosophy as resolveAnalysisLink: only auto-link on an exact,
     // unambiguous name match (case-insensitive), otherwise leave it as plain text.
@@ -4380,10 +4623,10 @@
             + (link ? `<span class="nv-folder-pill" title="Linked — “Save changes to file” writes here"><i class="fa-solid fa-link"></i>${esc(link.name)}</span>` : '')
             + (pendingRelink ? `<span class="nv-relink-pill" title="Restored from a backup — the file handle itself can't be backed up, so this note needs to be pointed at the file again"><i class="fa-solid fa-triangle-exclamation"></i> Needs relinking${pendingRelink.name ? ': ' + esc(pendingRelink.name) : ''}</span>` : '')
             + renderSkillLinkPill(n)
-            + (EntityLinks.getId(n, 'course') ? renderCourseLinkPill(n) : (n.course ? `<span title="Course"><i class="fa-solid fa-book" aria-hidden="true"></i> ${esc(n.course)}</span>` : ''))
-            + (EntityLinks.getId(n, 'resource') ? renderResourceLinkPill(n) : (n.resource ? `<span title="Resource"><i class="fa-solid fa-book-open" aria-hidden="true"></i> ${esc(n.resource)}</span>` : ''))
-            + (EntityLinks.getId(n, 'analysis') ? renderAnalysisLinkPill(n) : (n.analysis ? `<span title="Analysis"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> ${esc(n.analysis)}</span>` : ''))
-            + (EntityLinks.getId(n, 'deal') ? renderDealLinkPill(n) : (n.deal ? `<span title="Deal"><i class="fa-solid fa-handshake" aria-hidden="true"></i> ${esc(n.deal)}</span>` : ''))
+            + renderEntityMeta(n, 'course')
+            + renderEntityMeta(n, 'resource')
+            + renderEntityMeta(n, 'analysis')
+            + renderEntityMeta(n, 'deal')
             + (srsIsOn(n) ? `<span title="Review ladder: step ${n.srsStep + 1} of ${SRS_LADDER.length}"><i class="fa-solid fa-repeat" aria-hidden="true"></i> Ladder ${n.srsStep + 1}/${SRS_LADDER.length}</span>` : '')
             + (n.deadline ? `<span title="Deadline"><i class="fa-solid fa-calendar" aria-hidden="true"></i> ${esc(nvFmtDate(n.deadline))}</span>` : '')
             + (n.remindAt ? `<span title="Reminder"><i class="fa-solid fa-bell" aria-hidden="true"></i> ${esc(remShort(n.remindAt))}</span>` : '')
@@ -4509,12 +4752,181 @@
         el.linkedSkill.innerHTML = html;
     }
 
+    /* "Also linked" skills (Info tab → Tracker links). The markup lives in index.html, which only has the main-skill
+       selects, so this part is added to the page from here the first time it is needed. */
+    function nvEnsureExtraSkillBox() {
+        let box = document.getElementById('nvExtraSkills');
+        if (box) return box;
+        const host = el.linkedSkill && el.linkedSkill.closest('.nv-field');
+        if (!host) return null;
+        box = document.createElement('div');
+        box.id = 'nvExtraSkills'; box.className = 'nv-xs';
+        host.appendChild(box);
+        box.addEventListener('change', (e) => {
+            if (e.target.id === 'nvXsCareer') {
+                const sel = box.querySelector('#nvXsSkill'), career = e.target.value;
+                let html = '<option value="">Skill</option>';
+                if (career && typeof skillsData !== 'undefined' && skillsData[career]) {
+                    Object.entries(skillsData[career].categories || {}).forEach(([cat, c]) => {
+                        html += '<optgroup label="' + esc(cat) + '">' + (c.skills || []).map((sk) => '<option value="' + esc(sk.name) + '">' + esc(sk.name) + '</option>').join('') + '</optgroup>';
+                    });
+                }
+                sel.innerHTML = html; sel.disabled = !career;
+                box.querySelector('#nvXsAdd').disabled = true;
+            } else if (e.target.id === 'nvXsSkill') {
+                box.querySelector('#nvXsAdd').disabled = !e.target.value;
+            }
+        });
+        box.addEventListener('click', (e) => {
+            const n = S.note;
+            if (!n) return;
+            const add = e.target.closest('#nvXsAdd');
+            if (add) {
+                const career = box.querySelector('#nvXsCareer').value, skill = box.querySelector('#nvXsSkill').value;
+                if (!career || !skill) return;
+                const r = addSkillLink(n, career, skill);
+                if (r === 'exists') { flash('Already linked to “' + skill + '”'); return; }
+                nvAfterSkillEdit();
+                return;
+            }
+            const b = e.target.closest('[data-xs]');
+            if (!b) return;
+            const li = b.closest('li'), career = li.dataset.career, id = li.dataset.id;
+            if (b.dataset.xs === 'jump') { if (window.jumpFromNoteToSkill) window.jumpFromNoteToSkill(career, id); return; }
+            if (b.dataset.xs === 'rm') removeSkillLink(n, career, id);
+            else if (b.dataset.xs === 'main') promoteSkillLink(n, career, id);
+            nvAfterSkillEdit();
+        });
+        return box;
+    }
+    function nvRenderExtraSkills() {
+        const box = nvEnsureExtraSkillBox();
+        if (!box) return;
+        const n = S.note;
+        if (!n) { box.innerHTML = ''; return; }
+        const extras = cleanExtraSkills(n);
+        const careers = (typeof skillsData !== 'undefined') ? Object.keys(skillsData) : [];
+        const chip = (x) => {
+            const live = !!EntityLinks.RESOLVERS.skill({ career: x.career, id: x.id });
+            const ct = (typeof skillsData !== 'undefined' && skillsData[x.career]) ? (skillsData[x.career].title || x.career) : x.career;
+            return '<li data-career="' + esc(x.career) + '" data-id="' + esc(x.id) + '"' + (live ? '' : ' class="nv-xs-dead"') + '>'
+                + '<button type="button" class="nv-xs-name" data-xs="jump" title="' + (live ? 'Open in Tracker — ' + esc(ct) : 'No longer exists in the Tracker') + '">' + esc(x.id) + '<small>' + esc(ct) + '</small></button>'
+                + '<button type="button" class="nv-xs-btn" data-xs="main" title="Make this the main skill" aria-label="Make main skill"><i class="fa-solid fa-star"></i></button>'
+                + '<button type="button" class="nv-xs-btn" data-xs="rm" title="Remove this skill link" aria-label="Remove skill link"><i class="fa-solid fa-xmark"></i></button></li>';
+        };
+        box.innerHTML = (extras.length ? '<div class="nv-xs-h">Also linked</div><ul class="nv-xs-list">' + extras.map(chip).join('') + '</ul>' : '')
+            + (careers.length ? '<div class="nv-xs-add"><select id="nvXsCareer" aria-label="Career/track of another skill"><option value="">+ Add another skill…</option>'
+                + careers.map((k) => '<option value="' + esc(k) + '">' + esc(skillsData[k].title || k) + '</option>').join('') + '</select>'
+                + '<select id="nvXsSkill" aria-label="Another skill" disabled><option value="">Skill</option></select>'
+                + '<button type="button" class="nv-btn nv-btn-ghost" id="nvXsAdd" disabled>Add</button></div>' : '');
+    }
+    // The main-skill selects and the "Also linked" list both show the note's skills — set them from the note in one go.
+    function nvSyncSkillFields() {
+        const n = S.note;
+        if (!n) return;
+        nvPopulateCareerOptions();
+        if (el.linkedCareer) el.linkedCareer.value = n.linkedCareer || '';
+        nvPopulateSkillOptions();
+        if (el.linkedSkill) el.linkedSkill.value = n.linkedSkill || '';
+        nvRenderExtraSkills();
+        nvRenderExtraLinks();
+        nvUpdateLinkCount();
+    }
+    // Everything on the Info tab that shows the note's links — main selects/inputs and the "Also linked" lists.
+    function nvSyncLinkFields() {
+        const n = S.note;
+        if (!n) return;
+        ['course', 'resource', 'analysis', 'deal'].forEach((t) => { if (el[t]) el[t].value = n[t] || ''; });
+        nvSyncSkillFields();
+    }
+    /* "Also linked" courses / resources / analyses / deals: one list plus an add row (type, then the entry), added to the
+       Tracker links group from here because index.html only has the single text field per type. */
+    function nvEnsureExtraLinksBox() {
+        let box = document.getElementById('nvExtraLinks');
+        if (box) return box;
+        const host = document.getElementById('nvTrackerFold');
+        if (!host) return null;
+        box = document.createElement('div');
+        box.id = 'nvExtraLinks'; box.className = 'nv-xs nv-xs-pad';
+        host.appendChild(box);
+        const fillEntries = () => {
+            const type = box.querySelector('#nvXlType').value, sel = box.querySelector('#nvXlEntry');
+            const list = type ? NV_ENTITY_META[type].all().map((x) => ({ id: String(x.id), t: String(NV_ENTITY_META[type].title(x) || '').trim() })).filter((x) => x.t) : [];
+            list.sort((a, b) => a.t.localeCompare(b.t, undefined, { sensitivity: 'base', numeric: true }));
+            sel.innerHTML = '<option value="">' + (type ? (list.length ? 'Choose…' : 'None in the Tracker yet') : 'Choose a type first') + '</option>' + list.map((x) => '<option value="' + esc(x.id) + '">' + esc(x.t) + '</option>').join('');
+            sel.disabled = !list.length;
+            box.querySelector('#nvXlAdd').disabled = true;
+        };
+        box.addEventListener('change', (e) => {
+            if (e.target.id === 'nvXlType') fillEntries();
+            else if (e.target.id === 'nvXlEntry') box.querySelector('#nvXlAdd').disabled = !e.target.value;
+        });
+        box.addEventListener('click', (e) => {
+            const n = S.note;
+            if (!n) return;
+            const add = e.target.closest('#nvXlAdd');
+            if (add) {
+                const type = box.querySelector('#nvXlType').value, id = box.querySelector('#nvXlEntry').value;
+                if (!type || !id) return;
+                const r = addEntityLink(n, type, id);
+                if (r === 'exists') { flash('Already linked'); return; }
+                if (r === 'main') n[type] = entityTitleOf(type, id);
+                nvAfterEntityEdit(type);
+                return;
+            }
+            const b = e.target.closest('[data-xl]');
+            if (!b) return;
+            const li = b.closest('li'), type = li.dataset.type, id = li.dataset.id;
+            if (b.dataset.xl === 'jump') { const fn = window[NV_ENTITY_META[type].jump]; if (fn) fn(id); return; }
+            if (b.dataset.xl === 'rm') removeEntityLink(n, type, id);
+            else if (b.dataset.xl === 'main') promoteEntityLink(n, type, id);
+            nvAfterEntityEdit(type);
+        });
+        return box;
+    }
+    function nvRenderExtraLinks() {
+        const box = nvEnsureExtraLinksBox();
+        if (!box) return;
+        const n = S.note;
+        if (!n) { box.innerHTML = ''; return; }
+        const extras = cleanExtraLinks(n);
+        const chip = (x) => {
+            const m = NV_ENTITY_META[x.type], live = entityLive(x.type, x.id);
+            const name = live ? m.title(live) : m.label;
+            return '<li data-type="' + x.type + '" data-id="' + esc(x.id) + '"' + (live ? '' : ' class="nv-xs-dead"') + '>'
+                + '<i class="fa-solid fa-' + m.icon + '" aria-hidden="true"></i>'
+                + '<button type="button" class="nv-xs-name" data-xl="jump" title="' + (live ? 'Open in ' + esc(m.where) : 'No longer exists in ' + esc(m.where)) + '">' + esc(name) + '<small>' + esc(m.label) + '</small></button>'
+                + '<button type="button" class="nv-xs-btn" data-xl="main" title="Make this the main ' + esc(m.label.toLowerCase()) + '" aria-label="Make main"><i class="fa-solid fa-star"></i></button>'
+                + '<button type="button" class="nv-xs-btn" data-xl="rm" title="Remove this link" aria-label="Remove link"><i class="fa-solid fa-xmark"></i></button></li>';
+        };
+        box.innerHTML = (extras.length ? '<div class="nv-xs-h">Also linked (course · resource · analysis · deal)</div><ul class="nv-xs-list">' + extras.map(chip).join('') + '</ul>' : '')
+            + '<div class="nv-xs-add"><select id="nvXlType" aria-label="Type of the other link"><option value="">+ Add another link…</option>'
+            + MULTI_LINK_TYPES.map((t) => '<option value="' + t + '">' + NV_ENTITY_META[t].label + '</option>').join('') + '</select>'
+            + '<select id="nvXlEntry" aria-label="Which one" disabled><option value="">Choose a type first</option></select>'
+            + '<button type="button" class="nv-btn nv-btn-ghost" id="nvXlAdd" disabled>Add</button></div>';
+    }
+    function nvAfterEntityEdit(type) {
+        nvSyncLinkFields();
+        renderDocMeta();
+        renderContextPane();
+        markDirty();
+        afterEntityLinkChanged(type);
+    }
+    function nvAfterSkillEdit() {
+        nvSyncSkillFields();
+        renderDocMeta();
+        renderContextPane();
+        markDirty();
+        if (window.nvRefreshSkillBadges) window.nvRefreshSkillBadges();
+    }
     // "Tracker links" group is collapsed by default — its header shows how many of the links are filled in.
     function nvUpdateLinkCount() {
         const out = document.getElementById('nvTrackerCount');
         if (!out) return;
         let n = 0;
         [el.linkedSkill, el.course, el.resource, el.analysis, el.deal].forEach((f) => { if (f && String(f.value || '').trim()) n++; });
+        if (S.note && Array.isArray(S.note.extraSkills)) n += S.note.extraSkills.length;
+        if (S.note && Array.isArray(S.note.extraLinks)) n += S.note.extraLinks.length;
         out.textContent = n ? n + ' linked' : 'None';
         out.classList.toggle('nv-has', n > 0);
     }
@@ -4526,10 +4938,7 @@
         el.src.value = n.markdown;
         el.folderIn.value = normType(n.type);
         el.tagIn.value = '';
-        nvPopulateCareerOptions();
-        if (el.linkedCareer) el.linkedCareer.value = n.linkedCareer || '';
-        nvPopulateSkillOptions();
-        if (el.linkedSkill) el.linkedSkill.value = n.linkedSkill || '';
+        nvSyncSkillFields();                 // also draws both "Also linked" lists
         if (el.course) el.course.value = n.course || '';
         if (el.resource) el.resource.value = n.resource || '';
         if (el.analysis) el.analysis.value = n.analysis || '';
@@ -5014,11 +5423,19 @@
 
     // Clicking a [[wikilink]] opens the note with that title, or — if none exists — creates a
     // blank one with that title and drops straight into Edit mode, the way Obsidian does.
-    async function openOrCreateByTitle(title) {
+    // Opens a note and, for [[Note#Heading]], lands on that heading instead of the remembered reading spot.
+    async function openNoteAtHeading(id, heading) {
+        if (!heading) { await openNote(id); return; }
+        const was = rpSkipOnce;
+        rpSkipOnce = true;                                   // skip "Resumed where you left off": the link says where to go
+        try { await openNote(id); } finally { rpSkipOnce = was; }
+        wikiGoLeft(heading);
+    }
+    async function openOrCreateByTitle(title, heading) {
         const t = String(title || '').trim();
         if (!t) return;
         const existing = findNoteByTitle(t);
-        if (existing) { await openNote(existing.id); return; }
+        if (existing) { await openNoteAtHeading(existing.id, heading); return; }
         await settle();
         pruneCurrentTabIfBlank();
         closeWlPopup();
@@ -5270,7 +5687,8 @@
     // "link" has no separate free-text field), same source the old per-type pill used.
     function contextDeadLabel(type, n, entry) {
         if (type === 'skill') return entry.id;
-        return n[type] || (CONTEXT_TYPE_META[type].label);
+        const isMain = String(entry && entry.id) === String(EntityLinks.getId(n, type));
+        return (isMain && n[type]) || (CONTEXT_TYPE_META[type].label);
     }
     // Other live notes that share at least one entity link with `n`. Ranked by number of
     // shared links (most-relevant first), then by recency. Capped so a heavily-linked skill
@@ -5291,13 +5709,14 @@
     }
     function contextEntityRowHtml(type, entry, n) {
         const meta = CONTEXT_TYPE_META[type];
-        const live = EntityLinks.resolve(n, type);
+        const live = EntityLinks.resolveEntry(Object.assign({ type }, entry), n);
         if (!live) {
             const label = contextDeadLabel(type, n, entry);
             return `<li><span class="nv-lk-item-dead" title="No longer exists"><i class="fa-solid fa-link-slash" aria-hidden="true"></i><span>${esc(label)}</span></span></li>`;
         }
         const label = contextLiveLabel(type, live);
-        return `<li><button type="button" class="nv-lk-item" data-ctx-jump="${esc(type)}"><i class="fa-solid ${meta.icon}" aria-hidden="true"></i><span>${esc(label)}</span></button></li>`;
+        const sk = ` data-ctx-id="${esc(String(entry.id))}"` + (type === 'skill' ? ` data-ctx-career="${esc(entry.career || '')}"` : '');
+        return `<li><button type="button" class="nv-lk-item" data-ctx-jump="${esc(type)}"${sk}><i class="fa-solid ${meta.icon}" aria-hidden="true"></i><span>${esc(label)}</span></button></li>`;
     }
     function renderContextPane() {
         if (!S.note || !S.inspOpen || S.inspTab !== 'context') return;
@@ -5311,8 +5730,8 @@
         let html = '';
         if (linkedTypes.length) {
             html += linkedTypes.map((type) => {
-                const entry = EntityLinks.getEntry(n, type);
-                return `<div class="nv-side-h">${esc(CONTEXT_TYPE_META[type].label)}</div><ul class="nv-lk">${contextEntityRowHtml(type, entry, n)}</ul>`;
+                const rows = EntityLinks.getLinked(n, type).map((entry) => contextEntityRowHtml(type, entry, n)).join('');
+                return `<div class="nv-side-h">${esc(CONTEXT_TYPE_META[type].label)}</div><ul class="nv-lk">${rows}</ul>`;
             }).join('');
         }
         if (related.length) {
@@ -5870,8 +6289,12 @@
         for (const g of groups) {
             const keys = g.slice(0, 2), pHas = keys.some((k) => primary[k]), sHas = keys.some((k) => secondary[k]);
             if (!pHas && sHas) keys.forEach((k) => { primary[k] = secondary[k]; });
-            else if (pHas && sHas && keys.some((k) => primary[k] !== secondary[k])) lost.push(g[2]);
+            else if (pHas && sHas && g[2] !== 'skill' && !secondary[g[1]] && keys.some((k) => primary[k] !== secondary[k])) lost.push(g[2]);   // only a bare text label is left behind
         }
+        // Courses / resources / analyses / deals add up, like skills: the surviving note gets every link of the other one.
+        MULTI_LINK_TYPES.forEach((t) => EntityLinks.getLinked(secondary, t).forEach((e) => { addEntityLink(primary, t, e.id); }));
+        // Skills add up: the surviving note gets every skill of the other one, so nothing is left behind in Trash.
+        skillEntries(secondary).forEach((e) => { if (e.career) addSkillLink(primary, e.career, e.id); });
         if (!primary.remindAt && secondary.remindAt) { primary.remindAt = secondary.remindAt; primary.remindState = secondary.remindState || ''; }
         if (!primary.deadline) primary.deadline = secondary.deadline || '';
         else if (secondary.deadline && secondary.deadline !== primary.deadline) lost.push('deadline');
@@ -6889,7 +7312,7 @@
                 // analysis/deal/deadline on restore — same "looks fine, data's actually gone"
                 // shape as the revisions/fileLinks gap above. (normalizeNote rebuilds n.links
                 // from these legacy fields, so restoring the legacy fields is all that's needed.)
-                linkedCareer: raw.linkedCareer, linkedSkill: raw.linkedSkill,
+                linkedCareer: raw.linkedCareer, linkedSkill: raw.linkedSkill, extraSkills: raw.extraSkills, extraLinks: raw.extraLinks,
                 srsStep: raw.srsStep,
                 course: raw.course, deadline: raw.deadline, remindAt: raw.remindAt, remindState: raw.remindState, linkedCourseId: raw.linkedCourseId,
                 resource: raw.resource, linkedResourceId: raw.linkedResourceId,
@@ -8973,6 +9396,18 @@
         if (el.wlPop) el.wlPop.hidden = true;
     }
     function wlCandidates(q) {
+        // "[[Note#par" or "[[#par": suggest that note's headings (a note really titled "C# basics" still uses the normal list).
+        const hi = q.indexOf('#');
+        if (hi >= 0 && q.indexOf('|') === -1 && !findNoteByTitle(q.trim())) {
+            const noteQ = q.slice(0, hi).trim(), headQ = wikiHeadingKey(q.slice(hi + 1));
+            const tgt = noteQ ? findNoteByTitle(noteQ) : S.note;
+            if (tgt) {
+                return outlineFromMd(tgt.markdown || '')
+                    .map((h) => ({ heading: true, title: noteQ ? tgt.title.trim() : '', text: h.text.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[\[\]|]/g, '').trim() }))
+                    .filter((h) => h.text && (!headQ || wikiHeadingKey(h.text).indexOf(headQ) >= 0))
+                    .slice(0, 8);
+            }
+        }
         const key = fold(q);
         return S.notes
             .filter((n) => n.title.trim())
@@ -9006,7 +9441,8 @@
         WL.items = items; WL.sel = 0; WL.open = items.length > 0;
         if (!el.wlPop) return;
         if (!WL.open) { el.wlPop.hidden = true; return; }
-        el.wlPop.innerHTML = items.map((n, i) => `<li data-i="${i}" class="${i === 0 ? 'nv-wl-sel' : ''}">${esc(n.title.trim())}</li>`).join('')
+        const lab = (n) => n.heading ? esc(n.text) + (n.title ? ' <small>in ' + esc(n.title) + '</small>' : '') : esc(n.title.trim());
+        el.wlPop.innerHTML = items.map((n, i) => `<li data-i="${i}" class="${i === 0 ? 'nv-wl-sel' : ''}">${lab(n)}</li>`).join('')
             + '<li class="nv-wl-hint">↑↓ choose · Enter to link · Esc to cancel</li>';
         let { x, y } = caretCoords(el.src);
         if (S.live && lv) { const c = lv.coordsAt(el.src.selectionStart); if (c) { x = c.left; y = c.bottom + 4; } }
@@ -9027,7 +9463,7 @@
     }
     function applyWlPick(n) {
         if (!n) return;
-        const title = n.title.trim();
+        const title = n.heading ? (n.title ? n.title + '#' : '#') + n.text : n.title.trim();
         replaceRange(WL.start, WL.end, title + ']]', WL.start + title.length + 2, WL.start + title.length + 2);
         closeWlPopup();
         refreshToolbar();
@@ -10458,20 +10894,20 @@
         const L = S.notes.find((x) => x.id === left.id);
         if (L) await rpBind(L);
     }
-    function rpOpenLink(title, onLeft) {
+    function rpOpenLink(title, onLeft, heading) {
         const t = findNoteByTitle(title);
         if (!t) { flash('No note called “' + String(title).trim() + '” yet'); return; }
-        if (onLeft) { openNote(t.id); return; }
-        if (S.note && S.note.id === t.id) { flash('That note is open on the left'); return; }
-        rpBind(t);
+        if (onLeft) { openNoteAtHeading(t.id, heading).catch((e) => console.error(e)); return; }
+        if (S.note && S.note.id === t.id) { if (heading) wikiGoLeft(heading); else flash('That note is open on the left'); return; }
+        rpBind(t).then(() => { if (heading) wikiGoIn(ppGet('nvRpRead'), heading); }).catch((e) => console.error(e));
     }
     // Ctrl/⌘+click on a [[link]] in the left note: open it on the right instead. Returns true if handled.
-    function rpOpenFromLeft(title) {
+    function rpOpenFromLeft(title, heading) {
         if (!ppVisible()) return false;
         const t = findNoteByTitle(title);
         if (!t || (S.note && S.note.id === t.id)) return false;
         rpSetView('note');
-        rpBind(t);
+        rpBind(t).then(() => { if (heading) wikiGoIn(ppGet('nvRpRead'), heading); }).catch((e) => console.error(e));
         return true;
     }
     function rpCloseMenu() {
@@ -10589,7 +11025,13 @@
         });
         read.addEventListener('click', (e) => {
             const wl = e.target.closest('.nv-wikilink');
-            if (wl) { e.preventDefault(); rpOpenLink(wl.dataset.wikilink, e.shiftKey); return; }
+            if (wl) {
+                e.preventDefault();
+                const wh = wl.dataset.wikiheading || '';
+                if (!wl.dataset.wikilink) { wikiGoIn(read, wh); return; }              // [[#Heading]] inside the right-hand note
+                rpOpenLink(wl.dataset.wikilink, e.shiftKey, wh);
+                return;
+            }
             const cb = e.target.closest('input[type="checkbox"]');
             if (!cb || !rp.note) return;
             const items = Array.from(read.querySelectorAll('input[type="checkbox"]'));
@@ -13018,6 +13460,7 @@
 
         // sidebar navigation
         el.sideScroll.addEventListener('click', (e) => {
+            if (svSideClick(e)) return;
             if (e.target.closest('[data-merge-folders]')) { mergeDuplicateFolders(); return; }
             if (e.target.closest('[data-new-folder]')) { promptNewFolder(); return; }
             const editBtn = e.target.closest('[data-edit-folder]');
@@ -13138,7 +13581,14 @@
         initNoteFind();
         el.read.addEventListener('click', (e) => {
             const wl = e.target.closest('.nv-wikilink');
-            if (wl) { e.preventDefault(); if ((e.ctrlKey || e.metaKey) && rpOpenFromLeft(wl.dataset.wikilink)) return; openOrCreateByTitle(wl.dataset.wikilink); return; }
+            if (wl) {
+                e.preventDefault();
+                const wh = wl.dataset.wikiheading || '';
+                if (!wl.dataset.wikilink) { wikiGoIn(el.read, wh); return; }          // [[#Heading]]: stay in this note
+                if ((e.ctrlKey || e.metaKey) && rpOpenFromLeft(wl.dataset.wikilink, wh)) return;
+                openOrCreateByTitle(wl.dataset.wikilink, wh);
+                return;
+            }
             const cb = e.target.closest('input[type="checkbox"]');
             if (!cb) return;
             // Let the native click go through — by this point the browser has already
@@ -13262,7 +13712,9 @@
             const jumpBtn = e.target.closest('[data-ctx-jump]');
             if (!jumpBtn || !S.note) return;
             const type = jumpBtn.dataset.ctxJump;
-            const entry = EntityLinks.getEntry(S.note, type);
+            const entry = jumpBtn.dataset.ctxId
+                ? { career: jumpBtn.dataset.ctxCareer || '', id: jumpBtn.dataset.ctxId }
+                : EntityLinks.getEntry(S.note, type);
             if (!entry) return;
             if (type === 'skill' && window.jumpFromNoteToSkill) window.jumpFromNoteToSkill(entry.career, entry.id);
             else if (type === 'course' && window.jumpFromNoteToCourse) window.jumpFromNoteToCourse(entry.id);
@@ -13304,8 +13756,9 @@
         if (el.linkedCareer) el.linkedCareer.addEventListener('change', () => {
             if (!S.note) return;
             S.note.linkedCareer = el.linkedCareer.value;
-            EntityLinks.unlink(S.note, 'skill');           // career changed → old skill choice no longer applies
+            EntityLinks.unlink(S.note, 'skill');           // career changed → the main skill's old choice no longer applies
             nvPopulateSkillOptions();
+            nvRenderExtraSkills();
             renderDocMeta();
             renderContextPane();
             markDirty();
@@ -13314,6 +13767,8 @@
         if (el.linkedSkill) el.linkedSkill.addEventListener('change', () => {
             if (!S.note) return;
             EntityLinks.link(S.note, 'skill', el.linkedSkill.value, { career: S.note.linkedCareer });
+            nvRenderExtraSkills();                         // picking a skill that was listed under "Also linked" folds it into the main one
+            nvUpdateLinkCount();
             renderDocMeta();
             renderContextPane();
             markDirty();
@@ -13324,6 +13779,8 @@
             S.note.course = el.course.value;
             const hit = resolveCourseLink(el.course.value);
             EntityLinks.link(S.note, 'course', hit ? hit.id : '');
+            nvRenderExtraLinks();                          // typing the title of one listed under "Also linked" folds it into the main link
+            nvUpdateLinkCount();
             renderDocMeta();
             renderContextPane();
             markDirty();
@@ -13335,6 +13792,8 @@
             S.note.resource = el.resource.value;
             const hit = resolveResourceLink(el.resource.value);
             EntityLinks.link(S.note, 'resource', hit ? hit.id : '');
+            nvRenderExtraLinks();                          // typing the title of one listed under "Also linked" folds it into the main link
+            nvUpdateLinkCount();
             renderDocMeta();
             renderContextPane();
             markDirty();
@@ -13346,6 +13805,8 @@
             S.note.analysis = el.analysis.value;
             const hit = resolveAnalysisLink(el.analysis.value);
             EntityLinks.link(S.note, 'analysis', hit ? hit.id : '');
+            nvRenderExtraLinks();                          // typing the title of one listed under "Also linked" folds it into the main link
+            nvUpdateLinkCount();
             renderDocMeta();
             renderContextPane();
             markDirty();
@@ -13357,6 +13818,8 @@
             S.note.deal = el.deal.value;
             const hit = resolveDealLink(el.deal.value);
             EntityLinks.link(S.note, 'deal', hit ? hit.id : '');
+            nvRenderExtraLinks();                          // typing the title of one listed under "Also linked" folds it into the main link
+            nvUpdateLinkCount();
             renderDocMeta();
             renderContextPane();
             markDirty();
@@ -13606,6 +14069,7 @@
         plInit();   // PDF Library: sidebar button + gear-menu entry
         gbInit();
         gaInit();   // Group A: health check, quick backup, templates button, Esc handling
+        gcInit();   // Group C: saved views, extra filters, multi-select
 
         // density toggle (Comfortable / Compact row spacing in the list view)
         applyDensity();
@@ -13635,13 +14099,13 @@
             el.sortMenu.querySelectorAll('.nv-sort-opt').forEach((o) => o.setAttribute('aria-checked', String(o === b)));
             closeMenus();
             S.limit = PAGE;
-            renderLibrary();
+            renderLibrary(); renderSide();   // sidebar: a saved view is highlighted only while its sort matches
         });
 
         // filter panel — every change re-renders the library immediately (no separate "Apply" step)
         el.filterBtn.addEventListener('click', () => { renderFilterOptions(); toggleMenu(el.filterBtn, el.filterMenu); });
         function updateFilterDot() { el.filterDot.hidden = !filtersActive(); }
-        function applyFilterChange() { S.limit = PAGE; updateFilterDot(); renderLibrary(); }
+        function applyFilterChange() { S.limit = PAGE; updateFilterDot(); renderLibrary(); renderSide(); }
         el.fType.addEventListener('change', () => { S.filters.type = el.fType.value; applyFilterChange(); });
         el.fFolder.addEventListener('change', () => { S.filters.folder = el.fFolder.value; applyFilterChange(); });
         let fTagTimer = null;
@@ -13660,9 +14124,8 @@
         el.fLink.addEventListener('change', () => { S.filters.link = el.fLink.checked; applyFilterChange(); });
         el.fPinned.addEventListener('change', () => { S.filters.pinnedOnly = el.fPinned.checked; applyFilterChange(); });
         el.filterClear.addEventListener('click', () => {
-            S.filters = { type: '', folder: '', tags: [], createdDays: '', updatedDays: '', checklist: false, code: false, link: false, pinnedOnly: false };
-            el.fType.value = ''; el.fFolder.value = ''; el.fTag.value = ''; el.fCreated.value = ''; el.fUpdated.value = '';
-            el.fChecklist.checked = false; el.fCode.checked = false; el.fLink.checked = false; el.fPinned.checked = false;
+            S.filters = defaultFilters();
+            svSyncUi();
             applyFilterChange();
         });
 
@@ -13681,6 +14144,7 @@
                 if (!el.fed.hidden) { closeFolderEditor(); return; }
                 if (rpCloseMenu()) return;
                 if (closeMenus()) return;
+                if (SEL.on && !S.note) { selExit(); return; }
                 if (S.focus) { toggleFocus(false); return; }
                 if (closeDrawers()) return;
                 if (S.viewRev) { backToCurrent(); return; }
@@ -14638,7 +15102,7 @@
                 depth = headDepth + 1 + Math.floor(m[1].replace(/\t/g, '    ').length / 2); text = m[2];
             }
             const links = extractWikilinks(text).map((l) => l.title);
-            const plain = text.replace(WIKILINK_RE, (mm, t, a) => (a || t)).replace(/[*_`~]/g, '').trim();
+            const plain = text.replace(WIKILINK_RE, (mm, t, a) => wikiLabel(t, a)).replace(/[*_`~]/g, '').trim();
             items.push({ depth, head, links, plain });
         });
 
@@ -15890,19 +16354,35 @@
         live.forEach((n) => { const k = fold((n.title || '').trim()); if (k && !byTitle.has(k)) byTitle.set(k, n); });
         const trashTitles = new Set((S.trash || []).map((n) => fold((n.title || '').trim())).filter(Boolean));
         const scanned = live.filter((n) => !gaIsTemplate(n));   // a template's {{variables}} would look like dead links
-        const incoming = new Set(), outgoing = new Set(), deadWiki = [];
+        const incoming = new Set(), outgoing = new Set(), deadWiki = [], deadHeading = [];
+        const outlineOf = new Map();     // note id -> its heading texts, read once
+        const headingsOf = (t) => { let h = outlineOf.get(t.id); if (!h) { h = outlineFromMd(t.markdown || '').map((x) => x.text); outlineOf.set(t.id, h); } return h; };
         for (const n of scanned) {
-            const seen = new Set(), missing = [];
+            const seen = new Set(), missing = [], badHead = [], seenHead = new Set();
             for (const w of extractWikilinks(n.markdown)) {
                 const full = fold(w.title);
-                let tgt = byTitle.get(full);
-                if (!tgt && w.title.indexOf('#') > 0) tgt = byTitle.get(fold(w.title.split('#')[0].trim()));
-                if (tgt) { if (tgt.id !== n.id) { incoming.add(tgt.id); outgoing.add(n.id); } continue; }
+                const tgt = byTitle.get(full);
+                if (tgt) {
+                    if (tgt.id !== n.id) { incoming.add(tgt.id); outgoing.add(n.id); }
+                    const hk = tgt.id + '#' + wikiHeadingKey(w.heading);
+                    if (w.heading && !seenHead.has(hk)) {
+                        seenHead.add(hk);
+                        if (pickHeadingIdx(headingsOf(tgt), w.heading, true) < 0) badHead.push({ target: w.title + '#' + w.heading });
+                    }
+                    continue;
+                }
                 if (seen.has(full)) continue;
                 seen.add(full);
                 missing.push({ target: w.title, inTrash: trashTitles.has(full) });
             }
+            extractSelfHeadingLinks(n.markdown).forEach((h) => {
+                const hk = n.id + '#' + wikiHeadingKey(h);
+                if (seenHead.has(hk)) return;
+                seenHead.add(hk);
+                if (pickHeadingIdx(headingsOf(n), h, true) < 0) badHead.push({ target: '#' + h });
+            });
             if (missing.length) deadWiki.push({ note: n, missing });
+            if (badHead.length) deadHeading.push({ note: n, bad: badHead });
         }
         // Entity links: only judged when the Tracker data for that type is actually loaded in this page.
         const tryT = (f) => { try { return !!f(); } catch (e) { return false; } };
@@ -15918,9 +16398,9 @@
             for (const l of (n.links || [])) {
                 if (!avail[l.type]) continue;
                 let ok = true;
-                try { ok = !!EntityLinks.resolve(n, l.type); } catch (e) { ok = true; }
+                try { ok = !!EntityLinks.resolveEntry(l, n); } catch (e) { ok = true; }
                 if (ok) continue;
-                const label = l.type === 'skill' ? (l.id + (l.career ? ' (' + l.career + ')' : '')) : (n[l.type] || l.id);
+                const label = l.type === 'skill' ? (l.id + (l.career ? ' (' + l.career + ')' : '')) : ((String(l.id) === String(EntityLinks.getId(n, l.type)) && n[l.type]) || l.id);
                 bad.push({ type: l.type, label });
             }
             if (bad.length) deadEntity.push({ note: n, bad });
@@ -15933,7 +16413,7 @@
         });
         const orphans = scanned.filter((n) => !mapped.has(n.id) && !incoming.has(n.id) && !outgoing.has(n.id))
             .sort((a, b) => b.updatedAt - a.updatedAt);
-        return { total: scanned.length, deadWiki, deadEntity, orphans, skipped };
+        return { total: scanned.length, deadWiki, deadHeading, deadEntity, orphans, skipped };
     }
     function healthSection(title, icon, count, hint, rowsHtml) {
         return '<details class="nv-ga-sec"' + (count ? ' open' : '') + '><summary><i class="fa-solid fa-' + icon + '" aria-hidden="true"></i> ' + esc(title)
@@ -15949,14 +16429,16 @@
         try { r = healthScan(); } catch (e) { console.warn('Notes Vault: health scan failed', e); body.innerHTML = '<div class="nv-dup-empty">Couldn’t scan the vault.</div>'; return; }
         const CAP = 150;
         const wiki = r.deadWiki.slice(0, CAP).map((d) => healthRow(d.note, d.missing.map((m) => '<code>[[' + esc(m.target) + ']]</code>' + (m.inTrash ? ' <em>(note is in Trash)</em>' : '')).join(' · '))).join('');
+        const hd = r.deadHeading.slice(0, CAP).map((d) => healthRow(d.note, d.bad.map((b) => '<code>[[' + esc(b.target) + ']]</code>').join(' · '))).join('');
         const ent = r.deadEntity.slice(0, CAP).map((d) => healthRow(d.note, d.bad.map((b) => '<b>' + esc(b.type) + '</b>: ' + esc(b.label)).join(' · '))).join('');
         const orp = r.orphans.slice(0, CAP).map((n) => healthRow(n, '')).join('');
         const more = (arr) => arr.length > CAP ? '<p class="nv-dup-hint">Showing the first ' + CAP + ' of ' + arr.length + '.</p>' : '';
-        const issues = r.deadWiki.length + r.deadEntity.length;
+        const issues = r.deadWiki.length + r.deadHeading.length + r.deadEntity.length;
         body.innerHTML = '<p class="nv-dup-hint"><b>' + r.total + '</b> notes checked (notes in the “' + TPL_FOLDER + '” folder are skipped). '
             + (issues ? '<b>' + issues + '</b> note' + (issues === 1 ? '' : 's') + ' with broken links.' : 'No broken links.') + ' This report only reads your notes — nothing is changed.</p>'
             + (r.skipped.length ? '<p class="nv-dup-hint">Tracker data for <b>' + esc(r.skipped.join(', ')) + '</b> isn’t loaded on this page, so those links weren’t checked.</p>' : '')
             + healthSection('Dead [[wikilinks]]', 'link-slash', r.deadWiki.length, 'The link points to a title that no live note has. Click a note to open it and fix or create the target.', wiki + more(r.deadWiki))
+            + healthSection('Heading links that don’t match', 'hashtag', r.deadHeading.length, 'The note exists, but it has no heading with that text (it may have been renamed or removed). Clicking such a link still opens the note. A heading with a formula in it can show up here even though it works.', hd + more(r.deadHeading))
             + healthSection('Dead entity links', 'plug-circle-xmark', r.deadEntity.length, 'A Skill / Course / Resource / Analysis / Deal that this note points to no longer exists in the Tracker.', ent + more(r.deadEntity))
             + healthSection('Orphan notes', 'circle-nodes', r.orphans.length, 'Not on the Note Map and not connected by any [[wikilink]] in or out. Often fine for standalone notes; worth a look for the rest.', orp + more(r.orphans));
     }
@@ -16022,7 +16504,7 @@
         }
         if (opt.linked) {
             const add = (n) => { if (n && !seen.has(n.id) && !n.deletedAt) { seen.add(n.id); out.push({ note: n, role: 'linked' }); } };
-            extractWikilinks(root.markdown).forEach((w) => add(findNoteByTitle(w.title.split('#')[0])));
+            extractWikilinks(root.markdown).forEach((w) => add(findNoteByTitle(w.title)));
             (root.mapLinks || []).forEach((l) => add(byId.get(l.id)));
         }
         return out;
@@ -16137,7 +16619,7 @@
         const copy = Object.assign({}, n, {
             id: uid(), title: gaTitleOf(n) + ' (template)', type: TPL_FOLDER, tags: n.tags.slice(), pinned: false, createdAt: now, updatedAt: now,
             mapParent: '', mapOrder: 0, mapLinks: [], deadline: '', remindAt: '', remindState: '', srsStep: -1,
-            linkedCareer: '', linkedSkill: '', course: '', linkedCourseId: '', resource: '', linkedResourceId: '', analysis: '', linkedAnalysisId: '', deal: '', linkedDealId: ''
+            linkedCareer: '', linkedSkill: '', extraSkills: [], extraLinks: [], course: '', linkedCourseId: '', resource: '', linkedResourceId: '', analysis: '', linkedAnalysisId: '', deal: '', linkedDealId: ''
         });
         normalizeNote(copy);
         await dbPut(copy);
@@ -16340,6 +16822,349 @@
                 if (t && a && el.read.contains(a.nodeType === 1 ? a : a.parentNode)) GB.sel = { text: t, at: Date.now() };
             } catch (e) { /* ignore */ }
         });
+    }
+
+    /* ═════════════ Group C: Saved views · Select several notes ═════════════
+       · Saved views — keep a folder/tag/Recent/Pinned scope + the Filter panel + sort as one tap in the sidebar.
+         Stored in this browser (localStorage "nvSavedViews"); two extra filters make the useful ones possible:
+         "has unfinished tasks" and "not linked to a skill".
+       · Select — a Select button in the Library turns rows into checkboxes (Shift+click picks a range) with a bar for
+         Move to folder, Add / Remove tag, Pin, Export, Merge (two notes) and Move to Trash. Everything acts only on
+         notes that are ticked AND still in the list on screen. */
+    const defaultFilters = () => ({ type: '', folder: '', tags: [], createdDays: '', updatedDays: '', checklist: false, code: false, link: false, pinnedOnly: false, openTasks: false, noSkill: false });
+    const hasOpenTasks = (md) => /^[ \t]*[-*+]\s\[ \]/m.test(md || '');
+    const hasSkillLink = (n) => !!n.linkedSkill || (Array.isArray(n.links) && n.links.some((l) => l && l.type === 'skill'));
+
+    /* ── Saved views ── */
+    const SV_KEY = 'nvSavedViews', SV_MAX = 30, SV_SCOPES = new Set(['all', 'recent', 'pinned', 'folder', 'tag']), SV_SORTS = ['updated', 'created', 'title', 'words'];
+    function svNormFilters(f) {
+        const d = defaultFilters();
+        if (!f || typeof f !== 'object') return d;
+        Object.keys(d).forEach((k) => {
+            if (typeof d[k] === 'boolean') d[k] = !!f[k];
+            else if (Array.isArray(d[k])) d[k] = Array.isArray(f[k]) ? f[k].map((x) => String(x).trim().toLowerCase()).filter(Boolean) : [];
+            else d[k] = typeof f[k] === 'string' ? f[k] : '';
+        });
+        return d;
+    }
+    function svLoad() {
+        try {
+            const a = JSON.parse(localStorage.getItem(SV_KEY) || '[]');
+            if (!Array.isArray(a)) return [];
+            return a.filter((v) => v && typeof v.id === 'string' && typeof v.name === 'string' && v.scope && SV_SCOPES.has(v.scope.kind))
+                .map((v) => ({ id: v.id, name: v.name, scope: { kind: v.scope.kind, value: String(v.scope.value || '') }, filters: svNormFilters(v.filters), sort: SV_SORTS.includes(v.sort) ? v.sort : '', createdAt: v.createdAt || 0 }));
+        } catch (e) { return []; }
+    }
+    function svStore(list) {
+        try { localStorage.setItem(SV_KEY, JSON.stringify(list)); return true; }
+        catch (e) { toast('Couldn’t save the view (browser storage is full or blocked).'); return false; }
+    }
+    function svScopeOk(n, sc) {
+        if (sc.kind === 'recent') return Date.now() - n.updatedAt < RECENT_MS;
+        if (sc.kind === 'pinned') return !!n.pinned;
+        if (sc.kind === 'folder') return typeKey(n.type) === sc.value;
+        if (sc.kind === 'tag') return n.tags.some((t) => t.toLowerCase() === sc.value);
+        return true;
+    }
+    const svCount = (v) => S.notes.reduce((c, n) => c + (svScopeOk(n, v.scope) && passesFilters(n, v.filters) ? 1 : 0), 0);
+    function svIsCurrent(v) {
+        const sc = S.scope;
+        if (sc.kind !== v.scope.kind || (sc.value || '') !== v.scope.value) return false;
+        if (v.sort && v.sort !== S.sort) return false;
+        const a = svNormFilters(S.filters), b = v.filters;
+        a.tags = a.tags.slice().sort(); b.tags = b.tags.slice().sort();
+        return JSON.stringify(a) === JSON.stringify(b);
+    }
+    function svSideHtml() {
+        const views = svLoad(), searching = !!S.query.trim();
+        let h = '<div class="nv-side-h nv-side-h-row"><span>Saved views</span><button type="button" class="nv-side-h-add" data-save-view title="Save the current folder, filters and sort as a view" aria-label="Save current view"><i class="fa-solid fa-plus" aria-hidden="true"></i></button></div>';
+        if (!views.length) return h + '<div class="nv-side-hint">Choose a folder or set a filter, then tap + to keep it here.</div>';
+        return h + views.map((v) => {
+            const cur = !searching && svIsCurrent(v);
+            return '<div class="nv-fitem"><button type="button" class="nv-nav-item' + (cur ? ' nv-cur' : '') + '" data-view="' + esc(v.id) + '"' + (cur ? ' aria-current="true"' : '') + '>'
+                + '<i class="fa-solid fa-filter" aria-hidden="true"></i><span class="nv-nm">' + esc(v.name) + '</span><span class="nv-count">' + svCount(v) + '</span></button>'
+                + '<button type="button" class="nv-fitem-edit" data-edit-view="' + esc(v.id) + '" title="Rename or delete this view" aria-label="Edit view ' + esc(v.name) + '"><i class="fa-solid fa-pen" aria-hidden="true"></i></button></div>';
+        }).join('');
+    }
+    // Keeps the Filter panel's controls in step with S.filters (used when a view is applied or filters are cleared).
+    function svSyncUi() {
+        if (!el || !el.fType) return;
+        const f = S.filters;
+        el.fType.value = f.type || ''; el.fFolder.value = f.folder || ''; el.fTag.value = (f.tags || []).join(', ');
+        el.fCreated.value = f.createdDays || ''; el.fUpdated.value = f.updatedDays || '';
+        el.fChecklist.checked = !!f.checklist; el.fCode.checked = !!f.code; el.fLink.checked = !!f.link; el.fPinned.checked = !!f.pinnedOnly;
+        const ot = document.getElementById('nvFOpenTasks'), ns = document.getElementById('nvFNoSkill');
+        if (ot) ot.checked = !!f.openTasks; if (ns) ns.checked = !!f.noSkill;
+        if (el.filterDot) el.filterDot.hidden = !filtersActive();
+    }
+    async function svApply(id) {
+        const v = svLoad().find((x) => x.id === id);
+        if (!v) { renderSide(); return; }
+        S.filters = svNormFilters(v.filters);
+        if (v.sort) {
+            S.sort = v.sort;
+            if (el.sortMenu) el.sortMenu.querySelectorAll('.nv-sort-opt').forEach((o) => o.setAttribute('aria-checked', String(o.dataset.sort === S.sort)));
+        }
+        renderFilterOptions(); svSyncUi();
+        await setScope(v.scope.kind, v.scope.value);
+        if (S.scope.kind !== v.scope.kind || (S.scope.value || '') !== v.scope.value) toast('The folder or tag saved in “' + v.name + '” no longer exists, so All notes is shown with its filters.');
+    }
+    function svSuggestName() {
+        const f = S.filters, p = [], sc = S.scope;
+        if (sc.kind === 'folder') p.push((S.fmap.get(sc.value) || {}).label || 'Folder');
+        else if (sc.kind === 'tag') p.push('#' + ((S.tmap.get(sc.value) || {}).label || sc.value));
+        else if (sc.kind === 'recent') p.push('Recent');
+        else if (sc.kind === 'pinned') p.push('Pinned');
+        if (f.folder) p.push((S.fmap.get(f.folder) || {}).label || f.folder);
+        f.tags.forEach((t) => p.push('#' + t));
+        if (f.openTasks) p.push('open tasks'); else if (f.checklist) p.push('checklists');
+        if (f.noSkill) p.push('no skill');
+        if (f.code) p.push('code'); if (f.link) p.push('links'); if (f.pinnedOnly) p.push('pinned');
+        if (f.updatedDays) p.push('updated ' + f.updatedDays + 'd'); if (f.createdDays) p.push('created ' + f.createdDays + 'd');
+        return p.join(' · ').slice(0, 60);
+    }
+    async function svSaveCurrent() {
+        const sc = S.scope;
+        if (sc.kind === 'trash') { toast('Views can’t be saved from Trash.'); return; }
+        const kept = SV_SCOPES.has(sc.kind);
+        if (!filtersActive() && (!kept || sc.kind === 'all')) { toast('Pick a folder or set a filter first, then save it as a view.'); return; }
+        const name = ((await skPrompt('Name this view', svSuggestName())) || '').trim();
+        if (!name) return;
+        const list = svLoad(), same = list.find((v) => fold(v.name) === fold(name));
+        if (!same && list.length >= SV_MAX) { toast('You can keep up to ' + SV_MAX + ' views. Delete one first.'); return; }
+        const view = { id: same ? same.id : uid(), name, scope: kept ? { kind: sc.kind, value: String(sc.value || '') } : { kind: 'all', value: '' },
+            filters: svNormFilters(S.filters), sort: S.sort, createdAt: same ? same.createdAt : Date.now() };
+        if (!svStore(same ? list.map((v) => (v.id === same.id ? view : v)) : list.concat(view))) return;
+        renderSide();
+        toast((same ? 'Updated view “' : 'Saved view “') + name + '”.' + (kept ? '' : ' The linked list you were in isn’t kept, only the filters.'));
+    }
+    async function svEdit(id) {
+        const list = svLoad(), v = list.find((x) => x.id === id);
+        if (!v) { renderSide(); return; }
+        const next = await skPrompt('Rename view (leave empty to delete it)', v.name);
+        if (next === null) return;
+        const name = next.trim();
+        if (!name) {
+            if (!(await skConfirm('Delete the view “' + v.name + '”? Your notes are not affected.', { title: 'Delete view', danger: true, okText: 'Delete' }))) return;
+            if (svStore(list.filter((x) => x.id !== id))) { renderSide(); toast('View deleted.', 'Undo', () => { if (svStore(svLoad().concat(v))) renderSide(); }); }
+            return;
+        }
+        if (svStore(list.map((x) => (x.id === id ? Object.assign({}, x, { name }) : x)))) renderSide();
+    }
+    function svSideClick(e) {
+        if (e.target.closest('[data-save-view]')) { svSaveCurrent(); return true; }
+        const ed = e.target.closest('[data-edit-view]');
+        if (ed) { svEdit(ed.dataset.editView); return true; }
+        const b = e.target.closest('[data-view]');
+        if (b) { svApply(b.dataset.view); return true; }
+        return false;
+    }
+
+    /* ── Select several notes ── */
+    const SEL = { on: false, ids: new Set(), anchor: null, list: [] };
+    const selNotes = () => S.notes.filter((n) => SEL.ids.has(n.id));
+    function selBarHtml() {
+        const c = SEL.ids.size, none = c ? '' : ' disabled';
+        const b = (act, icon, label, extra) => '<button type="button" class="nv-btn nv-selbtn' + (extra || '') + '" data-sel="' + act + '"' + (act === 'merge' ? (c === 2 ? '' : ' disabled title="Select exactly two notes to merge"') : none) + '><i class="fa-solid fa-' + icon + '" aria-hidden="true"></i> ' + label + '</button>';
+        return '<span class="nv-selcount" aria-live="polite"><b>' + c + '</b> selected</span>'
+            + '<button type="button" class="nv-btn nv-btn-ghost nv-selbtn" data-sel="all">All ' + SEL.list.length + '</button>'
+            + '<button type="button" class="nv-btn nv-btn-ghost nv-selbtn" data-sel="none"' + none + '>Clear</button><span class="nv-selsep"></span>'
+            + b('move', 'folder-tree', 'Move') + b('addtag', 'hashtag', 'Add tag') + b('rmtag', 'tag', 'Remove tag') + b('pin', 'star', 'Pin') + b('export', 'file-export', 'Export') + b('merge', 'code-merge', 'Merge') + b('trash', 'trash', 'Trash', ' nv-danger');
+    }
+    function selPaint() {
+        const btn = document.getElementById('nvSelBtn'), bar = document.getElementById('nvSelBar');
+        const inTrash = S.scope.kind === 'trash' && !S.query.trim();
+        if (btn) { btn.hidden = inTrash || !SEL.list.length; btn.innerHTML = SEL.on ? '<i class="fa-solid fa-check" aria-hidden="true"></i> Done' : '<i class="fa-regular fa-square-check" aria-hidden="true"></i> Select'; btn.setAttribute('aria-pressed', String(SEL.on)); }
+        if (bar) { bar.hidden = !SEL.on; if (SEL.on) bar.innerHTML = selBarHtml(); }
+        el.list.classList.toggle('nv-sel-mode', SEL.on);
+        el.list.querySelectorAll('.nv-row[data-id]').forEach((row) => {
+            if (row.classList.contains('nv-row-trash')) return;
+            let cb = row.querySelector(':scope > .nv-row-cb');
+            if (!SEL.on) { if (cb) cb.remove(); row.classList.remove('nv-row-selected'); return; }
+            if (!cb) { cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'nv-row-cb'; cb.tabIndex = 0; cb.setAttribute('aria-label', 'Select this note'); row.insertBefore(cb, row.firstChild); }
+            const on = SEL.ids.has(row.dataset.id);
+            cb.checked = on; row.classList.toggle('nv-row-selected', on);
+        });
+    }
+    // Called at the end of every renderLibrary(): remember which notes the list shows and drop selections that fell out of it.
+    function selSync(list, inTrash) {
+        SEL.list = inTrash ? [] : list.map((n) => n.id);
+        if (inTrash) { SEL.on = false; SEL.ids.clear(); SEL.anchor = null; }
+        else { const live = new Set(SEL.list); SEL.ids.forEach((id) => { if (!live.has(id)) SEL.ids.delete(id); }); if (!SEL.list.length) SEL.on = false; }
+        selPaint();
+    }
+    function selToggle(id, range) {
+        if (range && SEL.anchor && SEL.list.includes(SEL.anchor) && SEL.list.includes(id)) {
+            const a = SEL.list.indexOf(SEL.anchor), b = SEL.list.indexOf(id);
+            SEL.list.slice(Math.min(a, b), Math.max(a, b) + 1).forEach((x) => SEL.ids.add(x));
+        } else {
+            if (SEL.ids.has(id)) SEL.ids.delete(id); else SEL.ids.add(id);
+            SEL.anchor = id;
+        }
+        selPaint();
+    }
+    function selExit() { SEL.on = false; SEL.ids.clear(); SEL.anchor = null; selPaint(); }
+    // Writes each note, undoes the in-memory change of any that fail to save, and says how many worked.
+    async function selWrite(notes, mutate, restore) {
+        let ok = 0, failed = 0;
+        for (const n of notes) {
+            const before = restore(n);
+            mutate(n);
+            try { await dbPut(n); ok++; }
+            catch (e) { Object.assign(n, before); failed++; console.error('Notes Vault: bulk change failed for', n.id, e); }
+        }
+        return { ok, failed };
+    }
+    const selUndoable = (notes, restore) => { const snap = new Map(notes.map((n) => [n.id, restore(n)])); return async () => { for (const [id, before] of snap) { const n = S.notes.find((x) => x.id === id); if (!n) continue; Object.assign(n, before); n.updatedAt = Date.now(); try { await dbPut(n); } catch (e) { console.error(e); } } renderAll(); }; };
+    const SEL_TYPE = (n) => ({ type: n.type, updatedAt: n.updatedAt }), SEL_TAGS = (n) => ({ tags: n.tags.slice(), updatedAt: n.updatedAt }), SEL_PIN = (n) => ({ pinned: n.pinned });
+    const selPlural = (c) => c + (c === 1 ? ' note' : ' notes');
+    function selDone(res, what, undo) {
+        renderAll();
+        if (!res.ok) { toast('Couldn’t save the change. Nothing was changed.'); return; }
+        toast(what + (res.failed ? ' (' + res.failed + ' couldn’t be saved)' : ''), undo ? 'Undo' : undefined, undo);
+    }
+    async function selMove(label) {
+        const notes = selNotes(); if (!notes.length) return;
+        const ex = findExistingFolder(label), target = ex || normType(label);
+        const todo = notes.filter((n) => normType(n.type) !== target);
+        gaClose();
+        if (!todo.length) { toast('Those notes are already in “' + target + '”.'); return; }
+        const undo = selUndoable(todo, SEL_TYPE);
+        const res = await selWrite(todo, (n) => { n.type = target; n.updatedAt = Date.now(); }, SEL_TYPE);
+        selDone(res, 'Moved ' + selPlural(res.ok) + ' to “' + target + '”', undo);
+    }
+    async function selAddTag(raw) {
+        const t = normTag(raw), notes = selNotes();
+        if (!t || !notes.length) return;
+        const label = (liveTags().get(t.toLowerCase()) || { label: t }).label;
+        const todo = notes.filter((n) => !n.tags.some((x) => x.toLowerCase() === label.toLowerCase()));
+        gaClose();
+        if (!todo.length) { toast('All of those notes already have #' + label + '.'); return; }
+        const undo = selUndoable(todo, SEL_TAGS);
+        const res = await selWrite(todo, (n) => { n.tags = n.tags.concat(label); n.updatedAt = Date.now(); }, SEL_TAGS);
+        selDone(res, 'Added #' + label + ' to ' + selPlural(res.ok), undo);
+    }
+    async function selRemoveTag(label) {
+        const notes = selNotes().filter((n) => n.tags.some((x) => x.toLowerCase() === label.toLowerCase()));
+        gaClose();
+        if (!notes.length) return;
+        const undo = selUndoable(notes, SEL_TAGS);
+        const res = await selWrite(notes, (n) => { n.tags = n.tags.filter((x) => x.toLowerCase() !== label.toLowerCase()); n.updatedAt = Date.now(); }, SEL_TAGS);
+        selDone(res, 'Removed #' + label + ' from ' + selPlural(res.ok), undo);
+    }
+    async function selPin() {
+        const notes = selNotes(); if (!notes.length) return;
+        const pin = notes.some((n) => !n.pinned);
+        const todo = notes.filter((n) => n.pinned !== pin);
+        const undo = selUndoable(todo, SEL_PIN);
+        const res = await selWrite(todo, (n) => { n.pinned = pin; }, SEL_PIN);
+        selDone(res, (pin ? 'Pinned ' : 'Unpinned ') + selPlural(res.ok), undo);
+    }
+    function selExport() {
+        const notes = selNotes().sort((a, b) => b.updatedAt - a.updatedAt); if (!notes.length) return;
+        const head = '# Notes export · ' + notes.length + (notes.length === 1 ? ' note' : ' notes') + ' · ' + toLocalDateStr(new Date()) + '\n';
+        const body = notes.map((n) => '\n\n---\n\n## ' + gaTitleOf(n) + '\n\n*' + normType(n.type) + (n.tags.length ? ' · ' + n.tags.map((t) => '#' + t).join(' ') : '') + ' · updated ' + toLocalDateStr(new Date(n.updatedAt)) + '*\n\n' + (n.markdown || '').trim()).join('');
+        download(head + body + '\n', 'notes-export-' + toLocalDateStr(new Date()) + '.md', 'text/markdown');
+        toast('Exported ' + selPlural(notes.length) + ' as one Markdown file. Images and PDFs are not included.');
+    }
+    async function selMerge() {
+        const two = selNotes();
+        if (two.length !== 2) return;
+        const [primary, secondary] = two.slice().sort((a, b) => a.createdAt - b.createdAt);   // the older note survives, as in Find duplicates
+        try {
+            await settle();
+            const identical = dupSq(primary.markdown) === dupSq(secondary.markdown);
+            const opts = identical ? { markdown: primary.markdown.trim() } : await dupMergeDialog(primary, secondary);
+            if (opts && await mergeNotes(primary, secondary, opts)) { SEL.ids.clear(); SEL.anchor = null; renderAll(); }
+        } catch (err) { console.error('Notes Vault: merge failed', err); flash('Couldn’t merge those notes'); }
+    }
+    async function selTrash() {
+        const notes = selNotes().filter((n) => !(S.note && S.note.id === n.id)); if (!notes.length) return;
+        const ok = await skConfirm('Move ' + selPlural(notes.length) + ' to Trash? You can restore them for 30 days.', { title: 'Move to Trash', danger: true, okText: 'Move to Trash' });
+        if (!ok) return;
+        const done = [];
+        for (const n of notes) {
+            n.deletedAt = Date.now();
+            try { await dbPut(n); } catch (e) { n.deletedAt = 0; console.error('Notes Vault: could not move to Trash', e); continue; }
+            nvSyncPlannerDeadline(n);
+            S.notes = S.notes.filter((x) => x.id !== n.id); S.trash.push(n); SEL.ids.delete(n.id); done.push(n.id);
+        }
+        renderAll();
+        if (!done.length) { toast('Couldn’t move those notes to Trash.'); return; }
+        toast('Moved ' + selPlural(done.length) + ' to Trash' + (done.length < notes.length ? ' (' + (notes.length - done.length) + ' couldn’t be moved)' : ''), 'Undo', async () => { for (const id of done) await restoreNote(id); });
+    }
+    function selPickModal(kind) {
+        const notes = selNotes(); if (!notes.length) return;
+        if (kind === 'move') {
+            const body = gaOpen('bulk', 'folder-tree', 'Move ' + selPlural(notes.length) + ' to…');
+            body.innerHTML = '<div class="nv-ga-titlerow"><label for="nvBulkNew">New folder</label><input type="text" id="nvBulkNew" autocomplete="off" placeholder="Type a name, then press Enter"></div>'
+                + '<div class="nv-ga-tpls">' + liveFolders().map((f) => '<button type="button" class="nv-ga-tpl" data-bulk-folder="' + esc(f.label) + '"><i class="fa-solid fa-' + iconFor(f.label) + '" aria-hidden="true"></i><span class="nv-ga-tpl-name">' + esc(f.label) + '</span><span class="nv-ga-meta">' + selPlural(f.count) + '</span></button>').join('') + '</div>';
+            GA.el.addEventListener('click', (e) => { const b = e.target.closest('[data-bulk-folder]'); if (b) selMove(b.dataset.bulkFolder); });
+            const inp = body.querySelector('#nvBulkNew');
+            inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && inp.value.trim()) { e.preventDefault(); selMove(inp.value.trim()); } });
+            inp.focus({ preventScroll: true });
+        } else if (kind === 'addtag') {
+            const body = gaOpen('bulk', 'hashtag', 'Add a tag to ' + selPlural(notes.length));
+            const all = [...liveTags().values()].sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label)).slice(0, 30);
+            body.innerHTML = '<div class="nv-ga-titlerow"><label for="nvBulkTag">Tag</label><input type="text" id="nvBulkTag" autocomplete="off" placeholder="Type a tag, then press Enter"></div>'
+                + (all.length ? '<h4 class="nv-ga-h">Existing tags</h4><div class="nv-ga-chips">' + all.map((g) => '<button type="button" class="nv-ga-chip" data-bulk-tag="' + esc(g.label) + '">#' + esc(g.label) + ' <span class="nv-ga-meta">' + g.count + '</span></button>').join('') + '</div>' : '');
+            GA.el.addEventListener('click', (e) => { const b = e.target.closest('[data-bulk-tag]'); if (b) selAddTag(b.dataset.bulkTag); });
+            const inp = body.querySelector('#nvBulkTag');
+            inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && inp.value.trim()) { e.preventDefault(); selAddTag(inp.value); } });
+            inp.focus({ preventScroll: true });
+        } else if (kind === 'rmtag') {
+            const m = new Map();
+            notes.forEach((n) => n.tags.forEach((t) => { const k = t.toLowerCase(), g = m.get(k) || { label: t, count: 0 }; g.count++; m.set(k, g); }));
+            const tags = [...m.values()].sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label));
+            const body = gaOpen('bulk', 'tag', 'Remove a tag from ' + selPlural(notes.length));
+            body.innerHTML = tags.length ? '<p class="nv-dup-hint">Tap a tag to remove it from the selected notes that have it.</p><div class="nv-ga-chips">' + tags.map((g) => '<button type="button" class="nv-ga-chip" data-bulk-rm="' + esc(g.label) + '">#' + esc(g.label) + ' <span class="nv-ga-meta">' + g.count + ' of ' + notes.length + '</span></button>').join('') + '</div>'
+                : '<div class="nv-dup-empty"><i class="fa-solid fa-tag"></i>None of the selected notes has a tag.</div>';
+            GA.el.addEventListener('click', (e) => { const b = e.target.closest('[data-bulk-rm]'); if (b) selRemoveTag(b.dataset.bulkRm); });
+        }
+    }
+    function gcInit() {
+        // extra filters in the Filter panel + "Save as view"
+        const grp = el.filterMenu && el.filterMenu.querySelector('.nv-fcheck-group');
+        if (grp && !document.getElementById('nvFOpenTasks')) {
+            grp.insertAdjacentHTML('beforeend', '<label class="nv-fcheck"><input type="checkbox" id="nvFOpenTasks"> Has unfinished tasks</label><label class="nv-fcheck"><input type="checkbox" id="nvFNoSkill"> Not linked to a skill</label>');
+            document.getElementById('nvFOpenTasks').addEventListener('change', (e) => { S.filters.openTasks = e.target.checked; S.limit = PAGE; svSyncUi(); renderLibrary(); renderSide(); });
+            document.getElementById('nvFNoSkill').addEventListener('change', (e) => { S.filters.noSkill = e.target.checked; S.limit = PAGE; svSyncUi(); renderLibrary(); renderSide(); });
+        }
+        const acts = el.filterMenu && el.filterMenu.querySelector('.nv-filter-actions');
+        if (acts && !document.getElementById('nvFilterSave')) {
+            acts.insertAdjacentHTML('beforeend', '<button type="button" class="nv-btn" id="nvFilterSave"><i class="fa-solid fa-bookmark"></i> Save as view…</button>');
+            document.getElementById('nvFilterSave').addEventListener('click', () => { closeMenus(); svSaveCurrent(); });
+        }
+        // Select button + bar in the Library
+        const head = el.emptyTrash && el.emptyTrash.parentNode;
+        if (head && !document.getElementById('nvSelBtn')) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.id = 'nvSelBtn'; b.className = 'nv-btn'; b.hidden = true;
+            b.addEventListener('click', () => { if (SEL.on) selExit(); else { SEL.on = true; selPaint(); } });
+            head.appendChild(b);
+            const bar = document.createElement('div');
+            bar.id = 'nvSelBar'; bar.className = 'nv-selbar'; bar.hidden = true; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Actions for the selected notes');
+            el.list.parentNode.insertBefore(bar, el.list);
+            bar.addEventListener('click', (e) => {
+                const a = e.target.closest('[data-sel]'); if (!a || a.disabled) return;
+                const k = a.dataset.sel;
+                if (k === 'all') { SEL.list.forEach((id) => SEL.ids.add(id)); selPaint(); }
+                else if (k === 'none') { SEL.ids.clear(); SEL.anchor = null; selPaint(); }
+                else if (k === 'move' || k === 'addtag' || k === 'rmtag') selPickModal(k);
+                else if (k === 'pin') selPin();
+                else if (k === 'export') selExport();
+                else if (k === 'merge') selMerge();
+                else if (k === 'trash') selTrash();
+            });
+            // In selection mode a click on a row ticks it instead of opening it (capture phase: runs before the normal row handler).
+            el.list.addEventListener('click', (e) => {
+                if (!SEL.on || e.target.closest('[data-more]')) return;
+                const row = e.target.closest('.nv-row');
+                if (!row || row.classList.contains('nv-row-trash')) return;
+                e.preventDefault(); e.stopPropagation();
+                selToggle(row.dataset.id, e.shiftKey);
+            }, true);
+        }
     }
 
     window.NotesVault = {

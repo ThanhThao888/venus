@@ -14305,7 +14305,7 @@
     .ft-clean-hide { display: none !important; }
     body.ft-clean-on .main-content { grid-template-columns: minmax(0, 1fr); }
     body.ft-clean-on .sidebar { width: 100%; max-width: 520px; margin: 0 auto; padding-right: 0; }
-    body.ft-clean-on #quoteFab, body.ft-clean-on #quotePopup, body.ft-clean-on #nvFab, body.ft-clean-on #reminderPermBanner { display: none !important; }
+    body.ft-clean-on #quoteFab, body.ft-clean-on #quotePopup, body.ft-clean-on #nvFab, body.ft-clean-on #insightQuickBtn, body.ft-clean-on #insightQuickDlg, body.ft-clean-on #reminderPermBanner { display: none !important; }
     .ft-fm-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 0.88rem; color: var(--text-dark); cursor: pointer; }
     .ft-fm-row input { flex-shrink: 0; accent-color: var(--primary); }
     .ft-fm-row small { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); text-align: right; }
@@ -14536,7 +14536,7 @@
        and Parking Lot (10050), so those always cover it. */
     body.ft-fv-on { overflow: hidden; }
     body.ft-fv-on #fc-toast-container, body.ft-fv-on #bdFab, body.ft-fv-on #bdrWaitPill,
-    body.ft-fv-on #quoteFab, body.ft-fv-on #quotePopup, body.ft-fv-on #nvFab,
+    body.ft-fv-on #quoteFab, body.ft-fv-on #quotePopup, body.ft-fv-on #nvFab, body.ft-fv-on #insightQuickBtn,
     body.ft-fv-on .notification, body.ft-fv-on .dlt-xp, body.ft-fv-on .dlt-confetti-container { display: none !important; }
     .ft-fv { position: fixed; inset: 0; z-index: 9970; display: none; align-items: center; justify-content: center; box-sizing: border-box; padding: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px)); background: radial-gradient(ellipse at 50% 38%, rgba(var(--primary-rgb), 0.08), transparent 62%), var(--bg-light); color: var(--text-dark); text-align: center; outline: none; }
     .ft-fv.open { display: flex; animation: ftBreakIn 0.5s ease both; }
@@ -19765,6 +19765,9 @@ document.addEventListener('wheel', function (e) {
             <i class="fas fa-quote-left"></i>
             <span id="quoteFabFilterDot" class="quote-fab-filter-dot" hidden aria-hidden="true"></span>
         </button>
+        <button id="insightQuickBtn" type="button" title="Lưu nhanh Fact / Advice (Alt+I)" aria-label="Lưu nhanh Fact / Advice" aria-haspopup="dialog"
+            class="dark-mode-toggle fab-icon-btn"
+            ><i class="fa-solid fa-lightbulb"></i></button>
         <a href="./prompts.html" target="_blank" rel="noopener"
             id="promptsFAB" title="Prompt Library — lộ trình dùng prompt theo từng việc" aria-label="Prompt Library"
             class="dark-mode-toggle fab-icon-btn">
@@ -92471,6 +92474,69 @@ body .course-controls .rl-pick-btn .rl-pick-chev { width: 12px; height: 12px; }
         enhance(document.getElementById('resourceSortBy'),         { chips: false, icon: 'sort',   head: 'Sort by',  def: 'newest' });
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+<script>
+/* Facts & Advice — Quick Dump: lưu nhanh vào localStorage['venusInsights.v1'] (Inbox), đọc được ngay ở insights.html */
+(function () {
+  var KEY = 'venusInsights.v1';
+  var btn = document.getElementById('insightQuickBtn');
+  if (!btn) return;
+  function build() {
+    var dlg = document.createElement('dialog');
+    dlg.id = 'insightQuickDlg';
+    dlg.style.cssText = 'border:1px solid var(--border-color);border-radius:18px;background:var(--bg-white);color:var(--text-dark);width:min(460px,92vw);padding:18px;box-shadow:var(--shadow-lg)';
+    var fld = 'width:100%;box-sizing:border-box;padding:9px 11px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);font:inherit;';
+    var b = 'padding:8px 16px;border-radius:10px;cursor:pointer;font:inherit;font-weight:600;';
+    dlg.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">' +
+        '<b style="font-size:1.05rem">💡 Lưu nhanh Fact / Advice</b>' +
+        '<a href="./insights.html" target="_blank" rel="noopener" style="font-size:.82rem;color:var(--primary);text-decoration:none;font-weight:600;white-space:nowrap">Mở toàn bộ kho →</a>' +
+      '</div>' +
+      '<select id="iqType" style="' + fld + 'margin-bottom:8px">' +
+        '<option value="advice">Lời khuyên (Advice)</option><option value="fact">Sự thật (Fact)</option>' +
+        '<option value="rule">Nguyên tắc (Rule)</option><option value="reframe">Đổi góc nhìn (Reframe)</option>' +
+      '</select>' +
+      '<textarea id="iqText" rows="4" placeholder="Dán nhanh vào đây… (vào Inbox, phân loại sau) · Ctrl+Enter để lưu" style="' + fld + 'resize:vertical;font-size:16px"></textarea>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button type="button" id="iqCancel" style="' + b + 'background:transparent;color:var(--text-dark);border:1px solid var(--border-color)">Đóng</button>' +
+        '<button type="button" id="iqSave" style="' + b + 'background:var(--primary);color:#fff;border:1px solid var(--primary)">Lưu</button>' +
+      '</div>';
+    document.body.appendChild(dlg);
+    function save() {
+      var ta = dlg.querySelector('#iqText');
+      var content = ta.value.trim();
+      if (!content) return;
+      var list = [];
+      try { list = JSON.parse(localStorage.getItem(KEY) || '[]'); if (!Array.isArray(list)) list = []; } catch (e) { list = []; }
+      list.unshift({
+        id: 'ins_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        type: dlg.querySelector('#iqType').value, content: content, detail: '', triggers: [], tags: [], source: '',
+        status: 'inbox', pinned: false, seenCount: 0, lastSeenAt: 0, createdAt: Date.now()
+      });
+      try { localStorage.setItem(KEY, JSON.stringify(list)); }
+      catch (e) { if (typeof showNotification === 'function') showNotification('Không lưu được (bộ nhớ đầy hoặc bị chặn).', 'error'); return; }
+      ta.value = '';
+      dlg.close();
+      if (typeof showNotification === 'function') showNotification('Đã lưu vào Facts & Advice (Inbox)');
+    }
+    dlg.querySelector('#iqCancel').onclick = function () { dlg.close(); };
+    dlg.querySelector('#iqSave').onclick = save;
+    dlg.querySelector('#iqText').addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+    });
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+    return dlg;
+  }
+  function open() {
+    var dlg = document.getElementById('insightQuickDlg') || build();
+    if (!dlg.open) dlg.showModal();
+    dlg.querySelector('#iqText').focus();
+  }
+  btn.addEventListener('click', open);
+  document.addEventListener('keydown', function (e) {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'i' || e.key === 'I' || e.code === 'KeyI')) { e.preventDefault(); open(); }
+  });
 })();
 </script>
 </body>
