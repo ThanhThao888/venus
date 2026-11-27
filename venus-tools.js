@@ -3,13 +3,13 @@
    read studyHours / goals / skillsData … the same way ai-hub.js does.
 
    • The single doorway for AI (and later workflows) to reach app data: VenusTools.run(name, input, ctx).
-   • Phase 1A is READ-ONLY: five L0_READ tools that WRAP existing calculators (nothing is re-implemented or moved).
+   • Phase 1A tools are READ-ONLY: five L0_READ tools that WRAP existing calculators (nothing is re-implemented or moved).
      It never writes localStorage / IndexedDB / the Vault, and it adds no storage of its own.
    • Permission levels:
        L0_READ            runs immediately.
        L1_DRAFT           runs, result is marked draft:true (never persisted by the registry).
        L2_WRITE_APPROVAL  needs ctx.approvedByUser === true AND expected_revision (input or ctx); every attempt is reported
-                          to the audit sink (venus-memory.js will plug it into audit_logs in Phase 1B). No L2 tool exists yet.
+                          to the audit sink (venus-memory.js plugs it into audit_logs; its L2 tools live there).
        L3_DESTRUCTIVE     locked — always refused.
    • Public API: VenusTools.run(name,input,ctx) (alias call) · list() · register(spec) · setAuditSink(fn) · LEVELS · version */
 (function () {
@@ -43,7 +43,8 @@
   function audit(rec) { if (typeof auditSink !== 'function') return; try { Promise.resolve(auditSink(rec)).catch(() => {}); } catch (e) { /* audit must never break a call */ } }
   function fail(code, message, extra) { return Object.assign({ ok: false, error: { code, message } }, extra || {}); }
 
-  /* Tiny input validator. Schema: { field: { type:'date'|'string'|'int'|'boolean', optional?, min?, max?, maxLen?, def? } }. Unknown fields are dropped. */
+  /* Tiny input validator. Schema: { field: { type:'date'|'string'|'int'|'number'|'boolean'|'enum'|'string_array', optional?, min?, max?, maxLen?, values? (enum), maxItems?/itemMaxLen? (string_array), def? } }.
+     Unknown fields are dropped. 'number' accepts finite floats and CLAMPS to min/max like 'int'; 'enum' must match one of `values`; 'string_array' is trimmed, de-duplicated and stripped of empties. */
   function validate(input, schema) {
     const src = input && typeof input === 'object' ? input : {}, out = {};
     for (const k of Object.keys(schema || {})) {
@@ -56,7 +57,21 @@
       if (f.type === 'date') { if (typeof v !== 'string' || !ISO_DATE.test(v) || isNaN(dayNum(v))) return { error: k + ' phải có dạng YYYY-MM-DD' }; }
       else if (f.type === 'string') { if (typeof v !== 'string') return { error: k + ' phải là chuỗi' }; v = v.trim(); if (!v && !f.optional) return { error: k + ' không được rỗng' }; if (f.maxLen && v.length > f.maxLen) return { error: k + ' dài quá ' + f.maxLen + ' ký tự' }; }
       else if (f.type === 'int') { v = Number(v); if (!Number.isInteger(v)) return { error: k + ' phải là số nguyên' }; if (f.min != null && v < f.min) v = f.min; if (f.max != null && v > f.max) v = f.max; }
+      else if (f.type === 'number') { if (typeof v === 'string' && v.trim() === '') return { error: k + ' phải là số' }; v = Number(v); if (!isFinite(v)) return { error: k + ' phải là số' }; if (f.min != null && v < f.min) v = f.min; if (f.max != null && v > f.max) v = f.max; }
       else if (f.type === 'boolean') { v = v === true || v === 'true'; }
+      else if (f.type === 'enum') { if (!Array.isArray(f.values) || f.values.indexOf(v) < 0) return { error: k + ' phải là một trong: ' + (f.values || []).join(', ') }; }
+      else if (f.type === 'string_array') {
+        if (!Array.isArray(v)) return { error: k + ' phải là mảng chuỗi' };
+        const seen = new Set(), arr = [];
+        for (const it of v) {
+          if (typeof it !== 'string') return { error: k + ' chỉ được chứa chuỗi' };
+          const t = it.trim(); if (!t) continue;
+          if (f.itemMaxLen && t.length > f.itemMaxLen) return { error: 'Phần tử của ' + k + ' dài quá ' + f.itemMaxLen + ' ký tự' };
+          if (!seen.has(t)) { seen.add(t); arr.push(t); }
+        }
+        if (f.maxItems && arr.length > f.maxItems) return { error: k + ' tối đa ' + f.maxItems + ' phần tử' };
+        v = arr;
+      }
       out[k] = v;
     }
     return { value: out };
@@ -92,8 +107,10 @@
       const rec = { ts: nowIso(), tool_name: name, target_id: target, revision_checked: exp !== undefined && exp !== null, approved_by_user: ctx.approvedByUser === true };
       if (ctx.approvedByUser !== true) { audit(Object.assign(rec, { status: 'rejected_no_approval' })); return Object.assign(fail('approval_required', 'Tool ghi cần approvedByUser: true (người dùng đã duyệt đúng hành động này).'), { meta: meta() }); }
       if (exp === undefined || exp === null) { audit(Object.assign(rec, { status: 'rejected_no_revision' })); return Object.assign(fail('revision_required', 'Tool ghi cần expected_revision.'), { meta: meta() }); }
+      if (!Number.isInteger(exp) || exp < 0) { audit(Object.assign(rec, { status: 'rejected_bad_revision' })); return Object.assign(fail('bad_input', 'expected_revision phải là số nguyên >= 0 (0 = tạo mới).'), { meta: meta() }); }
       try {
         const data = await tool.handler(v.value, Object.assign({}, ctx, { expected_revision: exp }));
+        if (!rec.target_id && data && typeof data === 'object' && data.id) rec.target_id = String(data.id);   // creates have no id until the handler returns
         audit(Object.assign(rec, { status: 'ok' }));
         return { ok: true, data, meta: meta() };
       } catch (e) {
@@ -170,7 +187,7 @@
     name: 'get_sleep_wellness_summary', level: LEVELS.L0_READ,
     description: 'Giấc ngủ + wellness trong khoảng ngày (mặc định 30 ngày): số liệu có cấu trúc để so sánh giữa các kỳ, kèm summaryText (gọi lại VenusAIHub.sleepText) khi khoảng kết thúc hôm nay.',
     input: Object.assign({ include_text: { type: 'boolean', optional: true, def: true } }, DATE_RANGE_SCHEMA),
-    output: '{ range, sleep:{nights_logged,avg_hours,median_hours,min,max,goal_hours,nights_meeting_goal,pct_meeting_goal,nights_under_6h,avg_sol_min,avg_se_pct,avg_quality,excluded_long_nights}, sleep_debt_now, wellness:{…}, summaryText }',
+    output: '{ range, sleep:{nights_logged,span_days,effective_span_days,logged_pct,avg_hours,median_hours,min,max,goal_hours,nights_meeting_goal,pct_meeting_goal,nights_under_6h,avg_sol_min,avg_se_pct,avg_quality,excluded_long_nights}, sleep_debt_now, wellness:{…}, summaryText }',
     handler: async (inp) => {
       const need = ['getSortedSleepSessions', 'buildSleepNightsByWakeDate', 'getSleepGoal'];
       const miss = need.filter((n) => !hasFn(n));
@@ -182,6 +199,9 @@
       const all = getSortedSleepSessions().filter((s) => s && isNum(s.start) && isNum(s.duration) && s.duration > 0);
       const nights = buildSleepNightsByWakeDate(all).filter((n) => n.date >= rg.from && n.date <= rg.to);
       const win = nights.filter((n) => n.hours <= maxNight), dropped = nights.length - win.length;
+      // Same denominator as ai-hub.js: days from max(window start, first night ever logged) to the window end; numerator counts every logged night (incl. excluded long ones).
+      const allNights = buildSleepNightsByWakeDate(all), firstNum = allNights.length ? Math.min.apply(null, allNights.map((n) => dayNum(n.date))) : rg.fromNum;
+      const effSpan = Math.max(1, rg.toNum - Math.max(rg.fromNum, firstNum) + 1);
       // main session of each wake date → SOL / SE / quality (same rule as ai-hub.js)
       const mainBy = new Map();
       if (hasFn('getSleepWakeDateVN')) all.forEach((s) => { const d = getSleepWakeDateVN(s), cur = mainBy.get(d); if (!cur || s.duration > cur.duration) mainBy.set(d, s); });
@@ -194,7 +214,7 @@
       });
       const hrs = win.map((n) => n.hours), meet = win.filter((n) => n.hours >= okLimit).length;
       const sleep = {
-        nights_logged: win.length, span_days: rg.span, logged_pct: r1(win.length / rg.span * 100),
+        nights_logged: win.length, span_days: rg.span, effective_span_days: effSpan, logged_pct: r1(Math.min(100, nights.length / effSpan * 100)),
         avg_hours: r2(avg(hrs)), median_hours: r2(median(hrs)), min_hours: hrs.length ? r2(Math.min.apply(null, hrs)) : null, max_hours: hrs.length ? r2(Math.max.apply(null, hrs)) : null,
         goal_hours: goal, nights_meeting_goal: meet, pct_meeting_goal: win.length ? r1(meet / win.length * 100) : null,
         nights_under_6h: hrs.filter((h) => h < 6).length,
@@ -403,5 +423,5 @@
     }
   });
 
-  window.VenusTools = { version: 1, LEVELS, run, call: run, list, register, setAuditSink: (fn) => { auditSink = typeof fn === 'function' ? fn : null; } };
+  window.VenusTools = { version: 2, LEVELS, run, call: run, list, register, setAuditSink: (fn) => { auditSink = typeof fn === 'function' ? fn : null; } };
 })();
