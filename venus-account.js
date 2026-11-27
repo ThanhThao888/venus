@@ -184,14 +184,18 @@
       if (r && r.error) lastReg.at = 0;   // allow a retry sooner
     } catch (e) { S.deviceNote = 'Chưa ghi được thiết bị lên cloud (offline?).'; lastReg.at = 0; }
   }
-  async function loadDevices() {
+  async function loadDevices(manual) {   // manual = true when the user pressed the button: show progress and the result
     if (!S.user) return;
+    manual = manual === true;
+    if (manual) { if (S.busy) return; S.busy = true; say('Đang tải danh sách thiết bị…'); render(); }
+    let okMsg = null, errMsg = null;
     try {
       const c = await getClient();
       const r = await withTimeout(c.from('user_devices').select('device_id,label,platform,last_seen_at,created_at').order('last_seen_at', { ascending: false }).limit(20), NET_TIMEOUT);
-      if (r.error) { S.devices = null; S.devicesErr = 'Không đọc được danh sách thiết bị.'; }
-      else { S.devices = r.data || []; S.devicesErr = null; }
-    } catch (e) { S.devices = null; S.devicesErr = 'Không đọc được danh sách thiết bị (offline?).'; }
+      if (r.error) { S.devices = null; S.devicesErr = errMsg = 'Không đọc được danh sách thiết bị.'; }
+      else { S.devices = r.data || []; S.devicesErr = null; okMsg = 'Đã tải lại: ' + S.devices.length + ' thiết bị.'; }
+    } catch (e) { S.devices = null; S.devicesErr = errMsg = 'Không đọc được danh sách thiết bị (offline?).'; }
+    if (manual) { S.busy = false; say(okMsg || errMsg, okMsg ? 'ok' : 'err'); }
     if (isOpen()) render();
   }
 
@@ -356,7 +360,7 @@
       healthView(),
       el('div', { class: 'vpis-acc-row' }, [
         btn('Kiểm tra kết nối', '', checkHealth, S.busy),
-        btn('Tải lại thiết bị', '', loadDevices, S.busy),
+        btn('Tải lại thiết bị', '', () => loadDevices(true), S.busy),
         btn(armed ? 'Bấm lần nữa để đăng xuất' : 'Đăng xuất', armed ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger', () => {
           if (!armed) { S.confirmOut = true; clearTimeout(confirmTimer); confirmTimer = setTimeout(() => { S.confirmOut = false; render(); }, 4000); render(); return; }
           clearTimeout(confirmTimer); signOut();
