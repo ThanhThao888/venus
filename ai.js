@@ -376,6 +376,20 @@
       `.vai-chip{padding:6px 14px;font-weight:600;border-radius:99px}`,
       `.vai-chip:active:not(:disabled){transform:scale(.97)}`,
       `@media (max-width:520px){.vai-det ul{columns:1}.vai-opt select{max-width:46vw}}`,
+      /* ── scrollbar: mảnh, bo tròn, không mũi tên, nền trong suốt ── */
+      '.vai,.vai *,.vai-set,.vai-set *{--vai-sb:rgba(var(--primary-rgb,209,123,150),.38);--vai-sb-h:rgba(var(--primary-rgb,209,123,150),.7)}',
+      '@supports not selector(::-webkit-scrollbar){.vai,.vai *,.vai-set,.vai-set *{scrollbar-width:thin;scrollbar-color:var(--vai-sb) transparent}}',
+      ':is(.vai,.vai-set) *::-webkit-scrollbar{width:10px;height:10px}',
+      ':is(.vai,.vai-set) *::-webkit-scrollbar-track,:is(.vai,.vai-set) *::-webkit-scrollbar-corner{background:transparent}',
+      ':is(.vai,.vai-set) *::-webkit-scrollbar-button{display:none;width:0;height:0}',
+      ':is(.vai,.vai-set) *::-webkit-scrollbar-thumb{background:var(--vai-sb);border-radius:99px;border:3px solid transparent;background-clip:padding-box;min-height:36px}',
+      ':is(.vai,.vai-set) *::-webkit-scrollbar-thumb:hover{background:var(--vai-sb-h);background-clip:padding-box}',
+      /* ── nút sao chép dưới mỗi câu trả lời ── */
+      '.vai-ta{display:flex;gap:2px;align-self:flex-start;margin:-2px 0 0 -4px}',
+      '.vai-cp{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:var(--text-muted,#9a7686);font:inherit;font-size:.78rem;line-height:1;padding:5px 8px;border-radius:8px;cursor:pointer;transition:background .12s,color .12s}',
+      '.vai-cp svg{width:14px;height:14px;flex:none}',
+      '.vai-cp:hover,.vai-cp:focus-visible{background:var(--primary-light,#fbe4ea);color:var(--text-dark,#4a3240);outline:0}',
+      '.vai-cp.ok{color:#16a34a}',
       '@media (prefers-reduced-motion:reduce){.vai-ib,.vai-btn,.vai-chip,.vai-send,.vai-comp,.vai-opt,.vai-opt select,.vai-opt input,.vai-chk input,.vai-det summary::before{transition:none}}'
     ].join('');
     document.head.appendChild(s);
@@ -474,6 +488,24 @@
        presets: [{label, prompt}],            // one-click questions
        actions: [{label, run(answerText, api)}]   // extra buttons under an answer (e.g. "Save as note")
      }) → { close, ask(prompt) } */
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; }
+    catch (e) {
+      const x = document.createElement('textarea'); x.value = t; x.setAttribute('readonly', ''); x.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(x); x.select(); let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) { /* ignore */ }
+      x.remove(); return ok;
+    }
+  }
+  const CP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
+  // one copy button under every finished answer (copies that answer's original text)
+  function addCopyBar(turn, ans, text) {
+    if (!turn || !text || turn.querySelector('.vai-ta')) return;
+    turn._raw = text;
+    const bar = document.createElement('div'); bar.className = 'vai-ta';
+    bar.innerHTML = '<button type="button" class="vai-cp" data-cp title="Sao chép câu trả lời này">' + CP_ICON + '<span>Sao chép</span></button>';
+    ans.after(bar);
+  }
   let current = null;
   function openPanel(o) {
     o = o || {}; injectCss();
@@ -542,7 +574,6 @@
       actsEl.innerHTML = '';
       const add = (label, a, main) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'vai-btn' + (main ? ' vai-main' : ''); b.textContent = label; b.dataset.act = a; actsEl.appendChild(b); };
       if (busy) { add('■ Dừng', 'stop'); return; }
-      if (last) add('Sao chép', 'copy');
       if (last || logEl.querySelector('[data-failed]')) add('Thử lại', 'retry');
       if (last) (o.actions || []).forEach((a, i) => add(a.label, 'x' + i, true));
     }
@@ -596,11 +627,11 @@
           onModel: (m, t) => { used = m; trail = t; } });
         clearTimeout(timer); renderInto(ans, raw); after();
         if (trail.length) { const fb = document.createElement('div'); fb.className = 'vai-fbinfo'; fb.innerHTML = '↪ Trả lời bởi <b>' + esc(used) + '</b> (model dự phòng). ' + trail.map((t) => esc(t.model) + ': ' + esc(t.reason)).join(' · '); turn.appendChild(fb); }
-        turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw;
+        turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw; addCopyBar(turn, ans, raw);
       } catch (e) {
         clearTimeout(timer);
         if (e && e.name === 'AbortError' && !e.__ai) {
-          if (raw.trim()) { renderInto(ans, raw + '\n\n*(đã dừng)*'); after(); turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw; }
+          if (raw.trim()) { renderInto(ans, raw + '\n\n*(đã dừng)*'); after(); turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw; addCopyBar(turn, ans, raw); }
           else turn.remove();
         } else { ans.innerHTML = ''; ans.classList.remove('vai-md'); ans.appendChild(errBox(e)); turn.dataset.failed = '1'; }
       }
@@ -630,13 +661,18 @@
     box.addEventListener('click', async (e) => {
       const p = e.target.closest('[data-preset]');
       if (p) { const pr = o.presets[+p.dataset.preset]; ask(pr.prompt, pr.label); return; }
+      const cp = e.target.closest('[data-cp]');
+      if (cp) {
+        const t = cp.closest('.vai-turn'), sp = cp.querySelector('span'), ok = await copyText((t && t._raw) || '');
+        sp.textContent = ok ? 'Đã chép ✓' : 'Không chép được'; cp.classList.toggle('ok', ok);
+        clearTimeout(cp._t); cp._t = setTimeout(() => { sp.textContent = 'Sao chép'; cp.classList.remove('ok'); }, 1800);
+        return;
+      }
       const act = e.target.closest('[data-act]');
       if (act) {
         const k = act.dataset.act;
         if (k === 'stop') { if (abort) abort.abort(); }
-        else if (k === 'copy') {
-          try { await navigator.clipboard.writeText(last); act.textContent = 'Đã chép ✓'; } catch (err) { const t = document.createElement('textarea'); t.value = last; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); act.textContent = 'Đã chép ✓'; } catch (_) { act.textContent = 'Không chép được'; } t.remove(); }
-        } else if (k === 'retry') {
+        else if (k === 'retry') {
           const failed = logEl.querySelector('[data-failed]');
           if (failed) failed.remove();                                   // last try failed: it was never part of the history
           else { const t = turns.pop(); if (t && t.el) t.el.remove(); }  // last try worked but the person wants another answer
