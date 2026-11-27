@@ -98,19 +98,29 @@
     /* one record per night (wake-up date, Vietnam time) */
     const nightsAll = buildSleepNightsByWakeDate(all);
     if (hasFn('attachNapsToNights') && hasFn('getSleepNapsSafe')) { try { attachNapsToNights(nightsAll, getSleepNapsSafe()); } catch (e) { /* naps are optional */ } }
-    const mainBy = new Map();
-    all.forEach((s) => { const d = getSleepWakeDateVN(s), cur = mainBy.get(d); if (!cur || s.duration > cur.duration) mainBy.set(d, s); });
+    const mainBy = new Map(), sessionsBy = new Map();
+    const sessEndTs = (s) => (hasFn('getSleepSessionEndTs') ? getSleepSessionEndTs(s) : (isNum(s.end) ? s.end : (isNum(s.start) && isNum(s.duration) ? s.start + s.duration * 3600000 : null)));
+    const sessTstHours = (s) => (hasFn('getSessionTSTHours') ? getSessionTSTHours(s) : Math.max(0, s.duration - (isNum(s.awakenings_min) ? Math.max(0, s.awakenings_min) : 0) / 60));
+    all.forEach((s) => {
+      const d = getSleepWakeDateVN(s), cur = mainBy.get(d), tst = sessTstHours(s);
+      if (!cur || tst > sessTstHours(cur)) mainBy.set(d, s);
+      if (!sessionsBy.has(d)) sessionsBy.set(d, []);
+      sessionsBy.get(d).push({ startTs: s.start, endTs: sessEndTs(s), hours: tst });
+    });
     const studyMap = st.study ? safe(() => getStudyHoursByLocalDate(), {}) : {};
     const firstStudyKey = Object.keys(studyMap).sort()[0] || null;
     const recs = nightsAll.map((n) => {
       const s = mainBy.get(n.date) || {};
+      const mainEnd = sessEndTs(s);
       const tags = {};
       if (s.tags) Object.keys(s.tags).forEach((k) => { if (s.tags[k]) tags[k] = true; });
       const autoOk = !!(s.auto_tags && s.auto_tags.available);
       if (autoOk) AUTO_TAGS.forEach((k) => { if (s.auto_tags[k]) tags[k] = true; });
       const wakeLocal = safe(() => getSleepWakeDateLocal(s), null);
       return {
-        date: n.date, dayNum: n.dayNum, hours: n.hours, startTs: n.startTs, endTs: n.endTs, sessions: n.sessions,
+        date: n.date, dayNum: n.dayNum, hours: n.hours,
+        startTs: isNum(s.start) ? s.start : n.startTs, endTs: isNum(mainEnd) ? mainEnd : n.endTs,
+        sessions: n.sessions, sessionsList: sessionsBy.get(n.date) || [],
         sol: isNum(s.sol) ? s.sol : null, awake: isNum(s.awakenings_min) ? s.awakenings_min : null,
         se: safe(() => computeSleepEfficiency(s), null), quality: isNum(s.quality) && s.quality > 0 ? s.quality : null,
         tags, autoOk, habitsV2: s.habitsV === 2, hasTagObj: !!s.tags, notes: s.notes ? clip(s.notes, 140) : '',
@@ -125,6 +135,20 @@
     const maxNight = safe(() => SLEEP_DEBT_CFG.longNightHours, 14);
     const win = winAll.filter((r) => r.hours >= 0.5 && r.hours <= maxNight);
     const dropped = winAll.filter((r) => r.hours > maxNight || r.hours < 0.5);
+    const droppedLong = dropped.filter((r) => r.hours > maxNight);
+    const droppedShort = dropped.filter((r) => r.hours < 0.5);
+    const droppedDesc = () => {
+      const parts = [];
+      if (droppedLong.length) parts.push(droppedLong.length + ' đêm dài >' + maxNight + 'h (nghi quên bấm Stop)');
+      if (droppedShort.length) parts.push(droppedShort.length + ' đêm quá ngắn (<0.5h)');
+      return parts.join(' và ');
+    };
+    const droppedBounds = () => {
+      const parts = [];
+      if (droppedLong.length) parts.push('>' + maxNight + 'h');
+      if (droppedShort.length) parts.push('<0.5h');
+      return parts.join(' hoặc ');
+    };
     const last = recs[recs.length - 1];
     const L = [], sect = [];
     const head = (name) => { L.push(''); L.push('## ' + name); sect.push(name); };
@@ -138,7 +162,7 @@
     L.push('Quy ước: mỗi đêm gán theo NGÀY THỨC DẬY. "Giờ ngủ" = thời gian ngủ thật (đã trừ thời gian chờ vào giấc và số phút thức giữa đêm); nap không tính vào đêm. Giờ lên giường = lúc bấm bắt đầu ngủ.');
     L.push('Mục tiêu của mình: ' + goal + 'h/đêm (đêm dưới ' + f1(okLimit) + 'h tính là thiếu).');
     if (!win.length) {
-      L.push(''); L.push(winAll.length ? 'Mọi đêm trong cửa sổ này đều dài bất thường (nghi quên bấm Stop). Đừng phân tích số giờ ngủ; hãy nhắc mình sửa dữ liệu.' : 'Không có đêm nào được log trong cửa sổ này. Đừng phân tích gì thêm — hãy nói rõ là thiếu dữ liệu.');
+      L.push(''); L.push(winAll.length ? 'Mọi đêm trong cửa sổ này đều nằm ngoài ngưỡng hợp lệ (' + droppedDesc() + '). Đừng phân tích số giờ ngủ; hãy nhắc mình sửa dữ liệu.' : 'Không có đêm nào được log trong cửa sổ này. Đừng phân tích gì thêm — hãy nói rõ là thiếu dữ liệu.');
       return { text: L.join('\n'), label: winAll.length ? 'Chỉ có đêm nghi sai' : 'Không có đêm nào trong cửa sổ', details: [], data: null };
     }
 
@@ -147,7 +171,7 @@
     const hrs = win.map((r) => r.hours), sols = win.map((r) => r.sol).filter(isNum), awk = win.map((r) => r.awake).filter(isNum);
     const ses = win.map((r) => r.se).filter(isNum), qs = win.map((r) => r.quality).filter(isNum);
     const lo = win.reduce((a, r) => (!a || r.hours < a.hours ? r : a), null), hi = win.reduce((a, r) => (!a || r.hours > a.hours ? r : a), null);
-    L.push('• Số đêm có log: ' + winAll.length + '/' + spanDays + ' ngày (' + Math.round(winAll.length / spanDays * 100) + '%) — các ngày không log bị bỏ qua, không phải ngày ngủ thiếu.' + (dropped.length ? ' Đã loại ' + dropped.length + ' đêm dài >' + maxNight + 'h (nghi quên bấm Stop) khỏi mọi thống kê dưới đây.' : ''));
+    L.push('• Số đêm có log: ' + winAll.length + '/' + spanDays + ' ngày (' + Math.round(winAll.length / spanDays * 100) + '%) — các ngày không log bị bỏ qua, không phải ngày ngủ thiếu.' + (dropped.length ? ' Đã loại ' + droppedDesc() + ' khỏi mọi thống kê dưới đây.' : ''));
     L.push('• Giờ ngủ thật: trung bình ' + f1(avg(hrs)) + 'h, trung vị ' + f1(median(hrs)) + 'h, độ lệch chuẩn ' + f1(sd(hrs)) + 'h; ngắn nhất ' + f1(lo.hours) + 'h (' + dm(lo.date) + '), dài nhất ' + f1(hi.hours) + 'h (' + dm(hi.date) + ').');
     const reach = win.filter((r) => r.hours >= okLimit).length;
     L.push('• Đạt mục tiêu: ' + reach + '/' + win.length + ' đêm (' + Math.round(reach / win.length * 100) + '%); dưới 6h: ' + hrs.filter((h) => h < 6).length + ' đêm; trên 9h: ' + hrs.filter((h) => h > 9).length + ' đêm.');
@@ -310,9 +334,18 @@
 
     /* — nights worth looking at — */
     const tagTxt = (r) => Object.keys(r.tags).filter((k) => TAG_LABEL[k]).map((k) => TAG_LABEL[k]).join(', ');
+    const sessFmt = (x) => (isNum(x.startTs) ? hm(vnMinuteOfDay(x.startTs)) : '?') + '→' + (isNum(x.endTs) ? hm(vnMinuteOfDay(x.endTs)) : '?') + ' (' + f1(x.hours) + 'h)';
     const nightLine = (r) => {
-      const p = [dm(r.date) + ' (' + DOW[dowOf(r.date)] + ') ' + (isNum(r.startTs) ? hm(vnMinuteOfDay(r.startTs)) : '?') + '→' + (isNum(r.endTs) ? hm(vnMinuteOfDay(r.endTs)) : '?') + ' · ' + f1(r.hours) + 'h'];
-      if (r.sol != null) p.push('SOL ' + f0(r.sol) + 'p'); if (r.awake != null && r.awake > 0) p.push('thức ' + f0(r.awake) + 'p'); if (r.se != null) p.push('SE ' + f0(r.se) + '%');
+      const multi = r.sessions > 1 && r.sessionsList && r.sessionsList.length > 1;
+      const headSpan = multi
+        ? r.sessionsList.length + ' phiên: ' + r.sessionsList.map(sessFmt).join(' + ') + ' · tổng ' + f1(r.hours) + 'h'
+        : (isNum(r.startTs) ? hm(vnMinuteOfDay(r.startTs)) : '?') + '→' + (isNum(r.endTs) ? hm(vnMinuteOfDay(r.endTs)) : '?') + ' · ' + f1(r.hours) + 'h';
+      const p = [dm(r.date) + ' (' + DOW[dowOf(r.date)] + ') ' + headSpan];
+      const mParts = [];
+      if (r.sol != null) mParts.push('SOL ' + f0(r.sol) + 'p');
+      if (r.awake != null && r.awake > 0) mParts.push('thức ' + f0(r.awake) + 'p');
+      if (r.se != null) mParts.push('SE ' + f0(r.se) + '%');
+      if (mParts.length) p.push(mParts.join(' · ') + (multi ? ' (phiên dài nhất)' : ''));
       if (r.quality != null) p.push('chất lượng ' + r.quality + '/5'); if (r.napMin > 0) p.push('nap ' + f0(r.napMin) + 'p');
       if (r.studyNext != null && st.study) p.push('học hôm đó ' + f1(r.studyNext) + 'h');
       const t = tagTxt(r); if (t) p.push('thẻ: ' + t);
@@ -345,17 +378,27 @@
     /* — data quality — */
     head('Chất lượng dữ liệu');
     const odd = winAll.filter((r) => r.hours < 3 || r.hours > maxNight);
-    L.push('• Đêm bất thường (<3h hoặc >' + maxNight + 'h; dài thường là quên bấm Stop): ' + (odd.length ? odd.map((r) => dm(r.date) + ' ' + f1(r.hours) + 'h' + (r.hours > maxNight ? ' [đã loại khỏi thống kê]' : '')).join('; ') : 'không có') + '.');
-    if (dropped.length) L.push('• Lưu ý: các đêm >' + maxNight + 'h đã được loại đồng bộ khỏi cả thống kê tổng quan, nợ ngủ, baseline và SRI.');
+    L.push('• Đêm bất thường (<3h hoặc >' + maxNight + 'h; dài >' + maxNight + 'h thường là quên bấm Stop, <0.5h là phiên quá ngắn): ' + (odd.length ? odd.map((r) => dm(r.date) + ' ' + f1(r.hours) + 'h' + (r.hours > maxNight || r.hours < 0.5 ? ' [đã loại khỏi thống kê]' : '')).join('; ') : 'không có') + '.');
+    if (dropped.length) L.push('• Lưu ý: các đêm ' + droppedBounds() + ' đã được loại đồng bộ khỏi cả thống kê tổng quan, nợ ngủ, baseline và SRI.');
     L.push('• Số đêm có ghi SOL: ' + sols.length + '/' + win.length + '; có chấm chất lượng: ' + qs.length + '/' + win.length + '; có gắn thẻ thói quen: ' + win.filter((r) => Object.keys(r.tags).length).length + '/' + win.length + '.');
 
-    const night = (r) => ({
-      date: r.date, dow: DOW[dowOf(r.date)],
-      bed: isNum(r.startTs) ? hm(vnMinuteOfDay(r.startTs)) : null, wake: isNum(r.endTs) ? hm(vnMinuteOfDay(r.endTs)) : null,
-      hours: isNum(r.hours) ? Math.round(r.hours * 100) / 100 : null, solMin: r.sol, awakeMin: r.awake, sePct: isNum(r.se) ? Math.round(r.se * 10) / 10 : null,
-      quality: r.quality, napMin: r.napMin || 0, studyHours: r.studyNext, tags: Object.keys(r.tags).filter((k) => TAG_LABEL[k]).map((k) => TAG_LABEL[k]),
-      note: st.notes && r.notes ? r.notes : null
-    });
+    const night = (r) => {
+      const o = {
+        date: r.date, dow: DOW[dowOf(r.date)], sessions: r.sessions || 1,
+        bed: isNum(r.startTs) ? hm(vnMinuteOfDay(r.startTs)) : null, wake: isNum(r.endTs) ? hm(vnMinuteOfDay(r.endTs)) : null,
+        hours: isNum(r.hours) ? Math.round(r.hours * 100) / 100 : null, solMin: r.sol, awakeMin: r.awake, sePct: isNum(r.se) ? Math.round(r.se * 10) / 10 : null,
+        quality: r.quality, napMin: r.napMin || 0, studyHours: r.studyNext, tags: Object.keys(r.tags).filter((k) => TAG_LABEL[k]).map((k) => TAG_LABEL[k]),
+        note: st.notes && r.notes ? r.notes : null
+      };
+      if (r.sessions > 1 && r.sessionsList && r.sessionsList.length > 1) {
+        o.sessionsList = r.sessionsList.map((x) => ({
+          bed: isNum(x.startTs) ? hm(vnMinuteOfDay(x.startTs)) : null,
+          wake: isNum(x.endTs) ? hm(vnMinuteOfDay(x.endTs)) : null,
+          hours: Math.round(x.hours * 100) / 100
+        }));
+      }
+      return o;
+    };
     const data = {
       schema: 'venus.sleep.v2', generated: todayStr, tz: 'Asia/Ho_Chi_Minh',
       window: { days: range === Infinity ? 'all' : range, nights: win.length, excluded: dropped.map((r) => r.date) },
@@ -511,12 +554,12 @@
   }
 
   /* ═══════════════════════════ the two windows ═══════════════════════════ */
-  const SLEEP_SYSTEM = 'Bạn đang đọc dữ liệu giấc ngủ cá nhân của người dùng (đã được app tính sẵn theo 4 trục khoa học) trong <context>. Quy tắc: (1) chỉ dựa vào số liệu trong đó và trích số cụ thể khi nhận xét; (2) phân biệt rạch ròi 3 nhóm vấn đề khác nhau: dấu hiệu mất ngủ thật (dựa trên SOL ≥31p, WASO ≥31p, SE <85% dù đủ cơ hội ngủ), lệch/thất thường nhịp sinh học (SRI, SD giờ ngủ/dậy, Social Jetlag), và thiếu ngủ/nợ ngủ — không gán nhãn mất ngủ nếu SOL/WASO bình thường; (3) phân biệt tương quan với nhân quả, nói rõ độ tin cậy khi mẫu nhỏ (ít đêm, nhóm <5 đêm, hoặc SRI có ít cặp ngày liền kề pairedDays <7); (4) không chẩn đoán y khoa — nếu số liệu gợi ý vấn đề kéo dài nghiêm trọng thì khuyên gặp bác sĩ hoặc chuyên gia giấc ngủ; (5) khi đề xuất thay đổi, chỉ chọn tối đa 3 thay đổi cụ thể kèm cách tự kiểm tra trong chính app; (6) nếu thiếu dữ liệu để kết luận thì nói rõ cần log thêm gì. Mặc định trả lời gọn (khoảng 300–400 từ) với tiêu đề ngắn, trừ khi được yêu cầu chi tiết.';
+  const SLEEP_SYSTEM = 'Bạn đang đọc dữ liệu giấc ngủ cá nhân của người dùng (đã được app tính sẵn theo 4 trục khoa học) trong <context>. Quy tắc: (1) chỉ dựa vào số liệu trong đó và trích số cụ thể khi nhận xét; (2) phân biệt rạch ròi 3 nhóm vấn đề khác nhau: dấu hiệu mất ngủ thật (dựa trên SOL ≥31p, WASO ≥31p, SE <85% dù đủ cơ hội ngủ), lệch/thất thường nhịp sinh học (SRI, SD giờ ngủ/dậy, Social Jetlag), và thiếu ngủ/nợ ngủ — không gán nhãn mất ngủ nếu SOL/WASO bình thường; (3) phân biệt tương quan với nhân quả, nói rõ độ tin cậy khi mẫu nhỏ (ít đêm, nhóm <5 đêm, hoặc SRI có ít cặp ngày liền kề pairedDays <7); (4) không chẩn đoán y khoa — nếu số liệu gợi ý vấn đề kéo dài nghiêm trọng thì khuyên gặp bác sĩ hoặc chuyên gia giấc ngủ; (5) khi đề xuất thay đổi, chỉ chọn tối đa 3 thay đổi cụ thể kèm cách tự kiểm tra trong chính app; (6) nếu thiếu dữ liệu để kết luận thì nói rõ cần log thêm gì; (7) nếu một ngày có từ 2 phiên ngủ trở lên (ngủ chia giấc hoặc 2 chu kỳ độc lập cùng kết thúc trong 1 ngày theo giờ thức dậy), xem đó là lịch ngủ đa pha/chia giấc chứ không kết luận là lỗi quên bấm Stop. Mặc định trả lời gọn (khoảng 300–400 từ) với tiêu đề ngắn, trừ khi được yêu cầu chi tiết.';
   const SLEEP_PRESETS = [
     { label: 'Bức tranh tổng thể', prompt: 'Tóm tắt tình trạng giấc ngủ của mình: (1) 3 phát hiện quan trọng nhất kèm số liệu cụ thể; (2) điều đang ổn; (3) điều đáng lo nhất, và mức chắc chắn của nhận định này dựa trên bao nhiêu đêm dữ liệu.' },
     { label: 'Vì sao ngủ thiếu?', prompt: 'Tìm nguyên nhân khiến mình ngủ thiếu hoặc ngủ kém: so sánh các thói quen (thẻ), ngày thường với cuối tuần, giờ lên giường với giờ dậy. Chỉ nêu điều có số liệu hỗ trợ, nói rõ chỗ nào mẫu quá nhỏ. Xếp hạng tối đa 3 nguyên nhân theo mức ảnh hưởng và nói mình tự kiểm chứng từng cái bằng cách nào.' },
     { label: 'Ngủ ↔ học', prompt: 'Giấc ngủ có đang ảnh hưởng tới số giờ mình học trong ngày thức dậy không? Dùng các số so sánh sau đêm thiếu với sau đêm đủ và hệ số tương quan, nói rõ độ tin cậy và các yếu tố có thể gây nhiễu (vd ngày nghỉ, ngày đi làm). Cuối cùng đề xuất một quy tắc đơn giản mỗi sáng: ngủ như vậy thì nên học loại việc gì.' },
-    { label: 'Kế hoạch 7 ngày', prompt: 'Lập kế hoạch 7 ngày để cải thiện giấc ngủ dựa trên đúng dữ liệu của mình. Giữ giờ dậy hiện tại làm mốc, chỉ thay đổi tối đa 3 thứ cùng lúc. Với mỗi ngày ghi: giờ tắt màn hình, giờ lên giường, giờ báo thức và đúng 1 việc cần làm. Cuối kế hoạch nêu chỉ số nào trong app cho biết kế hoạch đang hiệu quả và ngưỡng để coi là thành công.' },
+    { label: 'Kế hoạch 7 ngày', prompt: 'Lập kế hoạch 7 ngày để cải thiện giấc ngủ dựa trên đúng dữ liệu của mình, chỉ thay đổi tối đa 3 thứ cùng lúc. Nếu giờ dậy trung vị đang ở khung sáng bình thường thì giữ giờ dậy hiện tại làm mốc; còn nếu lịch đang đảo ngày–đêm hoặc giờ dậy trung vị rơi vào chiều–tối, hãy nêu rõ 2 phương án — (a) giữ nguyên giờ dậy hiện tại mà không yêu cầu bỏ giấc ngủ chính ban ngày, hoặc (b) lộ trình dịch dần giờ ngủ về ban đêm — rồi lập bảng chi tiết theo phương án phù hợp hơn. Với mỗi ngày ghi: giờ tắt màn hình, giờ lên giường, giờ báo thức và đúng 1 việc cần làm. Cuối kế hoạch nêu chỉ số nào trong app cho biết kế hoạch đang hiệu quả và ngưỡng để coi là thành công.' },
     { label: 'Kiểm tra dữ liệu', prompt: 'Rà dữ liệu giấc ngủ của mình: đêm nào có vẻ nhập sai hoặc bất thường, mục nào đang thiếu (SOL, chất lượng, thẻ…) khiến phân tích kém tin cậy, và mình nên bắt đầu ghi thêm gì để lần phân tích sau chính xác hơn.' }
   ];
   const SKILLS_SYSTEM = 'Bạn đang đọc dữ liệu tiến độ học kỹ năng cá nhân của người dùng (đã được app tính sẵn) trong <context>. Người dùng đang xây sự nghiệp tài chính/đầu tư và học song song nhiều track. Quy tắc: (1) chỉ dựa vào số liệu trong đó, trích số cụ thể; (2) giờ-theo-skill theo ngày chỉ có từ mốc ghi trong dữ liệu, nên đừng kết luận skill bị bỏ quên khi không có ngày; (3) tốc độ và ngày hoàn thành chỉ là ước tính thô, hãy nói như vậy; (4) khi đề xuất, ưu tiên ít việc nhưng rõ: tối đa 3 ưu tiên, mỗi ưu tiên nêu skill cụ thể, số giờ mỗi tuần và vì sao; (5) nếu dữ liệu không đủ thì nói rõ. Mặc định trả lời gọn (khoảng 300–400 từ) với tiêu đề ngắn, trừ khi được yêu cầu chi tiết.';
