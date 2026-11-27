@@ -151,13 +151,23 @@
   const S = { user: null, email: null, devices: null, devicesErr: null, health: null, msg: null, busy: false, confirmOut: false, lib: 'idle', phase: 'idle', deviceNote: null };
   let dlg = null, box = null, msgTimer = null, confirmTimer = null, lastReg = { uid: null, at: 0 };
 
+  // other modules (venus-sync.js) learn when the signed-in state really changes (restored session, sign-in, sign-out)
+  const authListeners = []; let lastAuthKey = null;
+  function emitAuth() {
+    const key = S.user ? S.user.id : '';
+    if (key === lastAuthKey) return; lastAuthKey = key;
+    const st = { signedIn: !!S.user, email: S.email };
+    authListeners.slice().forEach((f) => { try { f(st); } catch (e) { /* a listener must never break sign-in */ } });
+  }
+  function onChange(cb) { if (typeof cb !== 'function') return () => {}; authListeners.push(cb); return () => { const i = authListeners.indexOf(cb); if (i >= 0) authListeners.splice(i, 1); }; }
+
   function onAuth(evt, session) {
     const u = session && session.user ? session.user : null;
     const changed = (u && u.id) !== (S.user && S.user.id);
     S.user = u ? { id: u.id, email: u.email || '' } : null; S.email = S.user ? S.user.email : null;
     if (!u) { S.devices = null; S.health = null; S.confirmOut = false; }
     if (u && (evt === 'SIGNED_IN' || evt === 'INITIAL_SESSION' || changed)) registerDevice().then(() => { if (isOpen()) loadDevices(); });
-    refreshMemoryUiButton();
+    refreshMemoryUiButton(); emitAuth();
     if (isOpen()) render();
   }
 
@@ -184,18 +194,14 @@
       if (r && r.error) lastReg.at = 0;   // allow a retry sooner
     } catch (e) { S.deviceNote = 'Chưa ghi được thiết bị lên cloud (offline?).'; lastReg.at = 0; }
   }
-  async function loadDevices(manual) {   // manual = true when the user pressed the button: show progress and the result
+  async function loadDevices(manual) {   // manual === true only from the "Tải lại thiết bị" button (the button passes a wrapper, never the click event)
     if (!S.user) return;
-    manual = manual === true;
-    if (manual) { if (S.busy) return; S.busy = true; say('Đang tải danh sách thiết bị…'); render(); }
-    let okMsg = null, errMsg = null;
     try {
       const c = await getClient();
       const r = await withTimeout(c.from('user_devices').select('device_id,label,platform,last_seen_at,created_at').order('last_seen_at', { ascending: false }).limit(20), NET_TIMEOUT);
-      if (r.error) { S.devices = null; S.devicesErr = errMsg = 'Không đọc được danh sách thiết bị.'; }
-      else { S.devices = r.data || []; S.devicesErr = null; okMsg = 'Đã tải lại: ' + S.devices.length + ' thiết bị.'; }
-    } catch (e) { S.devices = null; S.devicesErr = errMsg = 'Không đọc được danh sách thiết bị (offline?).'; }
-    if (manual) { S.busy = false; say(okMsg || errMsg, okMsg ? 'ok' : 'err'); }
+      if (r.error) { S.devices = null; S.devicesErr = 'Không đọc được danh sách thiết bị.'; }
+      else { S.devices = r.data || []; S.devicesErr = null; if (manual === true) say('Đã tải lại: ' + S.devices.length + ' thiết bị.', 'ok'); }
+    } catch (e) { S.devices = null; S.devicesErr = 'Không đọc được danh sách thiết bị (offline?).'; }
     if (isOpen()) render();
   }
 
@@ -223,7 +229,7 @@
       S.lib = e && e.code === 'not_configured' ? 'config' : 'fail'; S.phase = 'ready';
       if (S.lib === 'config') S.fatal = e.message;
     }
-    refreshMemoryUiButton();
+    refreshMemoryUiButton(); emitAuth();
     if (isOpen()) { render(); if (S.user) loadDevices(); }
   }
 
@@ -239,7 +245,7 @@
       if (r.error) throw r.error;
       const u = r.data && r.data.user; S.user = u ? { id: u.id, email: u.email || email } : null; S.email = S.user && S.user.email;
       S.lib = 'ok'; S.busy = false; say('Đã đăng nhập.', 'ok');
-      await registerDevice(); refreshMemoryUiButton(); render(); loadDevices();
+      await registerDevice(); refreshMemoryUiButton(); emitAuth(); render(); loadDevices();
       return;
     } catch (e) {
       S.busy = false; if (e && (e.code === 'not_configured')) S.lib = 'config'; else if (!(e && e.status) && !(e && e.code)) S.lib = S.lib === 'ok' ? 'ok' : 'fail';
@@ -256,7 +262,7 @@
     await kv.del(STORAGE_KEY);   // make sure no token stays behind
     S.user = null; S.email = null; S.devices = null; S.health = null; S.confirmOut = false; S.busy = false; lastReg = { uid: null, at: 0 };
     say('Đã đăng xuất khỏi thiết bị này. Dữ liệu Memory/Vault không bị động tới.', 'ok');
-    refreshMemoryUiButton(); render();
+    refreshMemoryUiButton(); emitAuth(); render();
   }
 
   async function checkHealth() {
@@ -345,6 +351,9 @@
     const t = good ? 'Kết nối tốt: đã xác thực, đọc được cơ sở dữ liệu.' : 'Có vấn đề: HTTP ' + h.http + ', authenticated=' + h.authenticated + ', db=' + (h.db || '—') + (h.error ? ', lỗi=' + clip(h.error, 60) : '') + '.';
     return el('div', { class: good ? 'vpis-acc-msg vpis-acc-msg--ok' : 'vpis-acc-msg vpis-acc-msg--err', style: 'margin:0 0 10px', text: t });
   }
+  function syncBlock() {   // the "Đồng bộ bộ nhớ" card lives in venus-sync.js; the account dialog works without it
+    try { return window.VenusSync && typeof window.VenusSync.renderBlock === 'function' ? window.VenusSync.renderBlock() : null; } catch (e) { return null; }
+  }
   function signedInView() {
     const myId = S._myDevice || null;
     const devs = S.devices ? (S.devices.length ? S.devices.map((d) => el('div', { class: 'vpis-acc-dev' }, [
@@ -356,6 +365,7 @@
       el('div', { class: 'vpis-acc-card' }, [el('p', { class: 'vpis-acc-h', text: 'Đã đăng nhập' }), el('p', { class: 'vpis-acc-big', text: S.email || '(không có email)' })]),
       memMode ? el('div', { class: 'vpis-acc-warn', text: 'Không ghi được vào IndexedDB của trình duyệt: phiên đăng nhập chỉ giữ trong bộ nhớ và sẽ mất khi tải lại trang.' }) : null,
       S.deviceNote ? el('p', { class: 'vpis-acc-note', text: S.deviceNote }) : null,
+      syncBlock(),
       el('div', { class: 'vpis-acc-card' }, [el('p', { class: 'vpis-acc-h', text: 'Thiết bị của bạn' })].concat(devs)),
       healthView(),
       el('div', { class: 'vpis-acc-row' }, [
@@ -430,7 +440,7 @@
   window.VenusAccount = {
     version: 1, open, close, isOpen,
     status: () => ({ signedIn: !!S.user, email: S.email, storage: memMode ? 'memory' : 'indexeddb' }),
-    getClient, signOut, checkHealth,
+    getClient, signOut, checkHealth, onChange,
     _keyProblem: keyProblem
   };
 })();
