@@ -81057,7 +81057,10 @@ window.fcRenderTagChips = fcRenderTagChips;
 
 
         // --- DATA MANAGEMENT (EXPORT/IMPORT) ---
-        const FULLBACKUP_EXCLUDE_KEYS = ['lastFullBackupAt'];   // device-local bookkeeping, not user data
+        const FULLBACKUP_EXCLUDE_KEYS = ['lastFullBackupAt', 'autoBackup', 'backupHistory'];   // device-local bookkeeping and duplicate copies of other keys, not user data
+        const FULLBACKUP_EXCLUDE_PREFIXES = ['sb-'];   // Supabase auth tokens (Phase 2) must never travel inside a backup file
+        const BACKUP_SCHEMA_VERSION = 4;               // 3.x = localStorage + notesVault; 4 adds venusMemory (profile + decisions)
+        function isBackupExcludedKey(k) { return FULLBACKUP_EXCLUDE_KEYS.includes(k) || FULLBACKUP_EXCLUDE_PREFIXES.some(p => String(k).startsWith(p)); }
 
         // ✅ Ước lượng dung lượng localStorage hiện tại (xấp xỉ UTF-16, 2 byte/ký tự).
         // excludeKeys: các key sẽ KHÔNG được tính (vd vì sắp bị ghi đè bởi key khác cùng tên).
@@ -81077,7 +81080,7 @@ window.fcRenderTagChips = fcRenderTagChips;
             const raw = {};
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (FULLBACKUP_EXCLUDE_KEYS.includes(key)) continue;
+                if (isBackupExcludedKey(key)) continue;
                 raw[key] = localStorage.getItem(key);
             }
             if (window.__ensureNotesVault) {
@@ -81095,9 +81098,16 @@ window.fcRenderTagChips = fcRenderTagChips;
                     notesVault = await window.NotesVault.getBackupData();
                 }
             } catch (e) { console.error('Notes Vault backup failed:', e); }
+            // Venus long-term memory (VenusMemoryDB: profile + decisions only, never keys/tokens). A failure here must not block the backup.
+            let venusMemory = null, venusMemoryWarning = null;
+            try {
+                if (!window.VenusMemory || typeof window.VenusMemory.exportAll !== 'function') throw new Error('venus-memory.js chưa tải');
+                venusMemory = await Promise.race([window.VenusMemory.exportAll(), new Promise((_, rej) => setTimeout(() => rej(new Error('quá 5 giây')), 5000))]);
+            } catch (e) { venusMemoryWarning = (e && e.message) || 'lỗi không rõ'; console.warn('VenusMemory export skipped:', e); }
             const vaultNoteCount = vaultParts ? vaultParts.counts.notes : (notesVault ? notesVault.notes.length : 0);
             const vaultRevCount = vaultParts ? vaultParts.counts.revisions : (notesVault ? (notesVault.revisions || []).length : 0);
             const result = {
+                backupSchemaVersion: BACKUP_SCHEMA_VERSION,
                 __meta: {
                     app: "Finance Career Skills Tracker",
                     exportDate: new Date().toISOString(),
@@ -81108,12 +81118,15 @@ window.fcRenderTagChips = fcRenderTagChips;
                     // (see NotesVault.getBackupData) — surfaced here too just for the import/export
                     // confirmation messages below.
                     notesVaultRevisionsCount: vaultRevCount,
-                    excludes: FULLBACKUP_EXCLUDE_KEYS,
+                    excludes: FULLBACKUP_EXCLUDE_KEYS.concat(FULLBACKUP_EXCLUDE_PREFIXES.map(p => p + '*')),
+                    venusMemoryCount: venusMemory ? (venusMemory.profile.length + venusMemory.decisions.length) : 0,
+                    ...(venusMemoryWarning ? { venusMemoryWarning } : {}),
                     ...extraMeta
                 },
                 resourceStats: (typeof getResourceStats === 'function') ? getResourceStats() : null,
                 data: raw,
-                notesVault   // { schema, notes, revisions, fileLinks } from Notes Vault's IndexedDB, or null if the vault script hasn't loaded
+                notesVault,  // { schema, notes, revisions, fileLinks } from Notes Vault's IndexedDB, or null if the vault script hasn't loaded
+                venusMemory  // { schema, profile[], decisions[] } from VenusMemoryDB, or null (see __meta.venusMemoryWarning)
             };
             // Not enumerable → never ends up in a plain JSON.stringify; downloadBackupObject splices it in as parts.
             if (vaultParts) Object.defineProperty(result, '__vaultParts', { value: vaultParts.parts, enumerable: false });
@@ -81154,10 +81167,12 @@ window.fcRenderTagChips = fcRenderTagChips;
                 const noteMsg = backup.__meta.notesVaultCount
                     ? `, ${backup.__meta.notesVaultCount} note (Notes Vault)${revCount ? ` + ${revCount} version lịch sử` : ''}`
                     : '';
+                const memCount = backup.__meta.venusMemoryCount || 0;
                 showNotification(
-                    `✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu${noteMsg}!`,
+                    `✅ Đã export đầy đủ ${backup.__meta.keyCount} mục dữ liệu${noteMsg}${memCount ? `, ${memCount} mục bộ nhớ Venus` : ''}!`,
                     'success'
                 );
+                if (backup.__meta.venusMemoryWarning) showNotification('⚠️ Backup đã tạo nhưng KHÔNG gồm bộ nhớ Venus (' + backup.__meta.venusMemoryWarning + ').', 'warning');
             } catch (err) {
                 console.error("Export failed:", err);
                 showNotification('❌ Export failed: ' + err.message, 'error');
@@ -81187,6 +81202,14 @@ window.fcRenderTagChips = fcRenderTagChips;
                     // - File backup MỚI (có __meta + data)  → restore thẳng từng key
                     // - File backup CŨ (export bản trước, phẳng, mỗi field là 1 key)
                     const isFullBackup = parsed.__meta && parsed.data;
+                    if (isFullBackup && Number.isInteger(parsed.backupSchemaVersion) && parsed.backupSchemaVersion > BACKUP_SCHEMA_VERSION) {
+                        const goOn = await skConfirm(
+                            `File backup này có định dạng v${parsed.backupSchemaVersion}, mới hơn định dạng app hiểu (v${BACKUP_SCHEMA_VERSION}).\n` +
+                            `Một số phần có thể không được khôi phục đúng. Nên cập nhật app trước. Vẫn tiếp tục?`,
+                            {title: 'Backup từ phiên bản mới hơn', danger: true, okText: 'Vẫn tiếp tục'}
+                        );
+                        if (!goOn) { event.target.value = ''; return; }
+                    }
                     if (isFullBackup && parsed.notesVault && window.__ensureNotesVault) {
                         try { await window.__ensureNotesVault(); }
                         catch (e) { showNotification("❌ Không tải được Notes Vault nên CHƯA khôi phục gì cả. Kiểm tra mạng rồi thử import lại.", "error"); return; }
@@ -81197,9 +81220,9 @@ window.fcRenderTagChips = fcRenderTagChips;
 
                     // Ignore any leftover key from the old (now-removed) vault module,
                     // in case someone imports a very old backup file that still has it.
-                    keys = keys.filter(k => k !== '_uiCacheV3');
+                    keys = keys.filter(k => k !== '_uiCacheV3' && !isBackupExcludedKey(k));   // never restore device-local copies or auth tokens, even from an old file
 
-                    if (keys.length === 0) {
+                    if (keys.length === 0 && !(isFullBackup && parsed.venusMemory)) {
                         showNotification('❌ File không có dữ liệu hợp lệ.', 'error');
                         event.target.value = '';
                         return;
@@ -81237,6 +81260,24 @@ window.fcRenderTagChips = fcRenderTagChips;
                         {title: 'Khôi phục dữ liệu', danger: true, okText: 'Tiếp tục'}
                     );
                     if (!ok) { event.target.value = ''; return; }
+
+                    // Venus memory (VenusMemoryDB): decided BEFORE anything is written. memMode === null → leave this device's memory untouched.
+                    // Merge is the default; "Thay thế" is only reachable through a second, danger-styled question.
+                    let memMode = null;
+                    if (isFullBackup && parsed.venusMemory && window.VenusMemory) {
+                        let hasLocal = false;
+                        try { const st = await window.VenusMemory.stats(); hasLocal = (st.profile + st.decisions.proposed + st.decisions.approved + st.decisions.superseded) > 0; } catch (e) { hasLocal = false; }
+                        const vm = parsed.venusMemory, memCount = (Array.isArray(vm.profile) ? vm.profile.length : 0) + (Array.isArray(vm.decisions) ? vm.decisions.length : 0);
+                        if (!hasLocal) memMode = 'merge';
+                        else if (await skConfirm(
+                            `File có ${memCount} mục bộ nhớ Venus. Gộp vào bộ nhớ hiện tại trên máy này?\n` +
+                            `Mục nào có phiên bản (revision) cao hơn sẽ thắng; không xóa mục nào đang có.`,
+                            {title: 'Bộ nhớ Venus', danger: false, okText: 'Gộp (khuyến nghị)', cancelText: 'Không gộp'})) memMode = 'merge';
+                        else if (await skConfirm(
+                            `Thay thế TOÀN BỘ bộ nhớ Venus trên máy này bằng bản trong file?\n` +
+                            `Bộ nhớ hiện tại sẽ bị xóa. Chọn "Giữ nguyên" để bỏ qua phần bộ nhớ trong file.`,
+                            {title: 'Thay thế bộ nhớ Venus', danger: true, okText: 'Thay thế', cancelText: 'Giữ nguyên'})) memMode = 'replace';
+                    }
 
                     // Import chỉ ghi đè — không tự tải file backup dữ liệu cũ nữa
                     // (dữ liệu cũ đã có sẵn trong file export trước đó trên Drive).
@@ -81283,7 +81324,22 @@ window.fcRenderTagChips = fcRenderTagChips;
                         }
                     }
 
-                    showNotification(`✅ Đã khôi phục ${restored} mục${noteMsg}. Đang tải lại trang...`, 'success');
+                    let memMsg = '';
+                    if (memMode) {
+                        try {
+                            const r = await window.VenusMemory.importAll(parsed.venusMemory, { mode: memMode });
+                            memMsg = `, bộ nhớ Venus (${memMode === 'replace' ? 'thay thế' : 'gộp'}: ${r.profile.applied + r.decisions.applied} mục)`;
+                            if (r.profile.invalid + r.decisions.invalid + r.profile.key_conflicts > 0) memMsg += ' ⚠️ có mục bị bỏ qua, xem console';
+                            console.info('VenusMemory import:', r);
+                        } catch (e) {
+                            console.error('VenusMemory restore failed:', e);
+                            memMsg = ' (⚠️ bộ nhớ Venus khôi phục lỗi: ' + ((e && e.message) || e) + ')';
+                        }
+                    } else if (isFullBackup && parsed.venusMemory) {
+                        memMsg = window.VenusMemory ? ' (bộ nhớ Venus: giữ nguyên, không khôi phục)' : ' (⚠️ bộ nhớ Venus bỏ qua vì venus-memory.js chưa tải)';
+                    }
+
+                    showNotification(`✅ Đã khôi phục ${restored} mục${noteMsg}${memMsg}. Đang tải lại trang...`, 'success');
 
                     // Reload để mọi phần của app đọc lại dữ liệu mới từ localStorage —
                     // an toàn hơn nhiều so với việc tự tay đồng bộ từng biến JS trong bộ nhớ.
