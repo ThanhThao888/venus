@@ -48995,6 +48995,11 @@ const EnglishDaily = (function () {
                         return (new Date(b.addedAt) - new Date(a.addedAt)) || (a.id - b.id);
                 }
             });
+            // Chunked rendering: only the first rlLimit cards are built; more load on scroll
+            const _sig = genreFilter + '|' + sortValue + '|' + searchQuery + '|' + rlStatusFilter;
+            if (_sig !== window._rlSig) { window._rlSig = _sig; window._rlLimit = 40; }
+            const _limit = window._rlLimit || 40;
+            const _totalFiltered = filteredBooks.length;
             if (filteredBooks.length === 0) {
                 let title, sub;
                 if (searchQuery) { title = 'No matches'; sub = `Nothing found for "${escapeHtml(searchQuery)}".`; }
@@ -49005,7 +49010,7 @@ const EnglishDaily = (function () {
                 return;
             }
             const ic = (name) => `<svg class="icon-svg icon-inherit icon-sm" aria-hidden="true"><use href="#icon-${name}"></use></svg>`;
-            container.innerHTML = filteredBooks.map((book, idx) => {
+            container.innerHTML = filteredBooks.slice(0, _limit).map((book, idx) => {
                 const maxReviewLength = 110;
                 let ratingDisplay = '';
                 if (book.rating !== null && book.rating !== undefined && !isNaN(book.rating)) {
@@ -49096,7 +49101,22 @@ const EnglishDaily = (function () {
                                 <button class="book-action-btn is-danger" onclick="removeBook(${book.id}); event.stopPropagation();" title="Delete Book" aria-label="Delete Book"><svg class="icon-svg icon-danger" aria-hidden="true"><use href="#icon-trash-2"></use></svg></button>
                             </div>
                         </div>`;
-            }).join('');
+            }).join('') + (_totalFiltered > _limit ? `<div id="rlMore" class="rl-more" style="text-align:center;padding:10px;font-size:.8rem;opacity:.7">Loading more… (${_totalFiltered - _limit} left)</div>` : '');
+            rlObserveMore(container);
+        }
+        function rlObserveMore(container) {
+            if (window._rlIO) { window._rlIO.disconnect(); window._rlIO = null; }
+            const el = document.getElementById('rlMore');
+            if (!el || !('IntersectionObserver' in window)) return;
+            window._rlIO = new IntersectionObserver((ents) => {
+                if (!ents.some(e => e.isIntersecting)) return;
+                window._rlIO.disconnect();
+                window._rlLimit = (window._rlLimit || 40) + 60;
+                const st = container.scrollTop;
+                renderReadingList();
+                container.scrollTop = st;
+            }, { root: container, rootMargin: '0px 0px 500px 0px' });
+            window._rlIO.observe(el);
         }
 
 
@@ -50163,8 +50183,8 @@ const EnglishDaily = (function () {
                 applyBookDates(readingList[bookIndex]);
 
                 localStorage.setItem('readingList', JSON.stringify(readingList));
-                renderReadingList();
                 closeEditBookModal();
+                requestAnimationFrame(() => renderReadingList());
                 showNotification('Book updated successfully!', 'success');
                 console.log('Updated book:', readingList[bookIndex]);
             } else {
@@ -50409,7 +50429,7 @@ const EnglishDaily = (function () {
             const modal = document.createElement('div');
             modal.id = 'bookProgressModal';
             modal.style.cssText = `
-                position: fixed; inset: 0; background: rgba(50,16,34,0.55); backdrop-filter: blur(6px);
+                position: fixed; inset: 0; background: rgba(36,18,30,0.6);
                 z-index: 100000; display: flex; align-items: center; justify-content: center;
                 padding: 20px;
             `;
