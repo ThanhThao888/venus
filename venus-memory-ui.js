@@ -326,8 +326,9 @@
     const cnt = (s) => dec.filter((d) => d.status === s).length;
 
     const revBtn = window.VenusReview ? el('button', { id: 'vpisReviewBtn', type: 'button', class: 'vpis-btn', style: 'margin-left:auto', text: '📋 Review tháng', 'aria-haspopup': 'dialog', onclick: () => window.VenusReview.open() }) : null;
-    const accBtn = window.VenusAccount ? el('button', { id: 'vpisAccountBtn', type: 'button', class: 'vpis-btn', style: revBtn ? 'margin-left:6px' : 'margin-left:auto', text: (window.VenusAccount.status && window.VenusAccount.status().signedIn) ? '☁ Tài khoản ✓' : '☁ Tài khoản', 'aria-haspopup': 'dialog', onclick: () => window.VenusAccount.open() }) : null;
-    sheet.appendChild(el('div', { class: 'vpis-head' }, [el('h2', { class: 'vpis-title', id: 'vpisTitle', text: 'Bộ nhớ Venus' }), revBtn, accBtn, el('button', { type: 'button', class: 'vpis-x', 'aria-label': 'Đóng', text: '×', onclick: close })]));
+    const aiBtn = el('button', { id: 'vpisAiBtn', type: 'button', class: 'vpis-btn', style: revBtn ? 'margin-left:6px' : 'margin-left:auto', text: '⚙ AI', title: 'Cài đặt AI (profile, model, thinking)', onclick: openAiSettings });
+    const accBtn = window.VenusAccount ? el('button', { id: 'vpisAccountBtn', type: 'button', class: 'vpis-btn', style: 'margin-left:6px', text: (window.VenusAccount.status && window.VenusAccount.status().signedIn) ? '☁ Tài khoản ✓' : '☁ Tài khoản', 'aria-haspopup': 'dialog', onclick: () => window.VenusAccount.open() }) : null;
+    sheet.appendChild(el('div', { class: 'vpis-head' }, [el('h2', { class: 'vpis-title', id: 'vpisTitle', text: 'Bộ nhớ Venus' }), revBtn, aiBtn, accBtn, el('button', { type: 'button', class: 'vpis-x', 'aria-label': 'Đóng', text: '×', onclick: close })]));
     sheet.appendChild(el('div', { class: 'vpis-meta', text: st ? 'Hồ sơ ' + S.profile.length + ' · đang dùng ' + cnt('approved') + ' · chờ duyệt ' + cnt('proposed') + ' · chờ đồng bộ ' + st.outbox_pending + (st.device_id ? ' · thiết bị ' + String(st.device_id).slice(0, 6) : '') : (S.loading ? 'Đang tải…' : '') }));
     const m = el('div', { class: 'vpis-msg', role: 'status', 'aria-live': 'polite', hidden: true }); sheet.appendChild(m);
     if (S.stale.length) sheet.appendChild(el('div', { class: 'vpis-stale', text: S.stale.length + ' mục đang dùng đã hơn 90 ngày chưa được xác nhận. Nếu vẫn đúng, bấm "Còn đúng" trên mục đó.' }));
@@ -363,6 +364,30 @@
     paintMsg();
     body.scrollTop = scroll;
     if (S.focusForm) { S.focusForm = false; const f = body.querySelector('.vpis-form'); if (f) { try { f.scrollIntoView({ block: 'nearest' }); const i = f.querySelector('input:not([readonly]),textarea'); if (i) i.focus({ preventScroll: true }); } catch (e) { /* ignore */ } } }
+  }
+
+  /* ───────── "⚙ AI" button: opens the AI settings (ai.js is loaded on demand, like venus-review.js / ai-hub.js do) ───────── */
+  let aiLoading = null;
+  function loadAi() {
+    if (window.VenusAI) return Promise.resolve(window.VenusAI);
+    if (!aiLoading) aiLoading = new Promise((res, rej) => {
+      const t = setTimeout(() => { aiLoading = null; rej(new Error('timeout')); }, 10000);
+      const sc = document.createElement('script'); sc.src = './ai.js';
+      sc.onload = () => { clearTimeout(t); if (window.VenusAI) res(window.VenusAI); else { aiLoading = null; rej(new Error('missing')); } };
+      sc.onerror = () => { clearTimeout(t); aiLoading = null; rej(new Error('not_found')); };
+      document.head.appendChild(sc);
+    });
+    return aiLoading;
+  }
+  async function openAiSettings() {
+    const btn = () => document.getElementById('vpisAiBtn');
+    try {
+      if (!window.VenusAI) { if (btn()) btn().disabled = true; say('Đang tải ai.js…', 'info'); await loadAi(); say(null); }
+      window.VenusAI.openSettings();   // a <dialog> in the top layer, so it shows above this modal
+    } catch (e) {
+      say('Không tải được ai.js (kiểm tra file ai.js nằm cạnh index.html và kết nối mạng).', 'err');
+    }
+    if (btn()) btn().disabled = false;
   }
 
   /* ───────── open / close ───────── */
