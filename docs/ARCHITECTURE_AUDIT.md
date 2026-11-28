@@ -2,7 +2,7 @@
 
 > Ảnh chụp kiến trúc thực tế, cộng danh sách phát hiện cần xử lý. Cập nhật khi trách nhiệm hoặc phụ thuộc giữa các module đổi (`CLAUDE.md` §5.4).
 > Ngày audit: 2026-11-27. Số dòng tính trên bản tải lên cùng ngày và có thể lệch sau khi sửa.
-> **Cập nhật 2026-11-28:** `ai.js` nâng lên **Multi-Profile AI Settings** (schema `venus-ai` v2, bộ đếm riêng theo profile, thinking effort, request format) và `venus-memory-ui.js` có nút `⚙ AI`. Số dòng của `ai.js` trong tài liệu này đã cũ.
+> **Cập nhật 2026-11-28:** `ai.js` nâng lên **Multi-Profile AI Settings** (schema `venus-ai` v2, bộ đếm riêng theo profile, thinking effort, request format), bổ sung **PIN lock** (UI gate, PBKDF2-SHA256 trong khóa `lock`) và ô API key **write-only** (`maskKey`, bỏ nút Show, không đưa key thật ra DOM). `venus-memory-ui.js`, `venus-account.js`, `venus-sync.js` và cửa sổ AI Settings (`ai.js`) đã chuyển sang giao diện tiếng Anh; nút mở AI Settings trong Memory modal đổi thành icon ẩn mờ (`.vpis-ghost`). Số dòng của `ai.js` trong tài liệu này đã cũ.
 
 ## 0. Phạm vi và giới hạn của audit
 
@@ -47,11 +47,11 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `venus-tools.js` | Registry công cụ + kiểm tra quyền L0–L3 | `VenusTools` | Biến/hàm global của `index.html` (đọc qua `safe()`), `ai-hub.js` (`sleepText`), IndexedDB Vault (chỉ đọc) | Không |
 | `venus-memory.js` | `VenusMemoryDB` + API sync, **không có mã mạng** | `VenusMemory` | `VenusTools` (đăng ký `get_memory_context`, `save_memory_item`) | IndexedDB `VenusMemoryDB` |
-| `venus-memory-ui.js` | Modal "Bộ nhớ Venus" (Alt+M, nút 🧠); header có nút `📋 Review tháng`, `⚙ AI`, `☁ Tài khoản` | `VenusMemoryUI` | `VenusMemory`, `VenusReview`, `VenusAccount` (tùy chọn), `ai.js` (nút `⚙ AI` nạp `./ai.js` theo yêu cầu, timeout 10 giây) | CSS chèn từ JS, tiền tố `vpis-` |
-| `venus-account.js` | Đăng nhập Email + Mật khẩu, thiết bị, kiểm tra `health` | `VenusAccount` | `supabase-js@2.119.0` (CDN, nạp lười), `VenusMemory.getDeviceId()` | IndexedDB `VenusAuthDB` |
-| `venus-sync.js` | Engine đồng bộ + khối "Đồng bộ bộ nhớ" | `VenusSync` | `VenusMemory`, `VenusAccount` | `syncMeta` trong `VenusMemoryDB` |
+| `venus-memory-ui.js` | Modal "Venus Memory" (Alt+M, nút 🧠, giao diện tiếng Anh); header có nút `Monthly review`, `Account`, và nút mở AI Settings dạng icon ẩn mờ (`#vpisAiBtn`, `.vpis-ghost`, không label/tooltip) | `VenusMemoryUI` | `VenusMemory`, `VenusReview`, `VenusAccount` (tùy chọn), `ai.js` (nút `#vpisAiBtn` nạp `./ai.js` theo yêu cầu, timeout 10 giây) | CSS chèn từ JS, tiền tố `vpis-` |
+| `venus-account.js` | Đăng nhập Email + Mật khẩu, thiết bị, kiểm tra `health` (giao diện tiếng Anh) | `VenusAccount` | `supabase-js@2.119.0` (CDN, nạp lười), `VenusMemory.getDeviceId()` | IndexedDB `VenusAuthDB` |
+| `venus-sync.js` | Engine đồng bộ + khối "Memory sync" (giao diện tiếng Anh) | `VenusSync` | `VenusMemory`, `VenusAccount` | `syncMeta` trong `VenusMemoryDB` |
 | `venus-review.js` | Review tháng + banner nhắc ngày 1–5 | `VenusReview` | `VenusTools`, `VenusMemory`, `ai.js` (nạp theo yêu cầu) | Không (chỉ ghi khi bạn bấm lưu) |
-| `ai.js` | Lõi AI OpenAI-compatible, **nhiều profile** (URL, request format `openrouter`/`openai`, key, model, thinking effort, bộ đếm riêng, prompt riêng), SSE, fallback model + fallback profile, DOMPurify. Cửa sổ Cài đặt AI là `<dialog>` hai cột | `VenusAI` | DOMPurify, marked | IndexedDB `venus-ai` (`settings` schema 2 + `usage` theo profile) |
+| `ai.js` | Lõi AI OpenAI-compatible, **nhiều profile** (URL, request format `openrouter`/`openai`, key, model, thinking effort, bộ đếm riêng, prompt riêng), SSE, fallback model + fallback profile, DOMPurify. Cửa sổ AI Settings là `<dialog>` hai cột giao diện tiếng Anh, có **PIN lock** tùy chọn và ô API key **write-only** (`maskKey`, bỏ nút Show) | `VenusAI` | DOMPurify, marked | IndexedDB `venus-ai` (`settings` schema 2 + `usage` theo profile + `lock` PIN hash) |
 | `ai-hub.js` | Tầng phân tích deterministic cho Sleep/Skills | `VenusAIHub` | Biến global của Tracker; nạp `ai.js` khi cần | Không |
 | `vault.js` / `vault-cm.js` / `vault.css` | Notes Vault | `NotesVault` | IndexedDB `FinanceTrackerVaultDB` | Có |
 | `pwa.js` / `sw.js` / `manifest.json` | PWA, offline | — | — | Cache Storage |
@@ -61,7 +61,7 @@
 `ai-hub.js` → `venus-tools.js` → `venus-memory.js` → `venus-memory-ui.js` → `venus-account.js` → `venus-sync.js` → `venus-review.js`
 
 - Thứ tự quan trọng: `venus-memory.js` phải sau `venus-tools.js` (đăng ký tool); `venus-sync.js` phải sau `venus-account.js`; `venus-review.js` ở cuối vì Memory UI kiểm tra `window.VenusReview` khi dựng nút.
-- **Nạp theo yêu cầu (không có thẻ `<script>` trong `index.html`):** `ai.js` (bởi `ai-hub.js:19`, `vault.js`, `venus-review.js` và nút `⚙ AI` của `venus-memory-ui.js`), `vault.js`/`vault-cm.js`/`vault.css` (bộ nạp ở `index.html:155–156`), `supabase-js` (bởi `venus-account.js:128`).
+- **Nạp theo yêu cầu (không có thẻ `<script>` trong `index.html`):** `ai.js` (bởi `ai-hub.js:19`, `vault.js`, `venus-review.js` và nút `#vpisAiBtn` của `venus-memory-ui.js`), `vault.js`/`vault-cm.js`/`vault.css` (bộ nạp ở `index.html:155–156`), `supabase-js` (bởi `venus-account.js:128`).
 - Tệp `pwa.js` **không** được nạp bằng thẻ `<script>` trong `index.html` (tìm không thấy); nó nằm trong `CORE` của `sw.js`. Chưa xác minh trang nào nạp nó (khả năng cao là `launcher.html`, chưa audit).
 
 ## 3. Service Worker (`sw.js`)
@@ -84,7 +84,7 @@ Xem chi tiết ở `DATA_CATALOG.md` §6. Điểm nối: `buildFullBackupObject`
 | Quyền ghi server | Chỉ RPC `vpis_push`; `insert/update` trực tiếp bị thu hồi; không có `DELETE` |
 | RLS | Bật trên mọi bảng, `auth.uid() = user_id` |
 | Edge Function `health` | Xác thực token bằng Supabase Auth; không dùng secret/service key; CORS `*` an toàn vì dùng bearer token, không cookie |
-| API key AI | IndexedDB `venus-ai` (mọi profile, kể cả `apiKey` của từng profile), không vào `localStorage`/backup/sync. Ô key là `type=password`; chuỗi người dùng/server vào form đều qua `esc()` |
+| API key AI | IndexedDB `venus-ai` (mọi profile, kể cả `apiKey` của từng profile), không vào `localStorage`/backup/sync. Ô key dùng cơ chế **write-only** (`maskKey` dạng `sk-or-…a1b2`, chỉ đọc, bỏ nút Show, không đưa key thật vào DOM; chỉ giữ `Replace key` và `Clear key`). Cửa sổ AI Settings có thể khóa cổng bằng **PIN** (PBKDF2-SHA256 + salt ngẫu nhiên trong khóa `lock`, chỉ khóa giao diện, không mã hóa IndexedDB). Chuỗi người dùng/server vào form đều qua `esc()` |
 | Token | `VenusAuthDB`; backup loại trừ tiền tố `sb-` |
 | XSS | `textContent` cho chuỗi từ server/AI/bộ nhớ; DOMPurify (chặn `img`, `svg`, `iframe`…) khi render Markdown |
 | Prompt injection | Nội dung gửi AI bọc trong `<context>` như dữ liệu; AI trong Phase 4 **không gọi tool và không ghi**; mọi ghi cần bạn bấm (`approvedByUser`) |
@@ -98,7 +98,7 @@ Mức độ: **Cao** = hỏng chức năng hoặc rủi ro dữ liệu · **Trun
 | :--- | :--- | :--- | :--- |
 | F1 | Cao | **Review tháng không tự nạp `ai.js`.** `window.VenusAI` chỉ có sau khi một nút AI khác nạp nó (`ai-hub.js`/`vault.js`). Nếu bạn mở Review trước, nút "Gửi cho AI" báo "Chưa tải ai.js". | **Đã sửa** trong `venus-review.js`: `aiInfo()` giờ tự nạp `./ai.js` (như `ai-hub.js:16–21`), timeout 10 giây, báo lỗi rõ nếu thất bại. Có 4 test |
 | F2 | Trung | **Tool đọc dữ liệu Tracker qua biến global trần** (`studyHours`, `dailyStudyBreakdown`, `skillsData`, `goals`, `gamification`, `Wellness`, `SLEEP_DEBT_CFG`; `venus-tools.js:162–173, 197, 235, 288`) bọc trong `safe()`. Nếu `index.html` đổi tên hoặc chuyển chúng khỏi phạm vi script, tool **âm thầm trả số 0**, giống hệt "chưa log". | Mở. Đề xuất mục 7.2 |
-| F3 | Trung | **`CLAUDE.md` yêu cầu bump `CACHE_VERSION` khi thêm tệp, nhưng `sw.js` (chú thích đầu tệp) nói chỉ bump khi muốn xóa sạch cache.** Về kỹ thuật, sửa `sw.js` (thêm vào `CORE`) làm đổi byte nên trình duyệt cài lại SW và tải lại `CORE`; bump không bắt buộc. Tệp cùng origin lại là network-first. | Mở. Nên sửa lời quy tắc trong `CLAUDE.md` cho đúng thực tế |
+| F3 | Trung | **`CLAUDE.md` yêu cầu bump `CACHE_VERSION` khi thêm tệp, nhưng `sw.js` (chú thích đầu tệp) nói chỉ bump khi muốn xóa sạch cache.** Về kỹ thuật, sửa `sw.js` (thêm vào `CORE`) làm đổi byte nên trình duyệt cài lại SW và tải lại `CORE`; bump không bắt buộc. Tệp cùng origin lại là network-first. | **Đã sửa** trong `CLAUDE.md` §2: chỉ bắt buộc thêm tệp mới vào `CORE` của `sw.js`; chỉ bump `CACHE_VERSION` khi cần xóa sạch cache |
 | F4 | Trung | **Lớp "vá hàm lúc chạy" trong `index.html`.** Console in `Patched: calculateGoalDifficulty…`, `All functions patched successfully` (`index.html:74601–74702`). Tool và `ai-hub.js` gọi chính các hàm này; thứ tự vá có thể đổi kết quả. | Mở. Chưa đọc đoạn này. Nên đọc trước khi thêm tool mới dựa vào hàm tính toán |
 | F5 | Trung | **Phiên bản `supabase-js` nằm ở hai nơi** (`venus-account.js:19` và `sw.js` `CDN_PRECACHE`), đồng bộ thủ công. Lệch thì không lỗi ngay nhưng mất offline. | Mở. Có thể thêm một dòng nhắc trong cả hai tệp (đã có) hoặc kiểm tra tự động |
 | F6 | Thấp | **Cảnh báo console:** `apple-mobile-web-app-capable` đã lỗi thời, Chrome khuyên thêm `mobile-web-app-capable`. Thẻ do `pwa.js:14` chèn. | Mở. Sửa 1 dòng trong `pwa.js`: thêm `ensure('meta[name="mobile-web-app-capable"]', …)` song song, **giữ** thẻ `apple-…` cho iOS |
@@ -106,8 +106,8 @@ Mức độ: **Cao** = hỏng chức năng hoặc rủi ro dữ liệu · **Trun
 | F8 | Thấp | `vault_1.js` giống hệt `vault.js`. | Mở. Xóa nếu là bản sao thừa trong repo |
 | F9 | Thấp | Mỗi module VPIS tự chèn CSS (4 thẻ `<style>` có tiền tố riêng). Quy ước thanh cuộn/animation phải lặp lại ở từng module. | Chấp nhận (đúng quy tắc tiền tố). Cân nhắc một tệp CSS dùng chung khi có module thứ 5 |
 | F10 | Thấp | `index.html` rất lớn (92.605 dòng). Quy tắc #1 đã hạn chế thay đổi; mọi thêm mới ở đây nên chỉ là thẻ `<script>`. | Theo dõi |
-| F11 | Trung | **Fallback sang profile khác gửi cùng prompt tới nhà cung cấp khác.** Nếu profile dự phòng là dịch vụ ngoài (nhất là gói free của Gemini) thì dữ liệu Review/Notes có thể rời máy tới nhà đó dù profile chính là Ollama hoặc đã bật `denyTraining`. `denyTraining` chỉ áp dụng cho profile có request format `openrouter`. | Mở. Chỉ đưa vào `fallbackProfileIds` những nhà bạn chấp nhận gửi dữ liệu tới; ghi chú nhạy cảm vẫn dùng tag `noai`. Cửa sổ Cài đặt AI hiển thị thứ tự dự phòng |
-| F12 | Thấp | **Tham số thinking chưa kiểm với API thật.** `ai.js` gửi `reasoning: {effort}` (OpenRouter) hoặc `reasoning_effort` (OpenAI-compatible); `off` gửi `none`; `xhigh`/`max` gửi nguyên văn. Một số nhà/model từ chối giá trị không hỗ trợ (HTTP 400). Test jsdom chỉ kiểm payload, không gọi mạng. | Mở. Dùng nút "Lưu & thử" cho từng profile; nếu nhà nào từ chối `max`/`xhigh`, đổi mức hoặc báo để sửa ánh xạ |
+| F11 | Trung | **Fallback sang profile khác gửi cùng prompt tới nhà cung cấp khác.** Nếu profile dự phòng là dịch vụ ngoài (nhất là gói free của Gemini) thì dữ liệu Review/Notes có thể rời máy tới nhà đó dù profile chính là Ollama hoặc đã bật `denyTraining`. `denyTraining` chỉ áp dụng cho profile có request format `openrouter`. | Mở. Chỉ đưa vào `fallbackProfileIds` những nhà bạn chấp nhận gửi dữ liệu tới; ghi chú nhạy cảm vẫn dùng tag `noai`. Cửa sổ AI Settings hiển thị thứ tự dự phòng |
+| F12 | Thấp | **Tham số thinking chưa kiểm với API thật.** `ai.js` gửi `reasoning: {effort}` (OpenRouter) hoặc `reasoning_effort` (OpenAI-compatible); `off` gửi `none`; `xhigh`/`max` gửi nguyên văn. Một số nhà/model từ chối giá trị không hỗ trợ (HTTP 400). Test jsdom chỉ kiểm payload, không gọi mạng. | Mở. Dùng nút "Save & test" cho từng profile; nếu nhà nào từ chối `max`/`xhigh`, đổi mức hoặc báo để sửa ánh xạ |
 
 Phát hiện về đồng bộ (không có khóa duy nhất cho `key` ở server, `sync_changes` không dọn, không có backoff…) nằm ở `SYNC_PROTOCOL.md` §12.
 
@@ -115,14 +115,13 @@ Phát hiện về đồng bộ (không có khóa duy nhất cho `key` ở server
 
 ### 7.1 Việc nhỏ, rủi ro thấp
 1. `pwa.js`: thêm thẻ `mobile-web-app-capable` (F6).
-2. `CLAUDE.md`: sửa quy tắc về `CACHE_VERSION` cho khớp với `sw.js` (F3).
-3. Xóa `vault_1.js` nếu thừa (F8) và dòng `=` thừa ở `tracker.css:5151` (F7).
+2. Xóa `vault_1.js` nếu thừa (F8) và dòng `=` thừa ở `tracker.css:5151` (F7).
 
 ### 7.2 Chống "số 0 giả" (F2)
 Thêm một **tự kiểm tra đấu nối** (chỉ đọc) vào `get_storage_health` hoặc một tool L0 mới: với mỗi nguồn mà tool cần (`studyHours`, `skillsData`, `goals`, `Wellness`, `getSortedSleepSessions`…), trả `present: true/false`. Khi nguồn **vắng mặt** (khác với **rỗng**), Review tháng nên hiện "không đọc được nguồn X" thay vì "0 giờ". Việc này phân biệt được "bạn chưa log" với "app đổi tên biến".
 
 ### 7.3 Kiểm thử
-Các test jsdom cho `venus-review.js` (tháng đến hôm nay, banner, nạp `ai.js`) và kiểm tra cú pháp CSS chỉ chạy trong phiên làm việc, chưa nằm trong repo. `tests/ai.test.js` (migrate schema, payload theo format × thinking, bộ đếm theo profile, fallback giữa profile, UI Cài đặt AI, nút `⚙ AI`; cần `npm i jsdom fake-indexeddb`, chạy `node tests/ai.test.js`) được thêm cùng đợt nâng cấp `ai.js`. Nên lưu tất cả vào `tests/` cùng bộ test SQL 28/28 để chạy lại sau mỗi thay đổi.
+Các test jsdom cho `venus-review.js` (tháng đến hôm nay, banner, nạp `ai.js`) và kiểm tra cú pháp CSS chỉ chạy trong phiên làm việc, chưa nằm trong repo. `tests/ai.test.js` (migrate schema, payload theo format × thinking, bộ đếm theo profile, fallback giữa profile, UI AI Settings, PIN lock, write-only API key, nút `#vpisAiBtn`; cần `npm i jsdom fake-indexeddb`, chạy `node tests/ai.test.js`) được thêm cùng đợt nâng cấp `ai.js`. Nên lưu tất cả vào `tests/` cùng bộ test SQL 28/28 để chạy lại sau mỗi thay đổi.
 
 ## 8. Danh sách kiểm tra hồi quy (sau mỗi milestone)
 
@@ -131,11 +130,11 @@ Theo `CLAUDE.md` §5.4:
 1. **Console 0 lỗi** khi mở app, cả online lẫn offline (cảnh báo F6 là cảnh báo đã biết, không phải lỗi).
 2. Các tab cũ, dữ liệu `localStorage`, Notes Vault, chat AI streaming cũ hoạt động như trước.
 3. Backup JSON xuất và nhập thành công; **tìm trong file** không có API key, `sb-…` hay token; `__meta.venusMemoryCount` khớp số mục.
-4. Offline: tắt mạng, mở app, mở modal Bộ nhớ và sửa một mục; `VenusMemory.getSyncState().outbox_pending` tăng; bật mạng thì về 0.
+4. Offline: tắt mạng, mở app, mở modal Venus Memory và sửa một mục; `VenusMemory.getSyncState().outbox_pending` tăng; bật mạng thì về 0.
 5. iPhone (PWA màn hình chính): mở app, đăng nhập còn giữ, đồng bộ chạy khi mở lại app.
 6. Review tháng: mở modal, chọn "tháng này đến hôm nay", "Chuẩn bị số liệu" cho số đêm ngủ đúng; "Gửi cho AI" bật khi đã cấu hình AI (kể cả khi chưa từng bấm nút AI khác trong phiên).
 7. Tài liệu `docs/` được cập nhật nếu trách nhiệm hoặc phụ thuộc giữa module đổi.
-8. Cài đặt AI (sau khi sửa `ai.js`): mở `⚙ AI` từ modal Bộ nhớ, cửa sổ phải hiện **trên** modal; dữ liệu `venus-ai` cũ được chuyển thành profile #1 (+ #2, #3 từ nhà dự phòng) và bộ đếm hôm nay giữ nguyên; chat/Review/Notes Vault dùng profile đang chọn; chọn profile ở thanh đầu khung AI không đóng khung; **tìm trong file backup** không có API key (xem mục 3).
+8. AI Settings (sau khi sửa `ai.js`): mở nút cài đặt từ modal Venus Memory, cửa sổ phải hiện **trên** modal (hỏi PIN nếu đã đặt); dữ liệu `venus-ai` cũ được chuyển thành profile #1 (+ #2, #3 từ nhà dự phòng) và bộ đếm hôm nay giữ nguyên; ô API key đã lưu hiển thị dạng che chỉ đọc (không có key thật trong DOM); chat/Review/Notes Vault dùng profile đang chọn; chọn profile ở thanh đầu khung AI không đóng khung; **tìm trong file backup** không có API key (xem mục 3).
 
 **Lệnh Console hữu ích:**
 

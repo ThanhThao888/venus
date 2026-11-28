@@ -8,7 +8,7 @@
 
 | Vùng | Gồm | Quy tắc |
 | :--- | :--- | :--- |
-| **A — Local Private** (mặc định) | Notes Vault và tệp đính kèm, `localStorage` của Tracker, API key AI, token đăng nhập | Chỉ nằm trên thiết bị, không tự lên cloud |
+| **A — Local Private** (mặc định) | Notes Vault và tệp đính kèm, `localStorage` của Tracker, API key & PIN hash AI (`venus-ai`), token đăng nhập | Chỉ nằm trên thiết bị, không tự lên cloud |
 | **B — Opt-in Sync** | `profile`, `decisions` trong `VenusMemoryDB` | Lưu cục bộ trước, đồng bộ hai chiều khi người dùng bật (xem `SYNC_PROTOCOL.md`) |
 | **C — Cloud Operational** | Phiên Supabase Auth, `user_devices`, `sync_changes` | Do Supabase quản lý; không chứa Notes hay dữ liệu Tracker |
 
@@ -20,7 +20,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `FinanceTrackerVaultDB` | v4 [đã đọc: `vault.js:56–57`] | Notes, revisions, liên kết tệp, attachments | `vault.js` | **Có**, qua `NotesVault.getBackupParts()` (`vault.js:7009`, nối ở `index.html:81095`) | Không |
 | `VenusMemoryDB` | v1, `SCHEMA 1` [`venus-memory.js:20`] | Stores: `profile`, `decisions`, `outbox`, `syncMeta`, `audit_logs` | `venus-memory.js` | **Một phần:** chỉ `profile` + `decisions` (`exportAll`, `venus-memory.js:335`) | `profile` + `decisions` nếu bật sync |
-| `venus-ai` | v1, store `kv` (phiên bản IndexedDB giữ nguyên; schema nằm trong giá trị, xem 2.2) | Khóa `settings`: **nhiều profile AI, gồm `apiKey` của từng profile**; khóa `usage`: bộ đếm lượt gọi theo profile | `ai.js` | **Không bao giờ** | Không |
+| `venus-ai` | v1, store `kv` (phiên bản IndexedDB giữ nguyên; schema nằm trong giá trị, xem 2.2) | Khóa `settings`: **nhiều profile AI, gồm `apiKey` của từng profile**; khóa `usage`: bộ đếm lượt gọi theo profile; khóa `lock` *(tùy chọn)*: PBKDF2-SHA256 hash + salt cho PIN khóa cổng AI Settings | `ai.js` | **Không bao giờ** | Không |
 | `VenusAuthDB` | v1, store `kv` [`venus-account.js:21`] | Phiên đăng nhập Supabase (khóa `sb-venus-auth`) | `venus-account.js` | **Không bao giờ** | Là phiên của chính Supabase |
 
 ### 2.2 `venus-ai`: schema v2 (Zone A, chỉ trên thiết bị) [đã đọc code `ai.js`, 2026-11-28]
@@ -31,10 +31,11 @@
 | :--- | :--- |
 | `activeProfileId` | Profile đang dùng; mọi `VenusAI.chat` không chỉ định profile đều dùng nó |
 | `fallbackProfileIds[]` | Thứ tự các profile thử tiếp khi profile đang dùng hết lượt, sai key, mất mạng hoặc lỗi (không chứa profile đang dùng, tối đa 9) |
-| `profiles[]` (tối đa 10) | `id`, `name`, `requestFormat` (`openrouter` \| `openai`), `baseUrl` (URL chat completions đầy đủ; nếu chỉ tới `/v1` thì app tự thêm `/chat/completions`), **`apiKey`**, `model`, `fallbackModels` (≤ 3, cùng profile), `thinkingEffort` (`default` \| `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max`), `dailyLimit` (0 = không hiện giới hạn), `denyTraining` (chỉ có tác dụng với format `openrouter`), `temperature`, `maxTokens` (0 = không gửi), `replyLang`, `maxChars`, `customPrompt` (rỗng = hướng dẫn mặc định) |
+| `profiles[]` (tối đa 10) | `id`, `name`, `requestFormat` (`openrouter` \| `openai`), `baseUrl` (URL chat completions đầy đủ; nếu chỉ tới `/v1` thì app tự thêm `/chat/completions`), **`apiKey`** *(lưu cục bộ; trên UI hiển thị write-only dạng che `maskKey`, không đưa key thật vào DOM)*, `model`, `fallbackModels` (≤ 3, cùng profile), `thinkingEffort` (`default` \| `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max`), `dailyLimit` (0 = không hiện giới hạn), `denyTraining` (chỉ có tác dụng với format `openrouter`), `temperature`, `maxTokens` (0 = không gửi), `replyLang`, `maxChars`, `customPrompt` (rỗng = hướng dẫn mặc định) |
 
 - `temperature` và `max_tokens` chỉ được gửi khi `thinkingEffort` là `default` hoặc `off`.
 - `usage`: `{ day (UTC), profiles: { <profileId>: { n, by: { <model>: số lượt } } } }`. Sang ngày UTC mới thì làm lại từ đầu; xóa profile thì xóa luôn bộ đếm của nó. Mọi lượt gọi (kể cả model/profile dự phòng) được đếm vào profile đã nhận request.
+- `lock` *(tùy chọn, khi người dùng bật PIN trong mục Security của AI Settings)*: `{ v: 1, iter: 150000, salt (16-byte base64), hash (PBKDF2-SHA256 256-bit base64) }`. Chỉ làm cổng chặn giao diện (UI gate) trước khi mở cửa sổ AI Settings (khóa tạm 30 giây sau 5 lần nhập sai), **không** lưu PIN gốc và **không** mã hóa `apiKey` trong IndexedDB.
 - **Migrate tự động** (lần đầu đọc `settings` còn schema cũ, tức không có `schemaVersion: 2`): cấu hình chính → profile `prof_1` (đang dùng); mỗi mục `backups[]` có `model` hoặc `apiKey` → `prof_2`, `prof_3` (kế thừa giới hạn, ngôn ngữ, prompt… của cấu hình chính) và vào `fallbackProfileIds`; `usage` cũ của **ngày UTC hôm nay** → `prof_1`, của ngày cũ thì bỏ. Hướng dẫn riêng khác văn bản mặc định → `customPrompt`; bằng văn bản mặc định → rỗng. Máy mới chưa có gì thì chỉ giữ trong bộ nhớ, chưa ghi IndexedDB cho tới khi bạn bấm Lưu.
 - `VenusAI.getSettings()` vẫn trả các trường phẳng của profile đang dùng (`provider` được suy ra từ `baseUrl`, `instructions` = `customPrompt` hoặc mặc định) kèm `profiles`, `activeProfileId`, `fallbackProfileIds`, nên `vault.js` và `venus-review.js` không cần sửa.
 - Không có trường nào của `venus-ai` đi vào `localStorage`, backup hoặc đồng bộ.
@@ -81,7 +82,7 @@ Mọi truy cập của AI vào dữ liệu app phải đi qua đây. Cấp quy�
 `type` ∈ {`decision`, `lesson`, `milestone`, `procedure`, `review_summary`}, `status` ∈ {`proposed`, `approved`, `superseded`}, `title` (≤ 200), `content` (≤ 4000), `rationale` (≤ 2000), `source` (≤ 100), `confidence`, `tags`.
 
 - Review tháng lưu thành `type: review_summary`, `status: proposed`, `source: 'venus-review <YYYY-MM>'` (thêm `partial` cho bản "đến hôm nay"), tag `['review', '<YYYY-MM>']` (+ `'partial'`).
-- Mục `approved` quá 90 ngày chưa xác nhận bị đánh dấu "cũ" (`getStaleMemories(90)`); Memory modal nhắc "Còn đúng".
+- Mục `approved` quá 90 ngày chưa xác nhận bị đánh dấu "cũ" (`getStaleMemories(90)`); Memory modal nhắc "Still correct".
 
 ### 4.4 Các store phụ (không đồng bộ, không backup)
 
@@ -106,7 +107,7 @@ RLS bật trên mọi bảng (`auth.uid() = user_id`). Client **không** `insert
 
 - `BACKUP_SCHEMA_VERSION = 4` (`index.html:81062`): 3.x = `localStorage` + `notesVault`; **4 thêm `venusMemory` (profile + decisions)**.
 - `exportProgress()` (`index.html:81157`) gồm: `localStorage` (trừ khóa loại trừ) + Notes Vault + `venusMemory`. Nếu xuất `venusMemory` quá 5 giây hoặc lỗi, backup **vẫn tạo** nhưng cảnh báo "KHÔNG gồm bộ nhớ Venus" (`index.html:81102–81123, 81175`).
-- **Không bao giờ có trong backup:** API key (`venus-ai`), token/phiên (`VenusAuthDB`, khóa `sb-`), `outbox`, `audit_logs`, `device_id`, cursor đồng bộ.
+- **Không bao giờ có trong backup:** API key & PIN hash (`venus-ai`), token/phiên (`VenusAuthDB`, khóa `sb-`), `outbox`, `audit_logs`, `device_id`, cursor đồng bộ.
 - `importProgress()` (`index.html:81192`): từ chối file có `backupSchemaVersion` mới hơn app hiểu (`index.html:81205`); khôi phục bộ nhớ qua `VenusMemory.importAll(data, { mode })` với `mode` `merge` hoặc `replace` (`venus-memory.js:343`), tối đa 5.000 bản ghi. **Restore cục bộ không ghi đè cloud**; thay đổi sẽ đồng bộ như một lần ghi bình thường nếu sync đang bật.
 
 ## 7. Cái gì rời khỏi máy?
@@ -116,7 +117,7 @@ RLS bật trên mọi bảng (`auth.uid() = user_id`). Client **không** `insert
 | **Supabase** (Zone B) | `payload` của profile/decisions (**văn bản thường**, không mã hóa đầu-cuối); `device_id`, nhãn thiết bị, user-agent | Chỉ khi bật đồng bộ | Công tắc đồng bộ (mặc định tắt) |
 | **Supabase Auth** | Email, phiên đăng nhập | Khi đăng nhập | — |
 | **Nhà cung cấp AI** (OpenRouter/Gemini/Groq/Ollama, tùy profile) | Gói số liệu Review tháng: số liệu đã tính, mục tiêu/deadline (tên, %, ngày còn lại), tối đa 10 mục hồ sơ và 8 quyết định đã duyệt, mỗi mục rút gọn ≤ 160 ký tự; tổng ≤ 8.000 ký tự (`LIM` trong `venus-review.js`) | Chỉ khi bạn bấm "Gửi cho AI" | Bạn **xem nguyên văn gói và nơi nhận** trước khi gửi; có thể bỏ phần bộ nhớ |
-| **Không đi đâu** | Notes Vault, API key, log ngủ/học thô, token | — | — |
+| **Không đi đâu** | Notes Vault, API key, PIN hash, log ngủ/học thô, token | — | — |
 
 - Nội dung do AI trả về coi là dữ liệu không đáng tin: hiển thị bằng `textContent`; khi render Markdown thì qua DOMPurify chặn `img`, `svg`, `iframe`. Nội dung gửi cho AI được bọc trong `<context>` như dữ liệu, không phải chỉ thị.
 - **Lưu ý riêng tư:** nếu nhà cung cấp AI là dịch vụ ngoài, những gì có trong gói (kể cả đoạn trích hồ sơ) rời máy bạn. Dùng Ollama chạy trên máy nếu cần giữ hoàn toàn cục bộ.
