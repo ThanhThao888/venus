@@ -16939,7 +16939,7 @@
         const prev = (hist && hist.prev) || [];
         if (vqTokens(query).length < 3 && prev.length) query = prev[prev.length - 1] + ' ' + query;      // short follow-up: reuse the previous question's words
         const { ranked, terms } = vqRank(query, ok);
-        if (!ranked.length) return { text: '(Không tìm thấy đoạn nào trong vault khớp với câu hỏi này.)', label: inScope + ' note trong phạm vi · 0 đoạn khớp', details: [] };
+        if (!ranked.length) return { text: '(Không tìm thấy đoạn nào trong vault khớp với câu hỏi này.)', label: inScope + ' notes in scope · 0 matching passages', details: [] };
         const budget = Math.max(3000, (+cfg.maxChars || 30000) - 1500), per = new Map(), pick = []; let used = 0;
         for (const r of ranked) {
             if (pick.length >= K) break;
@@ -16959,7 +16959,7 @@
         ranked.forEach((r) => { if (others.length < 15 && !seen.has(r.c.note.id)) { seen.add(r.c.note.id); others.push(gaTitleOf(r.c.note)); } });
         const text = '<vault_excerpts notes_in_scope="' + inScope + '" matched_notes="' + new Set(ranked.map((r) => r.c.note.id)).size + '" search_words="' + gaAttr(terms.slice(0, 12).join(' ')) + '">\n' + parts.join('\n\n')
             + (others.length ? '\n\n<other_matching_notes note="chỉ có tiêu đề, chưa đọc nội dung">' + others.map(gaAttr).join(' | ') + '</other_matching_notes>' : '') + '\n</vault_excerpts>';
-        return { text, label: order.length + ' note · ' + pick.length + ' đoạn (trên ' + inScope + ' note trong phạm vi)', details: order.map((n) => gaTitleOf(n) + ' — ' + by.get(n.id).length + ' đoạn') };
+        return { text, label: order.length + ' notes · ' + pick.length + ' passages (of ' + inScope + ' notes in scope)', details: order.map((n) => gaTitleOf(n) + ' — ' + by.get(n.id).length + ' passages') };
     }
     function vaultLinkify(root, api) {
         if (!root.__nvRef) {
@@ -16975,7 +16975,7 @@
                 const n = findNoteByTitle(m[1].split('|')[0].split('#')[0]);
                 if (!n) continue;
                 hit = true; frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
-                const a = document.createElement('a'); a.href = '#'; a.dataset.nvNote = n.id; a.title = 'Mở note này (đóng khung chat)'; a.textContent = gaTitleOf(n);
+                const a = document.createElement('a'); a.href = '#'; a.dataset.nvNote = n.id; a.title = 'Open this note (closes the chat)'; a.textContent = gaTitleOf(n);
                 a.style.cssText = 'color:var(--primary,#d17b96);text-decoration:underline;cursor:pointer;font-weight:600';
                 frag.appendChild(a); last = m.index + m[0].length;
             }
@@ -16986,8 +16986,8 @@
     async function aiSaveVaultAnswer(text, question) {
         const now = Date.now(), day = toLocalDateStr(new Date(now)), q = String(question || '').replace(/\s+/g, ' ').trim();
         const note = normalizeNote({
-            id: uid(), title: 'AI · Hỏi vault · ' + (q.length > 50 ? q.slice(0, 49) + '…' : q || day),
-            markdown: '> AI trả lời từ các note của mình ngày ' + day + (q ? ' — câu hỏi: ' + q : '') + '. Kiểm tra lại thông tin quan trọng trước khi dùng.\n\n' + String(text).trim() + '\n',
+            id: uid(), title: 'AI · Ask vault · ' + (q.length > 50 ? q.slice(0, 49) + '…' : q || day),
+            markdown: '> AI answer drawn from my notes on ' + day + (q ? ' — question: ' + q : '') + '. Double-check important information before relying on it.\n\n' + String(text).trim() + '\n',
             type: 'General', tags: ['ai-analysis'], pinned: false, createdAt: now, updatedAt: now
         });
         try { await dbPut(note); } catch (e) { console.error('Notes Vault: could not save AI note', e); toast('Couldn’t save the note.'); return; }
@@ -17001,19 +17001,18 @@
         const live = S.notes.filter((n) => !n.deletedAt && !gaIsTemplate(n) && !nvNoAi(n));
         if (!live.length) { toast('The vault has no notes yet (notes tagged noai are not counted).'); return; }
         const folders = new Map(); live.forEach((n) => { const f = normType(n.type); folders.set(f, (folders.get(f) || 0) + 1); });
-        const choices = [{ v: '*', l: 'Tất cả (' + live.length + ' note)' }].concat(Array.from(folders.keys()).sort((a, b) => a.localeCompare(b)).map((f) => ({ v: 'f:' + f, l: f + ' (' + folders.get(f) + ')' })));
+        const choices = [{ v: '*', l: 'All (' + live.length + ' notes)' }].concat(Array.from(folders.keys()).sort((a, b) => a.localeCompare(b)).map((f) => ({ v: 'f:' + f, l: f + ' (' + folders.get(f) + ')' })));
         ai.openPanel({
-            title: 'Hỏi cả vault', system: AI_VAULT_SYSTEM,
-            idleLabel: live.length + ' note',
-            placeholder: 'Hỏi bất cứ điều gì về các note của bạn… (Ctrl+Enter để gửi)',
-            hint: 'Gõ câu hỏi bên dưới. Ví dụ: “Mình đã ghi gì về WACC?”, “Tổng hợp những gì mình biết về quản trị rủi ro”, “Có note nào mâu thuẫn nhau về định giá không?”. App tìm các đoạn khớp câu hỏi rồi chỉ gửi những đoạn đó, không gửi cả vault. Câu hỏi càng có từ khóa cụ thể thì càng tìm đúng; hỏi rộng kiểu “tóm tắt hết” sẽ chỉ thấy một phần.',
+            title: 'Ask your vault', system: AI_VAULT_SYSTEM,
+            idleLabel: live.length + ' notes',
+            placeholder: 'Ask anything about your notes… (Ctrl+Enter to send)',
             options: [
-                { id: 'scope', type: 'select', label: 'Phạm vi', value: '*', choices },
-                { id: 'k', type: 'select', label: 'Số đoạn tối đa', value: '12', choices: [{ v: '6', l: '6' }, { v: '12', l: '12' }, { v: '20', l: '20' }, { v: '30', l: '30' }] },
-                { id: 'ai', label: 'Gồm cả note AI đã lưu', checked: false }
+                { id: 'scope', type: 'select', label: 'Scope', value: '*', choices },
+                { id: 'k', type: 'select', label: 'Max passages', value: '12', choices: [{ v: '6', l: '6' }, { v: '12', l: '12' }, { v: '20', l: '20' }, { v: '30', l: '30' }] },
+                { id: 'ai', label: 'Include saved AI notes', checked: false }
             ],
             retrieve: vaultRetrieve, onRender: vaultLinkify,
-            actions: [{ label: 'Lưu thành note mới', run: (t, api, q) => aiSaveVaultAnswer(t, q) }]
+            actions: [{ label: 'Save as new note', run: (t, api, q) => aiSaveVaultAnswer(t, q) }]
         });
     }
 
@@ -17790,8 +17789,8 @@
         }
     }
 
-    /* ═════════════ Note Map · "✨ AI sắp xếp giúp" ═════════════
-       The AI only PROPOSES. Nothing is written until you tick rows and press "Áp dụng", and the whole batch can be undone.
+    /* ═════════════ Note Map · "✨ AI organise" ═════════════
+       The AI only PROPOSES. Nothing is written until you tick rows and press "Apply", and the whole batch can be undone.
        • One request carries the title list of every note in scope (so the AI can pick parents) plus tags, headings and the
          first lines of the notes that still need a place. Notes tagged "noai" are left out completely, titles included.
        • Relations you set by hand are never touched: a note that already has a parent gets no new parent, a pair that is
@@ -17867,7 +17866,7 @@
     function maiParse(raw) {
         const s = String(raw || '').replace(/```(?:json)?/gi, '');
         const a = s.indexOf('{'), b = s.lastIndexOf('}');
-        const bad = () => { const e = new Error('AI không trả về JSON hợp lệ (model free hay bị vậy). Bấm Hỏi AI để thử lại, hoặc đổi model trong ⚙.'); e.__ai = true; e.detail = maiClip(s, 240); return e; };
+        const bad = () => { const e = new Error('The AI didn’t return valid JSON (free models often do this). Press Ask AI to retry, or change the model in ⚙.'); e.__ai = true; e.detail = maiClip(s, 240); return e; };
         if (a < 0 || b <= a) throw bad();
         const body = s.slice(a, b + 1);
         try { return JSON.parse(body); } catch (e1) { /* try once more without trailing commas */ }
@@ -17940,7 +17939,7 @@
         ].join('');
         document.head.appendChild(s);
     }
-    function maiTitleOf(id) { const n = S.notes.find((x) => x.id === id); return n ? maiClip(mapTitle(n), 70) : '(đã xóa)'; }
+    function maiTitleOf(id) { const n = S.notes.find((x) => x.id === id); return n ? maiClip(mapTitle(n), 70) : '(deleted)'; }
     function maiOpts() {
         const U = MAI.ui, q = (s) => U.box.querySelector(s);
         return { scope: q('[data-o="scope"]').value, onlyNew: q('[data-o="onlyNew"]').checked, parents: q('[data-o="parents"]').checked, links: q('[data-o="links"]').checked };
@@ -17957,11 +17956,11 @@
             const p = await maiPlan(st);
             if (MAI.ui !== U) return;
             const host = (() => { try { return new URL(p.cfg.baseUrl).host; } catch (e) { return p.cfg.baseUrl || '?'; } })();
-            let h = p.inScope + ' note trong phạm vi · <b>' + p.targets + '</b> note sẽ được xếp · ' + (p.batches.length ? 'sẽ gửi ≈ ' + p.chars.toLocaleString() + ' ký tự trong ' + p.batches.length + ' lượt gọi tới <b>' + esc(host) + '</b>' + (p.cfg.model ? ' (' + esc(p.cfg.model) + ')' : ' — <i>chưa chọn model, bấm ⚙</i>') : 'không có gì để gửi');
-            if (p.noai) h += '<span class="nvmai-w" style="color:inherit">🔒 ' + p.noai + ' note gắn noai bị bỏ ra, không gửi cả tiêu đề.</span>';
-            if (p.skipped) h += '<span class="nvmai-w">Còn ' + p.skipped + ' note chưa vào lượt này (giới hạn ' + MAI_MAX_BATCH + ' lượt hoặc ký tự). Áp dụng xong bấm Hỏi AI lần nữa, các note đã có quan hệ sẽ không bị xét lại.</span>';
-            if (p.capped) h += '<span class="nvmai-w">Phạm vi quá lớn: chỉ xét ' + MAI_MAX_NOTES + ' note đầu theo tên. Chọn một folder để xét phần còn lại.</span>';
-            if (!p.targets) h += '<span class="nvmai-w">Không có note nào cần xếp. Bỏ tick “Chỉ note chưa có quan hệ” nếu muốn xét lại cả note đã có.</span>';
+            let h = p.inScope + ' notes in scope · <b>' + p.targets + '</b> notes to organise · ' + (p.batches.length ? 'will send ≈ ' + p.chars.toLocaleString() + ' characters in ' + p.batches.length + ' request(s) to <b>' + esc(host) + '</b>' + (p.cfg.model ? ' (' + esc(p.cfg.model) + ')' : ' — <i>no model selected, press ⚙</i>') : 'nothing to send');
+            if (p.noai) h += '<span class="nvmai-w" style="color:inherit">🔒 ' + p.noai + ' notes tagged noai were left out; not even their titles are sent.</span>';
+            if (p.skipped) h += '<span class="nvmai-w">' + p.skipped + ' more notes didn’t fit in this run (limit: ' + MAI_MAX_BATCH + ' requests or characters). After applying, press Ask AI again; notes that already have relations won’t be reviewed again.</span>';
+            if (p.capped) h += '<span class="nvmai-w">Scope too large: only the first ' + MAI_MAX_NOTES + ' notes by name are considered. Pick a folder to cover the rest.</span>';
+            if (!p.targets) h += '<span class="nvmai-w">No notes need organising. Untick “Only notes without relations” to review notes that already have some.</span>';
             el.innerHTML = h;
         } catch (e) { el.textContent = ''; }
     }
@@ -17973,42 +17972,42 @@
             if (!rows.length) return '';
             return '<div class="nvmai-gh">' + title + ' (' + rows.length + ')</div>' + rows.map(({ it, i }) => {
                 const t = it.kind === 'parent'
-                    ? '<b>' + esc(maiTitleOf(it.child)) + '</b> <i>là sub-note của</i> <b>' + esc(maiTitleOf(it.parent)) + '</b>'
-                    : '<b>' + esc(maiTitleOf(it.a)) + '</b> <i>↔ liên quan tới</i> <b>' + esc(maiTitleOf(it.b)) + '</b>' + (it.label ? '<span class="nvmai-chip">' + esc(it.label) + '</span>' : '');
-                return '<label class="nvmai-row' + (it.done ? ' done' : '') + '"><input type="checkbox" data-i="' + i + '"' + (it.on ? ' checked' : '') + (it.done ? ' disabled' : '') + '><span>' + t + (it.done ? ' <i>✓ đã áp dụng</i>' : '')
+                    ? '<b>' + esc(maiTitleOf(it.child)) + '</b> <i>is a sub-note of</i> <b>' + esc(maiTitleOf(it.parent)) + '</b>'
+                    : '<b>' + esc(maiTitleOf(it.a)) + '</b> <i>↔ related to</i> <b>' + esc(maiTitleOf(it.b)) + '</b>' + (it.label ? '<span class="nvmai-chip">' + esc(it.label) + '</span>' : '');
+                return '<label class="nvmai-row' + (it.done ? ' done' : '') + '"><input type="checkbox" data-i="' + i + '"' + (it.on ? ' checked' : '') + (it.done ? ' disabled' : '') + '><span>' + t + (it.done ? ' <i>✓ applied</i>' : '')
                     + (it.why ? '<small>' + esc(it.why) + '</small>' : '') + '</span></label>';
             }).join('');
         };
-        res.innerHTML = grp('parent', 'Cha – con') + grp('link', 'Liên quan');
+        res.innerHTML = grp('parent', 'Parent – child') + grp('link', 'Related');
         maiButtons();
     }
     function maiButtons() {
         const U = MAI.ui; if (!U) return;
         const f = (s) => U.box.querySelector(s);
         const n = U.items.filter((x) => x.on && !x.done).length;
-        const ap = f('[data-a="apply"]'); ap.disabled = U.busy || !n; ap.textContent = n ? 'Áp dụng (' + n + ')' : 'Áp dụng';
+        const ap = f('[data-a="apply"]'); ap.disabled = U.busy || !n; ap.textContent = n ? 'Apply (' + n + ')' : 'Apply';
         f('[data-a="all"]').disabled = f('[data-a="none"]').disabled = U.busy || !U.items.length;
         const un = f('[data-a="undo"]'); un.hidden = !MAI.undo; un.disabled = U.busy;
-        if (MAI.undo) un.textContent = 'Hoàn tác lần áp dụng trước (' + MAI.undo.size + ' note)';
-        const ask = f('[data-a="ask"],[data-a="stop"]'); ask.textContent = U.busy ? '■ Dừng' : (U.items.length ? 'Hỏi lại AI' : 'Hỏi AI'); ask.dataset.a = U.busy ? 'stop' : 'ask';
+        if (MAI.undo) un.textContent = 'Undo last apply (' + MAI.undo.size + ' notes)';
+        const ask = f('[data-a="ask"],[data-a="stop"]'); ask.textContent = U.busy ? '■ Stop' : (U.items.length ? 'Ask AI again' : 'Ask AI'); ask.dataset.a = U.busy ? 'stop' : 'ask';
         U.box.querySelectorAll('[data-o]').forEach((x) => { x.disabled = U.busy; });
     }
     async function maiAsk() {
         const U = MAI.ui; if (!U || U.busy) return;
         const ai = window.VenusAI, st = maiOpts();
-        if (!st.parents && !st.links) { maiStatus('Hãy chọn ít nhất một loại quan hệ.', 'bad'); return; }
-        if (!(await ai.isConfigured())) { ai.openSettings({ note: 'Nhập API key và tên model trước khi dùng AI.', onSave: maiMeta }); return; }
+        if (!st.parents && !st.links) { maiStatus('Pick at least one relation type.', 'bad'); return; }
+        if (!(await ai.isConfigured())) { ai.openSettings({ note: 'Enter an API key and model name before using AI.', onSave: maiMeta }); return; }
         const plan = await maiPlan(st);
-        if (!plan.batches.length) { maiStatus('Không có note nào cần xếp.', 'bad'); return; }
+        if (!plan.batches.length) { maiStatus('No notes need organising.', 'bad'); return; }
         const sim = maiSim(), fresh = [];
         U.busy = true; U.abort = new AbortController(); U.items = []; maiRender();
         let failure = null, stopped = false;
         const sys = MAI_SYSTEM + (st.parents && st.links ? '' : st.parents ? ' Lần này CHỈ đề xuất "parents", để "links" là mảng rỗng.' : ' Lần này CHỈ đề xuất "links", để "parents" là mảng rỗng.');
         for (let i = 0; i < plan.batches.length; i++) {
-            maiStatus('Đang hỏi AI… lượt ' + (i + 1) + '/' + plan.batches.length);
+            maiStatus('Asking AI… request ' + (i + 1) + '/' + plan.batches.length);
             try {
                 const raw = await ai.chat({ messages: [{ role: 'system', content: sys }, { role: 'user', content: plan.batches[i].text }], temperature: 0.2, signal: U.abort.signal,
-                    onFallback: (f) => maiStatus(f.from + ' lỗi, đang thử ' + f.to + '…') });
+                    onFallback: (f) => maiStatus(f.from + ' failed, trying ' + f.to + '…') });
                 if (MAI.ui !== U) return;
                 maiCollect(maiParse(raw), plan, plan.batches[i], sim, st, fresh);
                 U.items = fresh; maiRender();
@@ -18020,10 +18019,10 @@
         }
         if (MAI.ui !== U) return;
         U.busy = false; U.abort = null; maiButtons();
-        if (failure) maiStatus(failure.message || 'Có lỗi khi gọi AI.', 'bad', failure.detail ? String(failure.detail).slice(0, 240) : '');
-        else if (stopped) maiStatus('Đã dừng.' + (U.items.length ? ' Các đề xuất nhận được vẫn ở bên dưới.' : ''));
-        else if (!U.items.length) maiStatus('AI không thấy quan hệ nào đủ chắc chắn. Thường đó là dấu hiệu tốt: nó không bịa. Thử đổi phạm vi hoặc model.', 'ok');
-        else maiStatus('Có ' + U.items.length + ' đề xuất. Bỏ tick cái nào bạn thấy sai rồi bấm Áp dụng.', 'ok');
+        if (failure) maiStatus(failure.message || 'Something went wrong calling the AI.', 'bad', failure.detail ? String(failure.detail).slice(0, 240) : '');
+        else if (stopped) maiStatus('Stopped.' + (U.items.length ? ' Suggestions received so far are still shown below.' : ''));
+        else if (!U.items.length) maiStatus('The AI found no relation it was confident about. That’s often a good sign: it isn’t making things up. Try a different scope or model.', 'ok');
+        else maiStatus(U.items.length + ' suggestion(s). Untick any you think are wrong, then press Apply.', 'ok');
     }
     async function maiApply() {
         const U = MAI.ui; if (!U || U.busy) return;
@@ -18047,12 +18046,12 @@
                 touch(a);
                 if (await mapAddLink(a, b, it.label)) { it.done = true; okL++; } else skip++;
             }
-        } catch (e) { console.error('Notes Vault: AI map apply failed', e); toast('Có lỗi khi ghi quan hệ. Bấm Hoàn tác nếu map bị lệch.'); }
+        } catch (e) { console.error('Notes Vault: AI map apply failed', e); toast('Couldn’t write the relations. Press Undo if the map looks off.'); }
         if (snap.size) MAI.undo = snap;
         U.busy = false; mapChanged(); maiRender();
-        const msg = [okP ? okP + ' cha-con' : '', okL ? okL + ' liên quan' : ''].filter(Boolean).join(' và ');
-        maiStatus(msg ? 'Đã thêm ' + msg + ' vào Note Map.' + (skip ? ' Bỏ qua ' + skip + ' cái đã thay đổi.' : '') + ' Muốn sửa thì bấm Hoàn tác.' : 'Không có gì được thêm' + (skip ? ' (' + skip + ' đề xuất không còn hợp lệ).' : '.'), msg ? 'ok' : 'bad');
-        if (msg) toast('Đã thêm ' + msg + ' vào Note Map.', 'Hoàn tác', () => maiUndo());
+        const msg = [okP ? okP + ' parent–child' : '', okL ? okL + ' related' : ''].filter(Boolean).join(' and ');
+        maiStatus(msg ? 'Added ' + msg + ' to the Note Map.' + (skip ? ' Skipped ' + skip + ' that had changed.' : '') + ' Press Undo to revert.' : 'Nothing was added' + (skip ? ' (' + skip + ' suggestions no longer valid).' : '.'), msg ? 'ok' : 'bad');
+        if (msg) toast('Added ' + msg + ' to the Note Map.', 'Undo', () => maiUndo());
     }
     async function maiUndo() {
         const snap = MAI.undo; if (!snap) return;
@@ -18062,8 +18061,8 @@
         MAI.undo = null;
         try { await mapCommit(list); } catch (e) { console.error('Notes Vault: AI map undo failed', e); }
         mapChanged();
-        if (MAI.ui) { MAI.ui.items.forEach((x) => { if (x.done) { x.done = false; x.on = false; } }); maiRender(); maiStatus('Đã hoàn tác ' + list.length + ' note về trạng thái trước.', 'ok'); }
-        toast('Đã hoàn tác ' + list.length + ' note trên Note Map.');
+        if (MAI.ui) { MAI.ui.items.forEach((x) => { if (x.done) { x.done = false; x.on = false; } }); maiRender(); maiStatus('Undid ' + list.length + ' notes (back to the previous state).', 'ok'); }
+        toast('Undid ' + list.length + ' notes on the Note Map.');
     }
     function maiClose() {
         const U = MAI.ui; if (!U) return;
@@ -18078,24 +18077,24 @@
         let ai; try { ai = await ensureAi(); } catch (e) { aiLoadFail(); return; }
         closeMenus();
         const pool = maiPool();
-        if (pool.length < 2) { toast('Cần ít nhất 2 note (không tính note noai, template, note AI) để sắp xếp.'); return; }
+        if (pool.length < 2) { toast('You need at least 2 notes (not counting noai, template or AI notes) to organise.'); return; }
         if (MAI.ui) maiClose();
         maiCss();
         const folders = new Map(); pool.forEach((n) => { const f = normType(n.type); folders.set(f, (folders.get(f) || 0) + 1); });
         const scrim = document.createElement('div'); scrim.className = 'nvmai-scrim';
-        const box = document.createElement('div'); box.className = 'nvmai'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'AI sắp xếp Note Map');
-        box.innerHTML = '<div class="nvmai-h"><span class="nvmai-t">✨ AI sắp xếp Note Map</span><span class="nvmai-g"></span><button type="button" class="nvmai-ib" data-a="settings" title="Cài đặt AI (key, model)">⚙</button><button type="button" class="nvmai-ib" data-a="close" title="Đóng (Esc)">✕</button></div>'
-            + '<div class="nvmai-b"><p class="nvmai-hint">AI đọc tiêu đề và vài dòng đầu của note rồi đề xuất quan hệ. Chưa có gì được ghi cho tới khi bạn tick và bấm Áp dụng, và có thể hoàn tác. Quan hệ bạn đã đặt tay không bị đụng tới. Note gắn tag <b>noai</b> không bao giờ bị gửi.</p>'
-            + '<div class="nvmai-opts"><label class="nvmai-opt">Phạm vi <select data-o="scope"><option value="*">Tất cả (' + pool.length + ' note)</option>'
+        const box = document.createElement('div'); box.className = 'nvmai'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'AI organise Note Map');
+        box.innerHTML = '<div class="nvmai-h"><span class="nvmai-t">✨ AI organise Note Map</span><span class="nvmai-g"></span><button type="button" class="nvmai-ib" data-a="settings" title="AI settings (key, model)">⚙</button><button type="button" class="nvmai-ib" data-a="close" title="Close (Esc)">✕</button></div>'
+            + '<div class="nvmai-b"><p class="nvmai-hint">The AI reads each note’s title and first few lines, then suggests relations. Nothing is written until you tick rows and press Apply, and it can be undone. Relations you set by hand are never touched. Notes tagged <b>noai</b> are never sent.</p>'
+            + '<div class="nvmai-opts"><label class="nvmai-opt">Scope <select data-o="scope"><option value="*">All (' + pool.length + ' notes)</option>'
             + Array.from(folders.keys()).sort((a, b) => a.localeCompare(b)).map((f) => '<option value="f:' + esc(f) + '">' + esc(f) + ' (' + folders.get(f) + ')</option>').join('') + '</select></label>'
-            + '<label class="nvmai-opt"><input type="checkbox" data-o="onlyNew" checked> Chỉ note chưa có quan hệ</label>'
-            + '<label class="nvmai-opt"><input type="checkbox" data-o="parents" checked> Cha – con</label>'
-            + '<label class="nvmai-opt"><input type="checkbox" data-o="links" checked> Liên quan</label></div>'
+            + '<label class="nvmai-opt"><input type="checkbox" data-o="onlyNew" checked> Only notes without relations</label>'
+            + '<label class="nvmai-opt"><input type="checkbox" data-o="parents" checked> Parent – child</label>'
+            + '<label class="nvmai-opt"><input type="checkbox" data-o="links" checked> Related</label></div>'
             + '<div class="nvmai-meta" aria-live="polite"></div>'
-            + '<div class="nvmai-go"><button type="button" class="nvmai-btn nvmai-main" data-a="ask">Hỏi AI</button><span class="nvmai-st" aria-live="polite"></span></div>'
+            + '<div class="nvmai-go"><button type="button" class="nvmai-btn nvmai-main" data-a="ask">Ask AI</button><span class="nvmai-st" aria-live="polite"></span></div>'
             + '<div class="nvmai-res"></div></div>'
-            + '<div class="nvmai-f"><button type="button" class="nvmai-btn" data-a="all">Chọn tất cả</button><button type="button" class="nvmai-btn" data-a="none">Bỏ chọn</button><span class="nvmai-g"></span>'
-            + '<button type="button" class="nvmai-btn" data-a="undo" hidden>Hoàn tác</button><button type="button" class="nvmai-btn nvmai-main" data-a="apply" disabled>Áp dụng</button></div>';
+            + '<div class="nvmai-f"><button type="button" class="nvmai-btn" data-a="all">Select all</button><button type="button" class="nvmai-btn" data-a="none">Select none</button><span class="nvmai-g"></span>'
+            + '<button type="button" class="nvmai-btn" data-a="undo" hidden>Undo</button><button type="button" class="nvmai-btn nvmai-main" data-a="apply" disabled>Apply</button></div>';
         document.body.appendChild(scrim); document.body.appendChild(box);
         const U = { scrim, box, items: [], busy: false, abort: null, prevFocus: document.activeElement };
         U.onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.vai-set')) { e.preventDefault(); e.stopPropagation(); maiClose(); } };

@@ -206,15 +206,15 @@
   function aiErr(msg, detail, code) { const e = new Error(msg); e.__ai = true; e.detail = detail || ''; e.code = code || ''; return e; }
   function httpErr(status, detail) {
     const d = String(detail || '');
-    if (status === 401 || status === 403) return aiErr('Key không đúng, hết hiệu lực hoặc không có quyền dùng model này.', d, 'auth');
-    if (status === 402) return aiErr('Hết credit, hoặc model này không còn miễn phí.', d, 'credit');
-    if (status === 404 && /data policy|privacy|guardrail/i.test(d)) return aiErr('Không có nhà cung cấp nào của model này thỏa điều kiện “không dùng dữ liệu để train”. Bỏ tick mục đó trong ⚙ hoặc đổi model.', d, 'policy');
-    if (status === 404) return aiErr('Không tìm thấy model — tên có thể gõ sai hoặc model free này đã bị gỡ. Đổi model trong ⚙.', d, 'model');
-    if (status === 413 || /context|too long|maximum/i.test(d) && status === 400) return aiErr('Nội dung quá dài so với model này. Chọn ít mục hơn hoặc giảm giới hạn ký tự trong ⚙.', d, 'long');
-    if (status === 429 && /per[- ]?day|daily/i.test(d)) return aiErr('Hết lượt miễn phí của hôm nay. Giới hạn này tính chung cho cả tài khoản (kể cả Copilot trong Obsidian) và đặt lại lúc ' + resetTime() + ' giờ máy bạn. Đợi tới lúc đó, nạp credit, hoặc dùng Ollama.', d, 'rate');
-    if (status === 429) return aiErr('Hết lượt hoặc gọi quá nhanh. Gói free thường giới hạn theo phút và theo ngày — đợi một lát hoặc đổi model.', d, 'rate');
-    if (status >= 500 || status === 408) return aiErr('Nhà cung cấp đang lỗi hoặc quá tải. Thử lại sau, hoặc đổi model.', d, 'server');
-    return aiErr('Yêu cầu bị từ chối (HTTP ' + status + ').', d, 'http');
+    if (status === 401 || status === 403) return aiErr('The key is wrong, expired, or not allowed to use this model.', d, 'auth');
+    if (status === 402) return aiErr('Out of credit, or this model is no longer free.', d, 'credit');
+    if (status === 404 && /data policy|privacy|guardrail/i.test(d)) return aiErr('No provider for this model meets the “don’t train on my data” condition. Untick that option in ⚙ or change the model.', d, 'policy');
+    if (status === 404) return aiErr('Model not found — the name may be mistyped or this free model has been removed. Change the model in ⚙.', d, 'model');
+    if (status === 413 || /context|too long|maximum/i.test(d) && status === 400) return aiErr('The content is too long for this model. Select fewer items or lower the character limit in ⚙.', d, 'long');
+    if (status === 429 && /per[- ]?day|daily/i.test(d)) return aiErr('Today’s free requests are used up. The limit is shared across the whole account (including Copilot in Obsidian) and resets at ' + resetTime() + ' your device time. Wait until then, add credit, or use Ollama.', d, 'rate');
+    if (status === 429) return aiErr('Out of requests, or calling too fast. Free plans usually limit per minute and per day — wait a moment or change the model.', d, 'rate');
+    if (status >= 500 || status === 408) return aiErr('The provider is down or overloaded. Try again later, or change the model.', d, 'server');
+    return aiErr('Request rejected (HTTP ' + status + ').', d, 'http');
   }
   /* Fallback models: when the main model fails for a reason that ANOTHER model could fix (gone, no longer free, overloaded,
      empty answer, provider policy), the next model of the SAME profile is tried. Not for a wrong key, a lost connection, a
@@ -238,9 +238,9 @@
   const canSwitchProvider = (e) => !!e && !!e.__ai && SWITCH_CODES.indexOf(e.code) >= 0;
   const profReady = (p) => !!(p && p.baseUrl && p.model && (!needsKey(p) || p.apiKey));
   function checkProfile(p) {
-    if (!p.model) throw aiErr('Chưa chọn model — mở ⚙ và nhập tên model.', '', 'nomodel');
-    if (!p.baseUrl) throw aiErr('Chưa nhập địa chỉ API — mở ⚙ và điền vào.', '', 'nourl');
-    if (needsKey(p) && !p.apiKey) throw aiErr('Chưa có API key — mở ⚙ và dán key vào.', '', 'nokey');
+    if (!p.model) throw aiErr('No model selected — open ⚙ and enter a model name.', '', 'nomodel');
+    if (!p.baseUrl) throw aiErr('No API address — open ⚙ and fill it in.', '', 'nourl');
+    if (needsKey(p) && !p.apiKey) throw aiErr('No API key — open ⚙ and paste your key.', '', 'nokey');
   }
   /* chat({messages, signal, onDelta, onFallback, onModel, temperature, idleMs,
            noFallback,        // only the profile's main model
@@ -254,7 +254,7 @@
     if (opts.profileId != null || opts.backup != null) {          // "Thử" button, or the old backup index: that profile only
       const id = opts.profileId != null ? opts.profileId : c.fallbackProfileIds[opts.backup];
       const p = profById(c, id);
-      if (!p) throw aiErr('Không tìm thấy profile này.', '', 'noprofile');
+      if (!p) throw aiErr('This profile wasn’t found.', '', 'noprofile');
       checkProfile(p);
       list = forProfile(p, 0, opts.noFallback || opts.backup != null);
     } else {
@@ -271,7 +271,7 @@
         if (opts.onModel) opts.onModel(a.name, tried);
         return full;
       } catch (e) {
-        tried.push({ model: a.name, reason: (e && e.message) || 'lỗi', code: (e && e.code) || '' });
+        tried.push({ model: a.name, reason: (e && e.message) || 'error', code: (e && e.code) || '' });
         let j = -1;
         for (let k = i + 1; k < list.length; k++) { if (list[k].prov === a.prov ? canFallback(e) : canSwitchProvider(e)) { j = k; break; } }
         if (j < 0 || st.got) { if (e && e.__ai && tried.length > 1) e.tried = tried.map((t) => t.model); throw e; }
@@ -313,9 +313,9 @@
       let res;
       try { res = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal: ctl.signal }); }
       catch (e) {
-        if (timedOut) throw aiErr('Model không phản hồi sau một lúc. Thử lại hoặc đổi model.', '', 'timeout');
+        if (timedOut) throw aiErr('The model didn’t respond in time. Try again or change the model.', '', 'timeout');
         if (e && e.name === 'AbortError') throw e;
-        throw aiErr('Không kết nối được tới ' + hostOf(p.baseUrl) + ' (mất mạng, bị chặn, hoặc server local chưa chạy).', String(e && e.message || e), 'network');
+        throw aiErr('Couldn’t connect to ' + hostOf(p.baseUrl) + ' (no network, blocked, or the local server isn’t running).', String(e && e.message || e), 'network');
       }
       if (!res.ok) {
         let d = '';
@@ -334,7 +334,7 @@
         for (;;) {
           let chunk;
           try { chunk = await reader.read(); }
-          catch (e) { if (timedOut) throw aiErr('Model ngừng trả lời giữa chừng. Thử lại hoặc đổi model.', '', 'timeout'); throw e; }
+          catch (e) { if (timedOut) throw aiErr('The model stopped replying midway. Try again or change the model.', '', 'timeout'); throw e; }
           if (chunk.done) break;
           bump();
           buf += dec.decode(chunk.value, { stream: true });
@@ -345,13 +345,13 @@
             const data = line.slice(5).trim();
             if (data === '[DONE]') continue;
             let j; try { j = JSON.parse(data); } catch (e) { continue; }
-            if (j.error) throw aiErr('Nhà cung cấp báo lỗi giữa chừng.', j.error.message || JSON.stringify(j.error), 'stream');
+            if (j.error) throw aiErr('The provider reported an error midway.', j.error.message || JSON.stringify(j.error), 'stream');
             const d = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
             if (d) { full += d; st.got = true; if (opts.onDelta) opts.onDelta(d, full); }
           }
         }
       }
-      if (!full.trim()) throw aiErr('Model trả về nội dung rỗng (free model hay bị vậy). Thử lại hoặc đổi model.', '', 'empty');
+      if (!full.trim()) throw aiErr('The model returned empty content (free models often do this). Try again or change the model.', '', 'empty');
       return full;
     } finally { clearTimeout(idle); }
   }
@@ -405,7 +405,7 @@
       '.vai-warn{margin-top:4px;color:#c0762f}.vai-det summary{cursor:pointer}.vai-det ul{margin:4px 0 0 18px;padding:0}',
       '.vai-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}',
       '.vai-chip{border:1px solid var(--primary,#d17b96);background:var(--primary-light,#fbe4ea);color:var(--text-dark,#4a3240);border-radius:99px;padding:4px 12px;font:inherit;font-size:.86rem;cursor:pointer}.vai-chip:hover{filter:brightness(.97)}.vai-chip:disabled,.vai-btn:disabled,.vai-send:disabled{opacity:.5;cursor:not-allowed}',
-      '.vai-turn{margin:0 0 14px}.vai-q{font-size:.82rem;color:var(--text-muted,#9a7686);margin-bottom:4px}.vai-q:before{content:"Bạn: "}',
+      '.vai-turn{margin:0 0 14px}.vai-q{font-size:.82rem;color:var(--text-muted,#9a7686);margin-bottom:4px}.vai-q:before{content:"You: "}',
       '.vai-a{border:1px solid var(--border-color,#f0d7de);border-radius:12px;padding:10px 14px;background:var(--bg-light,transparent);overflow-wrap:anywhere}',
       '.vai-md :first-child{margin-top:0}.vai-md :last-child{margin-bottom:0}.vai-md pre{overflow:auto;padding:8px;border-radius:8px;background:rgba(127,127,127,.12)}.vai-md table{border-collapse:collapse;display:block;overflow:auto}.vai-md td,.vai-md th{border:1px solid var(--border-color,#f0d7de);padding:3px 8px}.vai-md code{background:rgba(127,127,127,.15);padding:0 4px;border-radius:4px}',
       '.vai-use{font-size:.8rem;color:var(--text-muted,#9a7686);margin-top:2px}.vai-use.warn{color:#c0762f}.vai-use.bad{color:#b94a5a}.vai-fbinfo{font-size:.8rem;color:var(--text-muted,#9a7686);margin-top:4px}.vai-dots{color:var(--text-muted,#9a7686)}.vai-err{color:#b94a5a}.vai-err small{display:block;color:var(--text-muted,#9a7686);margin-top:4px;word-break:break-word}',
@@ -896,7 +896,7 @@
     if (!turn || !text || turn.querySelector('.vai-ta')) return;
     turn._raw = text;
     const bar = document.createElement('div'); bar.className = 'vai-ta';
-    bar.innerHTML = '<button type="button" class="vai-cp" data-cp title="Sao chép câu trả lời này">' + CP_ICON + '<span>Sao chép</span></button>';
+    bar.innerHTML = '<button type="button" class="vai-cp" data-cp title="Copy this answer">' + CP_ICON + '<span>Copy</span></button>';
     ans.after(bar);
   }
   let current = null;
@@ -905,14 +905,14 @@
     if (current && !o.embed) current.close();
     const scrim = document.createElement('div'); scrim.className = 'vai-scrim';
     const box = document.createElement('div'); box.className = 'vai'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', o.title || 'AI');
-    box.innerHTML = '<div class="vai-head"><span class="vai-title">✨ ' + esc(o.title || 'AI') + '</span><span class="vai-grow"></span><select class="vai-prof" data-prof title="Profile AI đang dùng" aria-label="Profile AI" hidden></select><button type="button" class="vai-ib" data-a="settings" title="Cài đặt AI (profile, key, model)">⚙</button><button type="button" class="vai-ib" data-a="close" title="Đóng (Esc)">✕</button></div>'
-      + '<div class="vai-body"><div class="vai-ctx"><div class="vai-opts"></div><div class="vai-meta"></div><div class="vai-use"></div><details class="vai-det" hidden><summary>Các mục sẽ được gửi</summary><ul></ul></details></div><div class="vai-presets"></div><div class="vai-log" aria-live="polite"></div></div>'
-      + '<div class="vai-foot"><div class="vai-acts"></div><div class="vai-comp"><textarea rows="2" placeholder="Hỏi thêm về dữ liệu này… (Ctrl+Enter để gửi)"></textarea><button type="button" class="vai-send" data-a="send" title="Gửi" aria-label="Gửi"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>';
+    box.innerHTML = '<div class="vai-head"><span class="vai-title">✨ ' + esc(o.title || 'AI') + '</span><span class="vai-grow"></span><select class="vai-prof" data-prof title="AI profile in use" aria-label="AI profile" hidden></select><button type="button" class="vai-ib" data-a="settings" title="AI settings (profile, key, model)">⚙</button><button type="button" class="vai-ib" data-a="close" title="Close (Esc)">✕</button></div>'
+      + '<div class="vai-body"><div class="vai-ctx"><div class="vai-opts"></div><div class="vai-meta"></div><div class="vai-use"></div><details class="vai-det" hidden><summary>Items that will be sent</summary><ul></ul></details></div><div class="vai-presets"></div><div class="vai-log" aria-live="polite"></div></div>'
+      + '<div class="vai-foot"><div class="vai-acts"></div><div class="vai-comp"><textarea rows="2" placeholder="Ask a follow-up about this data… (Ctrl+Enter to send)"></textarea><button type="button" class="vai-send" data-a="send" title="Send" aria-label="Send"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>';
     if (o.embed) { box.classList.add('vai-embed'); o.embed.appendChild(box); } else { document.body.appendChild(scrim); document.body.appendChild(box); }
     if (o.embed) {
       const cl = box.querySelector('[data-a="close"]'); if (cl) cl.remove();
       box.querySelector('.vai-title').textContent = o.title || 'AI';
-      box.querySelector('[data-a="settings"]').insertAdjacentHTML('beforebegin', '<button type="button" class="vai-ib" data-a="reset" title="Cuộc trò chuyện mới" aria-label="Cuộc trò chuyện mới"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>');
+      box.querySelector('[data-a="settings"]').insertAdjacentHTML('beforebegin', '<button type="button" class="vai-ib" data-a="reset" title="New conversation" aria-label="New conversation"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>');
       const cb = document.createElement('div'); cb.className = 'vai-ctxbar'; box.insertBefore(cb, box.querySelector('.vai-body'));
     }
     const prevFocus = document.activeElement;
@@ -931,9 +931,9 @@
 
     function showMeta(r, len, c) {
       r = r || {};
-      metaEl.innerHTML = (r.label ? esc(r.label) + ' · ' : '') + 'đã gửi ' + len.toLocaleString() + ' ký tự tới <b>' + esc(hostOf(c.baseUrl)) + '</b>' + (c.model ? ' (' + esc(c.model) + ')' : '');
+      metaEl.innerHTML = (r.label ? esc(r.label) + ' · ' : '') + 'sent ' + len.toLocaleString() + ' characters to <b>' + esc(hostOf(c.baseUrl)) + '</b>' + (c.model ? ' (' + esc(c.model) + ')' : '');
       const det = r.details || []; detEl.hidden = !det.length;
-      detEl.querySelector('summary').textContent = 'Các note đã gửi cho câu hỏi gần nhất';
+      detEl.querySelector('summary').textContent = 'Notes sent for the latest question';
       detEl.querySelector('ul').innerHTML = det.map((d) => '<li>' + esc(d) + '</li>').join('');
     }
     async function fillProfiles() {   // quick profile picker (shown when there are 2+ profiles)
@@ -950,32 +950,32 @@
         if (c.provider === 'ollama') { useEl.textContent = ''; return; }
         const r = lim ? u.n / lim : 0;
         useEl.className = 'vai-use' + (lim && r >= 1 ? ' bad' : lim && r >= 0.8 ? ' warn' : '');
-        useEl.textContent = 'Lượt gọi hôm nay: ' + u.n + (lim ? '/' + lim : '') + ' · đặt lại lúc ' + resetTime() + (lim && r >= 1 ? ' — có thể đã hết lượt free' : lim && r >= 0.8 ? ' — sắp hết lượt free' : '');
+        useEl.textContent = 'Requests today: ' + u.n + (lim ? '/' + lim : '') + ' · resets at ' + resetTime() + (lim && r >= 1 ? ' — free requests may be used up' : lim && r >= 0.8 ? ' — nearly out of free requests' : '');
       } catch (e) { useEl.textContent = ''; }
     }
     async function refreshCtx() {
       fillProfiles(); paintUsage();
       if (o.retrieve) {
         const c0 = await getSettings();
-        metaEl.innerHTML = (o.idleLabel ? esc(o.idleLabel) + ' · ' : '') + (o.idleText || 'mỗi câu hỏi chỉ gửi các đoạn liên quan tới') + ' <b>' + esc(hostOf(c0.baseUrl)) + '</b>' + (c0.model ? ' (' + esc(c0.model) + ')' : ' — <i>chưa chọn model, bấm ⚙</i>');
+        metaEl.innerHTML = (o.idleLabel ? esc(o.idleLabel) + ' · ' : '') + (o.idleText || 'each question only sends the relevant passages to') + ' <b>' + esc(hostOf(c0.baseUrl)) + '</b>' + (c0.model ? ' (' + esc(c0.model) + ')' : ' — <i>no model selected, press ⚙</i>');
         return;
       }
       let r;
       try { r = o.build ? await o.build(readOpts()) : { text: o.contextText || '', label: o.contextLabel || '' }; }
-      catch (e) { r = { text: '', label: 'Lỗi khi gom dữ liệu: ' + (e && e.message) }; }
+      catch (e) { r = { text: '', label: 'Error while gathering data: ' + (e && e.message) }; }
       const c = await getSettings(); let text = String(r.text || ''), cut = false;
       if (text.length > c.maxChars) { text = text.slice(0, c.maxChars) + '\n…[đã cắt bớt vì vượt giới hạn ký tự]'; cut = true; }
       ctx = { text, label: r.label || '', details: r.details || [] };
-      metaEl.innerHTML = (ctx.label ? esc(ctx.label) + ' · ' : '') + 'sẽ gửi ' + text.length.toLocaleString() + ' ký tự tới <b>' + esc(hostOf(c.baseUrl)) + '</b>' + (c.model ? ' (' + esc(c.model) + ')' : ' — <i>chưa chọn model, bấm ⚙</i>')
-        + (cut ? '<div class="vai-warn">Đã cắt bớt cho vừa giới hạn ' + c.maxChars.toLocaleString() + ' ký tự. Chọn ít mục hơn hoặc tăng giới hạn trong ⚙.</div>' : '');
+      metaEl.innerHTML = (ctx.label ? esc(ctx.label) + ' · ' : '') + 'will send ' + text.length.toLocaleString() + ' characters to <b>' + esc(hostOf(c.baseUrl)) + '</b>' + (c.model ? ' (' + esc(c.model) + ')' : ' — <i>no model selected, press ⚙</i>')
+        + (cut ? '<div class="vai-warn">Trimmed to fit the ' + c.maxChars.toLocaleString() + '-character limit. Select fewer items or raise the limit in ⚙.</div>' : '');
       detEl.hidden = !ctx.details.length;
       detEl.querySelector('ul').innerHTML = ctx.details.map((d) => '<li>' + esc(d) + '</li>').join('');
     }
     function renderActs() {
       actsEl.innerHTML = '';
       const add = (label, a, main) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'vai-btn' + (main ? ' vai-main' : ''); b.textContent = label; b.dataset.act = a; actsEl.appendChild(b); };
-      if (busy) { add('■ Dừng', 'stop'); return; }
-      if (last || logEl.querySelector('[data-failed]')) add('Thử lại', 'retry');
+      if (busy) { add('■ Stop', 'stop'); return; }
+      if (last || logEl.querySelector('[data-failed]')) add('Retry', 'retry');
       if (last) (o.actions || []).forEach((a, i) => add(a.label, 'x' + i, true));
     }
     function setBusy(b) { busy = b; sendBtn.disabled = b; presetsEl.querySelectorAll('button').forEach((x) => { x.disabled = b; }); optsEl.querySelectorAll('input,select').forEach((x) => { x.disabled = b; }); profSel.disabled = b; renderActs(); }
@@ -985,13 +985,13 @@
     }
     function errBox(e) {
       const d = document.createElement('div'); d.className = 'vai-err';
-      d.innerHTML = '<b>' + esc(e && e.message || 'Có lỗi') + '</b>' + (e && e.detail ? '<small>' + esc(String(e.detail).slice(0, 300)) + '</small>' : '') + (e && e.tried ? '<small>Đã thử lần lượt: ' + e.tried.map(esc).join(' → ') + '</small>' : '');
+      d.innerHTML = '<b>' + esc(e && e.message || 'Something went wrong') + '</b>' + (e && e.detail ? '<small>' + esc(String(e.detail).slice(0, 300)) + '</small>' : '') + (e && e.tried ? '<small>Tried in order: ' + e.tried.map(esc).join(' → ') + '</small>' : '');
       return d;
     }
     async function ask(prompt, shown) {
       prompt = String(prompt || '').trim(); if (!prompt || busy || closed) return;
       const c = await getSettings();
-      if (!c.model || (needsKey(c) && !c.apiKey)) { openSettings({ note: 'Nhập ' + (needsKey(c) && !c.apiKey ? 'API key' : 'tên model') + ' trước khi dùng AI.', onSave: refreshCtx }); return; }
+      if (!c.model || (needsKey(c) && !c.apiKey)) { openSettings({ note: 'Enter the ' + (needsKey(c) && !c.apiKey ? 'API key' : 'model name') + ' before using AI.', onSave: refreshCtx }); return; }
       const first = !turns.length, retr = typeof o.retrieve === 'function';
       let pending = [], msgs = [], store = null;
       if (!retr) {
@@ -1003,7 +1003,7 @@
       ta.style.height = ''; box.classList.add('vai-has-turns');
       logEl.querySelectorAll('.vai-hint0').forEach((x) => x.remove());
       const turn = document.createElement('div'); turn.className = 'vai-turn';
-      turn.innerHTML = '<div class="vai-q"></div><div class="vai-a vai-md"><span class="vai-dots">Đang suy nghĩ…</span></div>';
+      turn.innerHTML = '<div class="vai-q"></div><div class="vai-a vai-md"><span class="vai-dots">Thinking…</span></div>';
       turn.querySelector('.vai-q').textContent = String(shown || prompt).slice(0, 200);
       logEl.appendChild(turn); const ans = turn.querySelector('.vai-a');
       const scroll = () => { q('.vai-body').scrollTop = q('.vai-body').scrollHeight; }; scroll();
@@ -1013,7 +1013,7 @@
       try {
         if (retr) {
           // "Ask the whole vault": the context is searched fresh for every question; history keeps only the questions and answers.
-          let r; try { r = await o.retrieve(prompt, readOpts(), { prev: turns.map((t) => t.q).filter(Boolean) }); } catch (e) { r = { text: '', label: 'Lỗi khi tìm trong dữ liệu: ' + (e && e.message) }; }
+          let r; try { r = await o.retrieve(prompt, readOpts(), { prev: turns.map((t) => t.q).filter(Boolean) }); } catch (e) { r = { text: '', label: 'Error while searching the data: ' + (e && e.message) }; }
           let text = String((r && r.text) || '');
           if (text.length > c.maxChars) text = text.slice(0, c.maxChars) + '\n…[đã cắt bớt vì vượt giới hạn ký tự]';
           showMeta(r, text.length, c);
@@ -1024,15 +1024,15 @@
         await ensureMd();
         let used = '', trail = [];
         raw = await chat({ messages: msgs, signal: abort.signal, onDelta: (d, all) => { raw = all; if (!timer) timer = setTimeout(paint, 70); },
-          onFallback: (f) => { const dd = ans.querySelector('.vai-dots'); if (dd) dd.textContent = f.from + ' lỗi — đang thử ' + f.to + '…'; },
+          onFallback: (f) => { const dd = ans.querySelector('.vai-dots'); if (dd) dd.textContent = f.from + ' failed — trying ' + f.to + '…'; },
           onModel: (m, t) => { used = m; trail = t; } });
         clearTimeout(timer); renderInto(ans, raw); after();
-        if (trail.length) { const fb = document.createElement('div'); fb.className = 'vai-fbinfo'; fb.innerHTML = '↪ Trả lời bởi <b>' + esc(used) + '</b> (model dự phòng). ' + trail.map((t) => esc(t.model) + ': ' + esc(t.reason)).join(' · '); turn.appendChild(fb); }
+        if (trail.length) { const fb = document.createElement('div'); fb.className = 'vai-fbinfo'; fb.innerHTML = '↪ Answered by <b>' + esc(used) + '</b> (fallback model). ' + trail.map((t) => esc(t.model) + ': ' + esc(t.reason)).join(' · '); turn.appendChild(fb); }
         turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw; addCopyBar(turn, ans, raw);
       } catch (e) {
         clearTimeout(timer);
         if (e && e.name === 'AbortError' && !e.__ai) {
-          if (raw.trim()) { renderInto(ans, raw + '\n\n*(đã dừng)*'); after(); turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw; addCopyBar(turn, ans, raw); }
+          if (raw.trim()) { renderInto(ans, raw + '\n\n*(stopped)*'); after(); turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt }); last = raw; addCopyBar(turn, ans, raw); }
           else turn.remove();
         } else { ans.innerHTML = ''; ans.classList.remove('vai-md'); ans.appendChild(errBox(e)); turn.dataset.failed = '1'; }
       }
@@ -1068,8 +1068,8 @@
       const cp = e.target.closest('[data-cp]');
       if (cp) {
         const t = cp.closest('.vai-turn'), sp = cp.querySelector('span'), ok = await copyText((t && t._raw) || '');
-        sp.textContent = ok ? 'Đã chép ✓' : 'Không chép được'; cp.classList.toggle('ok', ok);
-        clearTimeout(cp._t); cp._t = setTimeout(() => { sp.textContent = 'Sao chép'; cp.classList.remove('ok'); }, 1800);
+        sp.textContent = ok ? 'Copied ✓' : 'Couldn’t copy'; cp.classList.toggle('ok', ok);
+        clearTimeout(cp._t); cp._t = setTimeout(() => { sp.textContent = 'Copy'; cp.classList.remove('ok'); }, 1800);
         return;
       }
       const act = e.target.closest('[data-act]');
