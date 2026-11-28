@@ -111,9 +111,9 @@ Mọi truy cập của AI vào dữ liệu app phải đi qua đây. Cấp quy�
 | `user_profile` | `(user_id, id)` | `payload jsonb` ≤ 64 KiB, `revision ≥ 1`, xóa mềm |
 | `decisions` | `(user_id, id)` | Như trên |
 | `sync_changes` | `seq` (identity), `unique (user_id, op_id)` | Nhật ký append-only; `entity_type ∈ {profile, decision}` |
-| `user_devices` | `(user_id, device_id)` | `label ≤ 80`, `platform ≤ 120` (user-agent), `last_seen_at`, `last_sync_at` |
+| `user_devices` | `(user_id, device_id)` | `label ≤ 80`, `platform ≤ 120` (user-agent), `last_seen_at`, `last_sync_at`. **Bảng duy nhất client được `delete`** (`004_user_devices_delete.sql`, policy `user_devices_delete_own`, chỉ dòng của mình) |
 
-RLS bật trên mọi bảng (`auth.uid() = user_id`). Client **không** `insert/update` trực tiếp vào `user_profile`, `decisions`, `sync_changes`; chỉ qua RPC `vpis_push`. Edge Function `health` (`index.ts`) kiểm tra token và đọc `user_devices` bằng chính token của người dùng; không dùng secret key.
+RLS bật trên mọi bảng (`auth.uid() = user_id`). Client **không** `insert/update` trực tiếp vào `user_profile`, `decisions`, `sync_changes`; chỉ qua RPC `vpis_push`. Client **không** `delete` bảng nào ngoài `user_devices` (dữ liệu khác chỉ xóa mềm). Nút `Remove` trong `Your devices` (`venus-account.js`) xóa đúng một dòng `user_devices` theo `(user_id, device_id)` bằng phiên của chính người dùng; không bao giờ áp dụng cho thiết bị đang dùng, không đụng dữ liệu đã đồng bộ và không đăng xuất thiết bị bị gỡ (máy còn đăng nhập sẽ tự ghi lại dòng của nó lần sau mở app). Edge Function `health` (`index.ts`) kiểm tra token và đọc `user_devices` bằng chính token của người dùng; không dùng secret key.
 
 ## 6. Backup và Restore
 

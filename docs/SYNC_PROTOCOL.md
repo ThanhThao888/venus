@@ -1,7 +1,7 @@
 # SYNC_PROTOCOL — Đồng bộ bộ nhớ VPIS (Phase 3A + 3B)
 
 > Tài liệu này mô tả cách `profile` và `decisions` đi giữa `VenusMemoryDB` (IndexedDB trên mỗi thiết bị) và Supabase.
-> Mọi mô tả dựa trên code thực tế: `supabase/migrations/001_core.sql`, `002_sync.sql`, `003_sync_rpc.sql`, `venus-memory.js`, `venus-sync.js`.
+> Mọi mô tả dựa trên code thực tế: `supabase/migrations/001_core.sql`, `002_sync.sql`, `003_sync_rpc.sql`, `004_user_devices_delete.sql`, `venus-memory.js`, `venus-sync.js`, `venus-account.js`.
 > Số dòng tính trên bản tải lên ngày 2026-11-27 và có thể lệch sau khi sửa. Khi code và tài liệu mâu thuẫn, **code đúng**, hãy sửa tài liệu.
 
 ## 1. Phạm vi
@@ -22,7 +22,7 @@ Thiết bị A / B (mỗi nơi một VenusMemoryDB)         Supabase (Postgres +
 │ venus-memory.js  (KHÔNG có mã mạng)      │      │ user_profile   (đọc-only với client)│
 │  profile · decisions · outbox · syncMeta │      │ decisions      (đọc-only với client)│
 │  audit_logs · API: onWrite, listOutbox,  │      │ sync_changes   (append-only, đọc-only)
-│  ackOutbox, touchOutbox, applyRemote,    │      │ user_devices   (client upsert)      │
+│  ackOutbox, touchOutbox, applyRemote,    │      │ user_devices   (upsert + delete)    │
 │  addConflicts, keepLocal, takeRemote,    │◄────►│ RPC vpis_push(ops)  ← ĐƯỜNG GHI DUY NHẤT
 │  enqueueSnapshot, getSyncState …         │      └─────────────────────────────────────┘
 │ venus-sync.js    (engine, UI khối Sync)  │
@@ -37,23 +37,24 @@ Thiết bị A / B (mỗi nơi một VenusMemoryDB)         Supabase (Postgres +
 
 Mỗi bản ghi `profile`/`decision` mang metadata sync-ready: `id` (UUID), `device_id`, `revision` (số nguyên ≥ 1), `updated_at`, `deleted_at`, `schema_version`.
 
-- **Xóa mềm (tombstone):** xóa = đặt `deleted_at` và tăng `revision`. Không có `DELETE` nào trên server (không có policy và không có grant, `001_core.sql`).
+- **Xóa mềm (tombstone):** xóa = đặt `deleted_at` và tăng `revision`. Không có `DELETE` nào trên `user_profile`, `decisions`, `sync_changes` (không có policy và không có grant, `001_core.sql`). **Ngoại lệ duy nhất là `user_devices`** (xem 4.1): đó là danh sách thiết bị, không phải dữ liệu đồng bộ.
 - **`revision`** tăng 1 mỗi lần ghi (`bump`, `venus-memory.js:109`). Đây là cơ sở của khóa lạc quan.
 - **Giới hạn:** `payload` ≤ 64 KiB và phải là object; một lần gọi `vpis_push` tối đa 50 thao tác.
 - **`profile.key` phải duy nhất giữa các mục còn sống** (ví dụ `personal_constraints`). Ràng buộc này chỉ được kiểm ở **client** (xem `key_clash`, mục 8). Server không có ràng buộc duy nhất cho `key`.
 
 ## 4. Server
 
-### 4.1 Bảng và quyền (`001_core.sql`, `002_sync.sql`, `003_sync_rpc.sql`)
+### 4.1 Bảng và quyền (`001_core.sql`, `002_sync.sql`, `003_sync_rpc.sql`, `004_user_devices_delete.sql`)
 
 | Bảng | Khóa | Client được làm gì |
 | :--- | :--- | :--- |
 | `user_profile`, `decisions` | `(user_id, id)` | **Chỉ `select`.** `insert`/`update` bị thu hồi ở cuối `003` (`revoke insert, update … from authenticated`) |
 | `sync_changes` | `seq` (identity) | Chỉ `select`. Nhật ký thay đổi **append-only**, `unique (user_id, op_id)` |
-| `user_devices` | `(user_id, device_id)` | `select`/`insert`/`update` (chỉ dòng của mình) |
+| `user_devices` | `(user_id, device_id)` | `select`/`insert`/`update` (`001_core.sql`) và **`delete`** (`004_user_devices_delete.sql`: policy `user_devices_delete_own` `for delete to authenticated using ((select auth.uid()) = user_id)`; `grant delete` cho `authenticated`, `revoke delete` từ `anon`). Chỉ dòng của chính mình |
 
 - Mọi bảng có `user_id` và RLS `(select auth.uid()) = user_id`. Trigger `vpis_guard_revision` chặn đổi `id`/`user_id` và chặn `revision` không tăng (phòng thủ thêm, ngoài RPC).
-- Lý do một đường ghi: ghi trực tiếp sẽ bỏ qua `sync_changes`, các thiết bị khác không bao giờ thấy thay đổi đó.
+- Lý do một đường ghi: ghi trực tiếp sẽ bỏ qua `sync_changes`, các thiết bị khác không bao giờ thấy thay đổi đó. `user_devices` không đi qua `sync_changes` nên được ghi/xóa trực tiếp.
+- **Gỡ thiết bị (`venus-account.js`, nút `Remove` trong `Your devices`):** `delete().eq('user_id', …).eq('device_id', …)` bằng phiên của chính người dùng. Chỉ xóa đúng một dòng `user_devices`; không đụng `user_profile`, `decisions`, `sync_changes` (`user_devices` chỉ có khóa ngoại tới `auth.users`, không bảng nào tham chiếu tới nó) và **không** đăng xuất thiết bị bị gỡ: máy còn đăng nhập sẽ tự ghi lại dòng của nó (`registerDevice`, upsert) lần sau mở app. Policy không biết máy nào đang gửi lệnh, nên việc chặn gỡ **máy hiện tại** do app đảm nhận: ẩn nút ở dòng đó, kiểm lại `VenusMemory.getDeviceId()` ngay trước khi xóa, và không hiện nút nào nếu chưa xác định được ID máy này.
 
 ### 4.2 RPC `vpis_push(ops jsonb)` (`003_sync_rpc.sql`)
 
@@ -175,6 +176,7 @@ Cách giải quyết (cần `approvedByUser: true`, ghi `audit_logs`):
 6. Thao tác của cùng một thực thể phải đi theo thứ tự `revision`, và một thao tác không được áp dụng thì chặn các thao tác sau của thực thể đó.
 7. Backup/restore cục bộ không tự ghi đè cloud (`importProgress` → `VenusMemory.importAll`).
 8. Cloud lỗi không được làm hỏng bất cứ chức năng nào khác.
+9. `DELETE` chỉ tồn tại trên `user_devices` và chỉ cho dòng của chính người dùng. App không bao giờ gỡ dòng của thiết bị đang dùng.
 
 ## 12. Giới hạn và rủi ro đã biết
 
@@ -185,7 +187,7 @@ Những điều dưới đây là **quan sát từ code**, không phải lỗi �
 3. **Không có backoff hoặc giới hạn số lần thử** cho lỗi mạng/`error`. Mỗi lần kích hoạt đều thử lại (debounce 2 s, tab hiện lại cách 15 s). `attempts` chỉ để hiển thị.
 4. **`too_new` dừng đồng bộ cho đến khi app được cập nhật.** Trên iPhone PWA, nếu bản cũ còn trong cache, hãy tải lại hoặc xóa cache của PWA.
 5. **Cursor nằm cục bộ.** Xóa dữ liệu IndexedDB làm `sync_initialized` về `false` và kéo lại từ đầu. Điều này an toàn, chỉ tốn băng thông.
-6. **Chưa có xóa cứng và chưa có dọn tombstone** trên cloud; `user_devices` cũng chưa có dọn thiết bị cũ.
+6. **Chưa có xóa cứng và chưa có dọn tombstone** trên cloud; `user_devices` không tự dọn: thiết bị cũ chỉ biến mất khi người dùng bấm `Remove` (thủ công, từng thiết bị).
 7. **`updated_at` trong `payload` do đồng hồ máy khách đặt.** Server dùng `now()` cho cột `updated_at` riêng. Thứ tự tin cậy duy nhất là `revision` và `seq`, đừng dùng `updated_at` để so sánh "bản nào mới hơn".
 8. **Không mã hóa đầu-cuối** (mục 10).
 
