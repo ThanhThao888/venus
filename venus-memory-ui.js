@@ -15,9 +15,9 @@
 
   const VM = () => window.VenusMemory;
   const APPROVED = { approvedByUser: true };
-  const CATS = { career: 'Nghề nghiệp', work_rules: 'Quy tắc làm việc', learning_style: 'Cách học', constraints: 'Ràng buộc', other: 'Khác' };
-  const TYPES = { decision: 'Quyết định', lesson: 'Bài học', milestone: 'Cột mốc', procedure: 'Quy trình', review_summary: 'Tóm tắt review' };
-  const DST = { proposed: 'Chờ duyệt', approved: 'Đang dùng', superseded: 'Đã thay thế' };
+  const CATS = { career: 'Career', work_rules: 'Work rules', learning_style: 'Learning style', constraints: 'Constraints', other: 'Other' };
+  const TYPES = { decision: 'Decision', lesson: 'Lesson', milestone: 'Milestone', procedure: 'Procedure', review_summary: 'Review summary' };
+  const DST = { proposed: 'Pending', approved: 'Active', superseded: 'Superseded' };
   const KEY_RE = /^[a-z0-9][a-z0-9_.-]{0,59}$/;
   const STALE_REVIEW_CODES = ['revision_conflict', 'not_found', 'not_editable', 'supersede_conflict', 'bad_state', 'not_replaceable'];
 
@@ -37,6 +37,23 @@
       n.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
     });
     return n;
+  }
+
+  /* Inline SVG icons (static constants below; stored content is still rendered with textContent only) */
+  const ICONS = {
+    calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/>'
+  };
+  function icon(name) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.setAttribute('class', 'vpis-ic'); s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = ICONS[name] || '';
+    return s;
   }
 
   /* Dates: shown in Vietnam time (UTC+7, like the rest of the app). Parsed by hand so the page's patched Date cannot skew them. */
@@ -136,7 +153,29 @@
       '.vpis-audit{width:100%;border-collapse:collapse;font-size:.78rem}',
       '.vpis-audit td{padding:6px 8px;border-bottom:1px dashed var(--border-color);vertical-align:top;word-break:break-word}',
       '.vpis-audit tr:last-child td{border-bottom:0}',
-      '@media (max-width:640px){.vpis-dlg{width:100vw;height:100vh;height:100dvh;margin:0;border-radius:0}.vpis-sheet{height:100%;max-height:none;border-radius:0;border:0;padding-top:env(safe-area-inset-top,0px)}.vpis-btn{min-height:44px}.vpis-head{padding:14px 16px 10px}.vpis-x{width:40px;height:40px}.vpis-body{padding-left:16px;padding-right:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}.vpis-title{order:1;flex:1 1 calc(100% - 56px)}.vpis-x{order:2}.vpis-head .vpis-btn{order:3;flex:1 1 calc(50% - 8px);min-height:40px}.vpis-tabs .vpis-tab{min-height:46px}.vpis-chips .vpis-tab{min-height:40px}.vpis-foot{padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}.vpis-foot .vpis-btn{flex:1}.vpis-meta{padding:0 16px 10px}.vpis-msg,.vpis-stale{margin-left:16px;margin-right:16px}.vpis-tabs{padding:0 8px}}'
+      /* ── header buttons, stat chips, card polish ── */
+      '.vpis-ic{width:16px;height:16px;flex:none}',
+      '.vpis-head{gap:10px;padding:18px 20px 10px}',
+      '.vpis-title{font-size:1.15rem;font-weight:800}',
+      '.vpis-x .vpis-ic{width:18px;height:18px}',
+      '.vpis-hbar{display:flex;align-items:center;gap:6px;flex:0 0 auto}',
+      '.vpis-hbtn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 14px;border:1px solid var(--border-color);border-radius:99px;background:var(--bg-white);color:var(--text-dark);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s}',
+      '.vpis-hbtn:hover{border-color:var(--primary);background:rgba(var(--primary-rgb,209,123,150),0.1)}',
+      '.vpis-hbtn .vpis-ic{color:var(--text-muted)}',
+      '.vpis-hbtn.vpis-signed::after{content:"";position:absolute;top:5px;left:25px;width:7px;height:7px;border-radius:50%;background:#4f8a6b;border:1.5px solid var(--bg-white)}',
+      /* the settings button is deliberately faint: icon only, no label, no tooltip, no hover change */
+      '.vpis-hbtn.vpis-ghost{width:34px;padding:0;border-color:transparent;background:transparent;opacity:.35;cursor:default}',
+      '.vpis-hbtn.vpis-ghost:hover{border-color:transparent;background:transparent}',
+      '.vpis-meta{display:flex;flex-wrap:wrap;gap:6px;padding:0 20px 12px}',
+      '.vpis-stat{display:inline-flex;align-items:baseline;gap:5px;padding:2px 10px;border-radius:99px;border:1px solid var(--border-color);background:var(--bg-light);font-size:.75rem;color:var(--text-muted)}',
+      '.vpis-stat b{color:var(--text-dark);font-weight:700}',
+      '.vpis-card{padding:14px 16px;border-radius:16px;box-shadow:0 1px 2px rgba(40,20,32,.05)}',
+      '.vpis-key{padding:1px 9px;border-radius:8px;background:rgba(127,127,127,.12);font-size:.84rem}',
+      '.vpis-actions .vpis-btn{min-height:32px;padding:3px 14px;border-radius:99px;font-size:.8rem;font-weight:600}',
+      '.vpis-foot{padding:12px 20px;background:var(--bg-light)}',
+      '.vpis-foot .vpis-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:99px;font-weight:600}',
+      '.vpis-form{border-radius:18px}',
+      '@media (max-width:640px){.vpis-dlg{width:100vw;height:100vh;height:100dvh;margin:0;border-radius:0}.vpis-sheet{height:100%;max-height:none;border-radius:0;border:0;padding-top:env(safe-area-inset-top,0px)}.vpis-btn{min-height:44px}.vpis-head{padding:14px 16px 10px}.vpis-x{width:40px;height:40px}.vpis-body{padding-left:16px;padding-right:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}.vpis-title{order:1;flex:1 1 calc(100% - 56px)}.vpis-x{order:2}.vpis-hbar{order:3;flex:1 1 100%;flex-wrap:wrap}.vpis-hbtn{min-height:40px}.vpis-ghost{width:40px}.vpis-tabs .vpis-tab{min-height:46px}.vpis-chips .vpis-tab{min-height:40px}.vpis-foot{padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}.vpis-foot .vpis-btn{flex:1}.vpis-meta{padding:0 16px 10px}.vpis-msg,.vpis-stale{margin-left:16px;margin-right:16px}.vpis-tabs{padding:0 8px}}'
     ].join('\n');
     const st = document.createElement('style'); st.id = 'vpis-style'; st.textContent = css; document.head.appendChild(st);
   }
@@ -160,7 +199,7 @@
     S.loading = true; render();
     try {
       const ready = await VM().ready();
-      if (!ready.ok) { S.fatal = ready.error || 'Không mở được VenusMemoryDB'; }
+      if (!ready.ok) { S.fatal = ready.error || 'Couldn\'t open VenusMemoryDB'; }
       else {
         S.fatal = null;
         const r = await Promise.all([VM().stats(), VM().listProfile(), VM().listDecisions(), VM().getStaleMemories(90), VM().listAudit(100)]);
@@ -194,54 +233,54 @@
     return s;
   }
   const tagRow = (tags) => (tags && tags.length ? el('div', { class: 'vpis-row', style: 'margin-top:6px' }, tags.map((t) => el('span', { class: 'vpis-tag', text: '#' + t }))) : null);
-  const verifiedText = (r) => (r.last_verified_at ? 'xác nhận ' + fmtDate(r.last_verified_at) : 'chưa xác nhận');
+  const verifiedText = (r) => (r.last_verified_at ? 'verified ' + fmtDate(r.last_verified_at) : 'not verified');
 
   function deleteBtn(store, rec, label) {
     const id = store + ':' + rec.id, armed = S.confirm === id;
     return el('button', {
-      type: 'button', class: 'vpis-btn ' + (armed ? 'vpis-btn--confirm' : 'vpis-btn--danger'), text: armed ? 'Bấm lần nữa để xóa' : (label || 'Xóa'),
+      type: 'button', class: 'vpis-btn ' + (armed ? 'vpis-btn--confirm' : 'vpis-btn--danger'), text: armed ? 'Click again to delete' : (label || 'Delete'),
       onclick: () => {
         if (!armed) { S.confirm = id; clearTimeout(confirmTimer); confirmTimer = setTimeout(() => { S.confirm = null; render(); }, 4000); render(); return; }
         clearTimeout(confirmTimer);
-        act(() => VM().remove(store, rec.id, rec.revision, APPROVED), 'Đã xóa (xóa mềm, vẫn nằm trong nhật ký và backup).');
+        act(() => VM().remove(store, rec.id, rec.revision, APPROVED), 'Deleted (soft delete; still kept in the log and backups).');
       }
     });
   }
   function verifyBtn(store, rec) {
-    return el('button', { type: 'button', class: 'vpis-btn', text: 'Còn đúng', title: 'Xác nhận mục này vẫn đúng', onclick: () => act(() => VM().markVerified(store, rec.id, rec.revision, APPROVED), 'Đã đánh dấu còn đúng.') });
+    return el('button', { type: 'button', class: 'vpis-btn', text: 'Still correct', onclick: () => act(() => VM().markVerified(store, rec.id, rec.revision, APPROVED), 'Marked as still correct.') });
   }
 
   /* ----- profile ----- */
   function profileCard(r) {
     const stale = S.staleIds.has(r.id);
     return el('div', { class: 'vpis-card' }, [
-      el('div', { class: 'vpis-row' }, [el('span', { class: 'vpis-key', text: r.key }), el('span', { class: 'vpis-badge', text: CATS[r.category] || r.category }), stale ? el('span', { class: 'vpis-badge vpis-badge--warn', text: 'Cần xác nhận' }) : null]),
+      el('div', { class: 'vpis-row' }, [el('span', { class: 'vpis-key', text: r.key }), el('span', { class: 'vpis-badge', text: CATS[r.category] || r.category }), stale ? el('span', { class: 'vpis-badge vpis-badge--warn', text: 'Needs check' }) : null]),
       el('p', { class: 'vpis-text', text: r.content }),
       tagRow(r.tags),
-      el('p', { class: 'vpis-sub', text: 'revision ' + r.revision + ' · ' + verifiedText(r) + ' · sửa ' + fmtDateTime(r.updated_at) }),
+      el('p', { class: 'vpis-sub', text: 'revision ' + r.revision + ' · ' + verifiedText(r) + ' · edited ' + fmtDateTime(r.updated_at) }),
       el('div', { class: 'vpis-actions' }, [
-        el('button', { type: 'button', class: 'vpis-btn', text: 'Sửa', onclick: () => { S.form = { kind: 'profile', rec: r }; S.focusForm = true; render(); } }),
+        el('button', { type: 'button', class: 'vpis-btn', text: 'Edit', onclick: () => { S.form = { kind: 'profile', rec: r }; S.focusForm = true; render(); } }),
         verifyBtn('profile', r), deleteBtn('profile', r)
       ])
     ]);
   }
   function profileForm(rec) {
-    const key = el('input', { class: 'vpis-in', type: 'text', maxlength: 60, value: rec ? rec.key : '', placeholder: 'vd: career_direction', readonly: !!rec, autocapitalize: 'none', autocomplete: 'off' });
+    const key = el('input', { class: 'vpis-in', type: 'text', maxlength: 60, value: rec ? rec.key : '', placeholder: 'e.g. career_direction', readonly: !!rec, autocapitalize: 'none', autocomplete: 'off' });
     const cat = selectOf(CATS, rec ? rec.category : 'career');
-    const content = el('textarea', { class: 'vpis-in', maxlength: 4000, rows: 5, placeholder: 'Thông tin nền ổn định về bạn (định hướng, quy tắc làm việc, ràng buộc…)' }); content.value = rec ? rec.content : '';
-    const tags = el('input', { class: 'vpis-in', type: 'text', value: rec ? rec.tags.join(', ') : '', placeholder: 'ngăn cách bằng dấu phẩy' });
+    const content = el('textarea', { class: 'vpis-in', maxlength: 4000, rows: 5, placeholder: 'Stable background info about you (direction, work rules, constraints…)' }); content.value = rec ? rec.content : '';
+    const tags = el('input', { class: 'vpis-in', type: 'text', value: rec ? rec.tags.join(', ') : '', placeholder: 'comma-separated' });
     return el('div', { class: 'vpis-form' }, [
-      el('h3', { text: rec ? 'Sửa mục hồ sơ' : 'Thêm mục hồ sơ' }),
-      field('Key (a-z, 0-9, _ . -; không đổi được sau khi tạo)', key), field('Nhóm', cat), field('Nội dung', content), field('Thẻ', tags),
+      el('h3', { text: rec ? 'Edit profile item' : 'Add profile item' }),
+      field('Key (a-z, 0-9, _ . -; can\'t be changed after creation)', key), field('Category', cat), field('Content', content), field('Tags', tags),
       el('div', { class: 'vpis-actions' }, [
-        el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: 'Lưu', disabled: S.busy, onclick: () => {
+        el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: 'Save', disabled: S.busy, onclick: () => {
           const k = key.value.trim().toLowerCase(), c = content.value.trim();
-          if (!KEY_RE.test(k)) return say('Key chỉ gồm a-z, 0-9, _ . - (tối đa 60 ký tự, bắt đầu bằng chữ hoặc số).', 'err');
-          if (!c) return say('Nội dung không được rỗng.', 'err');
-          if (!rec && S.profile.some((p) => p.key === k)) return say('Key "' + k + '" đã tồn tại — hãy sửa mục đó thay vì tạo mới.', 'err');
-          act(() => VM().saveProfileItem({ key: k, category: cat.value, content: c, tags: parseTags(tags.value) }, rec ? rec.revision : 0, APPROVED), rec ? 'Đã cập nhật mục hồ sơ.' : 'Đã thêm mục hồ sơ.');
+          if (!KEY_RE.test(k)) return say('Key may only contain a-z, 0-9, _ . - (max 60 characters, must start with a letter or digit).', 'err');
+          if (!c) return say('Content can\'t be empty.', 'err');
+          if (!rec && S.profile.some((p) => p.key === k)) return say('Key "' + k + '" already exists — edit that item instead.', 'err');
+          act(() => VM().saveProfileItem({ key: k, category: cat.value, content: c, tags: parseTags(tags.value) }, rec ? rec.revision : 0, APPROVED), rec ? 'Profile item updated.' : 'Profile item added.');
         } }),
-        el('button', { type: 'button', class: 'vpis-btn', text: 'Hủy', onclick: () => { S.form = null; render(); } })
+        el('button', { type: 'button', class: 'vpis-btn', text: 'Cancel', onclick: () => { S.form = null; render(); } })
       ])
     ]);
   }
@@ -251,22 +290,22 @@
   function decisionCard(r) {
     const stale = r.status === 'approved' && S.staleIds.has(r.id), acts = [];
     if (r.status === 'proposed') {
-      acts.push(el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: 'Duyệt', disabled: S.busy, onclick: () => act(() => VM().approve(r.id, r.revision, APPROVED), 'Đã duyệt: mục này đang có hiệu lực.') }));
-      acts.push(el('button', { type: 'button', class: 'vpis-btn', text: 'Sửa', onclick: () => { S.form = { kind: 'decision', mode: 'edit', rec: r }; S.focusForm = true; render(); } }));
-      acts.push(deleteBtn('decisions', r, 'Bỏ đề xuất'));
+      acts.push(el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: 'Approve', disabled: S.busy, onclick: () => act(() => VM().approve(r.id, r.revision, APPROVED), 'Approved: this item is now in effect.') }));
+      acts.push(el('button', { type: 'button', class: 'vpis-btn', text: 'Edit', onclick: () => { S.form = { kind: 'decision', mode: 'edit', rec: r }; S.focusForm = true; render(); } }));
+      acts.push(deleteBtn('decisions', r, 'Discard'));
     } else if (r.status === 'approved') {
-      acts.push(el('button', { type: 'button', class: 'vpis-btn', text: 'Sửa', onclick: () => { S.form = { kind: 'decision', mode: 'replace', rec: r }; S.focusForm = true; render(); } }));
+      acts.push(el('button', { type: 'button', class: 'vpis-btn', text: 'Edit', onclick: () => { S.form = { kind: 'decision', mode: 'replace', rec: r }; S.focusForm = true; render(); } }));
       acts.push(verifyBtn('decisions', r)); acts.push(deleteBtn('decisions', r));
     }
     const replaces = r.supersedes_id ? titleOf(r.supersedes_id) : null;
     return el('div', { class: 'vpis-card' + (r.status === 'superseded' ? ' vpis-card--sup' : '') }, [
-      el('div', { class: 'vpis-row' }, [el('span', { class: 'vpis-badge', text: TYPES[r.type] || r.type }), el('span', { class: 'vpis-badge', text: DST[r.status] || r.status }), stale ? el('span', { class: 'vpis-badge vpis-badge--warn', text: 'Cần xác nhận' }) : null]),
+      el('div', { class: 'vpis-row' }, [el('span', { class: 'vpis-badge', text: TYPES[r.type] || r.type }), el('span', { class: 'vpis-badge', text: DST[r.status] || r.status }), stale ? el('span', { class: 'vpis-badge vpis-badge--warn', text: 'Needs check' }) : null]),
       el('p', { class: 'vpis-card-title', style: 'margin-top:6px', text: r.title }),
       el('p', { class: 'vpis-text', text: r.content }),
-      r.rationale ? el('p', { class: 'vpis-sub', text: 'Lý do: ' + r.rationale }) : null,
-      replaces ? el('p', { class: 'vpis-sub', text: 'Thay thế: ' + replaces }) : null,
+      r.rationale ? el('p', { class: 'vpis-sub', text: 'Rationale: ' + r.rationale }) : null,
+      replaces ? el('p', { class: 'vpis-sub', text: 'Replaces: ' + replaces }) : null,
       tagRow(r.tags),
-      el('p', { class: 'vpis-sub', text: 'tin cậy ' + Math.round((r.confidence || 0) * 100) + '%' + (r.source ? ' · nguồn ' + r.source : '') + ' · revision ' + r.revision + ' · ' + verifiedText(r) }),
+      el('p', { class: 'vpis-sub', text: 'confidence ' + Math.round((r.confidence || 0) * 100) + '%' + (r.source ? ' · source ' + r.source : '') + ' · revision ' + r.revision + ' · ' + verifiedText(r) }),
       acts.length ? el('div', { class: 'vpis-actions' }, acts) : null
     ]);
   }
@@ -277,42 +316,47 @@
     const content = el('textarea', { class: 'vpis-in', maxlength: 4000, rows: 5 }); content.value = rec ? rec.content : '';
     const rationale = el('textarea', { class: 'vpis-in', maxlength: 2000, rows: 3, style: 'min-height:64px' }); rationale.value = rec ? rec.rationale || '' : '';
     const conf = el('input', { class: 'vpis-in', type: 'number', min: 0, max: 100, step: 5, value: rec ? Math.round((rec.confidence || 0) * 100) : 70, inputmode: 'numeric' });
-    const tags = el('input', { class: 'vpis-in', type: 'text', value: rec ? rec.tags.join(', ') : '', placeholder: 'ngăn cách bằng dấu phẩy' });
-    const heading = mode === 'new' ? 'Thêm quyết định / bài học' : mode === 'edit' ? 'Sửa đề xuất (chưa duyệt)' : 'Sửa mục đang dùng';
+    const tags = el('input', { class: 'vpis-in', type: 'text', value: rec ? rec.tags.join(', ') : '', placeholder: 'comma-separated' });
+    const heading = mode === 'new' ? 'Add decision / lesson' : mode === 'edit' ? 'Edit proposal (not yet approved)' : 'Edit active item';
     return el('div', { class: 'vpis-form' }, [
       el('h3', { text: heading }),
-      mode === 'replace' ? el('p', { class: 'vpis-note', text: 'Lưu sẽ tạo phiên bản mới (đang dùng) và chuyển bản cũ sang "Đã thay thế" — lịch sử được giữ.' }) : null,
-      mode === 'new' ? el('p', { class: 'vpis-note', text: 'Mục thêm tay được lưu thẳng ở trạng thái "Đang dùng".' }) : null,
-      field('Loại', type), field('Tiêu đề', title), field('Nội dung', content), field('Lý do (tuỳ chọn)', rationale), field('Độ tin cậy (%)', conf), field('Thẻ', tags),
+      mode === 'replace' ? el('p', { class: 'vpis-note', text: 'Saving creates a new version (active) and moves the old one to "Superseded" — history is kept.' }) : null,
+      mode === 'new' ? el('p', { class: 'vpis-note', text: 'Items added by hand are saved directly as "Active".' }) : null,
+      field('Type', type), field('Title', title), field('Content', content), field('Rationale (optional)', rationale), field('Confidence (%)', conf), field('Tags', tags),
       el('div', { class: 'vpis-actions' }, [
-        el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: 'Lưu', disabled: S.busy, onclick: () => {
+        el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: 'Save', disabled: S.busy, onclick: () => {
           const t = title.value.trim(), c = content.value.trim();
-          if (!t) return say('Tiêu đề không được rỗng.', 'err');
-          if (!c) return say('Nội dung không được rỗng.', 'err');
+          if (!t) return say('Title can\'t be empty.', 'err');
+          if (!c) return say('Content can\'t be empty.', 'err');
           const n = Number(conf.value), confidence = isFinite(n) ? Math.max(0, Math.min(100, n)) / 100 : 0.7;
           const base = { type: type.value, title: t, content: c, rationale: rationale.value.trim(), source: rec ? rec.source || '' : 'manual', confidence, tags: parseTags(tags.value) };
-          if (mode === 'edit') act(() => VM().saveDecisionItem(Object.assign({ id: rec.id, status: 'proposed' }, base), rec.revision, APPROVED), 'Đã cập nhật đề xuất.');
-          else if (mode === 'replace') act(() => VM().saveDecisionItem(Object.assign({ supersedes_id: rec.id, status: 'approved' }, base), rec.revision, APPROVED), 'Đã lưu phiên bản mới; bản cũ chuyển sang "Đã thay thế".');
-          else act(() => VM().saveDecisionItem(Object.assign({ status: 'approved' }, base), 0, APPROVED), 'Đã thêm mục.');
+          if (mode === 'edit') act(() => VM().saveDecisionItem(Object.assign({ id: rec.id, status: 'proposed' }, base), rec.revision, APPROVED), 'Proposal updated.');
+          else if (mode === 'replace') act(() => VM().saveDecisionItem(Object.assign({ supersedes_id: rec.id, status: 'approved' }, base), rec.revision, APPROVED), 'New version saved; the old one is now "Superseded".');
+          else act(() => VM().saveDecisionItem(Object.assign({ status: 'approved' }, base), 0, APPROVED), 'Item added.');
         } }),
-        el('button', { type: 'button', class: 'vpis-btn', text: 'Hủy', onclick: () => { S.form = null; render(); } })
+        el('button', { type: 'button', class: 'vpis-btn', text: 'Cancel', onclick: () => { S.form = null; render(); } })
       ])
     ]);
   }
 
   /* ----- audit ----- */
   function auditView() {
-    if (!S.audit.length) return el('div', { class: 'vpis-empty', text: 'Chưa có bản ghi nào.' });
+    if (!S.audit.length) return el('div', { class: 'vpis-empty', text: 'No entries yet.' });
     const rows = S.audit.map((a) => el('tr', null, [
       el('td', { text: fmtDateTime(a.ts) }),
       el('td', { text: a.tool_name || '' }),
-      el('td', { text: (a.status || '') + (a.approved_by_user ? '' : ' · chưa duyệt') }),
+      el('td', { text: (a.status || '') + (a.approved_by_user ? '' : ' · not approved') }),
       el('td', { text: a.target_id ? String(a.target_id).slice(0, 8) : '' })
     ]));
     return el('div', null, [
-      el('p', { class: 'vpis-note', text: 'Giờ Việt Nam. 100 bản ghi gần nhất; chỉ lưu tên thao tác, trạng thái và id — không lưu nội dung.' }),
+      el('p', { class: 'vpis-note', text: 'Vietnam time. Latest 100 entries; only the operation name, status and id are stored — never content.' }),
       el('div', { style: 'overflow-x:auto' }, [el('table', { class: 'vpis-audit' }, [el('tbody', null, rows)])])
     ]);
+  }
+
+  /* header pill button: icon + label (+ small green dot when `signed`) */
+  function hbtn(id, ico, label, onclick, signed) {
+    return el('button', { id, type: 'button', class: 'vpis-hbtn' + (signed ? ' vpis-signed' : ''), 'aria-haspopup': 'dialog', onclick }, [icon(ico), el('span', { text: label })]);
   }
 
   /* ───────── render ───────── */
@@ -325,40 +369,43 @@
     const st = S.stats, dec = S.decisions;
     const cnt = (s) => dec.filter((d) => d.status === s).length;
 
-    const revBtn = window.VenusReview ? el('button', { id: 'vpisReviewBtn', type: 'button', class: 'vpis-btn', style: 'margin-left:auto', text: '📋 Review tháng', 'aria-haspopup': 'dialog', onclick: () => window.VenusReview.open() }) : null;
-    const aiBtn = el('button', { id: 'vpisAiBtn', type: 'button', class: 'vpis-btn', style: revBtn ? 'margin-left:6px' : 'margin-left:auto', text: '⚙ AI', title: 'Cài đặt AI (profile, model, thinking)', onclick: openAiSettings });
-    const accBtn = window.VenusAccount ? el('button', { id: 'vpisAccountBtn', type: 'button', class: 'vpis-btn', style: 'margin-left:6px', text: (window.VenusAccount.status && window.VenusAccount.status().signedIn) ? '☁ Tài khoản ✓' : '☁ Tài khoản', 'aria-haspopup': 'dialog', onclick: () => window.VenusAccount.open() }) : null;
-    sheet.appendChild(el('div', { class: 'vpis-head' }, [el('h2', { class: 'vpis-title', id: 'vpisTitle', text: 'Bộ nhớ Venus' }), revBtn, aiBtn, accBtn, el('button', { type: 'button', class: 'vpis-x', 'aria-label': 'Đóng', text: '×', onclick: close })]));
-    sheet.appendChild(el('div', { class: 'vpis-meta', text: st ? 'Hồ sơ ' + S.profile.length + ' · đang dùng ' + cnt('approved') + ' · chờ duyệt ' + cnt('proposed') + ' · chờ đồng bộ ' + st.outbox_pending + (st.device_id ? ' · thiết bị ' + String(st.device_id).slice(0, 6) : '') : (S.loading ? 'Đang tải…' : '') }));
+    const hb = [];
+    if (window.VenusReview) hb.push(hbtn('vpisReviewBtn', 'calendar', 'Monthly review', () => window.VenusReview.open()));
+    if (window.VenusAccount) hb.push(hbtn('vpisAccountBtn', 'user', 'Account', () => window.VenusAccount.open(), !!(window.VenusAccount.status && window.VenusAccount.status().signedIn)));
+    // settings button: icon only, no label, no title/tooltip, no hover effect (see .vpis-ghost)
+    hb.push(el('button', { id: 'vpisAiBtn', type: 'button', class: 'vpis-hbtn vpis-ghost', 'aria-label': 'Settings', onclick: openAiSettings }, [icon('sliders')]));
+    sheet.appendChild(el('div', { class: 'vpis-head' }, [el('h2', { class: 'vpis-title', id: 'vpisTitle', text: 'Venus Memory' }), el('div', { class: 'vpis-hbar' }, hb), el('button', { type: 'button', class: 'vpis-x', 'aria-label': 'Close', onclick: close }, [icon('x')])]));
+    const stat = (k, v) => el('span', { class: 'vpis-stat' }, [k + ' ', el('b', { text: v })]);
+    sheet.appendChild(el('div', { class: 'vpis-meta' }, st ? [stat('Profile', S.profile.length), stat('Active', cnt('approved')), stat('Pending', cnt('proposed')), stat('To sync', st.outbox_pending), st.device_id ? stat('Device', String(st.device_id).slice(0, 6)) : null] : (S.loading ? 'Loading…' : '')));
     const m = el('div', { class: 'vpis-msg', role: 'status', 'aria-live': 'polite', hidden: true }); sheet.appendChild(m);
-    if (S.stale.length) sheet.appendChild(el('div', { class: 'vpis-stale', text: S.stale.length + ' mục đang dùng đã hơn 90 ngày chưa được xác nhận. Nếu vẫn đúng, bấm "Còn đúng" trên mục đó.' }));
+    if (S.stale.length) sheet.appendChild(el('div', { class: 'vpis-stale', text: S.stale.length + ' active item(s) haven\'t been verified in over 90 days. If still correct, press "Still correct" on the item.' }));
 
     sheet.appendChild(el('div', { class: 'vpis-tabs', role: 'tablist' }, [
-      chip('Hồ sơ (' + S.profile.length + ')', S.tab === 'profile', () => { S.tab = 'profile'; S.form = null; render(); }),
-      chip('Quyết định (' + (cnt('approved') + cnt('proposed')) + ')' + (cnt('proposed') ? ' •' : ''), S.tab === 'decisions', () => { S.tab = 'decisions'; S.form = null; render(); }),
-      chip('Nhật ký', S.tab === 'audit', () => { S.tab = 'audit'; S.form = null; render(); })
+      chip('Profile (' + S.profile.length + ')', S.tab === 'profile', () => { S.tab = 'profile'; S.form = null; render(); }),
+      chip('Decisions (' + (cnt('approved') + cnt('proposed')) + ')' + (cnt('proposed') ? ' •' : ''), S.tab === 'decisions', () => { S.tab = 'decisions'; S.form = null; render(); }),
+      chip('Log', S.tab === 'audit', () => { S.tab = 'audit'; S.form = null; render(); })
     ]));
 
     const body = el('div', { class: 'vpis-body' });
-    if (S.fatal) body.appendChild(el('div', { class: 'vpis-empty', text: 'Không mở được bộ nhớ: ' + S.fatal + '. Thử tải lại trang (nếu đang mở app ở nhiều tab, hãy đóng bớt).' }));
-    else if (S.loading && !st) body.appendChild(el('div', { class: 'vpis-empty', text: 'Đang tải…' }));
+    if (S.fatal) body.appendChild(el('div', { class: 'vpis-empty', text: 'Couldn\'t open memory: ' + S.fatal + '. Try reloading the page (if the app is open in several tabs, close the extras).' }));
+    else if (S.loading && !st) body.appendChild(el('div', { class: 'vpis-empty', text: 'Loading…' }));
     else if (S.tab === 'profile') {
       if (S.form && S.form.kind === 'profile') body.appendChild(profileForm(S.form.rec));
-      if (!S.profile.length && !S.form) body.appendChild(el('div', { class: 'vpis-empty', text: 'Chưa có mục hồ sơ nào. Bấm "+ Thêm mục hồ sơ" để thêm định hướng, quy tắc làm việc hoặc ràng buộc cá nhân.' }));
+      if (!S.profile.length && !S.form) body.appendChild(el('div', { class: 'vpis-empty', text: 'No profile items yet. Press "Add profile item" to add your direction, work rules or personal constraints.' }));
       S.profile.forEach((r) => body.appendChild(profileCard(r)));
     } else if (S.tab === 'decisions') {
       body.appendChild(el('div', { class: 'vpis-chips', role: 'tablist' }, ['proposed', 'approved', 'superseded'].map((s) => chip(DST[s] + ' (' + cnt(s) + ')', S.dstatus === s, () => { S.dstatus = s; S.form = null; render(); }))));
       if (S.form && S.form.kind === 'decision') body.appendChild(decisionForm(S.form));
       const list = dec.filter((d) => d.status === S.dstatus);
-      if (!list.length && !S.form) body.appendChild(el('div', { class: 'vpis-empty', text: S.dstatus === 'proposed' ? 'Không có đề xuất nào đang chờ duyệt.' : 'Chưa có mục nào.' }));
+      if (!list.length && !S.form) body.appendChild(el('div', { class: 'vpis-empty', text: S.dstatus === 'proposed' ? 'No proposals waiting for approval.' : 'Nothing here yet.' }));
       list.forEach((r) => body.appendChild(decisionCard(r)));
     } else body.appendChild(auditView());
     sheet.appendChild(body);
 
     const foot = el('div', { class: 'vpis-foot' });
-    if (S.tab === 'profile' && !S.fatal) foot.appendChild(el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: '+ Thêm mục hồ sơ', onclick: () => { S.form = { kind: 'profile', rec: null }; S.focusForm = true; render(); } }));
-    if (S.tab === 'decisions' && !S.fatal) foot.appendChild(el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', text: '+ Thêm quyết định', onclick: () => { S.form = { kind: 'decision', mode: 'new', rec: null }; S.focusForm = true; render(); } }));
-    foot.appendChild(el('button', { type: 'button', class: 'vpis-btn', text: 'Tải lại', onclick: refresh }));
+    if (S.tab === 'profile' && !S.fatal) foot.appendChild(el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', onclick: () => { S.form = { kind: 'profile', rec: null }; S.focusForm = true; render(); } }, [icon('plus'), el('span', { text: 'Add profile item' })]));
+    if (S.tab === 'decisions' && !S.fatal) foot.appendChild(el('button', { type: 'button', class: 'vpis-btn vpis-btn--pri', onclick: () => { S.form = { kind: 'decision', mode: 'new', rec: null }; S.focusForm = true; render(); } }, [icon('plus'), el('span', { text: 'Add decision' })]));
+    foot.appendChild(el('button', { type: 'button', class: 'vpis-btn', onclick: refresh }, [icon('refresh'), el('span', { text: 'Reload' })]));
     sheet.appendChild(foot);
 
     paintMsg();
@@ -382,10 +429,10 @@
   async function openAiSettings() {
     const btn = () => document.getElementById('vpisAiBtn');
     try {
-      if (!window.VenusAI) { if (btn()) btn().disabled = true; say('Đang tải ai.js…', 'info'); await loadAi(); say(null); }
+      if (!window.VenusAI) { if (btn()) btn().disabled = true; say('Loading ai.js…', 'info'); await loadAi(); say(null); }
       window.VenusAI.openSettings();   // a <dialog> in the top layer, so it shows above this modal
     } catch (e) {
-      say('Không tải được ai.js (kiểm tra file ai.js nằm cạnh index.html và kết nối mạng).', 'err');
+      say('Couldn\'t load ai.js (check that ai.js sits next to index.html and that you\'re online).', 'err');
     }
     if (btn()) btn().disabled = false;
   }
@@ -402,7 +449,7 @@
   }
   function isOpen() { return !!(dlg && dlg.open); }
   function open() {
-    if (!VM()) { alert('venus-memory.js chưa tải (kiểm tra file nằm cạnh index.html).'); return; }
+    if (!VM()) { alert('venus-memory.js isn\'t loaded (check that the file sits next to index.html).'); return; }
     if (!dlg) build();
     if (!dlg.open) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
     S.pickInitial = true; S.form = null; S.confirm = null; S.msg = null;
@@ -417,7 +464,7 @@
     Promise.resolve(S.stats || VM().stats()).then((st) => {
       const n = st && st.decisions ? st.decisions.proposed : 0;
       b.classList.toggle('vpis-has-pending', n > 0);
-      b.title = 'Bộ nhớ Venus (Alt+M)' + (n > 0 ? ' — ' + n + ' đề xuất chờ duyệt' : '');
+      b.title = 'Venus Memory (Alt+M)' + (n > 0 ? ' — ' + n + ' pending' : '');
     }).catch(() => {});
   }
   function addButton() {
@@ -425,7 +472,7 @@
     injectStyle();
     const anchor = document.getElementById('insightQuickBtn'), box = document.querySelector('.dark-mode-container');
     if (!anchor && !box) return;   // header cluster not found: Alt+M still works
-    const b = el('button', { id: 'vpisMemoryBtn', type: 'button', class: 'dark-mode-toggle fab-icon-btn', title: 'Bộ nhớ Venus (Alt+M)', 'aria-label': 'Bộ nhớ Venus', 'aria-haspopup': 'dialog', onclick: toggle }, [el('i', { class: 'fa-solid fa-brain', 'aria-hidden': 'true' })]);
+    const b = el('button', { id: 'vpisMemoryBtn', type: 'button', class: 'dark-mode-toggle fab-icon-btn', title: 'Venus Memory (Alt+M)', 'aria-label': 'Venus Memory', 'aria-haspopup': 'dialog', onclick: toggle }, [el('i', { class: 'fa-solid fa-brain', 'aria-hidden': 'true' })]);
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(b, anchor.nextSibling); else box.appendChild(b);
   }
   document.addEventListener('keydown', (e) => {

@@ -442,7 +442,7 @@
 
   /* ───────── glue with the Memory modal button (label shows the signed-in state) ───────── */
   function refreshMemoryUiButton() {
-    try { const b = document.getElementById('vpisAccountBtn'); if (b) b.textContent = S.user ? '☁ Tài khoản ✓' : '☁ Tài khoản'; } catch (e) { /* ignore */ }
+    try { const b = document.getElementById('vpisAccountBtn'); if (b) b.classList.toggle('vpis-signed', !!S.user); } catch (e) { /* ignore */ }
   }
 
   /* ───────── start-up: restore a saved session quietly, only if one exists ───────── */
