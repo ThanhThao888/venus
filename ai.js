@@ -118,6 +118,7 @@
     return dbp;
   }
   async function kvGet(k) { const db = await openDb(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+  async function kvDel(k) { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
   async function kvSet(k, v) { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
 
   const utcDay = () => new Date().toISOString().slice(0, 10);
@@ -192,6 +193,14 @@
   async function usageReset(profileId) { const id = profileId || (await loadCfg()).activeProfileId; await usageDrop(id); return usageGet(id); }
   const hostOf = (u) => { try { return new URL(u).host; } catch (e) { return u || '?'; } };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  /* write-only API key display: the real key is never put in the DOM, only this short mask (first chars + … + last chars) */
+  function maskKey(k) {
+    k = String(k || ''); const n = k.length;
+    if (n >= 20) return k.slice(0, 6) + '…' + k.slice(-4);
+    if (n >= 12) return k.slice(0, 3) + '…' + k.slice(-3);
+    if (n >= 6) return '…' + k.slice(-2);
+    return n ? '••••' : '';
+  }
 
   /* ───────── calling the model ───────── */
   function aiErr(msg, detail, code) { const e = new Error(msg); e.__ai = true; e.detail = detail || ''; e.code = code || ''; return e; }
@@ -585,6 +594,7 @@
       '.vai-set .vai-f label.vai-l{margin-bottom:5px;font-size:.74rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}',
       '.vai-set .vai-f input[type=text],.vai-set .vai-f input[type=password],.vai-set .vai-f input[type=number],.vai-set .vai-f textarea{min-height:38px;padding:8px 12px;border-radius:10px;background:var(--bg-light,#faf3f6);transition:border-color .14s,box-shadow .14s,background-color .14s}',
       '.vai-set .vai-f textarea{line-height:1.5;resize:vertical}',
+      '.vai-set .vai-f input[readonly]{cursor:default;opacity:.85;letter-spacing:.02em}',
       '.vai-set .vai-f input:hover:not(:disabled),.vai-set .vai-f textarea:hover:not(:disabled){border-color:color-mix(in srgb,var(--primary,#d17b96) 55%,var(--border-color,#f0d7de))}',
       '.vai-set .vai-f input:focus,.vai-set .vai-f textarea:focus{outline:0;border-color:var(--primary,#d17b96);background:var(--bg-white,#fffbfc);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.2)}',
       '.vai-set .vai-f select{width:100%;height:38px;background-color:var(--bg-light,#faf3f6);font-weight:500}',
@@ -597,10 +607,66 @@
       '.vai-set .vai-sfoot .vai-btn.vai-main{padding:6px 24px;font-weight:700;box-shadow:0 2px 8px rgba(var(--primary-rgb,209,123,150),.35)}',
       '.vai-set .vai-sfoot .vai-hint{margin:0 0 0 auto;text-align:right;font-size:.82rem;font-weight:600}',
       '@media (max-width:700px){.vai-set .vai-main{padding:14px 14px 8px}.vai-set .vai-sfoot{padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}.vai-set .vai-sfoot .vai-hint{flex:1 1 100%;text-align:left;margin:0}}',
+      /* ── PIN prompt ── */
+      'dialog.vai-pin{width:min(320px,92vw);padding:0;border:1px solid var(--border-color,#f0d7de);border-radius:18px;background:var(--bg-white,#fffbfc);color:var(--text-dark,#4a3240);box-shadow:0 24px 70px rgba(40,20,32,.36);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}',
+      'dialog.vai-pin::backdrop{background:rgba(20,10,20,.5);backdrop-filter:blur(2px)}',
+      '.vai-pinf{display:flex;flex-direction:column;gap:12px;padding:20px}',
+      '.vai-pint{font-weight:800;font-size:1.02rem}',
+      '.vai-pini{width:100%;box-sizing:border-box;height:42px;padding:0 12px;font:inherit;font-size:16px;letter-spacing:.2em;border-radius:10px;border:1px solid var(--border-color,#f0d7de);background:var(--bg-light,#faf3f6);color:inherit}',
+      '.vai-pini:focus{outline:0;border-color:var(--primary,#d17b96);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.2)}',
+      '.vai-pinm{min-height:1.2em;font-size:.8rem;color:#b94a5a}',
+      '.vai-pinb{display:flex;justify-content:flex-end;gap:8px}',
+      '.vai-pin .vai-btn{min-height:36px;padding:5px 16px;border-radius:10px;font-weight:600}',
       '@media (max-width:700px){dialog.vai-set{width:100vw;height:100vh;height:100dvh;max-height:none;border-radius:0}.vai-sbody{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.vai-side{flex-direction:row;align-items:flex-start;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--border-color,#f0d7de)}.vai-side>*{flex:0 0 auto}.vai-pc{width:210px}.vai-sh,.vai-side>.vai-hint{display:none}.vai-side>.vai-fbbox{width:240px;margin-top:0}.vai-main{padding:12px 14px}.vai-sfoot{padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}}',
       '@media (prefers-reduced-motion:reduce){.vai-ib,.vai-btn,.vai-chip,.vai-send,.vai-comp,.vai-opt,.vai-opt select,.vai-opt input,.vai-chk input,.vai-det summary::before{transition:none}}'
     ].join('');
     document.head.appendChild(s);
+  }
+
+  /* ───────── PIN lock for the settings window ─────────
+     Stored in this same IndexedDB (key "lock": PBKDF2-SHA256 hash + random salt, never the PIN). Like the keys, it never goes to localStorage, backups or sync.
+     This is a UI gate only: it stops someone clicking through the app, not someone reading IndexedDB in DevTools. */
+  const LOCK_ITER = 150000;
+  const b64 = (u8) => { let t = ''; u8.forEach((c) => { t += String.fromCharCode(c); }); return btoa(t); };
+  const unb64 = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+  async function pinHash(pin, salt, iter) {
+    const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+    return b64(new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, km, 256)));
+  }
+  async function lockInfo() { try { const v = await kvGet('lock'); return v && v.hash && v.salt ? v : null; } catch (e) { return null; } }
+  async function pinSet(pin) { const salt = crypto.getRandomValues(new Uint8Array(16)); await kvSet('lock', { v: 1, iter: LOCK_ITER, salt: b64(salt), hash: await pinHash(pin, salt, LOCK_ITER) }); }
+  async function pinCheck(pin, l) { return (await pinHash(pin, unb64(l.salt), l.iter)) === l.hash; }
+  let pinBusy = false, pinFails = 0, pinLockUntil = 0;
+  function askPin(l) {
+    injectCss();
+    return new Promise((resolve) => {
+      const dlg = document.createElement('dialog'); dlg.className = 'vai-pin'; dlg.setAttribute('aria-label', 'Enter PIN');
+      dlg.innerHTML = '<form class="vai-pinf" autocomplete="off"><div class="vai-pint">Enter PIN</div><input type="password" class="vai-pini" autocomplete="off" spellcheck="false" aria-label="PIN"><div class="vai-pinm" role="status"></div><div class="vai-pinb"><button type="button" class="vai-btn" data-x>Cancel</button><button type="submit" class="vai-btn vai-main">Unlock</button></div></form>';
+      document.body.appendChild(dlg);
+      const inp = dlg.querySelector('input'), m = dlg.querySelector('.vai-pinm'); let done = false;
+      const end = (ok) => { if (done) return; done = true; try { dlg.close(); } catch (e) { /* ignore */ } dlg.remove(); resolve(ok); };
+      dlg.addEventListener('cancel', (e) => { e.preventDefault(); end(false); });
+      dlg.addEventListener('click', (e) => { if (e.target === dlg) end(false); });
+      dlg.querySelector('[data-x]').onclick = () => end(false);
+      dlg.querySelector('form').onsubmit = async (e) => {
+        e.preventDefault();
+        const wait = pinLockUntil - Date.now();
+        if (wait > 0) { m.textContent = 'Too many attempts. Try again in ' + Math.ceil(wait / 1000) + 's.'; return; }
+        let ok = false; try { ok = await pinCheck(inp.value, l); } catch (err) { ok = false; }
+        if (ok) { pinFails = 0; end(true); return; }
+        inp.value = ''; inp.focus();
+        if (++pinFails >= 5) { pinFails = 0; pinLockUntil = Date.now() + 30000; m.textContent = 'Too many attempts. Try again in 30s.'; } else m.textContent = 'Wrong PIN.';
+      };
+      try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+      inp.focus();
+    });
+  }
+  async function openSettings(o) {   // gate: asks for the PIN first when one is set, then opens the real window
+    if (settingsApi) { settingsApi.focus(); return settingsApi; }
+    if (pinBusy) return null;
+    pinBusy = true;
+    try { const l = await lockInfo(); if (l && !(await askPin(l))) return null; } finally { pinBusy = false; }
+    return openSettingsInner(o);
   }
 
   /* ───────── settings window: a <dialog> (top layer, so it shows ABOVE the Memory modal), two columns ─────────
@@ -608,7 +674,7 @@
   const EFFORT_LABELS = { default: 'Model default (send nothing)', off: 'Off', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
   const FORMAT_LABELS = { openrouter: 'OpenRouter (reasoning + data_collection)', openai: 'OpenAI-compatible (reasoning_effort)' };
   let settingsApi = null;
-  function openSettings(o) {
+  function openSettingsInner(o) {
     o = o || {}; injectCss();
     if (settingsApi) { settingsApi.focus(); return settingsApi; }
     const dlg = document.createElement('dialog'); dlg.className = 'vai-set'; dlg.setAttribute('aria-label', 'AI Settings');
@@ -616,8 +682,11 @@
       + '<div class="vai-sbody"><aside class="vai-side"></aside><div class="vai-main"></div></div><div class="vai-sfoot"></div>';
     document.body.appendChild(dlg);
     const prevFocus = document.activeElement;
-    let draft = null, sel = '', busy = false, closed = false, useMap = {}, msgState = { t: '', cls: '' }, delArm = '', delT = 0, urlBefore = '', freeOnly = true, fbOpen = true;
-    const accOpen = { conn: true, models: false, think: true, limits: false, prompt: false }, modelsBy = {};
+    let draft = null, sel = '', busy = false, closed = false, useMap = {}, msgState = { t: '', cls: '' }, delArm = '', delT = 0, urlBefore = '', freeOnly = true, fbOpen = true, lockOn = false;
+    /* write-only key UI: keyEdit[pid] = "Replace key" mode; pendingKey[pid] = a newly typed key not saved yet (memory only, never rendered as an attribute) */
+    let keyEdit = {}, pendingKey = {};
+    const effKey = (p) => String(pendingKey[p.id] || '').trim() || p.apiKey;
+    const accOpen = { conn: true, models: false, think: true, limits: false, prompt: false, security: false }, modelsBy = {};
     const q = (s) => dlg.querySelector(s);
     const cur = () => profById(draft, sel) || draft.profiles[0];
 
@@ -645,7 +714,7 @@
       const fi = (id) => draft.fallbackProfileIds.indexOf(id);
       const cards = draft.profiles.map((p) => {
         const act = p.id === draft.activeProfileId, k = fi(p.id), n = (useMap[p.id] && useMap[p.id].n) || 0, lim = +p.dailyLimit || 0, prov = detectProvider(p.baseUrl);
-        const ready = p.model && p.baseUrl && (!needsKey(p) || p.apiKey);
+        const ready = p.model && p.baseUrl && (!needsKey(p) || effKey(p));
         return `<div class="vai-pc${p.id === sel ? ' vai-sel' : ''}" data-pid="${esc(p.id)}" role="button" tabindex="0"><div class="vai-pc-t"><b>${esc(p.name || 'Profile')}</b>${act ? '<span class="vai-tag vai-tag-a">★ Active</span>' : ''}${k >= 0 ? '<span class="vai-tag">Fallback ' + (k + 1) + '</span>' : ''}</div><div class="vai-pc-s">${esc(hostOf(p.baseUrl))} · ${p.model ? esc(p.model) : '<i>no model</i>'}</div><div class="vai-pc-u">${prov === 'ollama' ? 'runs locally' : 'Today: ' + n + (lim ? '/' + lim : '') + ' requests'}${ready ? '' : ' · <span class="vai-bad">missing ' + (!p.model ? 'model' : !p.baseUrl ? 'URL' : 'key') + '</span>'}</div></div>`;
       }).join('');
       const order = draft.fallbackProfileIds.map((id, i) => { const p = profById(draft, id); return p ? `<li><span>${i + 1}. ${esc(p.name)}</span><span class="vai-ord"><button type="button" class="vai-ib" data-a="fbup" data-pid="${esc(id)}" title="Move up"${i === 0 ? ' disabled' : ''}>↑</button><button type="button" class="vai-ib" data-a="fbdn" data-pid="${esc(id)}" title="Move down"${i === draft.fallbackProfileIds.length - 1 ? ' disabled' : ''}>↓</button><button type="button" class="vai-ib" data-a="fbrm" data-pid="${esc(id)}" title="Remove from fallbacks">✕</button></span></li>` : ''; }).join('');
@@ -660,6 +729,11 @@
       const fld = (label, inner, hint) => `<div class="vai-f"><label class="vai-l">${label}</label>${inner}${hint ? '<div class="vai-hint">' + hint + '</div>' : ''}</div>`;
       const inp = (f, type, v, extra) => `<input type="${type}" data-f="${f}" value="${esc(v)}" autocomplete="off" spellcheck="false"${extra || ''}>`;
       const opt = (v, l, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(l)}</option>`;
+      const keyFld = (p) => {
+        const hasKey = !!p.apiKey, editing = hasKey && !!keyEdit[p.id];
+        if (hasKey && !editing) return fld('API key', `<div class="vai-row"><input type="text" data-f="apiKey" data-keymode="masked" value="${esc(maskKey(p.apiKey))}" readonly autocomplete="off" spellcheck="false" aria-label="API key (saved, hidden)"><button type="button" class="vai-btn" data-a="keyreplace">Replace key</button><button type="button" class="vai-btn" data-a="forget">Clear key</button></div>`, 'The saved key is hidden and can\'t be shown again. Use “Replace key” to change it.');
+        return fld('API key', `<div class="vai-row"><input type="password" data-f="apiKey" data-keymode="entry" autocomplete="off" spellcheck="false" placeholder="${hasKey ? 'Paste new key' : 'Paste key (leave empty for Ollama)'}">${hasKey ? '<button type="button" class="vai-btn" data-a="keycancel">Cancel</button>' : ''}</div>`, hasKey ? 'Leave empty and press Save to keep the current key.' : '');
+      };
       const main = q('.vai-main'), top = main.scrollTop;
       main.innerHTML = (o.note ? `<div class="vai-hint vai-warn" style="margin-bottom:10px">${esc(o.note)}</div>` : '')
         + `<div class="vai-ptools">${act ? '<span class="vai-tag vai-tag-a">★ Active profile</span>' : '<button type="button" class="vai-btn" data-a="activate">★ Make active</button><label class="vai-chk"><input type="checkbox" data-fbtog' + (isFb ? ' checked' : '') + '><span>Use as fallback</span></label>'}<span class="vai-grow"></span><button type="button" class="vai-btn" data-a="dup"${draft.profiles.length >= PROFILE_MAX ? ' disabled' : ''}>Duplicate</button><button type="button" class="vai-btn" data-a="del"${draft.profiles.length < 2 ? ' disabled' : ''}>${delArm === p.id ? 'Click again to delete' : 'Delete'}</button></div>`
@@ -668,7 +742,7 @@
           + fld('Provider', `<select data-f="provider">${Object.keys(PROVIDERS).map((k) => opt(k, PROVIDERS[k].label, k === prov)).join('')}</select>`)
           + fld('Request format', `<select data-f="requestFormat">${FORMATS.map((k) => opt(k, FORMAT_LABELS[k], k === p.requestFormat)).join('')}</select>`, 'OpenRouter adds <code>provider.data_collection</code> and <code>reasoning.effort</code>. OpenAI-compatible sends <code>reasoning_effort</code>.')
           + fld('API endpoint (chat completions)', inp('baseUrl', 'text', p.baseUrl, ' placeholder="https://…/v1/chat/completions"'), 'Resolves to <code id="vaiResolved">' + esc(resolveChatUrl(p.baseUrl) || '—') + '</code>')
-          + fld('API key', `<div class="vai-row"><input type="password" data-f="apiKey" value="${esc(p.apiKey)}" autocomplete="off" spellcheck="false" placeholder="Paste key (leave empty for Ollama)"><button type="button" class="vai-btn" data-a="eye">Show</button><button type="button" class="vai-btn" data-a="forget">Clear key</button></div>`)
+          + keyFld(p)
           + fld('Model', `<div class="vai-row"><input type="text" data-f="model" list="vaiModels" value="${esc(p.model)}" autocomplete="off" spellcheck="false" placeholder="e.g. model-name:free"><button type="button" class="vai-btn" data-a="models">Load list</button></div><datalist id="vaiModels">${mm.list.map((m) => `<option value="${esc(m.id)}">${esc((m.ctx ? Math.round(m.ctx / 1000) + 'k context' : '') + (m.reasoning ? ' · reasoning' : ''))}</option>`).join('')}</datalist>${orf ? `<label class="vai-chk" style="margin-top:6px"><input type="checkbox" data-free${freeOnly ? ' checked' : ''}> Free models only, newest first</label>` : ''}<div class="vai-hint" id="vaiModelsMsg">${esc(mm.msg)}</div>`)
         )
         + acc('models', 'Fallback models (same profile)',
@@ -683,8 +757,13 @@
           + fld('Reply language', inp('replyLang', 'text', p.replyLang, ' placeholder="e.g. Vietnamese / English / empty = match the question"'))
           + fld('Max characters per request', inp('maxChars', 'number', p.maxChars, ' min="2000" step="1000"'), 'Free models often have small context windows. Longer input is truncated (the AI panel will tell you).'))
         + acc('prompt', 'Custom instructions (this profile)',
-          fld('Empty = use the default instructions', `<textarea data-f="customPrompt" rows="5" placeholder="${esc(DEFAULT_INSTRUCTIONS)}">${esc(p.customPrompt)}</textarea>`));
+          fld('Empty = use the default instructions', `<textarea data-f="customPrompt" rows="5" placeholder="${esc(DEFAULT_INSTRUCTIONS)}">${esc(p.customPrompt)}</textarea>`))
+        + acc('security', 'Security',
+          fld(lockOn ? 'New PIN' : 'PIN', '<input type="password" id="vaiPin1" autocomplete="new-password" spellcheck="false" placeholder="At least 4 characters">')
+          + fld('Confirm PIN', '<input type="password" id="vaiPin2" autocomplete="new-password" spellcheck="false">')
+          + `<div class="vai-row" style="margin-bottom:14px"><button type="button" class="vai-btn vai-main" data-a="pinset">${lockOn ? 'Change PIN' : 'Set PIN'}</button>${lockOn ? `<button type="button" class="vai-btn" data-a="pinoff">${delArm === 'pin' ? 'Click again to remove' : 'Remove PIN'}</button>` : ''}</div>`);
       main.scrollTop = top; updateUse();
+      const ki = q('[data-keymode="entry"]'); if (ki && pendingKey[p.id]) ki.value = pendingKey[p.id];
     }
     function updateUse() {
       const el = q('#vaiUse'); if (!el || !draft) return;
@@ -697,6 +776,8 @@
     function setFb(id, on) { const l = draft.fallbackProfileIds, i = l.indexOf(id); if (on && i < 0 && id !== draft.activeProfileId) l.push(id); else if (!on && i >= 0) l.splice(i, 1); }
     function move(id, d) { const l = draft.fallbackProfileIds, i = l.indexOf(id), j = i + d; if (i < 0 || j < 0 || j >= l.length) return; const t = l[i]; l[i] = l[j]; l[j] = t; }
     async function commit() {
+      for (const x of draft.profiles) { const k = String(pendingKey[x.id] || '').trim(); if (k) x.apiKey = k; }   // empty = keep the old key
+      pendingKey = {}; keyEdit = {};
       const r = await saveSettings({ profiles: draft.profiles, activeProfileId: draft.activeProfileId, fallbackProfileIds: draft.fallbackProfileIds });
       draft = clone(await loadCfg()); if (!profById(draft, sel)) sel = draft.activeProfileId;
       renderSide(); renderForm();
@@ -707,7 +788,9 @@
     dlg.addEventListener('focusin', (e) => { if (draft && e.target.dataset && e.target.dataset.f === 'baseUrl') urlBefore = cur().baseUrl; });
     dlg.addEventListener('input', (e) => {
       const t = e.target, f = t.dataset && t.dataset.f; if (!f || f === 'provider' || !draft) return;
-      const p = cur(); p[f] = t.type === 'checkbox' ? t.checked : t.value;
+      const p = cur();
+      if (f === 'apiKey') { if (!t.readOnly) { pendingKey[p.id] = t.value; renderSide(); } return; }   // typed key stays in memory until Save
+      p[f] = t.type === 'checkbox' ? t.checked : t.value;
       if (f === 'name' || f === 'model' || f === 'dailyLimit' || f === 'baseUrl') renderSide();
       if (f === 'baseUrl') { const r = q('#vaiResolved'); if (r) r.textContent = resolveChatUrl(p.baseUrl) || '—'; }
     });
@@ -728,16 +811,17 @@
       if (!draft) return;
       if (!b) { const c = e.target.closest('[data-pid]'); if (c) selectProfile(c.dataset.pid); return; }
       const a = b.dataset.a, p = cur();
-      if (a === 'eye') { const k = q('[data-f="apiKey"]'); k.type = k.type === 'password' ? 'text' : 'password'; b.textContent = k.type === 'password' ? 'Show' : 'Hide'; }
-      else if (a === 'forget') { p.apiKey = ''; renderForm(); renderSide(); msg('Key cleared for this profile — press Save to apply.', 'vai-ok'); }
+      if (a === 'keyreplace') { keyEdit[p.id] = true; renderForm(); try { q('[data-keymode="entry"]').focus(); } catch (e) { /* ignore */ } }
+      else if (a === 'keycancel') { delete keyEdit[p.id]; delete pendingKey[p.id]; renderForm(); renderSide(); }
+      else if (a === 'forget') { p.apiKey = ''; delete keyEdit[p.id]; delete pendingKey[p.id]; renderForm(); renderSide(); msg('Key cleared for this profile — press Save to apply.', 'vai-ok'); }
       else if (a === 'resetuse') { await usageReset(sel); await refreshUse(); }
       else if (a === 'activate') { draft.activeProfileId = sel; setFb(sel, false); renderSide(); renderForm(); }
       else if (a === 'add') { if (draft.profiles.length >= PROFILE_MAX) return; const id = newId(); draft.profiles.push(normProfile({ id, name: '#' + (draft.profiles.length + 1) + ' New' }, id)); selectProfile(id); }
-      else if (a === 'dup') { if (draft.profiles.length >= PROFILE_MAX) return; const id = newId(); draft.profiles.push(Object.assign(clone(p), { id, name: p.name + ' (copy)' })); selectProfile(id); }
+      else if (a === 'dup') { if (draft.profiles.length >= PROFILE_MAX) return; const id = newId(); draft.profiles.push(Object.assign(clone(p), { id, name: p.name + ' (copy)', apiKey: effKey(p) })); selectProfile(id); }
       else if (a === 'del') {
         if (draft.profiles.length < 2) return;
         if (delArm !== sel) { delArm = sel; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
-        delArm = ''; draft.profiles = draft.profiles.filter((x) => x.id !== sel); setFb(sel, false);
+        delArm = ''; delete pendingKey[sel]; delete keyEdit[sel]; draft.profiles = draft.profiles.filter((x) => x.id !== sel); setFb(sel, false);
         if (draft.activeProfileId === sel) { draft.activeProfileId = draft.profiles[0].id; setFb(draft.activeProfileId, false); }
         selectProfile(draft.activeProfileId);
       }
@@ -747,10 +831,20 @@
         b.disabled = true; const mmEl = q('#vaiModelsMsg'); if (mmEl) mmEl.textContent = 'Loading models…';
         const id = sel; let m = { list: [], msg: '' };
         try {
-          const list = await fetchModels(p.baseUrl, p.apiKey, freeOnly && p.requestFormat === 'openrouter');
+          const list = await fetchModels(p.baseUrl, effKey(p), freeOnly && p.requestFormat === 'openrouter');
           m = { list, msg: list.length ? list.length + ' models — click the Model field to pick one (type to filter). “k” is the context length.' : 'No models found.' };
         } catch (err) { m.msg = 'Couldn\'t load the list (' + err.message + '). You can still type a model name manually.'; }
         modelsBy[id] = m; if (!closed && sel === id) renderForm();
+      }
+      else if (a === 'pinset') {
+        const v1 = q('#vaiPin1').value, v2 = q('#vaiPin2').value;
+        if (v1.length < 4) { msg('PIN must be at least 4 characters.', 'vai-bad'); return; }
+        if (v1 !== v2) { msg('PINs don\'t match.', 'vai-bad'); return; }
+        try { await pinSet(v1); lockOn = true; renderForm(); msg('PIN saved.', 'vai-ok'); } catch (err) { msg('Couldn\'t set the PIN (needs HTTPS or localhost).', 'vai-bad'); }
+      }
+      else if (a === 'pinoff') {
+        if (delArm !== 'pin') { delArm = 'pin'; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
+        delArm = ''; try { await kvDel('lock'); lockOn = false; renderForm(); msg('PIN removed.', 'vai-ok'); } catch (err) { msg('Couldn\'t remove the PIN.', 'vai-bad'); }
       }
       else if (a === 'save') {
         busy = true; renderFoot(); const ok = await commit(); busy = false; renderFoot();
@@ -768,12 +862,13 @@
 
     const api = { close, focus: () => { try { dlg.focus(); } catch (e) { /* ignore */ } }, dialog: dlg };
     settingsApi = api;
-    Promise.all([loadCfg(), usageRaw()]).then(([c, u]) => {
+    Promise.all([loadCfg(), usageRaw(), lockInfo()]).then(([c, u, lk]) => {
       if (closed) return;
+      lockOn = !!lk;
       draft = clone(c); sel = draft.activeProfileId; useMap = u.profiles;
       renderSide(); renderForm(); renderFoot();
       const k = q('[data-f="apiKey"]'), m = q('[data-f="model"]'), cp = cur();
-      try { ((needsKey(cp) && !cp.apiKey) ? k : (!cp.model ? m : q('.vai-pc.vai-sel'))).focus(); } catch (e) { /* ignore */ }
+      try { ((needsKey(cp) && !effKey(cp)) ? k : (!cp.model ? m : q('.vai-pc.vai-sel'))).focus(); } catch (e) { /* ignore */ }
     }).catch((err) => { q('.vai-main').textContent = 'Couldn\'t read settings: ' + (err && err.message || err); });
     return api;
   }
