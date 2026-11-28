@@ -16883,7 +16883,8 @@
        Every note is cut into passages and ranked with BM25 (diacritic-insensitive, so "rui ro" finds "rủi ro"; word pairs
        count too). With a Google Gemini profile that has a key, the same passages are also ranked by meaning (embeddings,
        cached on this device) and the two rankings are merged, so Vietnamese questions find English notes. Only the best
-       passages that fit the character limit go to the chat AI. Without a key, offline or on any error: BM25 only.
+       passages that fit the character limit go to the chat AI. Semantic search is OFF by default (opt-in switch in the AI settings);
+       off, without a key, offline or on any error: BM25 only, nothing sent to Google.
        noai notes are never sent to either service. */
     const VQ = { sig: '', chunks: [], df: new Map(), avg: 1, notes: 0 };
     const VQ_STOP = new Set('la va cua cho cac nhung mot nhu the nao gi khong co duoc trong de voi toi minh ban hay nay do khi thi ma ve tu den cung da dang se rat nhieu it hon nen neu vi sao tai bao nhieu o day kia no ho chung ta anh chi em and of to is in an for on that what how why about are was be with as by it this these those or from at does did my me you your tell'.split(' '));
@@ -17085,6 +17086,8 @@
         const live = () => S.notes.filter(vqEligible);
         try {
             try { await vqPruneVectors(S.notes); } catch (e) { console.warn('Notes Vault: could not tidy the semantic index', e); }
+            // Consent first: until the person turns semantic search on (⚙ → Chỉ mục tìm kiếm ngữ nghĩa), nothing is sent anywhere.
+            if (typeof ai.semanticEnabled !== 'function' || !(await ai.semanticEnabled())) return { reason: 'tìm theo ngữ nghĩa đang tắt, chỉ dùng từ khóa trên máy này' };
             if (!(await ai.hasEmbeddingKey())) return { reason: 'thêm profile Gemini trong ⚙ để tìm theo ngữ nghĩa' };
             if (navigator.onLine === false) return { reason: 'đang ngoại tuyến' };
             let state = null, syncErr = null;

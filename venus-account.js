@@ -9,6 +9,8 @@
    • On sign-in (and on app start with a valid session) this device is upserted into public.user_devices; device_id comes from VenusMemory.getDeviceId().
    • "Your devices": every row except THIS device has a Remove button (two taps, no window.confirm). It deletes only the row (user_id, device_id) in public.user_devices with the user's own session
      (RLS policy from supabase/migrations/004). It never signs the other device out; a device that is still signed in registers itself again the next time it opens the app.
+   • Below the list, "Sign out other devices" (two taps) calls supabase-js signOut({ scope: 'others' }): it revokes the other sessions of this account on the server and keeps this one.
+     A device that is open right now can keep working until its access token expires (about an hour by default). It does not change user_devices; Remove is for the list.
    • Offline / Supabase down: only a status line in the dialog. Nothing throws into the console and no other part of the app depends on this file.
    • All text from the server (email, device labels, errors) is rendered with textContent only. Styles: one <style id="vpis-acc-style">, every class prefixed vpis-acc-. */
 (function () {
@@ -152,8 +154,8 @@
   }
 
   /* ───────── state ───────── */
-  const S = { user: null, email: null, devices: null, devicesErr: null, health: null, msg: null, busy: false, confirmOut: false, lib: 'idle', phase: 'idle', deviceNote: null, rmArmed: null, rmBusy: null };
-  let dlg = null, box = null, msgTimer = null, confirmTimer = null, rmTimer = null, lastReg = { uid: null, at: 0 };
+  const S = { user: null, email: null, devices: null, devicesErr: null, health: null, msg: null, busy: false, confirmOut: false, lib: 'idle', phase: 'idle', deviceNote: null, rmArmed: null, rmBusy: null, soArmed: false, soBusy: false };
+  let dlg = null, box = null, msgTimer = null, confirmTimer = null, rmTimer = null, soTimer = null, lastReg = { uid: null, at: 0 };
 
   // other modules (venus-sync.js) learn when the signed-in state really changes (restored session, sign-in, sign-out)
   const authListeners = []; let lastAuthKey = null;
@@ -169,7 +171,7 @@
     const u = session && session.user ? session.user : null;
     const changed = (u && u.id) !== (S.user && S.user.id);
     S.user = u ? { id: u.id, email: u.email || '' } : null; S.email = S.user ? S.user.email : null;
-    if (!u) { S.devices = null; S.health = null; S.confirmOut = false; S.rmArmed = null; }
+    if (!u) { S.devices = null; S.health = null; S.confirmOut = false; S.rmArmed = null; S.soArmed = false; }
     if (u && (evt === 'SIGNED_IN' || evt === 'INITIAL_SESSION' || changed)) registerDevice().then(() => { if (isOpen()) loadDevices(); });
     refreshMemoryUiButton(); emitAuth();
     if (isOpen()) render();
@@ -235,7 +237,7 @@
     rmTimer = setTimeout(() => { S.rmArmed = null; render(); }, 4000); render();
   }
   async function removeDevice(d) {
-    if (S.rmBusy || !S.user || !d || !UUID_RE.test(d.device_id || '')) return;
+    if (S.rmBusy || S.soBusy || !S.user || !d || !UUID_RE.test(d.device_id || '')) return;
     clearTimeout(rmTimer); S.rmArmed = null;
     const target = String(d.device_id).toLowerCase();
     let me = null;
@@ -257,6 +259,37 @@
     } catch (e) { say(rmErrText(e), 'err'); }
     S.rmBusy = null; render();
     if (isOpen()) loadDevices();   // quiet re-read so the list matches the server
+  }
+
+  /* Sign out every OTHER device (lost phone, old laptop): supabase-js signOut({ scope: 'others' }) revokes the refresh tokens of all other
+     sessions of this account on the server and keeps THIS session. A device that is open right now can keep working until its current
+     access token expires (about an hour by default); then it can't renew and is asked to sign in again. Same guards as Remove: two taps,
+     disabled while running, never offline, short fixed error texts. It does not touch user_devices rows (use Remove for the list). */
+  function soErrText(e) {
+    const code = e && e.code ? String(e.code) : '', status = e && e.status, msg = String((e && e.message) || '');
+    if (status === 401 || status === 403 || code === 'PGRST301' || code === 'PGRST303' || /jwt|not_authenticated|session.?missing|session_not_found/i.test(msg)) return 'Your session expired. Sign out and sign in again, then retry.';
+    if (/timeout|failed to fetch|networkerror|network request failed|load failed|offline|aborted/i.test(msg) || e instanceof TypeError || (!status && !code)) return 'Can\'t connect. Other devices were not signed out; try again when you\'re online.';
+    return 'Couldn\'t sign out the other devices' + (code || status ? ' (code ' + clip(code || status, 20) + ')' : '') + '. Try again later.';
+  }
+  function armSignOutOthers() {
+    if (S.soBusy || S.rmBusy) return;
+    S.soArmed = true; clearTimeout(soTimer);
+    soTimer = setTimeout(() => { S.soArmed = false; render(); }, 4000); render();
+  }
+  async function signOutOthers() {
+    if (S.soBusy || S.rmBusy || S.busy || !S.user) return;
+    clearTimeout(soTimer); S.soArmed = false;
+    if (navigator.onLine === false) { say('You\'re offline. Other devices were not signed out.', 'err'); render(); return; }
+    S.soBusy = true; render();
+    try {
+      const c = await getClient();
+      const ss = await withTimeout(c.auth.getSession(), NET_TIMEOUT);
+      if (!(ss && ss.data && ss.data.session)) throw Object.assign(new Error('no session'), { status: 401 });
+      const r = await withTimeout(c.auth.signOut({ scope: 'others' }), NET_TIMEOUT);
+      if (r && r.error) throw Object.assign(new Error(r.error.message || 'request failed'), { code: r.error.code, status: r.error.status });
+      say('Other devices were signed out. This device stays signed in. A device that is open right now may keep working for up to about an hour.', 'ok');
+    } catch (e) { say(soErrText(e), 'err'); }
+    S.soBusy = false; render();
   }
 
   async function ensureSession() {   // restores a saved session (if any) and fills S.user
@@ -303,7 +336,7 @@
     try { const c = await getClient(); await withTimeout(c.auth.signOut({ scope: 'local' }), NET_TIMEOUT); }
     catch (e) { /* even if the call fails, wipe the local copy below */ }
     await kv.del(STORAGE_KEY);   // make sure no token stays behind
-    S.user = null; S.email = null; S.devices = null; S.health = null; S.confirmOut = false; S.rmArmed = null; S.rmBusy = null; S.busy = false; lastReg = { uid: null, at: 0 };
+    S.user = null; S.email = null; S.devices = null; S.health = null; S.confirmOut = false; S.rmArmed = null; S.rmBusy = null; S.soArmed = false; S.soBusy = false; S.busy = false; lastReg = { uid: null, at: 0 };
     say('Signed out on this device. Your Memory and Vault data were not touched.', 'ok');
     refreshMemoryUiButton(); emitAuth(); render();
   }
@@ -371,6 +404,7 @@
       '.vpis-acc-btn--danger:hover:not(:disabled){border-color:#b94a5a;background:rgba(185,74,90,.1)}',
       '.vpis-acc-btn--confirm{background:#b94a5a;border-color:#b94a5a;color:#fff}',
       '.vpis-acc-btn--confirm:hover:not(:disabled){background:#b94a5a;filter:brightness(1.08)}',
+      '.vpis-acc-so{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color,#e6d9de)}',
       '.vpis-acc-btn--sm{min-height:30px;padding:2px 12px;font-size:.78rem;border-radius:10px}',
       '.vpis-acc-btn--ghost{background:transparent;border-color:transparent;color:var(--text-muted)}',
       '.vpis-acc-btn--ghost:hover:not(:disabled){background:rgba(var(--primary-rgb,209,123,150),0.1);border-color:transparent;color:var(--text-dark)}',
@@ -466,7 +500,7 @@
       if (!canRm || mine || !UUID_RE.test(id)) return el('div', { class: 'vpis-acc-dev' }, info);
       return el('div', { class: 'vpis-acc-dev vpis-acc-dev--row' }, [info,
         btn(busyRm ? 'Removing…' : armedRm ? 'Confirm?' : 'Remove', 'vpis-acc-btn--sm ' + (armedRm ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger'),
-          () => { if (!armedRm) return armRemove(id); removeDevice(d); }, !!S.rmBusy || S.busy)]);
+          () => { if (!armedRm) return armRemove(id); removeDevice(d); }, !!S.rmBusy || S.soBusy || S.busy)]);
     };
     const hasOthers = !!(S.devices && canRm && S.devices.some((d) => !isMe(d)));
     const devs = S.devices ? (S.devices.length ? S.devices.map(devRow) : [el('p', { class: 'vpis-acc-sub', text: 'No devices yet.' })]) : [el('p', { class: 'vpis-acc-sub', text: S.devicesErr || 'Loading…' })];
@@ -486,7 +520,12 @@
       el('div', { class: 'vpis-acc-card' }, [
         el('div', { class: 'vpis-acc-cardhead' }, [el('p', { class: 'vpis-acc-h', text: 'Your devices' }), btn('Refresh', 'vpis-acc-btn--sm vpis-acc-btn--ghost', () => loadDevices(true), S.busy)]),
         el('div', { class: 'vpis-acc-devs' }, devs),
-        hasOthers ? el('p', { class: 'vpis-acc-note', style: 'margin-top:10px', text: 'Remove only deletes a device from this list. A device that is still signed in will appear again the next time it opens the app.' }) : null
+        hasOthers ? el('p', { class: 'vpis-acc-note', style: 'margin-top:10px', text: 'Remove only deletes a device from this list. A device that is still signed in will appear again the next time it opens the app.' }) : null,
+        el('div', { class: 'vpis-acc-so' }, [
+          btn(S.soBusy ? 'Signing out…' : S.soArmed ? 'Confirm?' : 'Sign out other devices', 'vpis-acc-btn--sm ' + (S.soArmed ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger'),
+            () => { if (!S.soArmed) return armSignOutOthers(); signOutOthers(); }, S.soBusy || !!S.rmBusy || S.busy),
+          el('p', { class: 'vpis-acc-note', text: 'Lost a phone or left an account open somewhere? This signs out every other device. This device stays signed in; your Memory and Vault data are not touched.' })
+        ])
       ]),
       healthView(),
       el('div', { class: 'vpis-acc-row vpis-acc-row--foot' }, [btn('Check connection', 'vpis-acc-btn--sm vpis-acc-btn--ghost', checkHealth, S.busy)])
@@ -518,14 +557,14 @@
     dlg = el('dialog', { id: 'vpisAccountDlg', class: 'vpis-acc-dlg', 'aria-labelledby': 'vpisAccTitle' });
     box = el('div', { class: 'vpis-acc-box' }); dlg.appendChild(box);
     dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
-    dlg.addEventListener('close', () => { S.confirmOut = false; S.rmArmed = null; clearTimeout(rmTimer); });
+    dlg.addEventListener('close', () => { S.confirmOut = false; S.rmArmed = null; S.soArmed = false; clearTimeout(rmTimer); clearTimeout(soTimer); });
     document.body.appendChild(dlg);
   }
   function isOpen() { return !!(dlg && dlg.open); }
   async function open() {
     if (!dlg) build();
     if (!dlg.open) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
-    S.msg = null; S.confirmOut = false; S.rmArmed = null; render();
+    S.msg = null; S.confirmOut = false; S.rmArmed = null; S.soArmed = false; render();
     if (window.VenusMemory && typeof window.VenusMemory.getDeviceId === 'function') window.VenusMemory.getDeviceId().then((id) => { S._myDevice = id; if (isOpen()) render(); }).catch(() => {});
     if (!configProblem()) { await ensureSession(); } else render();
   }

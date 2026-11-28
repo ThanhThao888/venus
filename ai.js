@@ -385,6 +385,12 @@
     return p ? p.apiKey : '';
   }
   async function hasEmbeddingKey() { try { return !!(await getEmbeddingKey()); } catch (e) { return false; } }
+  /* Consent switch for semantic search. DEFAULT OFF. Stored only in this device's "venus-ai" (key "vec:optin"): never backed up, never synced.
+     While it is off nothing is sent to Google: not note text, not the search question. embedTexts() enforces this itself, so even a
+     caller that forgets to check cannot upload. Any read error counts as "off". */
+  const VEC_OPTIN = 'vec:optin';
+  async function semanticEnabled() { try { const v = await kvGet(VEC_OPTIN); return !!(v && v.on === true); } catch (e) { return false; } }
+  async function setSemanticEnabled(on) { if (on) await kvSet(VEC_OPTIN, { on: true, at: Date.now() }); else await kvDel(VEC_OPTIN); }
   function l2Normalize(values) {
     const v = Float32Array.from(values); let sum = 0;
     for (let i = 0; i < v.length; i++) sum += v[i] * v[i];
@@ -437,6 +443,7 @@
       return r;
     });
     if (!reqs.length) return [];
+    if (!(await semanticEnabled())) throw aiErr('Semantic search is turned off, so nothing was sent.', '', 'optout');
     const key = await getEmbeddingKey();
     if (!key) throw aiErr('No Google Gemini profile with an API key.', '', 'nokey');
     const cool = embCool[taskType];
@@ -837,7 +844,7 @@
       + '<div class="vai-sbody"><aside class="vai-side"></aside><div class="vai-main"></div></div><div class="vai-sfoot"></div>';
     document.body.appendChild(dlg);
     const prevFocus = document.activeElement;
-    let draft = null, sel = '', busy = false, closed = false, useMap = {}, msgState = { t: '', cls: '' }, delArm = '', delT = 0, urlBefore = '', freeOnly = true, fbOpen = true, lockOn = false;
+    let draft = null, sel = '', busy = false, closed = false, useMap = {}, msgState = { t: '', cls: '' }, delArm = '', delT = 0, urlBefore = '', freeOnly = true, fbOpen = true, lockOn = false, semOn = false, semAsk = false;
     /* write-only key UI: keyEdit[pid] = "Replace key" mode; pendingKey[pid] = a newly typed key not saved yet (memory only, never rendered as an attribute) */
     let keyEdit = {}, pendingKey = {};
     const effKey = (p) => String(pendingKey[p.id] || '').trim() || p.apiKey;
@@ -918,7 +925,11 @@
           + fld('Confirm PIN', '<input type="password" id="vaiPin2" autocomplete="new-password" spellcheck="false">')
           + `<div class="vai-row" style="margin-bottom:14px"><button type="button" class="vai-btn vai-main" data-a="pinset">${lockOn ? 'Change PIN' : 'Set PIN'}</button>${lockOn ? `<button type="button" class="vai-btn" data-a="pinoff">${delArm === 'pin' ? 'Click again to remove' : 'Remove PIN'}</button>` : ''}</div>`)
         + acc('vector', 'Chỉ mục tìm kiếm ngữ nghĩa',
-          `<div class="vai-f"><div id="vaiVec" role="status">Đang đọc chỉ mục…</div><div class="vai-row" style="margin-top:8px"><button type="button" class="vai-btn" data-a="vecclear">${delArm === 'vec' ? 'Bấm lần nữa để xóa' : 'Xóa chỉ mục ngữ nghĩa'}</button></div>`
+          `<div class="vai-f"><div class="vai-hint" style="margin-bottom:8px"><b>${semOn ? 'ĐANG BẬT' : 'ĐANG TẮT'}</b> — ${semOn ? 'nội dung note (trừ #noai) và câu hỏi tìm kiếm được gửi tới Google Gemini để tìm theo nghĩa.' : 'không có gì được gửi tới Google. Tìm toàn vault chỉ dùng từ khóa, hoàn toàn trên máy này.'}</div>`
+          + (semOn ? '<div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn vai-main" data-a="semoff">Tắt tìm kiếm ngữ nghĩa</button></div>'
+            : semAsk ? '<div class="vai-hint" style="margin-bottom:8px">Nếu bật: nội dung <b>mọi note không gắn #noai</b> (tiêu đề, tag, từng đoạn văn) và <b>mỗi câu hỏi bạn gõ</b> sẽ được gửi tới Google Gemini, kể cả khi bạn chat bằng AI khác. Google có thể giữ hoặc dùng dữ liệu này (Free Tier). Bạn có thể tắt lại bất cứ lúc nào.</div><div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn vai-main" data-a="semon">Tôi hiểu, bật</button><button type="button" class="vai-btn" data-a="semcancel">Giữ tắt</button></div>'
+            : '<div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn" data-a="semask">Bật tìm kiếm ngữ nghĩa…</button></div>')
+          + `<div id="vaiVec" role="status">Đang đọc chỉ mục…</div><div class="vai-row" style="margin-top:8px"><button type="button" class="vai-btn" data-a="vecclear">${delArm === 'vec' ? 'Bấm lần nữa để xóa' : 'Xóa chỉ mục ngữ nghĩa'}</button></div>`
           + '<div class="vai-hint">Gemini AI Studio Free Tier miễn phí nhưng Google có thể dùng dữ liệu gửi đi để cải thiện sản phẩm; note gắn #noai không bao giờ được gửi.</div></div>');
       main.scrollTop = top; updateUse(); updateVec();
       const ki = q('[data-keymode="entry"]'); if (ki && pendingKey[p.id]) ki.value = pendingKey[p.id];
@@ -1008,6 +1019,14 @@
         if (delArm !== 'pin') { delArm = 'pin'; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
         delArm = ''; try { await kvDel('lock'); lockOn = false; renderForm(); msg('PIN removed.', 'vai-ok'); } catch (err) { msg('Couldn\'t remove the PIN.', 'vai-bad'); }
       }
+      else if (a === 'semask') { semAsk = true; renderForm(); }
+      else if (a === 'semcancel') { semAsk = false; renderForm(); }
+      else if (a === 'semon') {
+        try { await setSemanticEnabled(true); semOn = true; semAsk = false; renderForm(); msg('Đã bật tìm kiếm ngữ nghĩa.', 'vai-ok'); } catch (err) { semAsk = false; renderForm(); msg('Không lưu được lựa chọn, vẫn đang TẮT.', 'vai-bad'); }
+      }
+      else if (a === 'semoff') {
+        try { await setSemanticEnabled(false); semOn = false; semAsk = false; renderForm(); msg('Đã tắt. Không còn gửi gì tới Google.', 'vai-ok'); } catch (err) { semOn = false; renderForm(); msg('Không lưu được, nhưng tìm kiếm ngữ nghĩa đã bị chặn trong phiên này.', 'vai-bad'); }
+      }
       else if (a === 'vecclear') {
         if (delArm !== 'vec') { delArm = 'vec'; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
         delArm = '';
@@ -1029,9 +1048,9 @@
 
     const api = { close, focus: () => { try { dlg.focus(); } catch (e) { /* ignore */ } }, dialog: dlg };
     settingsApi = api;
-    Promise.all([loadCfg(), usageRaw(), lockInfo()]).then(([c, u, lk]) => {
+    Promise.all([loadCfg(), usageRaw(), lockInfo(), semanticEnabled()]).then(([c, u, lk, sem]) => {
       if (closed) return;
-      lockOn = !!lk;
+      lockOn = !!lk; semOn = !!sem;
       draft = clone(c); sel = draft.activeProfileId; useMap = u.profiles;
       renderSide(); renderForm(); renderFoot();
       const k = q('[data-f="apiKey"]'), m = q('[data-f="model"]'), cp = cur();
@@ -1483,5 +1502,5 @@
     return api;
   }
 
-  window.VenusAI = { version: 3, hasEmbeddingKey, embedTexts, embedInfo: Object.freeze({ model: EMB.model, dim: EMB.dim, version: EMB.version, batchItems: EMB.batchItems, batchChars: EMB.batchChars, textChars: EMB.textChars }), vecGetMeta, vecSetMeta, vecKeys, vecGetNote, vecGetAllNotes, vecPutNote, vecDelNote, vecClear, vecEpoch: () => vecEp, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, getProfiles, setActiveProfile: (id) => saveSettings({ activeProfileId: id }), resolveChatUrl, resolveModelsUrl, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
+  window.VenusAI = { version: 4, hasEmbeddingKey, semanticEnabled, setSemanticEnabled, embedTexts, embedInfo: Object.freeze({ model: EMB.model, dim: EMB.dim, version: EMB.version, batchItems: EMB.batchItems, batchChars: EMB.batchChars, textChars: EMB.textChars }), vecGetMeta, vecSetMeta, vecKeys, vecGetNote, vecGetAllNotes, vecPutNote, vecDelNote, vecClear, vecEpoch: () => vecEp, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, getProfiles, setActiveProfile: (id) => saveSettings({ activeProfileId: id }), resolveChatUrl, resolveModelsUrl, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
 })();
