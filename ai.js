@@ -19,8 +19,8 @@
     openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1/chat/completions', needsKey: true },
     groq:       { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1/chat/completions', needsKey: true },
     gemini:     { label: 'Google Gemini (AI Studio)', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', needsKey: true },
-    ollama:     { label: 'Ollama (chạy trên máy này)', baseUrl: 'http://localhost:11434/v1/chat/completions', needsKey: false },
-    custom:     { label: 'Khác (OpenAI-compatible)', baseUrl: '', needsKey: false }
+    ollama:     { label: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1/chat/completions', needsKey: false },
+    custom:     { label: 'Other (OpenAI-compatible)', baseUrl: '', needsKey: false }
   };
   const EFFORTS = ['default', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   const FORMATS = ['openrouter', 'openai'];
@@ -121,7 +121,7 @@
   async function kvSet(k, v) { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
 
   const utcDay = () => new Date().toISOString().slice(0, 10);
-  const resetTime = () => { const n = new Date(); const t = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1)); return t.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }); };
+  const resetTime = () => { const n = new Date(); const t = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1)); return t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); };
   const freshUse = () => ({ day: utcDay(), profiles: {} });
   /* today's usage in v2 shape; the old shape {day,n,by} (only today's) is read as profile #1 */
   function normUse(u) {
@@ -557,6 +557,46 @@
       `.vai-prof{appearance:none;-webkit-appearance:none;height:28px;box-sizing:border-box;max-width:min(210px,40vw);padding:0 24px 0 10px;font:inherit;font-size:.78rem;font-weight:600;text-overflow:ellipsis;border:1px solid var(--border-color,#f0d7de);border-radius:99px;background-color:var(--bg-white,#fffbfc);background-repeat:no-repeat;background-position:right 8px center;background-size:11px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6' fill='none' stroke='%239a7686' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");color:inherit;cursor:pointer}`,
       '.vai-prof[hidden]{display:none}.vai-prof:hover{border-color:var(--primary,#d17b96)}.vai-prof:focus-visible{outline:2px solid var(--primary,#d17b96);outline-offset:2px}.vai-prof:disabled{opacity:.5;cursor:not-allowed}',
       '.vai-prof option{background:var(--bg-white,#fffbfc);color:var(--text-dark,#4a3240)}',
+      /* ── Settings polish: softer surfaces, card-style sections, clearer focus, tidy footer ── */
+      'dialog.vai-set{border:1px solid var(--border-color,#f0d7de);border-radius:20px;background:var(--bg-white,#fffbfc);box-shadow:0 30px 80px rgba(40,20,32,.36)}',
+      '.vai-set .vai-head{padding:15px 20px;gap:6px;border-bottom:1px solid var(--border-color,#f0d7de);background:linear-gradient(180deg,rgba(var(--primary-rgb,209,123,150),.12),transparent)}',
+      '.vai-set .vai-title{font-size:1.05rem;font-weight:800;letter-spacing:-.01em}',
+      '.vai-set .vai-side{gap:10px;padding:14px;background:color-mix(in srgb,var(--primary,#d17b96) 4%,var(--bg-light,#faf3f6))}',
+      '.vai-set .vai-sh{padding:0 2px;font-size:.7rem;letter-spacing:.09em}',
+      '.vai-set .vai-pc{position:relative;padding:11px 13px 11px 15px;border-radius:14px;box-shadow:0 1px 2px rgba(40,20,32,.05);transition:border-color .14s,box-shadow .14s,transform .14s,background-color .14s}',
+      '.vai-set .vai-pc:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(40,20,32,.09)}',
+      '.vai-set .vai-pc.vai-sel{background:color-mix(in srgb,var(--primary,#d17b96) 8%,var(--bg-white,#fffbfc));box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.18)}',
+      '.vai-set .vai-pc.vai-sel::before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:var(--primary,#d17b96)}',
+      '.vai-set .vai-pc-t{font-size:.92rem}',
+      '.vai-set .vai-pc-s{margin-top:3px}',
+      '.vai-set .vai-tag{padding:1px 8px;font-weight:700;font-size:.66rem;letter-spacing:.02em}',
+      '.vai-set .vai-side>.vai-btn{border-style:dashed;background:transparent;color:var(--text-muted,#9a7686);min-height:36px}',
+      '.vai-set .vai-side>.vai-btn:hover:not(:disabled){color:var(--text-dark,#4a3240)}',
+      '.vai-set .vai-fbbox{margin-top:2px;background:var(--bg-white,#fffbfc)}',
+      '.vai-set .vai-main{padding:18px 22px 10px}',
+      '.vai-set .vai-ptools{gap:8px;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--border-color,#f0d7de)}',
+      '.vai-set .vai-btn{min-height:34px;padding:5px 14px;border-radius:10px;font-weight:600;font-size:.85rem}',
+      '.vai-set .vai-btn:focus-visible,.vai-set .vai-pc:focus-visible{outline:2px solid var(--primary,#d17b96);outline-offset:2px}',
+      '.vai-set .vai-acc{margin:0 0 12px;border-radius:16px;background:var(--bg-white,#fffbfc);box-shadow:0 1px 2px rgba(40,20,32,.04)}',
+      '.vai-set .vai-acc>summary{padding:12px 16px;font-size:.92rem;font-weight:700;border-radius:16px}',
+      '.vai-set .vai-acc[open]>summary{border-bottom:1px solid var(--border-color,#f0d7de);border-radius:16px 16px 0 0;background:color-mix(in srgb,var(--primary,#d17b96) 5%,transparent)}',
+      '.vai-set .vai-accb{padding:16px 16px 6px}',
+      '.vai-set .vai-f{margin:0 0 14px}',
+      '.vai-set .vai-f label.vai-l{margin-bottom:5px;font-size:.74rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}',
+      '.vai-set .vai-f input[type=text],.vai-set .vai-f input[type=password],.vai-set .vai-f input[type=number],.vai-set .vai-f textarea{min-height:38px;padding:8px 12px;border-radius:10px;background:var(--bg-light,#faf3f6);transition:border-color .14s,box-shadow .14s,background-color .14s}',
+      '.vai-set .vai-f textarea{line-height:1.5;resize:vertical}',
+      '.vai-set .vai-f input:hover:not(:disabled),.vai-set .vai-f textarea:hover:not(:disabled){border-color:color-mix(in srgb,var(--primary,#d17b96) 55%,var(--border-color,#f0d7de))}',
+      '.vai-set .vai-f input:focus,.vai-set .vai-f textarea:focus{outline:0;border-color:var(--primary,#d17b96);background:var(--bg-white,#fffbfc);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),.2)}',
+      '.vai-set .vai-f select{width:100%;height:38px;background-color:var(--bg-light,#faf3f6);font-weight:500}',
+      '.vai-set .vai-row{gap:8px}',
+      '.vai-set .vai-row .vai-btn{flex:none;height:38px}',
+      '.vai-set .vai-hint{margin-top:5px;font-size:.78rem;line-height:1.5}',
+      '.vai-set .vai-hint code{font-size:.9em}',
+      '.vai-set .vai-sfoot{gap:10px;padding:12px 20px;background:var(--bg-light,#faf3f6)}',
+      '.vai-set .vai-sfoot .vai-btn{min-height:38px;padding:6px 18px}',
+      '.vai-set .vai-sfoot .vai-btn.vai-main{padding:6px 24px;font-weight:700;box-shadow:0 2px 8px rgba(var(--primary-rgb,209,123,150),.35)}',
+      '.vai-set .vai-sfoot .vai-hint{margin:0 0 0 auto;text-align:right;font-size:.82rem;font-weight:600}',
+      '@media (max-width:700px){.vai-set .vai-main{padding:14px 14px 8px}.vai-set .vai-sfoot{padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}.vai-set .vai-sfoot .vai-hint{flex:1 1 100%;text-align:left;margin:0}}',
       '@media (max-width:700px){dialog.vai-set{width:100vw;height:100vh;height:100dvh;max-height:none;border-radius:0}.vai-sbody{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.vai-side{flex-direction:row;align-items:flex-start;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--border-color,#f0d7de)}.vai-side>*{flex:0 0 auto}.vai-pc{width:210px}.vai-sh,.vai-side>.vai-hint{display:none}.vai-side>.vai-fbbox{width:240px;margin-top:0}.vai-main{padding:12px 14px}.vai-sfoot{padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}}',
       '@media (prefers-reduced-motion:reduce){.vai-ib,.vai-btn,.vai-chip,.vai-send,.vai-comp,.vai-opt,.vai-opt select,.vai-opt input,.vai-chk input,.vai-det summary::before{transition:none}}'
     ].join('');
@@ -564,15 +604,15 @@
   }
 
   /* ───────── settings window: a <dialog> (top layer, so it shows ABOVE the Memory modal), two columns ─────────
-     left: profiles (active ★, fallback order) · right: the selected profile. Edits go to a draft; Lưu commits, Hủy discards. */
-  const EFFORT_LABELS = { default: 'Mặc định của model (không gửi gì)', off: 'Tắt suy luận', minimal: 'minimal — rất nhẹ', low: 'low — nhẹ', medium: 'medium — vừa', high: 'high — cao', xhigh: 'xhigh — rất cao', max: 'max — tối đa' };
+     left: profiles (active ★, fallback order) · right: the selected profile. Edits go to a draft; Save commits, Cancel discards. */
+  const EFFORT_LABELS = { default: 'Model default (send nothing)', off: 'Off', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' };
   const FORMAT_LABELS = { openrouter: 'OpenRouter (reasoning + data_collection)', openai: 'OpenAI-compatible (reasoning_effort)' };
   let settingsApi = null;
   function openSettings(o) {
     o = o || {}; injectCss();
     if (settingsApi) { settingsApi.focus(); return settingsApi; }
-    const dlg = document.createElement('dialog'); dlg.className = 'vai-set'; dlg.setAttribute('aria-label', 'Cài đặt AI');
-    dlg.innerHTML = '<div class="vai-head"><span class="vai-title">⚙ Cài đặt AI</span><span class="vai-grow"></span><button type="button" class="vai-ib" data-a="close" title="Đóng (Esc)" aria-label="Đóng">✕</button></div>'
+    const dlg = document.createElement('dialog'); dlg.className = 'vai-set'; dlg.setAttribute('aria-label', 'AI Settings');
+    dlg.innerHTML = '<div class="vai-head"><span class="vai-title">⚙ AI Settings</span><span class="vai-grow"></span><button type="button" class="vai-ib" data-a="close" title="Close (Esc)" aria-label="Close">✕</button></div>'
       + '<div class="vai-sbody"><aside class="vai-side"></aside><div class="vai-main"></div></div><div class="vai-sfoot"></div>';
     document.body.appendChild(dlg);
     const prevFocus = document.activeElement;
@@ -598,7 +638,7 @@
     const msg = (t, cls) => { msgState = { t: t || '', cls: cls || '' }; const m = q('#vaiMsg'); if (m) { m.className = 'vai-hint ' + (cls || ''); m.textContent = t || ''; } };
     function renderFoot() {
       const dis = busy ? ' disabled' : '';
-      q('.vai-sfoot').innerHTML = `<button type="button" class="vai-btn vai-main" data-a="save"${dis}>Lưu</button><button type="button" class="vai-btn" data-a="test"${dis} title="Lưu rồi thử đúng profile đang chọn (không dùng dự phòng)">Lưu &amp; thử</button><button type="button" class="vai-btn" data-a="cancel"${dis}>Hủy</button><span id="vaiMsg" class="vai-hint"></span>`;
+      q('.vai-sfoot').innerHTML = `<button type="button" class="vai-btn vai-main" data-a="save"${dis}>Save</button><button type="button" class="vai-btn" data-a="test"${dis} title="Save, then test the selected profile only (no fallback)">Save &amp; test</button><button type="button" class="vai-btn" data-a="cancel"${dis}>Cancel</button><span id="vaiMsg" class="vai-hint"></span>`;
       msg(msgState.t, msgState.cls);
     }
     function renderSide() {
@@ -606,11 +646,11 @@
       const cards = draft.profiles.map((p) => {
         const act = p.id === draft.activeProfileId, k = fi(p.id), n = (useMap[p.id] && useMap[p.id].n) || 0, lim = +p.dailyLimit || 0, prov = detectProvider(p.baseUrl);
         const ready = p.model && p.baseUrl && (!needsKey(p) || p.apiKey);
-        return `<div class="vai-pc${p.id === sel ? ' vai-sel' : ''}" data-pid="${esc(p.id)}" role="button" tabindex="0"><div class="vai-pc-t"><b>${esc(p.name || 'Profile')}</b>${act ? '<span class="vai-tag vai-tag-a">★ Đang dùng</span>' : ''}${k >= 0 ? '<span class="vai-tag">Dự phòng ' + (k + 1) + '</span>' : ''}</div><div class="vai-pc-s">${esc(hostOf(p.baseUrl))} · ${p.model ? esc(p.model) : '<i>chưa có model</i>'}</div><div class="vai-pc-u">${prov === 'ollama' ? 'chạy trên máy này' : 'Hôm nay: ' + n + (lim ? '/' + lim : '') + ' lượt'}${ready ? '' : ' · <span class="vai-bad">thiếu ' + (!p.model ? 'model' : !p.baseUrl ? 'địa chỉ' : 'key') + '</span>'}</div></div>`;
+        return `<div class="vai-pc${p.id === sel ? ' vai-sel' : ''}" data-pid="${esc(p.id)}" role="button" tabindex="0"><div class="vai-pc-t"><b>${esc(p.name || 'Profile')}</b>${act ? '<span class="vai-tag vai-tag-a">★ Active</span>' : ''}${k >= 0 ? '<span class="vai-tag">Fallback ' + (k + 1) + '</span>' : ''}</div><div class="vai-pc-s">${esc(hostOf(p.baseUrl))} · ${p.model ? esc(p.model) : '<i>no model</i>'}</div><div class="vai-pc-u">${prov === 'ollama' ? 'runs locally' : 'Today: ' + n + (lim ? '/' + lim : '') + ' requests'}${ready ? '' : ' · <span class="vai-bad">missing ' + (!p.model ? 'model' : !p.baseUrl ? 'URL' : 'key') + '</span>'}</div></div>`;
       }).join('');
-      const order = draft.fallbackProfileIds.map((id, i) => { const p = profById(draft, id); return p ? `<li><span>${i + 1}. ${esc(p.name)}</span><span class="vai-ord"><button type="button" class="vai-ib" data-a="fbup" data-pid="${esc(id)}" title="Lên"${i === 0 ? ' disabled' : ''}>↑</button><button type="button" class="vai-ib" data-a="fbdn" data-pid="${esc(id)}" title="Xuống"${i === draft.fallbackProfileIds.length - 1 ? ' disabled' : ''}>↓</button><button type="button" class="vai-ib" data-a="fbrm" data-pid="${esc(id)}" title="Bỏ khỏi dự phòng">✕</button></span></li>` : ''; }).join('');
-      q('.vai-side').innerHTML = `<div class="vai-sh">Profile</div>${cards}<button type="button" class="vai-btn" data-a="add"${draft.profiles.length >= PROFILE_MAX ? ' disabled' : ''}>＋ Thêm profile</button>`
-        + (order ? `<details class="vai-det vai-fbbox"${fbOpen ? ' open' : ''}><summary>Thứ tự dự phòng</summary><ol class="vai-fbl">${order}</ol><div class="vai-hint" style="padding:0 12px 10px">Khi profile đang dùng hết lượt, sai key, mất mạng hoặc lỗi, app thử lần lượt các profile này.</div></details>` : '<div class="vai-hint">Tick “Dùng làm dự phòng” ở profile khác để app tự chuyển khi profile đang dùng hết lượt hoặc lỗi.</div>');
+      const order = draft.fallbackProfileIds.map((id, i) => { const p = profById(draft, id); return p ? `<li><span>${i + 1}. ${esc(p.name)}</span><span class="vai-ord"><button type="button" class="vai-ib" data-a="fbup" data-pid="${esc(id)}" title="Move up"${i === 0 ? ' disabled' : ''}>↑</button><button type="button" class="vai-ib" data-a="fbdn" data-pid="${esc(id)}" title="Move down"${i === draft.fallbackProfileIds.length - 1 ? ' disabled' : ''}>↓</button><button type="button" class="vai-ib" data-a="fbrm" data-pid="${esc(id)}" title="Remove from fallbacks">✕</button></span></li>` : ''; }).join('');
+      q('.vai-side').innerHTML = `<div class="vai-sh">Profile</div>${cards}<button type="button" class="vai-btn" data-a="add"${draft.profiles.length >= PROFILE_MAX ? ' disabled' : ''}>＋ Add profile</button>`
+        + (order ? `<details class="vai-det vai-fbbox"${fbOpen ? ' open' : ''}><summary>Fallback order</summary><ol class="vai-fbl">${order}</ol><div class="vai-hint" style="padding:0 12px 10px">If the active profile runs out of quota, has a bad key, goes offline or errors, the app tries these in order.</div></details>` : '<div class="vai-hint">Tick “Use as fallback” on another profile to switch automatically when the active one runs out or fails.</div>');
     }
     function renderForm() {
       const p = cur(), prov = detectProvider(p.baseUrl), orf = p.requestFormat === 'openrouter';
@@ -622,34 +662,34 @@
       const opt = (v, l, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(l)}</option>`;
       const main = q('.vai-main'), top = main.scrollTop;
       main.innerHTML = (o.note ? `<div class="vai-hint vai-warn" style="margin-bottom:10px">${esc(o.note)}</div>` : '')
-        + `<div class="vai-ptools">${act ? '<span class="vai-tag vai-tag-a">★ Profile đang dùng</span>' : '<button type="button" class="vai-btn" data-a="activate">★ Dùng profile này</button><label class="vai-chk"><input type="checkbox" data-fbtog' + (isFb ? ' checked' : '') + '><span>Dùng làm dự phòng</span></label>'}<span class="vai-grow"></span><button type="button" class="vai-btn" data-a="dup"${draft.profiles.length >= PROFILE_MAX ? ' disabled' : ''}>Nhân bản</button><button type="button" class="vai-btn" data-a="del"${draft.profiles.length < 2 ? ' disabled' : ''}>${delArm === p.id ? 'Bấm lần nữa để xóa' : 'Xóa'}</button></div>`
-        + acc('conn', 'Kết nối',
-          fld('Tên profile', inp('name', 'text', p.name))
-          + fld('Nhà cung cấp (chọn để điền sẵn địa chỉ)', `<select data-f="provider">${Object.keys(PROVIDERS).map((k) => opt(k, PROVIDERS[k].label, k === prov)).join('')}</select>`)
-          + fld('Định dạng request', `<select data-f="requestFormat">${FORMATS.map((k) => opt(k, FORMAT_LABELS[k], k === p.requestFormat)).join('')}</select>`, 'OpenRouter: gửi thêm <code>provider.data_collection</code> và <code>reasoning.effort</code>. OpenAI-compatible: gửi <code>reasoning_effort</code>.')
-          + fld('Địa chỉ API (chat completions)', inp('baseUrl', 'text', p.baseUrl, ' placeholder="https://…/v1/chat/completions"'), 'Sẽ gửi tới: <code id="vaiResolved">' + esc(resolveChatUrl(p.baseUrl) || '—') + '</code> (nếu chỉ nhập tới <code>/v1</code>, app tự thêm <code>/chat/completions</code>)')
-          + fld('API key', `<div class="vai-row"><input type="password" data-f="apiKey" value="${esc(p.apiKey)}" autocomplete="off" spellcheck="false" placeholder="dán key vào đây (Ollama thì để trống)"><button type="button" class="vai-btn" data-a="eye">Hiện</button><button type="button" class="vai-btn" data-a="forget">Xóa key</button></div>`, 'Key lưu riêng trong trình duyệt của máy này, <b>không</b> nằm trong file backup và không được đồng bộ. Ai dùng máy này vẫn có thể thấy nó.')
-          + fld('Model (gõ hoặc dán tên bất kỳ)', `<div class="vai-row"><input type="text" data-f="model" list="vaiModels" value="${esc(p.model)}" autocomplete="off" spellcheck="false" placeholder="vd: tên-model:free"><button type="button" class="vai-btn" data-a="models">Tải danh sách</button></div><datalist id="vaiModels">${mm.list.map((m) => `<option value="${esc(m.id)}">${esc((m.ctx ? Math.round(m.ctx / 1000) + 'k ngữ cảnh' : '') + (m.reasoning ? ' · có suy luận' : ''))}</option>`).join('')}</datalist>${orf ? `<label class="vai-chk" style="margin-top:6px"><input type="checkbox" data-free${freeOnly ? ' checked' : ''}> Chỉ hiện model miễn phí, mới nhất lên đầu</label>` : ''}<div class="vai-hint" id="vaiModelsMsg">${esc(mm.msg)}</div>`)
+        + `<div class="vai-ptools">${act ? '<span class="vai-tag vai-tag-a">★ Active profile</span>' : '<button type="button" class="vai-btn" data-a="activate">★ Make active</button><label class="vai-chk"><input type="checkbox" data-fbtog' + (isFb ? ' checked' : '') + '><span>Use as fallback</span></label>'}<span class="vai-grow"></span><button type="button" class="vai-btn" data-a="dup"${draft.profiles.length >= PROFILE_MAX ? ' disabled' : ''}>Duplicate</button><button type="button" class="vai-btn" data-a="del"${draft.profiles.length < 2 ? ' disabled' : ''}>${delArm === p.id ? 'Click again to delete' : 'Delete'}</button></div>`
+        + acc('conn', 'Connection',
+          fld('Profile name', inp('name', 'text', p.name))
+          + fld('Provider', `<select data-f="provider">${Object.keys(PROVIDERS).map((k) => opt(k, PROVIDERS[k].label, k === prov)).join('')}</select>`)
+          + fld('Request format', `<select data-f="requestFormat">${FORMATS.map((k) => opt(k, FORMAT_LABELS[k], k === p.requestFormat)).join('')}</select>`, 'OpenRouter adds <code>provider.data_collection</code> and <code>reasoning.effort</code>. OpenAI-compatible sends <code>reasoning_effort</code>.')
+          + fld('API endpoint (chat completions)', inp('baseUrl', 'text', p.baseUrl, ' placeholder="https://…/v1/chat/completions"'), 'Resolves to <code id="vaiResolved">' + esc(resolveChatUrl(p.baseUrl) || '—') + '</code>')
+          + fld('API key', `<div class="vai-row"><input type="password" data-f="apiKey" value="${esc(p.apiKey)}" autocomplete="off" spellcheck="false" placeholder="Paste key (leave empty for Ollama)"><button type="button" class="vai-btn" data-a="eye">Show</button><button type="button" class="vai-btn" data-a="forget">Clear key</button></div>`)
+          + fld('Model', `<div class="vai-row"><input type="text" data-f="model" list="vaiModels" value="${esc(p.model)}" autocomplete="off" spellcheck="false" placeholder="e.g. model-name:free"><button type="button" class="vai-btn" data-a="models">Load list</button></div><datalist id="vaiModels">${mm.list.map((m) => `<option value="${esc(m.id)}">${esc((m.ctx ? Math.round(m.ctx / 1000) + 'k context' : '') + (m.reasoning ? ' · reasoning' : ''))}</option>`).join('')}</datalist>${orf ? `<label class="vai-chk" style="margin-top:6px"><input type="checkbox" data-free${freeOnly ? ' checked' : ''}> Free models only, newest first</label>` : ''}<div class="vai-hint" id="vaiModelsMsg">${esc(mm.msg)}</div>`)
         )
-        + acc('models', 'Model dự phòng (cùng profile)',
-          fld(`Mỗi dòng một tên, tối đa ${FB_MAX}`, `<textarea data-f="fallbackModels" rows="3" spellcheck="false" placeholder="để trống = không dùng dự phòng">${esc(p.fallbackModels)}</textarea>`, 'Khi model chính bị gỡ, hết free, quá tải hoặc trả rỗng, app thử lần lượt các model này của <b>cùng profile</b>. Mỗi lần thử tính là một lượt gọi. Không chuyển model khi hết lượt trong ngày hoặc trong phút (giới hạn free tính chung theo tài khoản) — trường hợp đó dùng profile dự phòng ở cột trái.'))
-        + acc('think', 'Suy luận (thinking) & tham số',
-          fld('Mức suy luận', `<select data-f="thinkingEffort">${EFFORTS.map((k) => opt(k, EFFORT_LABELS[k], k === p.thinkingEffort)).join('')}</select>`, 'Mặc định: không gửi tham số suy luận. Mức khác: gửi theo định dạng request ở trên. Một số nhà/model không hỗ trợ mọi mức (xhigh, max) — dùng “Lưu &amp; thử” để kiểm tra.')
+        + acc('models', 'Fallback models (same profile)',
+          fld(`One per line, max ${FB_MAX}`, `<textarea data-f="fallbackModels" rows="3" spellcheck="false" placeholder="Leave empty to disable">${esc(p.fallbackModels)}</textarea>`, 'If the primary model is removed, loses its free tier, is overloaded or returns an empty reply, the app tries these on the <b>same profile</b>. Each attempt counts as a request. Daily or per-minute rate limits do not trigger a model switch (free limits are per account) — use a fallback profile for that.'))
+        + acc('think', 'Reasoning & parameters',
+          fld('Reasoning effort', `<select data-f="thinkingEffort">${EFFORTS.map((k) => opt(k, EFFORT_LABELS[k], k === p.thinkingEffort)).join('')}</select>`, 'Default sends no reasoning parameter. Other levels are sent in the request format above. Some providers/models reject xhigh or max — use “Save &amp; test” to check.')
           + fld('Temperature (0–2)', inp('temperature', 'number', p.temperature, ' min="0" max="2" step="0.1"' + (think ? ' disabled' : '')))
-          + fld('Max tokens (0 = không gửi, dùng mặc định của model)', inp('maxTokens', 'number', p.maxTokens, ' min="0" step="100"' + (think ? ' disabled' : '')), think ? 'Đang bật suy luận nên app <b>không gửi</b> temperature và max_tokens (model suy luận thường từ chối hoặc bỏ qua).' : 'Chỉ gửi khi mức suy luận là “Mặc định” hoặc “Tắt”.'))
-        + acc('limits', 'Giới hạn & riêng tư',
-          fld('Giới hạn lượt free mỗi ngày (để app báo gần hết)', `<div class="vai-row">${inp('dailyLimit', 'number', p.dailyLimit, ' min="0" step="1"')}<button type="button" class="vai-btn" data-a="resetuse">Đặt lại bộ đếm</button></div><div class="vai-hint" id="vaiUse"></div><div class="vai-hint">OpenRouter: 50 lượt/ngày nếu chưa nạp credit, 1000 nếu đã nạp từ 10 credits. 0 = không hiện giới hạn. Bộ đếm riêng cho từng profile, chỉ thấy các lượt gửi từ app này; khi nhà cung cấp báo hết lượt ngày, bộ đếm tự chỉnh lại.</div>`)
-          + `<div class="vai-f"><label class="vai-chk"><input type="checkbox" data-f="denyTraining"${p.denyTraining ? ' checked' : ''}${orf ? '' : ' disabled'}><span>Không dùng nhà cung cấp có thể lấy prompt để huấn luyện<div class="vai-hint">${orf ? 'Khuyên bật vì ghi chú của bạn là dữ liệu riêng. Nếu model free nào đó báo lỗi “data policy”, bỏ tick hoặc đổi model.' : 'Chỉ áp dụng khi định dạng request là OpenRouter.'}</div></span></label></div>`
-          + fld('Trả lời bằng', inp('replyLang', 'text', p.replyLang, ' placeholder="tiếng Việt / English / để trống = theo ngôn ngữ câu hỏi"'))
-          + fld('Giới hạn ký tự gửi đi mỗi lần', inp('maxChars', 'number', p.maxChars, ' min="2000" step="1000"'), 'Model free thường có “bộ nhớ” nhỏ. Quá dài sẽ bị cắt bớt (khung AI sẽ báo).'))
-        + acc('prompt', 'Hướng dẫn riêng cho AI (profile này)',
-          fld('Để trống = dùng hướng dẫn mặc định', `<textarea data-f="customPrompt" rows="5" placeholder="${esc(DEFAULT_INSTRUCTIONS)}">${esc(p.customPrompt)}</textarea>`));
+          + fld('Max tokens (0 = don\'t send, use model default)', inp('maxTokens', 'number', p.maxTokens, ' min="0" step="100"' + (think ? ' disabled' : '')), think ? 'Reasoning is on, so <b>temperature</b> and <b>max_tokens</b> are not sent (reasoning models usually reject or ignore them).' : 'Only sent when reasoning effort is “Model default” or “Off”.'))
+        + acc('limits', 'Limits & privacy',
+          fld('Daily request limit', `<div class="vai-row">${inp('dailyLimit', 'number', p.dailyLimit, ' min="0" step="1"')}<button type="button" class="vai-btn" data-a="resetuse">Reset counter</button></div><div class="vai-hint" id="vaiUse"></div><div class="vai-hint">OpenRouter: 50 requests/day without credits, 1000 with $10+ topped up. 0 = hide the limit. Counted per profile, only for requests sent from this app; auto-corrects when the provider reports the daily limit is reached.</div>`)
+          + `<div class="vai-f"><label class="vai-chk"><input type="checkbox" data-f="denyTraining"${p.denyTraining ? ' checked' : ''}${orf ? '' : ' disabled'}><span>Block providers that may train on prompts<div class="vai-hint">${orf ? 'Recommended. If a free model fails with a “data policy” error, untick this or switch models.' : 'Only applies when the request format is OpenRouter.'}</div></span></label></div>`
+          + fld('Reply language', inp('replyLang', 'text', p.replyLang, ' placeholder="e.g. Vietnamese / English / empty = match the question"'))
+          + fld('Max characters per request', inp('maxChars', 'number', p.maxChars, ' min="2000" step="1000"'), 'Free models often have small context windows. Longer input is truncated (the AI panel will tell you).'))
+        + acc('prompt', 'Custom instructions (this profile)',
+          fld('Empty = use the default instructions', `<textarea data-f="customPrompt" rows="5" placeholder="${esc(DEFAULT_INSTRUCTIONS)}">${esc(p.customPrompt)}</textarea>`));
       main.scrollTop = top; updateUse();
     }
     function updateUse() {
       const el = q('#vaiUse'); if (!el || !draft) return;
       const u = useMap[sel] || { n: 0, by: {} };
-      el.textContent = 'Hôm nay (ngày UTC, đặt lại lúc ' + resetTime() + '): đã đếm ' + (u.n || 0) + ' lượt' + (Object.keys(u.by || {}).length ? ' — ' + Object.keys(u.by).map((m) => m + ' ×' + u.by[m]).join(', ') : '') + '.';
+      el.textContent = 'Today (UTC day, resets at ' + resetTime() + '): ' + (u.n || 0) + ' requests counted' + (Object.keys(u.by || {}).length ? ' — ' + Object.keys(u.by).map((m) => m + ' ×' + u.by[m]).join(', ') : '') + '.';
     }
     async function refreshUse() { useMap = (await usageRaw()).profiles; if (closed || !draft) return; renderSide(); updateUse(); }
     function selectProfile(id) { sel = id; delArm = ''; renderSide(); renderForm(); }
@@ -688,12 +728,12 @@
       if (!draft) return;
       if (!b) { const c = e.target.closest('[data-pid]'); if (c) selectProfile(c.dataset.pid); return; }
       const a = b.dataset.a, p = cur();
-      if (a === 'eye') { const k = q('[data-f="apiKey"]'); k.type = k.type === 'password' ? 'text' : 'password'; b.textContent = k.type === 'password' ? 'Hiện' : 'Ẩn'; }
-      else if (a === 'forget') { p.apiKey = ''; renderForm(); renderSide(); msg('Đã xóa key của profile này — bấm Lưu để áp dụng.', 'vai-ok'); }
+      if (a === 'eye') { const k = q('[data-f="apiKey"]'); k.type = k.type === 'password' ? 'text' : 'password'; b.textContent = k.type === 'password' ? 'Show' : 'Hide'; }
+      else if (a === 'forget') { p.apiKey = ''; renderForm(); renderSide(); msg('Key cleared for this profile — press Save to apply.', 'vai-ok'); }
       else if (a === 'resetuse') { await usageReset(sel); await refreshUse(); }
       else if (a === 'activate') { draft.activeProfileId = sel; setFb(sel, false); renderSide(); renderForm(); }
-      else if (a === 'add') { if (draft.profiles.length >= PROFILE_MAX) return; const id = newId(); draft.profiles.push(normProfile({ id, name: '#' + (draft.profiles.length + 1) + ' Mới' }, id)); selectProfile(id); }
-      else if (a === 'dup') { if (draft.profiles.length >= PROFILE_MAX) return; const id = newId(); draft.profiles.push(Object.assign(clone(p), { id, name: p.name + ' (bản sao)' })); selectProfile(id); }
+      else if (a === 'add') { if (draft.profiles.length >= PROFILE_MAX) return; const id = newId(); draft.profiles.push(normProfile({ id, name: '#' + (draft.profiles.length + 1) + ' New' }, id)); selectProfile(id); }
+      else if (a === 'dup') { if (draft.profiles.length >= PROFILE_MAX) return; const id = newId(); draft.profiles.push(Object.assign(clone(p), { id, name: p.name + ' (copy)' })); selectProfile(id); }
       else if (a === 'del') {
         if (draft.profiles.length < 2) return;
         if (delArm !== sel) { delArm = sel; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
@@ -704,23 +744,23 @@
       else if (a === 'fbup' || a === 'fbdn') { move(b.dataset.pid, a === 'fbup' ? -1 : 1); renderSide(); }
       else if (a === 'fbrm') { setFb(b.dataset.pid, false); renderSide(); renderForm(); }
       else if (a === 'models') {
-        b.disabled = true; const mmEl = q('#vaiModelsMsg'); if (mmEl) mmEl.textContent = 'Đang tải danh sách…';
+        b.disabled = true; const mmEl = q('#vaiModelsMsg'); if (mmEl) mmEl.textContent = 'Loading models…';
         const id = sel; let m = { list: [], msg: '' };
         try {
           const list = await fetchModels(p.baseUrl, p.apiKey, freeOnly && p.requestFormat === 'openrouter');
-          m = { list, msg: list.length ? 'Có ' + list.length + ' model — bấm vào ô Model để chọn (gõ để lọc). Số “k” là độ dài bộ nhớ, càng lớn càng chứa được nhiều note.' : 'Không thấy model nào.' };
-        } catch (err) { m.msg = 'Không tải được danh sách (' + err.message + '). Bạn vẫn có thể gõ tên model bằng tay.'; }
+          m = { list, msg: list.length ? list.length + ' models — click the Model field to pick one (type to filter). “k” is the context length.' : 'No models found.' };
+        } catch (err) { m.msg = 'Couldn\'t load the list (' + err.message + '). You can still type a model name manually.'; }
         modelsBy[id] = m; if (!closed && sel === id) renderForm();
       }
       else if (a === 'save') {
         busy = true; renderFoot(); const ok = await commit(); busy = false; renderFoot();
-        msg(ok ? 'Đã lưu.' : 'Không lưu được lâu dài (trình duyệt chặn lưu trữ) — chỉ nhớ trong lần mở này.', ok ? 'vai-ok' : 'vai-bad');
+        msg(ok ? 'Saved.' : 'Couldn\'t persist (browser blocked storage) — kept for this session only.', ok ? 'vai-ok' : 'vai-bad');
         if (o.onSave) o.onSave();
       }
       else if (a === 'test') {
-        busy = true; renderFoot(); const ok = await commit(); const id = sel; msg('Đang thử…');
+        busy = true; renderFoot(); const ok = await commit(); const id = sel; msg('Testing…');
         let text, cls;
-        try { const t0 = Date.now(); const out = await chat({ messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }], idleMs: 45000, noFallback: true, profileId: id }); text = 'Chạy được ✓ (' + ((Date.now() - t0) / 1000).toFixed(1) + 's) — model trả lời: ' + out.trim().slice(0, 40) + (ok ? '' : ' (chưa lưu được lâu dài)'); cls = 'vai-ok'; }
+        try { const t0 = Date.now(); const out = await chat({ messages: [{ role: 'user', content: 'Reply with exactly one word: OK' }], idleMs: 45000, noFallback: true, profileId: id }); text = 'Works ✓ (' + ((Date.now() - t0) / 1000).toFixed(1) + 's) — model replied: ' + out.trim().slice(0, 40) + (ok ? '' : ' (not persisted)'); cls = 'vai-ok'; }
         catch (err) { text = err.message + (err.detail ? ' — ' + String(err.detail).slice(0, 200) : ''); cls = 'vai-bad'; }
         busy = false; renderFoot(); msg(text, cls); await refreshUse(); if (o.onSave) o.onSave();
       }
@@ -734,7 +774,7 @@
       renderSide(); renderForm(); renderFoot();
       const k = q('[data-f="apiKey"]'), m = q('[data-f="model"]'), cp = cur();
       try { ((needsKey(cp) && !cp.apiKey) ? k : (!cp.model ? m : q('.vai-pc.vai-sel'))).focus(); } catch (e) { /* ignore */ }
-    }).catch((err) => { q('.vai-main').textContent = 'Không đọc được cài đặt: ' + (err && err.message || err); });
+    }).catch((err) => { q('.vai-main').textContent = 'Couldn\'t read settings: ' + (err && err.message || err); });
     return api;
   }
 
