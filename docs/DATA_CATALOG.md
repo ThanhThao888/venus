@@ -20,10 +20,26 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `FinanceTrackerVaultDB` | v4 [đã đọc: `vault.js:56–57`] | Notes, revisions, liên kết tệp, attachments | `vault.js` | **Có**, qua `NotesVault.getBackupParts()` (`vault.js:7009`, nối ở `index.html:81095`) | Không |
 | `VenusMemoryDB` | v1, `SCHEMA 1` [`venus-memory.js:20`] | Stores: `profile`, `decisions`, `outbox`, `syncMeta`, `audit_logs` | `venus-memory.js` | **Một phần:** chỉ `profile` + `decisions` (`exportAll`, `venus-memory.js:335`) | `profile` + `decisions` nếu bật sync |
-| `venus-ai` | v1, store `kv` [`ai.js:30`] | Cấu hình nhà cung cấp AI và **API key** | `ai.js` | **Không bao giờ** | Không |
+| `venus-ai` | v1, store `kv` (phiên bản IndexedDB giữ nguyên; schema nằm trong giá trị, xem 2.2) | Khóa `settings`: **nhiều profile AI, gồm `apiKey` của từng profile**; khóa `usage`: bộ đếm lượt gọi theo profile | `ai.js` | **Không bao giờ** | Không |
 | `VenusAuthDB` | v1, store `kv` [`venus-account.js:21`] | Phiên đăng nhập Supabase (khóa `sb-venus-auth`) | `venus-account.js` | **Không bao giờ** | Là phiên của chính Supabase |
 
-### 2.2 `localStorage` (dữ liệu Tracker, không phải VPIS)
+### 2.2 `venus-ai`: schema v2 (Zone A, chỉ trên thiết bị) [đã đọc code `ai.js`, 2026-11-28]
+
+`settings` (`schemaVersion: 2`):
+
+| Trường | Ý nghĩa |
+| :--- | :--- |
+| `activeProfileId` | Profile đang dùng; mọi `VenusAI.chat` không chỉ định profile đều dùng nó |
+| `fallbackProfileIds[]` | Thứ tự các profile thử tiếp khi profile đang dùng hết lượt, sai key, mất mạng hoặc lỗi (không chứa profile đang dùng, tối đa 9) |
+| `profiles[]` (tối đa 10) | `id`, `name`, `requestFormat` (`openrouter` \| `openai`), `baseUrl` (URL chat completions đầy đủ; nếu chỉ tới `/v1` thì app tự thêm `/chat/completions`), **`apiKey`**, `model`, `fallbackModels` (≤ 3, cùng profile), `thinkingEffort` (`default` \| `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max`), `dailyLimit` (0 = không hiện giới hạn), `denyTraining` (chỉ có tác dụng với format `openrouter`), `temperature`, `maxTokens` (0 = không gửi), `replyLang`, `maxChars`, `customPrompt` (rỗng = hướng dẫn mặc định) |
+
+- `temperature` và `max_tokens` chỉ được gửi khi `thinkingEffort` là `default` hoặc `off`.
+- `usage`: `{ day (UTC), profiles: { <profileId>: { n, by: { <model>: số lượt } } } }`. Sang ngày UTC mới thì làm lại từ đầu; xóa profile thì xóa luôn bộ đếm của nó. Mọi lượt gọi (kể cả model/profile dự phòng) được đếm vào profile đã nhận request.
+- **Migrate tự động** (lần đầu đọc `settings` còn schema cũ, tức không có `schemaVersion: 2`): cấu hình chính → profile `prof_1` (đang dùng); mỗi mục `backups[]` có `model` hoặc `apiKey` → `prof_2`, `prof_3` (kế thừa giới hạn, ngôn ngữ, prompt… của cấu hình chính) và vào `fallbackProfileIds`; `usage` cũ của **ngày UTC hôm nay** → `prof_1`, của ngày cũ thì bỏ. Hướng dẫn riêng khác văn bản mặc định → `customPrompt`; bằng văn bản mặc định → rỗng. Máy mới chưa có gì thì chỉ giữ trong bộ nhớ, chưa ghi IndexedDB cho tới khi bạn bấm Lưu.
+- `VenusAI.getSettings()` vẫn trả các trường phẳng của profile đang dùng (`provider` được suy ra từ `baseUrl`, `instructions` = `customPrompt` hoặc mặc định) kèm `profiles`, `activeProfileId`, `fallbackProfileIds`, nên `vault.js` và `venus-review.js` không cần sửa.
+- Không có trường nào của `venus-ai` đi vào `localStorage`, backup hoặc đồng bộ.
+
+### 2.3 `localStorage` (dữ liệu Tracker, không phải VPIS)
 
 Khoảng 15+ khóa [theo CLAUDE.md §3]: `studyHours`, `dailyStudyData`, `dailyStudyBreakdown`, `goals`, `courses`, `deadlines`, `calEvents`, `sleepSessions`, `wellnessTrackerData_v1`, `englishDaily_v1`, `brainDumpNotes`, `readingList`, `resourceLibrary`, `investmentAnalyses`, `dealDiary`, `focusSessionLogs`, `sessionLogs`, `gamification`…
 
@@ -44,10 +60,8 @@ Mọi truy cập của AI vào dữ liệu app phải đi qua đây. Cấp quy�
 | `search_vault_notes` | L0 | IndexedDB `FinanceTrackerVaultDB` (chỉ đọc) | — |
 | `get_storage_health` | L0 | `localStorage` (kích thước theo khóa), `navigator.storage` | — |
 | `get_memory_context` | L0 | `VenusMemoryDB` (mục `approved`) | — |
-| `get_data_sources_status` | L0 | Chỉ kiểm tên biến/hàm của Tracker có đọc được không (không đọc giá trị) | — |
 | `save_memory_item` | **L2** | — | `VenusMemoryDB` (profile hoặc decision), có `audit_logs` |
 
-- Ba tool đọc Tracker (`get_study_summary`, `get_sleep_wellness_summary`, `get_goals_and_deadlines`) trả thêm `missing_sources[]`. **Rỗng khác với không đọc được:** `0 giờ` kèm `missing_sources: []` nghĩa là chưa log; kèm tên biến nghĩa là app không đọc được nguồn đó (xem `ARCHITECTURE_AUDIT.md` F2, mục 7.2).
 - Giới hạn: `get_study_summary`/`get_sleep_wellness_summary` từ chối khoảng thời gian dài hơn **400 ngày** (`range_too_long`).
 - Registry **không ghi** `localStorage`/IndexedDB/Vault và không có kho riêng (`venus-tools.js:7`). Mọi lần thử L2, kể cả bị từ chối, đều được báo vào audit sink.
 - Chỉ có **một** công cụ ghi (`save_memory_item`), nên AI không thể sửa Goals, Deadlines, Vault hay Profile ngoài luồng này.
@@ -101,11 +115,12 @@ RLS bật trên mọi bảng (`auth.uid() = user_id`). Client **không** `insert
 | :--- | :--- | :--- | :--- |
 | **Supabase** (Zone B) | `payload` của profile/decisions (**văn bản thường**, không mã hóa đầu-cuối); `device_id`, nhãn thiết bị, user-agent | Chỉ khi bật đồng bộ | Công tắc đồng bộ (mặc định tắt) |
 | **Supabase Auth** | Email, phiên đăng nhập | Khi đăng nhập | — |
-| **Nhà cung cấp AI** (OpenRouter/Gemini/Groq/Ollama) | Gói số liệu Review tháng: số liệu đã tính, mục tiêu/deadline (tên, %, ngày còn lại), tối đa 10 mục hồ sơ và 8 quyết định đã duyệt, mỗi mục rút gọn ≤ 160 ký tự; tổng ≤ 8.000 ký tự (`LIM` trong `venus-review.js`) | Chỉ khi bạn bấm "Gửi cho AI" | Bạn **xem nguyên văn gói và nơi nhận** trước khi gửi; có thể bỏ phần bộ nhớ |
+| **Nhà cung cấp AI** (OpenRouter/Gemini/Groq/Ollama, tùy profile) | Gói số liệu Review tháng: số liệu đã tính, mục tiêu/deadline (tên, %, ngày còn lại), tối đa 10 mục hồ sơ và 8 quyết định đã duyệt, mỗi mục rút gọn ≤ 160 ký tự; tổng ≤ 8.000 ký tự (`LIM` trong `venus-review.js`) | Chỉ khi bạn bấm "Gửi cho AI" | Bạn **xem nguyên văn gói và nơi nhận** trước khi gửi; có thể bỏ phần bộ nhớ |
 | **Không đi đâu** | Notes Vault, API key, log ngủ/học thô, token | — | — |
 
 - Nội dung do AI trả về coi là dữ liệu không đáng tin: hiển thị bằng `textContent`; khi render Markdown thì qua DOMPurify chặn `img`, `svg`, `iframe`. Nội dung gửi cho AI được bọc trong `<context>` như dữ liệu, không phải chỉ thị.
 - **Lưu ý riêng tư:** nếu nhà cung cấp AI là dịch vụ ngoài, những gì có trong gói (kể cả đoạn trích hồ sơ) rời máy bạn. Dùng Ollama chạy trên máy nếu cần giữ hoàn toàn cục bộ.
+- **Fallback profile:** khi profile đang dùng lỗi, **cùng một prompt** có thể được gửi tới nhà cung cấp của profile dự phòng tiếp theo. Chỉ đưa vào danh sách dự phòng những nhà bạn chấp nhận gửi dữ liệu tới (xem F11 trong `ARCHITECTURE_AUDIT.md`).
 
 ## 8. Quy tắc khi thêm dữ liệu mới
 
