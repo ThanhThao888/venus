@@ -16880,8 +16880,11 @@
 
 
     /* ═════════════ Ask AI about the WHOLE vault: search first, send only the passages that match the question ═════════════
-       No embeddings and no extra API calls: every note is cut into passages, ranked with BM25 (diacritic-insensitive, so
-       "rui ro" finds "rủi ro"; word pairs count too), and only the best passages that fit the character limit are sent. */
+       Every note is cut into passages and ranked with BM25 (diacritic-insensitive, so "rui ro" finds "rủi ro"; word pairs
+       count too). With a Google Gemini profile that has a key, the same passages are also ranked by meaning (embeddings,
+       cached on this device) and the two rankings are merged, so Vietnamese questions find English notes. Only the best
+       passages that fit the character limit go to the chat AI. Without a key, offline or on any error: BM25 only.
+       noai notes are never sent to either service. */
     const VQ = { sig: '', chunks: [], df: new Map(), avg: 1, notes: 0 };
     const VQ_STOP = new Set('la va cua cho cac nhung mot nhu the nao gi khong co duoc trong de voi toi minh ban hay nay do khi thi ma ve tu den cung da dang se rat nhieu it hon nen neu vi sao tai bao nhieu o day kia no ho chung ta anh chi em and of to is in an for on that what how why about are was be with as by it this these those or from at does did my me you your tell'.split(' '));
     const vqFold = (s) => String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
@@ -16900,6 +16903,7 @@
         flush();
         return out;
     }
+    const vqChunks = (n) => vqSplit(gaClean(n.markdown)).slice(0, 80);      // shared by BM25 and the vector index: same passages, same ids (note.id + ':' + pos)
     function vqBuild() {
         const live = S.notes.filter((n) => !n.deletedAt && !gaIsTemplate(n));
         let h = live.length;
@@ -16909,7 +16913,7 @@
         const chunks = [], df = new Map(); let total = 0;
         live.forEach((n) => {
             const title = gaTitleOf(n), tt = vqTerms(title + ' ' + (n.tags || []).join(' '));
-            vqSplit(gaClean(n.markdown)).slice(0, 80).forEach((p, i) => {
+            vqChunks(n).forEach((p, i) => {
                 const terms = vqTerms(p.head + ' ' + p.text).concat(tt, tt), tf = new Map();
                 terms.forEach((t) => tf.set(t, (tf.get(t) || 0) + 1));
                 tf.forEach((_, t) => df.set(t, (df.get(t) || 0) + 1));
@@ -16931,24 +16935,233 @@
         });
         return { ranked: res.sort((a, b2) => b2.s - a.s), terms: q.filter((t) => t.indexOf('_') < 0) };
     }
-    async function vaultRetrieve(question, st, hist) {
-        vqBuild();
+    /* ── semantic index (vectors live in ai.js's IndexedDB "venus-ai": this device only, never backed up or synced) ── */
+    const VQV = { map: new Map(), gen: '', queue: Promise.resolve() };                  // RAM copy: noteId → { hash, updatedAt, chunks: [{ pos, vec }] }
+    const VQ_SIM_MIN = 0.48, VQ_SIM_STRONG = 0.72, VQ_SIM_TOP = 40, VQ_STRONG_BOOST = 0.017;   // boost > the gap between "both lists" and "meaning only", so a very close match leads
+    const vqAbort = () => new DOMException('Aborted', 'AbortError');
+    // May this note go to the embedding service? Checks the open editor copy too (a tag added a second ago counts).
+    function vqEligible(n) {
+        if (!n || n.deletedAt || gaIsTemplate(n) || nvNoAi(n)) return false;
+        const o = S.note && S.note.id === n.id ? S.note : null;
+        return !(o && (o.deletedAt || gaIsTemplate(o) || nvNoAi(o)));
+    }
+    // The same question asked of the SAVED copy, in case another tab changed the note. Unreadable or missing = don't send.
+    async function vqStoredEligible(ids) {
+        const out = new Set(), db = await openDb();
+        await new Promise((res, rej) => {
+            const tx = db.transaction(STORE, 'readonly'), st = tx.objectStore(STORE);
+            ids.forEach((id) => { const g = st.get(id); g.onsuccess = () => { if (g.result && vqEligible(normalizeNote(g.result))) out.add(id); }; });
+            tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+        });
+        return out;
+    }
+    // Titles of noai notes are also blanked where they appear as [[links]] inside other text that is about to be embedded.
+    function vqHiddenTitles() {
+        const out = new Set();
+        S.notes.concat(S.note ? [S.note] : []).forEach((n) => { if (nvNoAi(n) && (n.title || '').trim()) out.add(vqFold(n.title.trim())); });
+        return out;
+    }
+    function vqRedact(text, hidden) {
+        return String(text).replace(/\[\[([^\[\]\n]{1,300})\]\]/g, (m, inner) => {
+            const full = inner.split('|')[0].trim(), base = full.split('#')[0].trim();
+            return hidden.has(vqFold(full)) || hidden.has(vqFold(base)) ? '[private link]' : m;
+        });
+    }
+    function vqHash(s) {   // 53-bit string hash (cyrb53) + length
+        let a = 0xdeadbeef, b = 0x41c6ce57;
+        for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); a = Math.imul(a ^ c, 2654435761); b = Math.imul(b ^ c, 1597334677); }
+        a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909);
+        b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909);
+        return (4294967296 * (2097151 & b) + (a >>> 0)).toString(36) + '-' + s.length;
+    }
+    const vqNoteHash = (n) => vqHash(gaTitleOf(n) + '\n' + (n.tags || []).join(',') + '\n' + gaClean(n.markdown));
+    // Positions of a note's passages that still have no vector for its current content.
+    function vqMissing(rec, hash, chunks) {
+        const have = new Set(rec && rec.hash === hash ? rec.chunks.map((c) => c.pos) : []);
+        return chunks.map((c, i) => i).filter((i) => !have.has(i));
+    }
+    /* Deletes the vectors of every note that is no longer allowed (deleted, template, noai) — also when there is no key or no
+       network — and brings the RAM copy in line with IndexedDB. */
+    async function vqPruneVectors(liveNotes) {
+        const ai = window.VenusAI;
+        const live = new Set(liveNotes.filter(vqEligible).map((n) => n.id));
+        const meta = await ai.vecGetMeta(), gen = (meta && meta.gen) || '';
+        if (gen !== VQV.gen) { VQV.map.clear(); VQV.gen = gen; }                        // cleared or rebuilt (Settings, another tab)
+        const inRam = Array.from(VQV.map.keys()), keys = await ai.vecKeys(), stored = new Set();      // inRam is taken first: an entry a running job adds meanwhile is left alone
+        for (const id of keys) {
+            if (live.has(id)) stored.add(id);
+            else { await ai.vecDelNote(id); VQV.map.delete(id); }
+        }
+        inRam.forEach((id) => { if (!stored.has(id)) VQV.map.delete(id); });
+        const need = Array.from(stored).filter((id) => !VQV.map.has(id));
+        if (need.length > 8) { const all = await ai.vecGetAllNotes(); need.forEach((id) => { const r = all.get(id); if (r && Array.isArray(r.chunks)) VQV.map.set(id, r); }); }
+        else for (const id of need) { const r = await ai.vecGetNote(id); if (r && Array.isArray(r.chunks)) VQV.map.set(id, r); }
+    }
+    // Which allowed notes are fully indexed, and what is still to do.
+    function vqIndexState(liveNotes) {
+        const todo = []; let total = 0;
+        liveNotes.filter(vqEligible).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).forEach((n) => {      // newest first: if the quota runs out, recent notes are already in
+            const chunks = vqChunks(n); if (!chunks.length) return;
+            total++;
+            const hash = vqNoteHash(n), missing = vqMissing(VQV.map.get(n.id), hash, chunks);
+            if (missing.length) todo.push({ id: n.id, hash, chunks, missing });
+        });
+        return { total, done: total - todo.length, todo };
+    }
+    async function vqSyncRun(liveNotes, onProgress, signal) {
+        if (signal && signal.aborted) throw vqAbort();
+        const ai = window.VenusAI, info = ai.embedInfo;
+        const meta = await ai.vecGetMeta();
+        if (!meta || meta.model !== info.model || meta.dim !== info.dim || meta.version !== info.version) {
+            await ai.vecClear();                                                        // vectors from another model/size can't be compared
+            VQV.map.clear();
+            VQV.gen = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+            await ai.vecSetMeta({ version: info.version, model: info.model, dim: info.dim, gen: VQV.gen, updatedAt: Date.now() });
+        }
+        await vqPruneVectors(liveNotes);
+        const epoch = ai.vecEpoch(), state = vqIndexState(liveNotes);
+        if (!state.todo.length) return { total: state.total, done: state.total };
+        const jobs = [];
+        state.todo.forEach((t) => t.missing.forEach((pos) => jobs.push({ id: t.id, hash: t.hash, pos, chunk: t.chunks[pos] })));
+        const left = new Map(state.todo.map((t) => [t.id, t.missing.length]));
+        let done = state.done, wrote = false;
+        const textFor = (j, n, hidden) => {
+            const title = gaTitleOf(n);
+            return { title: vqRedact(title, hidden), text: vqRedact('[Title: ' + title + '][Tags: ' + (n.tags || []).join(', ') + '][Section: ' + j.chunk.head + ']\n' + j.chunk.text, hidden).slice(0, info.textChars) };
+        };
+        const current = (j) => { const n = S.notes.find((x) => x.id === j.id); return vqEligible(n) && vqNoteHash(n) === j.hash ? n : null; };
+        try {
+            for (let i = 0; i < jobs.length;) {
+                if (signal && signal.aborted) throw vqAbort();
+                if (ai.vecEpoch() !== epoch) break;                                     // "clear index" pressed while we were working
+                const part = []; let chars = 0;
+                while (i < jobs.length && part.length < info.batchItems) {
+                    const len = Math.min(info.textChars, jobs[i].chunk.text.length + 200);
+                    if (part.length && chars + len > info.batchChars) break;
+                    part.push(jobs[i++]); chars += len;
+                }
+                const saved = await vqStoredEligible(Array.from(new Set(part.map((j) => j.id))));
+                const hidden = vqHiddenTitles(), batch = [], send = [];
+                part.forEach((j) => {                                                   // last check right before sending: a note may have just become noai, deleted or edited
+                    const n = saved.has(j.id) ? current(j) : null; if (!n) return;
+                    batch.push(j); send.push(textFor(j, n, hidden));
+                });
+                if (!batch.length) continue;
+                if (onProgress) onProgress('Đang lập chỉ mục ngữ nghĩa ' + done + '/' + state.total + ' note…');
+                const vecs = await ai.embedTexts(send, { taskType: 'RETRIEVAL_DOCUMENT', signal });
+                const byNote = new Map();
+                batch.forEach((j, k) => { if (!byNote.has(j.id)) byNote.set(j.id, []); byNote.get(j.id).push({ j, vec: vecs[k] }); });
+                for (const [id, got] of byNote) {                                       // saved after every batch, so Stop or a lost connection keeps what is done
+                    if (!current(got[0].j)) continue;
+                    const old = VQV.map.get(id), same = old && old.hash === got[0].j.hash;
+                    const rec = { hash: got[0].j.hash, updatedAt: Date.now(), chunks: (same ? old.chunks.slice() : []).concat(got.map((g) => ({ pos: g.j.pos, vec: g.vec }))).sort((a, b) => a.pos - b.pos) };
+                    if (!(await ai.vecPutNote(id, rec, epoch))) break;
+                    VQV.map.set(id, rec); wrote = true;
+                    left.set(id, left.get(id) - got.length); if (left.get(id) <= 0) done++;
+                }
+            }
+        } finally {
+            if (wrote && ai.vecEpoch() === epoch) { try { await ai.vecSetMeta({ version: info.version, model: info.model, dim: info.dim, gen: VQV.gen, updatedAt: Date.now() }); } catch (e) { /* ignore */ } }
+        }
+        return { total: state.total, done };
+    }
+    // One index job at a time (the AI window and the AI tab can both ask). Waiting for another job can still be stopped.
+    function vqSyncVectors(liveNotes, onProgress, signal) {
+        const run = VQV.queue.then(() => vqSyncRun(liveNotes, onProgress, signal));
+        VQV.queue = run.catch(() => {});
+        if (!signal) return run;
+        return new Promise((res, rej) => {
+            const stop = () => rej(vqAbort());
+            if (signal.aborted) stop(); else signal.addEventListener('abort', stop, { once: true });
+            run.then(res, rej).finally(() => signal.removeEventListener('abort', stop));
+        });
+    }
+    const vqWhy = (e) => ({ rate: 'Gemini đang hết hạn mức, thử lại sau', auth: 'key Gemini bị từ chối', network: 'không kết nối được Gemini', timeout: 'Gemini phản hồi quá chậm', server: 'Gemini đang lỗi' }[e && e.code] || 'tìm theo ngữ nghĩa đang lỗi');
+    /* Everything slow and networked for one question. → { qvec, partial } for hybrid ranking, or { reason } = keywords only.
+       Never throws, except when the person pressed Stop. */
+    async function vqSemantic(query, opts) {
+        const ai = window.VenusAI, signal = opts && opts.signal, onProgress = opts && opts.onProgress;
+        if (!ai || typeof ai.hasEmbeddingKey !== 'function' || !ai.embedInfo) return { reason: '' };      // an older cached ai.js
+        const live = () => S.notes.filter(vqEligible);
+        try {
+            try { await vqPruneVectors(S.notes); } catch (e) { console.warn('Notes Vault: could not tidy the semantic index', e); }
+            if (!(await ai.hasEmbeddingKey())) return { reason: 'thêm profile Gemini trong ⚙ để tìm theo ngữ nghĩa' };
+            if (navigator.onLine === false) return { reason: 'đang ngoại tuyến' };
+            let state = null, syncErr = null;
+            try { state = await vqSyncVectors(live(), onProgress, signal); }
+            catch (e) { if (e && e.name === 'AbortError') throw e; syncErr = e; console.warn('Notes Vault: semantic indexing stopped', (e && (e.code || e.message)) || e); }
+            if (!VQV.map.size) return { reason: syncErr ? vqWhy(syncErr) : 'chưa có chỉ mục ngữ nghĩa' };
+            // [[links]] in the question: drop the ones naming a noai note, keep the words of the rest
+            const hidden = vqHiddenTitles();
+            const q = vqRedact(query, hidden).replace(/\[private link\]/g, ' ').replace(/\[\[|\]\]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (!q) return { reason: '' };
+            if (onProgress) onProgress('Đang tìm theo ngữ nghĩa…');
+            const vecs = await ai.embedTexts([{ text: q.slice(-ai.embedInfo.textChars) }], { taskType: 'RETRIEVAL_QUERY', signal });
+            let partial = '';
+            if (syncErr) { const st = vqIndexState(live()); if (st.todo.length) partial = 'mới lập chỉ mục ' + st.done + '/' + st.total + ' note: ' + vqWhy(syncErr); }
+            else if (state && state.done < state.total) partial = 'mới lập chỉ mục ' + state.done + '/' + state.total + ' note';
+            return { qvec: vecs[0], partial };
+        } catch (e) {
+            if ((e && e.name === 'AbortError') || (signal && signal.aborted)) throw vqAbort();
+            console.warn('Notes Vault: semantic search unavailable, using keywords', (e && (e.code || e.message)) || e);
+            return { reason: vqWhy(e) };
+        }
+    }
+    // Cosine similarity (vectors have length 1) against every passage of the allowed notes whose vector matches its current text.
+    function vqVecRank(qvec, ok) {
+        const res = [], cache = new Map();
+        const vectorsOf = (n) => {
+            if (!cache.has(n.id)) {
+                const rec = vqEligible(n) ? VQV.map.get(n.id) : null;
+                cache.set(n.id, rec && rec.hash === vqNoteHash(n) ? new Map(rec.chunks.map((c) => [c.pos, c.vec])) : null);
+            }
+            return cache.get(n.id);
+        };
+        VQ.chunks.forEach((c) => {
+            if (!ok(c.note)) return;
+            const m = vectorsOf(c.note), v = m && m.get(c.pos);
+            if (!v || v.length !== qvec.length) return;
+            let sim = 0; for (let i = 0; i < v.length; i++) sim += v[i] * qvec[i];
+            if (sim >= VQ_SIM_MIN) res.push({ c, sim });
+        });
+        return res.sort((a, b) => b.sim - a.sim).slice(0, VQ_SIM_TOP);
+    }
+    // Reciprocal Rank Fusion of the keyword and the meaning rankings.
+    function vqFuse(bm, vec) {
+        const all = new Map();
+        bm.forEach((r, i) => all.set(r.c.note.id + ':' + r.c.pos, { c: r.c, s: 1 / (60 + i + 1), sim: 0 }));
+        vec.forEach((r, i) => {
+            const key = r.c.note.id + ':' + r.c.pos, x = all.get(key) || { c: r.c, s: 0, sim: 0 };
+            x.s += 1.25 / (60 + i + 1) + (r.sim >= VQ_SIM_STRONG ? VQ_STRONG_BOOST : 0); x.sim = r.sim;
+            all.set(key, x);
+        });
+        return Array.from(all.values()).sort((a, b) => (b.s - a.s) || (b.sim - a.sim));
+    }
+    async function vaultRetrieve(question, st, hist, opts) {
+        const prev = (hist && hist.prev) || [];
+        let query = String(question || '');
+        if (vqTokens(query).length < 3 && prev.length) query = prev[prev.length - 1] + ' ' + query;      // short follow-up: reuse the previous question's words
+        // The slow part runs first. Everything below is synchronous, so it sees the notes (and their noai tags) as they are now.
+        const sem = await vqSemantic(query, opts);
         const cfg = await window.VenusAI.getSettings();
+        vqBuild();
         const scope = String(st.scope || '*'), withAi = !!st.ai, K = +st.k || 12;
         const pin = aiPinned(hist && hist.pinned, Math.floor(Math.max(4000, +cfg.maxChars || 30000) * 0.5)), pinSet = new Set(pin.items.map((i) => i.note.id));
         const pinLabel = pin.items.length ? pin.items.length + ' mentioned · ' : '', pinDet = pin.items.map((i) => gaTitleOf(i.note) + ' (mentioned' + (i.cut ? ', trimmed' : '') + ')');
-        const withPin = (r) => (pin.text ? { text: pin.text + (r.text ? '\n\n' + r.text : ''), label: pinLabel + r.label + (pin.skipped.length ? ' · left out ' + pin.skipped.length + ' noai' : ''), details: pinDet.concat(r.details || []) } : r);
+        const withPin = (r) => (pin.text ? { text: pin.text + (r.text ? '\n\n' + r.text : ''), label: pinLabel + r.label + (pin.skipped.length ? ' · left out ' + pin.skipped.length + ' noai' : ''), details: pinDet.concat(r.details || []), mode: r.mode } : r);
         const ok = (n) => !pinSet.has(n.id) && !nvNoAi(n) && (withAi || !(n.tags || []).some((t) => String(t).toLowerCase() === 'ai-analysis')) && (scope === '*' || normType(n.type) === scope.slice(2));
         const inScope = S.notes.filter((n) => !n.deletedAt && !gaIsTemplate(n) && ok(n)).length;
-        let query = String(question || '');
-        const prev = (hist && hist.prev) || [];
-        if (vqTokens(query).length < 3 && prev.length) query = prev[prev.length - 1] + ' ' + query;      // short follow-up: reuse the previous question's words
-        const { ranked, terms } = vqRank(query, ok);
-        if (!ranked.length) return withPin({ text: pin.text ? '' : '(No passages in the vault match this question.)', label: inScope + ' notes in scope · 0 matching passages', details: [] });
+        const kw = vqRank(query, ok), terms = kw.terms, hybrid = !!sem.qvec;
+        // keyword-only: same list as before. Hybrid: weak keyword hits are dropped BEFORE merging (merged scores have another scale).
+        const ranked = hybrid ? vqFuse(kw.ranked.filter((r) => r.s >= kw.ranked[0].s * 0.2), vqVecRank(sem.qvec, ok)) : kw.ranked;
+        const mode = hybrid ? 'Hybrid' : 'Từ khóa';
+        const modeNote = hybrid ? sem.partial : sem.reason;
+        const tail = modeNote ? ' (' + modeNote + ')' : '';
+        if (!ranked.length) return withPin({ text: pin.text ? '' : '(No passages in the vault match this question.)', label: mode + ' · 0 đoạn khớp (trên ' + inScope + ' note)' + tail, details: [], mode: hybrid ? 'hybrid' : 'bm25' });
         const budget = Math.max(3000, (+cfg.maxChars || 30000) - 1500 - pin.text.length), per = new Map(), pick = []; let used = 0;
         for (const r of ranked) {
             if (pick.length >= K) break;
-            if (r.s < ranked[0].s * 0.2) break;
+            if (!hybrid && r.s < ranked[0].s * 0.2) break;
             const id = r.c.note.id, cnt = per.get(id) || 0; if (cnt >= 3) continue;
             if (used + r.c.text.length > budget && pick.length) continue;
             per.set(id, cnt + 1); pick.push(r); used += r.c.text.length;
@@ -16964,7 +17177,12 @@
         ranked.forEach((r) => { if (others.length < 15 && !seen.has(r.c.note.id)) { seen.add(r.c.note.id); others.push(gaTitleOf(r.c.note)); } });
         const text = '<vault_excerpts notes_in_scope="' + inScope + '" matched_notes="' + new Set(ranked.map((r) => r.c.note.id)).size + '" search_words="' + gaAttr(terms.slice(0, 12).join(' ')) + '">\n' + parts.join('\n\n')
             + (others.length ? '\n\n<other_matching_notes note="titles only, contents not read">' + others.map(gaAttr).join(' | ') + '</other_matching_notes>' : '') + '\n</vault_excerpts>';
-        return withPin({ text, label: order.length + ' notes · ' + pick.length + ' passages (of ' + inScope + ' notes in scope)', details: order.map((n) => gaTitleOf(n) + ' — ' + by.get(n.id).length + ' passages') });
+        const best = new Map(); pick.forEach((r) => { if (r.sim > (best.get(r.c.note.id) || 0)) best.set(r.c.note.id, r.sim); });
+        return withPin({
+            text, mode: hybrid ? 'hybrid' : 'bm25',
+            label: mode + ' · ' + order.length + ' note · ' + pick.length + ' đoạn (trên ' + inScope + ' note)' + tail,
+            details: order.map((n) => gaTitleOf(n) + ' — ' + by.get(n.id).length + ' passages' + (best.has(n.id) ? ' · độ gần nghĩa ' + best.get(n.id).toFixed(2) : ''))
+        });
     }
     function vaultLinkify(root, api) {
         if (!root.__nvRef) {
@@ -17179,7 +17397,7 @@
                 + '<div class="vai-msep"></div>'
                 + item('note?', 'Another note…', 'Search by name', null)
                 + item('folder?', 'A whole folder…', 'Find passages matching your question in the folder', null)
-                + item('vault', 'Search the whole vault', live.length + ' notes, only passages matching your question are sent', null, aiTabHas('vault'));
+                + item('vault', 'Search the whole vault', live.length + ' notes · the chat AI gets only matching passages; with a Gemini key, notes are also sent to Gemini to index them (never noai)', null, aiTabHas('vault'));
         } else if (view === 'folder') {
             const f = new Map(); live.forEach((n) => { const k = normType(n.type); f.set(k, (f.get(k) || 0) + 1); });
             html = '<div class="vai-mhint">Choose a folder</div>' + Array.from(f.keys()).sort((a, b) => a.localeCompare(b)).map((k) => item('folder', k, f.get(k) + ' notes', k, aiTabHas('folder', k))).join('');
@@ -17206,7 +17424,7 @@
         else if (id === 'note') { if (!aiTabHas('note', v)) AIT.ctx.push({ k: 'note', id: v }); }
         aiTabMenu(null); aiTabSync();
     }
-    async function aiTabRetrieve(question, st, hist) {
+    async function aiTabRetrieve(question, st, hist, opts) {
         try { await flushSave(); } catch (e) { /* ignore */ }
         const cfg = await window.VenusAI.getSettings(), cap = Math.max(4000, +cfg.maxChars || 30000);
         const cur = aiTabCurrent(), items = [], seen = new Set(), skipped = [];
@@ -17239,7 +17457,7 @@
             const scopes = vault ? ['*'] : folders.map((f) => 'f:' + f);
             const k = items.length ? 8 : 12;
             for (const sc of scopes) {
-                const r = await vaultRetrieve(question, { scope: sc, ai: false, k }, { prev: hist && hist.prev });
+                const r = await vaultRetrieve(question, { scope: sc, ai: false, k }, { prev: hist && hist.prev }, opts);
                 if (r && r.text) { parts.push(r.text); (r.details || []).forEach((d) => details.push('search: ' + d)); labels.push((sc === '*' ? 'vault' : sc.slice(2)) + ': ' + r.label); }
             }
         }

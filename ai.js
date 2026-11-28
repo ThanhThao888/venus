@@ -6,7 +6,8 @@
    • window.VenusAI.openPanel({...}) is the reusable "ask AI about this data" window; Notes Vault uses it now,
      the Sleep tracker / Skills can use the very same call later with their own data and preset questions.
    • window.VenusAI.openSettings() opens the settings: several PROFILES (provider/URL, request format, key, model, thinking effort,
-     own daily counter, optional custom prompt), one active + an ordered list of fallback profiles. */
+     own daily counter, optional custom prompt), one active + an ordered list of fallback profiles.
+   • window.VenusAI.embedTexts() + vec*() serve the Notes Vault semantic search (Gemini embeddings, local vector cache). */
 (function () {
   'use strict';
   if (window.VenusAI) return;
@@ -59,7 +60,7 @@
       temperature: Math.min(2, Math.max(0, numOr(p.temperature, 0.4))),
       maxTokens: Math.max(0, Math.round(numOr(p.maxTokens, 0))),
       replyLang: p.replyLang == null ? 'English' : String(p.replyLang).trim(),
-      maxChars: Math.max(2000, Math.round(numOr(p.maxChars, 30000))),
+      maxChars: Math.max(2000, Math.round(numOr(p.maxChars, 60000))),
       customPrompt: String(p.customPrompt || '').trim()
     };
   }
@@ -368,6 +369,135 @@
     }).filter((m) => m.id);
     if (freeOnly) list = list.filter((m) => m.free);
     return list.sort((a, b) => (b.created - a.created) || a.id.localeCompare(b.id));
+  }
+
+  /* ───────── embeddings (Google Gemini) for the Notes Vault semantic search ─────────
+     The key comes from any "Google Gemini (AI Studio)" profile (the active one first), so chat can stay on another provider.
+     It is sent in the x-goog-api-key header, never in the URL, and only ever to the fixed Google address below.
+     Embedding calls are not added to the chat request counter. This file never decides WHAT is embedded: the caller must leave
+     out noai notes (vault.js does). */
+  const EMB = { model: 'gemini-embedding-001', dim: 768, version: 1, base: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001',
+    batchItems: 16, batchChars: 14000, textChars: 4000, retryWaits: [2000, 5000], docTimeout: 30000, queryTimeout: 12000 };
+  const embCool = {};   // taskType → { key, until, err }: after a final failure, don't make every following question wait for the retries again
+  async function getEmbeddingKey() {
+    const c = await loadCfg(), ok = (p) => !!p && !!p.apiKey && detectProvider(p.baseUrl) === 'gemini';
+    const a = activeOf(c), p = ok(a) ? a : c.profiles.find(ok);
+    return p ? p.apiKey : '';
+  }
+  async function hasEmbeddingKey() { try { return !!(await getEmbeddingKey()); } catch (e) { return false; } }
+  function l2Normalize(values) {
+    const v = Float32Array.from(values); let sum = 0;
+    for (let i = 0; i < v.length; i++) sum += v[i] * v[i];
+    const len = Math.sqrt(sum);
+    if (!isFinite(len) || len === 0) throw aiErr('The embedding service returned an unusable vector.', '', 'embed');
+    for (let i = 0; i < v.length; i++) v[i] /= len;
+    return v;
+  }
+  const abortErr = () => new DOMException('Aborted', 'AbortError');
+  const wait = (ms, signal) => new Promise((res, rej) => {
+    if (signal && signal.aborted) { rej(abortErr()); return; }
+    const onAbort = () => { clearTimeout(t); rej(abortErr()); };
+    const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', onAbort); res(); }, ms);
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
+  async function embedRequest(url, key, body, signal, timeoutMs) {
+    for (let attempt = 0; ; attempt++) {
+      if (signal && signal.aborted) throw abortErr();
+      const ctl = new AbortController(); let timedOut = false;
+      const onAbort = () => ctl.abort();
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      const t = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
+      let status = 0, detail = '';
+      try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body, signal: ctl.signal });
+        if (res.ok) return await res.json();
+        status = res.status;
+        try { const j = await res.json(); detail = JSON.stringify(j.error || j).slice(0, 1500); } catch (e) { detail = ''; }
+      } catch (e) {
+        if (signal && signal.aborted) throw abortErr();
+        if (timedOut) throw aiErr('The embedding service didn’t respond in time.', '', 'timeout');
+        throw aiErr('Couldn’t connect to the embedding service.', String(e && e.message || e), 'network');
+      } finally { clearTimeout(t); if (signal) signal.removeEventListener('abort', onAbort); }
+      const daily = status === 429 && /per[-_ ]?day|daily/i.test(detail);
+      if ((status === 429 || status >= 500) && !daily && attempt < EMB.retryWaits.length) { await wait(EMB.retryWaits[attempt], signal); continue; }
+      const code = status === 429 ? 'rate' : status >= 500 ? 'server' : (status === 401 || status === 403 || /API[_ ]key/i.test(detail)) ? 'auth' : 'http';
+      const err = aiErr('Embedding request failed (HTTP ' + status + ').', detail.slice(0, 300), code); err.daily = daily;
+      throw err;
+    }
+  }
+  /* embedTexts([{ text, title? } | "text"], { taskType: 'RETRIEVAL_DOCUMENT' | 'RETRIEVAL_QUERY', signal }) → [Float32Array(768)], same order.
+     Long lists are split into small batches. Any failure throws (nothing partial is returned). */
+  async function embedTexts(items, opts) {
+    opts = opts || {};
+    const taskType = opts.taskType === 'RETRIEVAL_QUERY' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT', isDoc = taskType === 'RETRIEVAL_DOCUMENT';
+    const reqs = (items || []).map((it) => {
+      const o = typeof it === 'string' ? { text: it } : (it || {});
+      const r = { model: 'models/' + EMB.model, content: { parts: [{ text: String(o.text || '').slice(0, EMB.textChars) || ' ' }] }, taskType, outputDimensionality: EMB.dim };
+      if (isDoc && o.title) r.title = String(o.title).slice(0, 300);
+      return r;
+    });
+    if (!reqs.length) return [];
+    const key = await getEmbeddingKey();
+    if (!key) throw aiErr('No Google Gemini profile with an API key.', '', 'nokey');
+    const cool = embCool[taskType];
+    if (cool && cool.key === key && Date.now() < cool.until) throw cool.err;
+    const out = [];
+    try {
+      for (let i = 0; i < reqs.length;) {
+        const batch = []; let chars = 0;
+        while (i < reqs.length && batch.length < EMB.batchItems) {
+          const len = reqs[i].content.parts[0].text.length;
+          if (batch.length && chars + len > EMB.batchChars) break;
+          batch.push(reqs[i++]); chars += len;
+        }
+        const one = batch.length === 1;
+        const j = await embedRequest(EMB.base + (one ? ':embedContent' : ':batchEmbedContents'), key, JSON.stringify(one ? batch[0] : { requests: batch }), opts.signal, isDoc ? EMB.docTimeout : EMB.queryTimeout);
+        const got = one ? [j && j.embedding] : ((j && j.embeddings) || []);
+        if (got.length !== batch.length) throw aiErr('The embedding service returned the wrong number of vectors.', '', 'embed');
+        got.forEach((e) => {
+          if (!e || !Array.isArray(e.values) || e.values.length !== EMB.dim) throw aiErr('The embedding service returned a vector of the wrong size.', '', 'embed');
+          out.push(l2Normalize(e.values));
+        });
+      }
+    } catch (e) {
+      if (e && e.__ai) { const ms = e.daily ? 600000 : (e.code === 'rate' || e.code === 'auth') ? 60000 : 20000; embCool[taskType] = { key, until: Date.now() + ms, err: e }; }
+      throw e;
+    }
+    delete embCool[taskType];
+    return out;
+  }
+
+  /* ───────── vector cache: same IndexedDB "venus-ai" (v1), same store "kv". Zone A: never backed up, never synced.
+       vec:meta      = { version, model, dim, gen, updatedAt }
+       vec:note:<id> = { hash, updatedAt, chunks: [{ pos, vec: Float32Array(768) }] }   (no note text, title or tags) ───────── */
+  const VEC_META = 'vec:meta', VEC_PREFIX = 'vec:note:';
+  let vecEp = 0;   // bumped by every clear in this page, so a running index job can't write old results back afterwards
+  const vecRange = () => IDBKeyRange.bound(VEC_PREFIX, VEC_PREFIX + '￿');
+  const vecGetMeta = async () => (await kvGet(VEC_META)) || null;
+  const vecSetMeta = (m) => kvSet(VEC_META, m);
+  async function vecKeys() {
+    const db = await openDb();
+    return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').getAllKeys(vecRange()); q.onsuccess = () => res(q.result.map((k) => String(k).slice(VEC_PREFIX.length))); q.onerror = () => rej(q.error); });
+  }
+  async function vecGetAllNotes() {   // → Map(noteId → record)
+    const db = await openDb();
+    return new Promise((res, rej) => {
+      const out = new Map(), q = db.transaction('kv').objectStore('kv').openCursor(vecRange());
+      q.onsuccess = () => { const c = q.result; if (!c) { res(out); return; } out.set(String(c.key).slice(VEC_PREFIX.length), c.value); c.continue(); };
+      q.onerror = () => rej(q.error);
+    });
+  }
+  const vecGetNote = async (id) => (await kvGet(VEC_PREFIX + id)) || null;
+  async function vecPutNote(id, rec, epoch) {   // → false when the index was cleared after `epoch` was read
+    const db = await openDb();
+    if (epoch != null && epoch !== vecEp) return false;
+    return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(rec, VEC_PREFIX + id); tx.oncomplete = () => res(true); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
+  }
+  const vecDelNote = (id) => kvDel(VEC_PREFIX + id);
+  async function vecClear() {   // removes vec:meta and every vec:note:* — settings, usage, lock and chat history are not touched
+    vecEp++;
+    const db = await openDb();
+    return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv'); st.delete(vecRange()); st.delete(VEC_META); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
   }
 
   /* ───────── markdown (sanitised) ───────── */
@@ -711,7 +841,7 @@
     /* write-only key UI: keyEdit[pid] = "Replace key" mode; pendingKey[pid] = a newly typed key not saved yet (memory only, never rendered as an attribute) */
     let keyEdit = {}, pendingKey = {};
     const effKey = (p) => String(pendingKey[p.id] || '').trim() || p.apiKey;
-    const accOpen = { conn: true, models: false, think: true, limits: false, prompt: false, security: false }, modelsBy = {};
+    const accOpen = { conn: true, models: false, think: true, limits: false, prompt: false, security: false, vector: false }, modelsBy = {};
     const q = (s) => dlg.querySelector(s);
     const cur = () => profById(draft, sel) || draft.profiles[0];
 
@@ -786,9 +916,16 @@
         + acc('security', 'Security',
           fld(lockOn ? 'New PIN' : 'PIN', '<input type="password" id="vaiPin1" autocomplete="new-password" spellcheck="false" placeholder="At least 4 characters">')
           + fld('Confirm PIN', '<input type="password" id="vaiPin2" autocomplete="new-password" spellcheck="false">')
-          + `<div class="vai-row" style="margin-bottom:14px"><button type="button" class="vai-btn vai-main" data-a="pinset">${lockOn ? 'Change PIN' : 'Set PIN'}</button>${lockOn ? `<button type="button" class="vai-btn" data-a="pinoff">${delArm === 'pin' ? 'Click again to remove' : 'Remove PIN'}</button>` : ''}</div>`);
-      main.scrollTop = top; updateUse();
+          + `<div class="vai-row" style="margin-bottom:14px"><button type="button" class="vai-btn vai-main" data-a="pinset">${lockOn ? 'Change PIN' : 'Set PIN'}</button>${lockOn ? `<button type="button" class="vai-btn" data-a="pinoff">${delArm === 'pin' ? 'Click again to remove' : 'Remove PIN'}</button>` : ''}</div>`)
+        + acc('vector', 'Chỉ mục tìm kiếm ngữ nghĩa',
+          `<div class="vai-f"><div id="vaiVec" role="status">Đang đọc chỉ mục…</div><div class="vai-row" style="margin-top:8px"><button type="button" class="vai-btn" data-a="vecclear">${delArm === 'vec' ? 'Bấm lần nữa để xóa' : 'Xóa chỉ mục ngữ nghĩa'}</button></div>`
+          + '<div class="vai-hint">Gemini AI Studio Free Tier miễn phí nhưng Google có thể dùng dữ liệu gửi đi để cải thiện sản phẩm; note gắn #noai không bao giờ được gửi.</div></div>');
+      main.scrollTop = top; updateUse(); updateVec();
       const ki = q('[data-keymode="entry"]'); if (ki && pendingKey[p.id]) ki.value = pendingKey[p.id];
+    }
+    async function updateVec() {
+      let t; try { t = 'Đã lập chỉ mục ' + (await vecKeys()).length + ' note trên thiết bị này.'; } catch (e) { t = 'Không đọc được chỉ mục.'; }
+      const el = q('#vaiVec'); if (el && !closed) el.textContent = t;
     }
     function updateUse() {
       const el = q('#vaiUse'); if (!el || !draft) return;
@@ -870,6 +1007,11 @@
       else if (a === 'pinoff') {
         if (delArm !== 'pin') { delArm = 'pin'; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
         delArm = ''; try { await kvDel('lock'); lockOn = false; renderForm(); msg('PIN removed.', 'vai-ok'); } catch (err) { msg('Couldn\'t remove the PIN.', 'vai-bad'); }
+      }
+      else if (a === 'vecclear') {
+        if (delArm !== 'vec') { delArm = 'vec'; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
+        delArm = '';
+        try { await vecClear(); renderForm(); msg('Đã xóa chỉ mục ngữ nghĩa.', 'vai-ok'); } catch (err) { renderForm(); msg('Không xóa được chỉ mục.', 'vai-bad'); }
       }
       else if (a === 'save') {
         busy = true; renderFoot(); const ok = await commit(); busy = false; renderFoot();
@@ -1148,7 +1290,11 @@
       try {
         if (retr) {
           // "Ask the whole vault": the context is searched fresh for every question; history keeps only the questions and answers.
-          let r; try { r = await o.retrieve(prompt, readOpts(), { prev: turns.map((t) => t.q).filter(Boolean), pinned: men.ids }); } catch (e) { r = { text: '', label: 'Error while searching the data: ' + (e && e.message) }; }
+          const sig = abort.signal;
+          const onProgress = (m) => { const dd = ans.querySelector('.vai-dots'); if (dd) dd.textContent = m || 'Thinking…'; };
+          let r; try { r = await o.retrieve(prompt, readOpts(), { prev: turns.map((t) => t.q).filter(Boolean), pinned: men.ids }, { signal: sig, onProgress }); } catch (e) { r = { text: '', label: 'Error while searching the data: ' + (e && e.message) }; }
+          if (sig.aborted) throw abortErr();   // Stop (or New chat / close) pressed while searching or indexing: don't call the chat model
+          onProgress('');
           let text = String((r && r.text) || '');
           if (text.length > c.maxChars) text = text.slice(0, c.maxChars) + '\n…[trimmed: character limit exceeded]';
           showMeta(r, text.length, c);
@@ -1337,5 +1483,5 @@
     return api;
   }
 
-  window.VenusAI = { version: 3, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, getProfiles, setActiveProfile: (id) => saveSettings({ activeProfileId: id }), resolveChatUrl, resolveModelsUrl, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
+  window.VenusAI = { version: 3, hasEmbeddingKey, embedTexts, embedInfo: Object.freeze({ model: EMB.model, dim: EMB.dim, version: EMB.version, batchItems: EMB.batchItems, batchChars: EMB.batchChars, textChars: EMB.textChars }), vecGetMeta, vecSetMeta, vecKeys, vecGetNote, vecGetAllNotes, vecPutNote, vecDelNote, vecClear, vecEpoch: () => vecEp, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, getProfiles, setActiveProfile: (id) => saveSettings({ activeProfileId: id }), resolveChatUrl, resolveModelsUrl, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
 })();
