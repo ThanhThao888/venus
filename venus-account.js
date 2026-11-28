@@ -38,8 +38,8 @@
   const urlOk = (u) => /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(u || '');
   function configProblem() {
     const kp = keyProblem(SUPABASE_KEY);
-    if (kp === 'secret') return 'Khóa Supabase trong venus-account.js là khóa BÍ MẬT (secret / service_role). Đã chặn: chỉ được dùng publishable key (sb_publishable_…).';
-    if (kp || !urlOk(SUPABASE_URL)) return 'Chưa cấu hình: điền Project URL và publishable key ở đầu venus-account.js.';
+    if (kp === 'secret') return 'The Supabase key in venus-account.js is a SECRET key (secret / service_role). Blocked: only the publishable key (sb_publishable_…) may be used here.';
+    if (kp || !urlOk(SUPABASE_URL)) return 'Not configured: set the Project URL and publishable key at the top of venus-account.js.';
     return null;
   }
 
@@ -60,21 +60,23 @@
   const withTimeout = (p, ms, msg) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error(msg || 'timeout')), ms); Promise.resolve(p).then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); }); });
   const clip = (s, n) => { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
   const isoMs = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(typeof s === 'string' ? s : ''); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null; };
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   function fmtDateTime(s) {   // Vietnam time (UTC+7), parsed by hand so the page's patched Date cannot skew it
     const ms = isoMs(s); if (ms == null) return '—';
     const t = new Date(ms + 7 * 3600e3).toISOString();
-    return t.slice(8, 10) + '/' + t.slice(5, 7) + ' ' + t.slice(11, 16);
+    return +t.slice(8, 10) + ' ' + MONTHS[+t.slice(5, 7) - 1] + ', ' + t.slice(11, 16);
   }
 
   /* Human error text. Never echoes server strings that could be long or odd; codes first, then a safe generic line. */
   function authErrText(e) {
     const code = e && (e.code || e.error_code), status = e && e.status, msg = String((e && e.message) || '');
-    if (code === 'invalid_credentials' || /invalid login credentials/i.test(msg)) return 'Email hoặc mật khẩu không đúng.';
-    if (code === 'email_not_confirmed') return 'Tài khoản chưa được xác nhận (trong Supabase, tick "Auto Confirm User" hoặc xác nhận user).';
-    if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' || status === 429) return 'Thử quá nhiều lần. Đợi vài phút rồi thử lại.';
-    if (code === 'user_banned') return 'Tài khoản này đang bị khóa.';
-    if (/timeout|failed to fetch|networkerror|network request failed|load failed|offline/i.test(msg) || e instanceof TypeError) return 'Không kết nối được. App vẫn chạy bình thường; thử lại khi có mạng.';
-    return 'Không đăng nhập được' + (status ? ' (mã ' + status + ')' : '') + '. Thử lại sau.';
+    if (code === 'invalid_credentials' || /invalid login credentials/i.test(msg)) return 'Incorrect email or password.';
+    if (code === 'email_not_confirmed') return 'This account is not confirmed yet (in Supabase, tick "Auto Confirm User" or confirm the user).';
+    if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' || status === 429) return 'Too many attempts. Wait a few minutes and try again.';
+    if (code === 'user_banned') return 'This account has been blocked.';
+    if (/timeout|failed to fetch|networkerror|network request failed|load failed|offline/i.test(msg) || e instanceof TypeError) return 'Can\'t connect. The app keeps working normally; try again when you\'re online.';
+    return 'Couldn\'t sign in' + (status ? ' (code ' + status + ')' : '') + '. Try again later.';
   }
 
   /* ───────── VenusAuthDB: the only place the session is stored ───────── */
@@ -174,8 +176,8 @@
   /* ───────── device registration ───────── */
   function deviceLabel() {
     const ua = navigator.userAgent || '', touch = navigator.maxTouchPoints > 1;
-    const dev = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Macintosh/.test(ua) ? (touch ? 'iPad' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /Linux|X11/.test(ua) ? 'Linux' : 'Thiết bị';
-    const br = /Edg\//.test(ua) ? 'Edge' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Trình duyệt';
+    const dev = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Macintosh/.test(ua) ? (touch ? 'iPad' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /Linux|X11/.test(ua) ? 'Linux' : 'Device';
+    const br = /Edg\//.test(ua) ? 'Edge' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
     let pwa = false; try { pwa = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches); } catch (e) { /* ignore */ }
     return clip(dev + ' · ' + br + (pwa ? ' (PWA)' : ''), 80);
   }
@@ -184,24 +186,24 @@
     if (lastReg.uid === uid && Date.now() - lastReg.at < 60000) return;   // SIGNED_IN can fire again on tab focus
     lastReg = { uid, at: Date.now() };
     try {
-      if (!window.VenusMemory || typeof window.VenusMemory.getDeviceId !== 'function') { S.deviceNote = 'Chưa ghi được thiết bị (venus-memory.js chưa tải).'; return; }
+      if (!window.VenusMemory || typeof window.VenusMemory.getDeviceId !== 'function') { S.deviceNote = 'Device not registered yet (venus-memory.js is not loaded).'; return; }
       const id = await window.VenusMemory.getDeviceId();
-      if (!UUID_RE.test(id || '')) { S.deviceNote = 'device_id không phải UUID nên chưa ghi thiết bị.'; return; }
+      if (!UUID_RE.test(id || '')) { S.deviceNote = 'device_id is not a UUID, so this device was not registered.'; return; }
       const c = await getClient();
       const row = { user_id: uid, device_id: id, label: deviceLabel(), platform: clip(navigator.userAgent || '', 120), last_seen_at: new Date().toISOString() };
       const r = await withTimeout(c.from('user_devices').upsert(row, { onConflict: 'user_id,device_id' }), NET_TIMEOUT);
-      S.deviceNote = r && r.error ? 'Chưa ghi được thiết bị lên cloud.' : null;
+      S.deviceNote = r && r.error ? 'Couldn\'t register this device in the cloud.' : null;
       if (r && r.error) lastReg.at = 0;   // allow a retry sooner
-    } catch (e) { S.deviceNote = 'Chưa ghi được thiết bị lên cloud (offline?).'; lastReg.at = 0; }
+    } catch (e) { S.deviceNote = 'Couldn\'t register this device in the cloud (offline?).'; lastReg.at = 0; }
   }
-  async function loadDevices(manual) {   // manual === true only from the "Tải lại thiết bị" button (the button passes a wrapper, never the click event)
+  async function loadDevices(manual) {   // manual === true only from the "Refresh" button (the button passes a wrapper, never the click event)
     if (!S.user) return;
     try {
       const c = await getClient();
       const r = await withTimeout(c.from('user_devices').select('device_id,label,platform,last_seen_at,created_at').order('last_seen_at', { ascending: false }).limit(20), NET_TIMEOUT);
-      if (r.error) { S.devices = null; S.devicesErr = 'Không đọc được danh sách thiết bị.'; }
-      else { S.devices = r.data || []; S.devicesErr = null; if (manual === true) say('Đã tải lại: ' + S.devices.length + ' thiết bị.', 'ok'); }
-    } catch (e) { S.devices = null; S.devicesErr = 'Không đọc được danh sách thiết bị (offline?).'; }
+      if (r.error) { S.devices = null; S.devicesErr = 'Couldn\'t load the device list.'; }
+      else { S.devices = r.data || []; S.devicesErr = null; if (manual === true) say('Refreshed: ' + plural(S.devices.length, 'device') + '.', 'ok'); }
+    } catch (e) { S.devices = null; S.devicesErr = 'Couldn\'t load the device list (offline?).'; }
     if (isOpen()) render();
   }
 
@@ -236,15 +238,15 @@
   async function signIn(email, password) {
     if (S.busy) return;
     email = String(email || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return say('Email chưa đúng định dạng.', 'err');
-    if (!password) return say('Nhập mật khẩu.', 'err');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return say('Enter a valid email address.', 'err');
+    if (!password) return say('Enter your password.', 'err');
     S.busy = true; render();
     try {
       const c = await getClient();
       const r = await withTimeout(c.auth.signInWithPassword({ email, password }), NET_TIMEOUT);
       if (r.error) throw r.error;
       const u = r.data && r.data.user; S.user = u ? { id: u.id, email: u.email || email } : null; S.email = S.user && S.user.email;
-      S.lib = 'ok'; S.busy = false; say('Đã đăng nhập.', 'ok');
+      S.lib = 'ok'; S.busy = false; say('Signed in.', 'ok');
       await registerDevice(); refreshMemoryUiButton(); emitAuth(); render(); loadDevices();
       return;
     } catch (e) {
@@ -261,7 +263,7 @@
     catch (e) { /* even if the call fails, wipe the local copy below */ }
     await kv.del(STORAGE_KEY);   // make sure no token stays behind
     S.user = null; S.email = null; S.devices = null; S.health = null; S.confirmOut = false; S.busy = false; lastReg = { uid: null, at: 0 };
-    say('Đã đăng xuất khỏi thiết bị này. Dữ liệu Memory/Vault không bị động tới.', 'ok');
+    say('Signed out on this device. Your Memory and Vault data were not touched.', 'ok');
     refreshMemoryUiButton(); emitAuth(); render();
   }
 
@@ -277,7 +279,7 @@
       let j = null; try { j = await res.json(); } catch (e) { /* not JSON */ }
       S.health = { state: 'done', http: res.status, ok: !!(j && j.ok), authenticated: !!(j && j.authenticated), db: j && j.db != null ? String(j.db) : null, error: j && j.error ? String(j.error) : null, at: Date.now() };
     } catch (e) {
-      S.health = { state: 'fail', text: e && e.code === 'no_session' ? 'Chưa có phiên đăng nhập.' : 'Không kết nối được tới Supabase (offline hoặc project đang tạm dừng). App vẫn chạy bình thường.' };
+      S.health = { state: 'fail', text: e && e.code === 'no_session' ? 'No active session.' : 'Can\'t reach Supabase (offline, or the project is paused). The app keeps working normally.' };
     }
     S.busy = false; render();
   }
@@ -288,21 +290,24 @@
     const css = [
       'body.ft-clean-on #vpisAccountDlg{display:none!important}',
       'html:has(dialog[open][id^="vpis"]),body:has(dialog[open][id^="vpis"]){overflow:hidden}',
-      '.vpis-acc-dlg{border:0;padding:0;background:transparent;color:var(--text-dark);width:min(500px,94vw);max-width:none;max-height:none;margin:auto;overflow:hidden;border-radius:22px;overscroll-behavior:contain}',
+      /* dialog shell */
+      '.vpis-acc-dlg{border:0;padding:0;background:transparent;color:var(--text-dark);width:min(480px,94vw);max-width:none;max-height:none;margin:auto;overflow:hidden;border-radius:22px;overscroll-behavior:contain}',
       '.vpis-acc-dlg:focus,.vpis-acc-dlg:focus-visible{outline:none}',
       '.vpis-acc-dlg::backdrop{background:rgba(24,10,18,.58);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}',
       '.vpis-acc-dlg[open]{animation:vpis-acc-pop .2s cubic-bezier(.2,.8,.2,1)}',
       '@keyframes vpis-acc-pop{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}',
       '@media (prefers-reduced-motion:reduce){.vpis-acc-dlg[open]{animation:none}}',
-      '.vpis-acc-box{display:flex;flex-direction:column;box-sizing:border-box;max-height:min(86vh,860px);max-height:min(86dvh,860px);background:var(--bg-white);color:var(--text-dark);border:1px solid var(--border-color);border-radius:22px;overflow:hidden;box-shadow:var(--shadow-lg,0 12px 28px rgba(0,0,0,.3)),0 24px 60px rgba(24,10,18,.28),0 0 0 1px rgba(var(--primary-rgb,209,123,150),0.06);font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:light}',
+      '.vpis-acc-box{display:flex;flex-direction:column;box-sizing:border-box;max-height:min(86vh,820px);max-height:min(86dvh,820px);background:var(--bg-white);color:var(--text-dark);border:1px solid var(--border-color);border-radius:22px;overflow:hidden;box-shadow:var(--shadow-lg,0 12px 28px rgba(0,0,0,.3)),0 24px 60px rgba(24,10,18,.28),0 0 0 1px rgba(var(--primary-rgb,209,123,150),0.06);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:light}',
       '.dark-mode .vpis-acc-box{color-scheme:dark}',
       '.vpis-acc-box>*{flex:0 0 auto;min-width:0}',
       '.vpis-acc-box>.vpis-acc-body{flex:1 1 auto;min-height:0}',
-      '.vpis-acc-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:18px 20px 12px;background:linear-gradient(180deg,rgba(var(--primary-rgb,209,123,150),0.1),transparent)}',
-      '.vpis-acc-title{flex:1 1 auto;margin:0;font-size:1.2rem;font-weight:700;letter-spacing:-.01em;line-height:1.3}',
-      '.vpis-acc-x{flex:0 0 auto;display:inline-grid;place-items:center;width:36px;height:36px;min-width:36px;min-height:36px;border:0;border-radius:50%;background:transparent;color:var(--text-muted);font-size:1.5rem;line-height:1;cursor:pointer;transition:background .15s,color .15s}',
+      '.vpis-acc-head{display:flex;align-items:center;gap:8px;padding:16px 16px 6px 22px;background:linear-gradient(180deg,rgba(var(--primary-rgb,209,123,150),0.1),transparent)}',
+      '.vpis-acc-title{flex:1 1 auto;margin:0;font-size:1.15rem;font-weight:700;letter-spacing:-.01em;line-height:1.3}',
+      '.vpis-acc-x{flex:0 0 auto;display:inline-grid;place-items:center;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--text-muted);font-size:1.4rem;line-height:1;cursor:pointer;transition:background .15s,color .15s}',
       '.vpis-acc-x:hover{background:rgba(var(--primary-rgb,209,123,150),0.14);color:var(--text-dark)}',
-      '.vpis-acc-body{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:6px 20px 18px}',
+      /* body = one vertical stack of cards */
+      '.vpis-acc-body{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:8px 20px 20px}',
+      '.vpis-acc-stack{display:flex;flex-direction:column;gap:12px}',
       '.vpis-acc-body::-webkit-scrollbar,.vpis-acc-pre::-webkit-scrollbar,textarea.vpis-acc-in::-webkit-scrollbar{width:12px;height:12px}',
       '.vpis-acc-body::-webkit-scrollbar-track,.vpis-acc-pre::-webkit-scrollbar-track,textarea.vpis-acc-in::-webkit-scrollbar-track{background:transparent}',
       '.vpis-acc-body::-webkit-scrollbar-thumb,.vpis-acc-pre::-webkit-scrollbar-thumb,textarea.vpis-acc-in::-webkit-scrollbar-thumb{background:rgba(var(--primary-rgb,209,123,150),0.38);border-radius:99px;border:3px solid transparent;background-clip:padding-box}',
@@ -310,39 +315,67 @@
       '.vpis-acc-body::-webkit-scrollbar-button,.vpis-acc-pre::-webkit-scrollbar-button,textarea.vpis-acc-in::-webkit-scrollbar-button{display:none;width:0;height:0}',
       '.vpis-acc-body::-webkit-scrollbar-corner,.vpis-acc-pre::-webkit-scrollbar-corner,textarea.vpis-acc-in::-webkit-scrollbar-corner{background:transparent}',
       '@supports not selector(::-webkit-scrollbar){.vpis-acc-body,.vpis-acc-pre,textarea.vpis-acc-in{scrollbar-width:thin;scrollbar-color:rgba(var(--primary-rgb,209,123,150),0.5) transparent}}',
-      '.vpis-acc-note{font-size:.82rem;color:var(--text-muted);margin:0 0 10px;white-space:pre-wrap;word-break:break-word}',
-      '.vpis-acc-warn{font-size:.82rem;margin:0 0 10px;padding:9px 12px;border-radius:12px;background:#fdf1e3;color:#8a5517;border:1px solid #e8c79a;white-space:pre-wrap;word-break:break-word}',
+      /* text blocks */
+      '.vpis-acc-note{font-size:.82rem;color:var(--text-muted);margin:0;white-space:pre-wrap;word-break:break-word}',
+      '.vpis-acc-warn{font-size:.82rem;margin:0;padding:9px 12px;border-radius:12px;background:#fdf1e3;color:#8a5517;border:1px solid #e8c79a;white-space:pre-wrap;word-break:break-word}',
       '.dark-mode .vpis-acc-warn{background:#3a2d1c;color:#e0a05f;border-color:#6b4f2a}',
-      '.vpis-acc-btn{border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);border-radius:12px;padding:6px 15px;font:inherit;font-size:.85rem;cursor:pointer;min-height:38px;transition:background .15s,border-color .15s,filter .15s,box-shadow .15s}',
+      '.vpis-acc-sub{color:var(--text-muted);font-size:.78rem}',
+      /* buttons */
+      '.vpis-acc-btn{border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-dark);border-radius:12px;padding:6px 16px;font:inherit;font-size:.85rem;font-weight:600;cursor:pointer;min-height:38px;transition:background .15s,border-color .15s,filter .15s,box-shadow .15s}',
       '.vpis-acc-btn:hover:not(:disabled){border-color:var(--primary);background:rgba(var(--primary-rgb,209,123,150),0.1)}',
       '.vpis-acc-btn:disabled{opacity:.5;cursor:default}',
-      '.vpis-acc-btn--pri{background:var(--primary);border-color:var(--primary);color:var(--bg-white);font-weight:700;box-shadow:0 2px 8px rgba(var(--primary-rgb,209,123,150),0.35)}',
+      '.vpis-acc-btn--pri{background:var(--primary);border-color:var(--primary);color:var(--bg-white);box-shadow:0 2px 8px rgba(var(--primary-rgb,209,123,150),0.3)}',
       '.vpis-acc-btn--pri:hover:not(:disabled){background:var(--primary);filter:brightness(1.07)}',
-      '.vpis-acc-btn--danger{border-color:#b94a5a;color:#a03647}.dark-mode .vpis-acc-btn--danger{color:#e58898}',
+      '.vpis-acc-btn--danger{border-color:#d9a3ac;color:#a03647}.dark-mode .vpis-acc-btn--danger{border-color:#7a4650;color:#e58898}',
       '.vpis-acc-btn--danger:hover:not(:disabled){border-color:#b94a5a;background:rgba(185,74,90,.1)}',
-      '.vpis-acc-btn--confirm{background:#b94a5a;border-color:#b94a5a;color:#fff;font-weight:700}',
+      '.vpis-acc-btn--confirm{background:#b94a5a;border-color:#b94a5a;color:#fff}',
       '.vpis-acc-btn--confirm:hover:not(:disabled){background:#b94a5a;filter:brightness(1.08)}',
+      '.vpis-acc-btn--sm{min-height:30px;padding:2px 12px;font-size:.78rem;border-radius:10px}',
+      '.vpis-acc-btn--ghost{background:transparent;border-color:transparent;color:var(--text-muted)}',
+      '.vpis-acc-btn--ghost:hover:not(:disabled){background:rgba(var(--primary-rgb,209,123,150),0.1);border-color:transparent;color:var(--text-dark)}',
+      /* inputs (sign-in form) */
       '.vpis-acc-in{width:100%;box-sizing:border-box;border:1px solid var(--border-color);background:var(--bg-light);color:var(--text-dark);border-radius:12px;padding:9px 12px;font:inherit;font-size:16px;min-height:42px;transition:border-color .15s,box-shadow .15s}',
       'textarea.vpis-acc-in{resize:vertical;min-height:84px}',
       '.vpis-acc-in:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(var(--primary-rgb,209,123,150),0.22)}',
       '.vpis-acc-box :focus-visible{outline:2px solid var(--primary);outline-offset:2px}',
-      '.vpis-acc-box input[type="checkbox"]{accent-color:var(--primary);width:16px;height:16px}',
-      '.vpis-acc-card{border:1px solid var(--border-color);border-radius:16px;padding:12px 14px;margin-bottom:10px;background:var(--bg-light);background:color-mix(in srgb,var(--primary) 4%,var(--bg-light));transition:border-color .15s}',
-      '.vpis-acc-card:hover{border-color:rgba(var(--primary-rgb,209,123,150),0.45)}',
-      '.vpis-acc-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}',
-      '.vpis-acc-h{margin:0 0 5px;font-size:.74rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}',
-      '.vpis-acc-card{padding:12px 14px}',
-      '.vpis-acc-msg{margin:0 20px 8px;padding:9px 12px;border-radius:12px;font-size:.85rem;border:1px solid var(--border-color);background:var(--bg-light)}',
+      '.vpis-acc-box input[type="checkbox"]{accent-color:var(--primary);width:16px;height:16px;margin:0}',
+      '.vpis-acc-field{display:block;margin:0 0 12px}.vpis-acc-field>span{display:block;font-size:.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600}',
+      '.vpis-acc-check{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--text-muted);margin:-2px 0 14px;cursor:pointer}',
+      /* cards */
+      '.vpis-acc-card{border:1px solid var(--border-color);border-radius:16px;padding:14px 16px;margin:0;background:var(--bg-light);background:color-mix(in srgb,var(--primary) 4%,var(--bg-light))}',
+      '.vpis-acc-cardhead{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:26px;margin:0 0 8px}',
+      '.vpis-acc-h{margin:0;font-size:.72rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}',
+      '.vpis-acc-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}',
+      '.vpis-acc-row--foot{margin-top:-2px;justify-content:center}',
+      '.vpis-acc-row--full .vpis-acc-btn{flex:1 1 auto}',
+      /* account card */
+      '.vpis-acc-who{display:flex;align-items:center;gap:12px;flex-wrap:wrap}',
+      '.vpis-acc-avatar{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--primary);color:var(--bg-white);font-weight:700;font-size:1.05rem;box-shadow:0 2px 8px rgba(var(--primary-rgb,209,123,150),0.3)}',
+      '.vpis-acc-who-t{flex:1 1 140px;min-width:0}',
+      '.vpis-acc-who .vpis-acc-btn{margin-left:auto}',
+      '.vpis-acc-big{margin:0;font-weight:700;font-size:.95rem;overflow-wrap:anywhere;line-height:1.3}',
+      '.vpis-acc-live{display:flex;align-items:center;gap:6px;margin:2px 0 0}',
+      '.vpis-acc-live::before{content:"";width:7px;height:7px;border-radius:50%;background:#4f8a6b}',
+      /* status pill + chips */
+      '.vpis-acc-pill{display:inline-block;padding:1px 10px;border-radius:99px;font-size:.7rem;font-weight:700;letter-spacing:.03em;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-muted)}',
+      '.vpis-acc-pill--on{background:rgba(79,138,107,.14);border-color:rgba(79,138,107,.45);color:#2f6a4b}.dark-mode .vpis-acc-pill--on{color:#7fc3a0}',
+      '.vpis-acc-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}',
+      '.vpis-acc-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font-size:.74rem;border:1px solid var(--border-color);background:var(--bg-white);color:var(--text-muted)}',
+      '.vpis-acc-chip b{color:var(--text-dark);font-weight:700}',
+      '.vpis-acc-chip--warn{background:#fdf1e3;border-color:#e8c79a;color:#8a5517}.vpis-acc-chip--warn b{color:inherit}',
+      '.dark-mode .vpis-acc-chip--warn{background:#3a2d1c;border-color:#6b4f2a;color:#e0a05f}',
+      '.vpis-acc-chip--bad{background:rgba(185,74,90,.1);border-color:rgba(185,74,90,.45);color:#a03647}.vpis-acc-chip--bad b{color:inherit}',
+      '.dark-mode .vpis-acc-chip--bad{color:#e58898}',
+      /* devices */
+      '.vpis-acc-devs{display:flex;flex-direction:column}',
+      '.vpis-acc-dev{padding:9px 0;border-top:1px solid var(--border-color)}.vpis-acc-dev:first-child{border-top:0;padding-top:2px}.vpis-acc-dev:last-child{padding-bottom:0}',
+      '.vpis-acc-dev-n{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-weight:600}',
+      '.vpis-acc-badge{display:inline-block;padding:0 9px;border-radius:99px;font-size:.68rem;font-weight:700;background:rgba(var(--primary-rgb,209,123,150),0.16);color:var(--text-dark);border:1px solid rgba(var(--primary-rgb,209,123,150),0.4)}',
+      /* messages */
+      '.vpis-acc-msg{margin:2px 20px 0;padding:9px 12px;border-radius:12px;font-size:.85rem;border:1px solid var(--border-color);background:var(--bg-light)}',
       '.vpis-acc-msg--ok{border-color:#4f8a6b;color:#2f6a4b}.vpis-acc-msg--err{border-color:#b94a5a;color:#a03647}',
       '.dark-mode .vpis-acc-msg--ok{color:#7fc3a0}.dark-mode .vpis-acc-msg--err{color:#e58898}',
-      '.vpis-acc-field{display:block;margin-bottom:12px}.vpis-acc-field>span{display:block;font-size:.78rem;color:var(--text-muted);margin-bottom:3px;font-weight:600}',
-      '.vpis-acc-check{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--text-muted);margin:-4px 0 12px}',
-      '.vpis-acc-row{margin-top:12px}',
-      '.vpis-acc-big{margin:0;font-weight:700;word-break:break-all}',
-      '.vpis-acc-dev{padding:8px 0;border-bottom:1px dashed var(--border-color)}.vpis-acc-dev:last-child{border-bottom:0}',
-      '.vpis-acc-badge{display:inline-block;margin-left:6px;padding:1px 10px;border-radius:99px;font-size:.7rem;font-weight:700;background:var(--primary-light);color:var(--text-dark);border:1px solid var(--border-color)}',
-      '.vpis-acc-sub{color:var(--text-muted);font-size:.78rem}',
-      '@media (max-width:640px){.vpis-acc-dlg{width:100vw;height:100vh;height:100dvh;margin:0;border-radius:0}.vpis-acc-box{height:100%;max-height:none;border-radius:0;border:0;padding-top:env(safe-area-inset-top,0px)}.vpis-acc-btn{min-height:44px}.vpis-acc-head{padding:14px 16px 10px}.vpis-acc-x{width:40px;height:40px}.vpis-acc-body{padding-left:16px;padding-right:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}.vpis-acc-msg{margin-left:16px;margin-right:16px}}'
+      '@media (max-width:640px){.vpis-acc-dlg{width:100vw;height:100vh;height:100dvh;margin:0;border-radius:0}.vpis-acc-box{height:100%;max-height:none;border-radius:0;border:0;padding-top:env(safe-area-inset-top,0px)}.vpis-acc-btn{min-height:44px}.vpis-acc-btn--sm{min-height:36px}.vpis-acc-head{padding:12px 12px 4px 16px}.vpis-acc-x{width:40px;height:40px}.vpis-acc-body{padding:8px 16px calc(18px + env(safe-area-inset-bottom,0px))}.vpis-acc-msg{margin-left:16px;margin-right:16px}}'
     ].join('\n');
     const st = document.createElement('style'); st.id = 'vpis-acc-style'; st.textContent = css; document.head.appendChild(st);
   }
@@ -351,54 +384,57 @@
   const btn = (text, cls, onclick, disabled) => el('button', { type: 'button', class: 'vpis-acc-btn' + (cls ? ' ' + cls : ''), text, disabled: !!disabled, onclick });
 
   function signInView() {
-    const email = el('input', { class: 'vpis-acc-in', type: 'email', name: 'email', autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', inputmode: 'email', placeholder: 'email của bạn', disabled: S.busy });
-    const pw = el('input', { class: 'vpis-acc-in', type: 'password', name: 'password', autocomplete: 'current-password', placeholder: 'mật khẩu', disabled: S.busy });
+    const email = el('input', { class: 'vpis-acc-in', type: 'email', name: 'email', autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', inputmode: 'email', placeholder: 'Your email', disabled: S.busy });
+    const pw = el('input', { class: 'vpis-acc-in', type: 'password', name: 'password', autocomplete: 'current-password', placeholder: 'Your password', disabled: S.busy });
     const show = el('input', { type: 'checkbox', onchange: () => { pw.type = show.checked ? 'text' : 'password'; } });
     const form = el('form', { novalidate: true, onsubmit: (ev) => { ev.preventDefault(); const p = pw.value; signIn(email.value, p).then(() => { try { pw.value = ''; } catch (e) { /* ignore */ } }); } }, [
       el('label', { class: 'vpis-acc-field' }, [el('span', { text: 'Email' }), email]),
-      el('label', { class: 'vpis-acc-field' }, [el('span', { text: 'Mật khẩu' }), pw]),
-      el('label', { class: 'vpis-acc-check' }, [show, el('span', { text: 'Hiện mật khẩu' })]),
-      el('div', { class: 'vpis-acc-row' }, [el('button', { type: 'submit', class: 'vpis-acc-btn vpis-acc-btn--pri', text: S.busy ? 'Đang đăng nhập…' : 'Đăng nhập', disabled: S.busy })])
+      el('label', { class: 'vpis-acc-field' }, [el('span', { text: 'Password' }), pw]),
+      el('label', { class: 'vpis-acc-check' }, [show, el('span', { text: 'Show password' })]),
+      el('div', { class: 'vpis-acc-row vpis-acc-row--full', style: 'margin-top:0' }, [el('button', { type: 'submit', class: 'vpis-acc-btn vpis-acc-btn--pri', text: S.busy ? 'Signing in…' : 'Sign in', disabled: S.busy })])
     ]);
-    return el('div', null, [
-      el('p', { class: 'vpis-acc-note', text: 'Đăng nhập là tùy chọn: chưa đăng nhập thì mọi thứ vẫn chạy y như trước. Đây là tài khoản riêng của bạn; không có đăng ký mới.' }),
-      S.lib === 'fail' ? el('div', { class: 'vpis-acc-warn', text: 'Chưa tải được thư viện đăng nhập (offline hoặc bị chặn). Thử lại khi có mạng; app vẫn chạy bình thường.' }) : null,
+    return el('div', { class: 'vpis-acc-stack' }, [
+      el('p', { class: 'vpis-acc-note', text: 'Signing in is optional: until you do, everything works exactly as before. This is your own private account; there is no sign-up.' }),
+      S.lib === 'fail' ? el('div', { class: 'vpis-acc-warn', text: 'Couldn\'t load the sign-in library (offline or blocked). Try again when you\'re online; the app keeps working normally.' }) : null,
       form
     ]);
   }
   function healthView() {
     const h = S.health; if (!h) return null;
-    if (h.state === 'running') return el('p', { class: 'vpis-acc-note', text: 'Đang kiểm tra…' });
+    if (h.state === 'running') return el('p', { class: 'vpis-acc-note', text: 'Checking…' });
     if (h.state === 'fail') return el('p', { class: 'vpis-acc-note', text: h.text });
     const good = h.ok && h.authenticated && h.db === 'ok';
-    const t = good ? 'Kết nối tốt: đã xác thực, đọc được cơ sở dữ liệu.' : 'Có vấn đề: HTTP ' + h.http + ', authenticated=' + h.authenticated + ', db=' + (h.db || '—') + (h.error ? ', lỗi=' + clip(h.error, 60) : '') + '.';
-    return el('div', { class: good ? 'vpis-acc-msg vpis-acc-msg--ok' : 'vpis-acc-msg vpis-acc-msg--err', style: 'margin:0 0 10px', text: t });
+    const t = good ? 'Connection OK: authenticated, and the database is reachable.' : 'Problem: HTTP ' + h.http + ', authenticated=' + h.authenticated + ', db=' + (h.db || '—') + (h.error ? ', error=' + clip(h.error, 60) : '') + '.';
+    return el('div', { class: good ? 'vpis-acc-msg vpis-acc-msg--ok' : 'vpis-acc-msg vpis-acc-msg--err', style: 'margin:0', text: t });
   }
-  function syncBlock() {   // the "Đồng bộ bộ nhớ" card lives in venus-sync.js; the account dialog works without it
+  function syncBlock() {   // the "Memory sync" card lives in venus-sync.js; the account dialog works without it
     try { return window.VenusSync && typeof window.VenusSync.renderBlock === 'function' ? window.VenusSync.renderBlock() : null; } catch (e) { return null; }
   }
   function signedInView() {
     const myId = S._myDevice || null;
     const devs = S.devices ? (S.devices.length ? S.devices.map((d) => el('div', { class: 'vpis-acc-dev' }, [
-      el('div', null, [document.createTextNode(clip(d.label, 80) || 'Thiết bị'), (myId && d.device_id === myId) ? el('span', { class: 'vpis-acc-badge', text: 'Thiết bị này' }) : null]),
-      el('div', { class: 'vpis-acc-sub', text: 'thấy lần cuối ' + fmtDateTime(d.last_seen_at) + ' · ' + String(d.device_id || '').slice(0, 6) })
-    ])) : [el('p', { class: 'vpis-acc-sub', text: 'Chưa có thiết bị nào.' })]) : [el('p', { class: 'vpis-acc-sub', text: S.devicesErr || 'Đang tải…' })];
+      el('div', { class: 'vpis-acc-dev-n' }, [el('span', { text: clip(d.label, 80) || 'Device' }), (myId && d.device_id === myId) ? el('span', { class: 'vpis-acc-badge', text: 'This device' }) : null]),
+      el('div', { class: 'vpis-acc-sub', text: 'Last seen ' + fmtDateTime(d.last_seen_at) + ' · ' + String(d.device_id || '').slice(0, 6) })
+    ])) : [el('p', { class: 'vpis-acc-sub', text: 'No devices yet.' })]) : [el('p', { class: 'vpis-acc-sub', text: S.devicesErr || 'Loading…' })];
     const armed = S.confirmOut;
-    return el('div', null, [
-      el('div', { class: 'vpis-acc-card' }, [el('p', { class: 'vpis-acc-h', text: 'Đã đăng nhập' }), el('p', { class: 'vpis-acc-big', text: S.email || '(không có email)' })]),
-      memMode ? el('div', { class: 'vpis-acc-warn', text: 'Không ghi được vào IndexedDB của trình duyệt: phiên đăng nhập chỉ giữ trong bộ nhớ và sẽ mất khi tải lại trang.' }) : null,
-      S.deviceNote ? el('p', { class: 'vpis-acc-note', text: S.deviceNote }) : null,
-      syncBlock(),
-      el('div', { class: 'vpis-acc-card' }, [el('p', { class: 'vpis-acc-h', text: 'Thiết bị của bạn' })].concat(devs)),
-      healthView(),
-      el('div', { class: 'vpis-acc-row' }, [
-        btn('Kiểm tra kết nối', '', checkHealth, S.busy),
-        btn('Tải lại thiết bị', '', () => loadDevices(true), S.busy),
-        btn(armed ? 'Bấm lần nữa để đăng xuất' : 'Đăng xuất', armed ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger', () => {
+    return el('div', { class: 'vpis-acc-stack' }, [
+      el('div', { class: 'vpis-acc-card' }, el('div', { class: 'vpis-acc-who' }, [
+        el('span', { class: 'vpis-acc-avatar', 'aria-hidden': 'true', text: (S.email || '?').trim().charAt(0).toUpperCase() || '?' }),
+        el('div', { class: 'vpis-acc-who-t' }, [el('p', { class: 'vpis-acc-big', text: S.email || '(no email)' }), el('p', { class: 'vpis-acc-sub vpis-acc-live', text: 'Signed in' })]),
+        btn(armed ? 'Confirm sign out' : 'Sign out', 'vpis-acc-btn--sm ' + (armed ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger'), () => {
           if (!armed) { S.confirmOut = true; clearTimeout(confirmTimer); confirmTimer = setTimeout(() => { S.confirmOut = false; render(); }, 4000); render(); return; }
           clearTimeout(confirmTimer); signOut();
         }, S.busy)
-      ])
+      ])),
+      memMode ? el('div', { class: 'vpis-acc-warn', text: 'Couldn\'t write to the browser\'s IndexedDB: the session is kept in memory only and will be lost when the page reloads.' }) : null,
+      S.deviceNote ? el('p', { class: 'vpis-acc-note', text: S.deviceNote }) : null,
+      syncBlock(),
+      el('div', { class: 'vpis-acc-card' }, [
+        el('div', { class: 'vpis-acc-cardhead' }, [el('p', { class: 'vpis-acc-h', text: 'Your devices' }), btn('Refresh', 'vpis-acc-btn--sm vpis-acc-btn--ghost', () => loadDevices(true), S.busy)]),
+        el('div', { class: 'vpis-acc-devs' }, devs)
+      ]),
+      healthView(),
+      el('div', { class: 'vpis-acc-row vpis-acc-row--foot' }, [btn('Check connection', 'vpis-acc-btn--sm vpis-acc-btn--ghost', checkHealth, S.busy)])
     ]);
   }
   function render() {
@@ -407,12 +443,12 @@
     // keep what is being typed if we re-render while the form is showing
     const typed = {}; box.querySelectorAll('input[name]').forEach((i) => { if (i.name === 'email') typed.email = i.value; });
     while (box.firstChild) box.removeChild(box.firstChild);
-    box.appendChild(el('div', { class: 'vpis-acc-head' }, [el('h2', { class: 'vpis-acc-title', id: 'vpisAccTitle', text: 'Tài khoản Venus' }), el('button', { type: 'button', class: 'vpis-acc-x', 'aria-label': 'Đóng', text: '×', onclick: close })]));
+    box.appendChild(el('div', { class: 'vpis-acc-head' }, [el('h2', { class: 'vpis-acc-title', id: 'vpisAccTitle', text: 'Venus Account' }), el('button', { type: 'button', class: 'vpis-acc-x', 'aria-label': 'Close', text: '×', onclick: close })]));
     box.appendChild(el('div', { class: 'vpis-acc-msg', role: 'status', 'aria-live': 'polite', hidden: true }));
     const body = el('div', { class: 'vpis-acc-body' });
     const bad = configProblem();
     if (bad) body.appendChild(el('div', { class: 'vpis-acc-warn', text: bad }));
-    else if (S.phase === 'loading' || S.phase === 'idle') body.appendChild(el('p', { class: 'vpis-acc-note', text: 'Đang tải…' }));
+    else if (S.phase === 'loading' || S.phase === 'idle') body.appendChild(el('p', { class: 'vpis-acc-note', text: 'Loading…' }));
     else if (S.user) body.appendChild(signedInView());
     else {
       body.appendChild(signInView());

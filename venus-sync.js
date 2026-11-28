@@ -3,11 +3,11 @@
 
    • Syncs ONLY VenusMemoryDB (profile + decisions) with Supabase through the Phase 3A API of window.VenusMemory (outbox, cursor, conflicts).
      Never copies localStorage, Notes Vault, API keys or tokens. The network client comes from VenusAccount.getClient() (publishable key + the user's own session).
-   • OFF by default. Turned on from the "Đồng bộ bộ nhớ" block inside the Account dialog, after an explicit confirmation. The switch lives in VenusMemoryDB.syncMeta (not localStorage).
+   • OFF by default. Turned on from the "Memory sync" card inside the Account dialog, after an explicit confirmation. The switch lives in VenusMemoryDB.syncMeta (not localStorage).
    • One run = PULL (sync_changes with seq > cursor, 200 per page) → PUSH (outbox via RPC vpis_push, 50 per call) → a short PULL so the cursor passes our own writes.
      First run on a device (sync_initialized = false): pull everything from seq 0, queue the local records the cloud lacks (enqueueSnapshot), then push.
-   • Conflicts are never merged silently: the item is held (not pushed), both versions are shown, the user picks "Giữ bản máy này" or "Lấy bản cloud".
-   • Triggers: sign-in, app start (+3 s), tab becomes visible, back online, after a write (debounced 2 s), "Đồng bộ ngay". No Background Sync (not on iOS).
+   • Conflicts are never merged silently: the item is held (not pushed), both versions are shown, the user picks "Keep this device's version" or "Take cloud version".
+   • Triggers: sign-in, app start (+3 s), tab becomes visible, back online, after a write (debounced 2 s), "Sync now". No Background Sync (not on iOS).
    • At most one run at a time (in this tab by a flag, across tabs by Web Locks when available; the server is idempotent, so a double run is harmless anyway).
    • Offline / Supabase down: outbox untouched, status line only, nothing thrown into the console. Nothing else in the app depends on this file.
    • Text from the server or from memory items is rendered with textContent only. Styles: one <style id="vpis-sync-style">, classes prefixed vpis-sync-. */
@@ -34,9 +34,11 @@
   const withTimeout = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('timeout')), ms); Promise.resolve(p).then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); }); });
   const clip = (s, n) => { s = String(s == null ? '' : s).replace(/[ \t]+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
   const isoMs = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(typeof s === 'string' ? s : ''); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null; };
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   function fmt(s) {   // Vietnam time (UTC+7), parsed by hand so the page's patched Date cannot skew it
     const ms = isoMs(s); if (ms == null) return '—';
-    const t = new Date(ms + 7 * 3600e3).toISOString(); return t.slice(8, 10) + '/' + t.slice(5, 7) + ' ' + t.slice(11, 16);
+    const t = new Date(ms + 7 * 3600e3).toISOString(); return +t.slice(8, 10) + ' ' + MONTHS[+t.slice(5, 7) - 1] + ', ' + t.slice(11, 16);
   }
   const lc = (s) => String(s == null ? '' : s).toLowerCase();
 
@@ -209,41 +211,41 @@
   const arm = (key) => { S.armed = key; paint(); clearTimeout(armTimer); armTimer = setTimeout(() => { S.armed = null; paint(); }, 4000); };
 
   async function enable() {
-    try { await VM().setSyncMeta('sync_enabled', true); } catch (e) { say('Không bật được (IndexedDB lỗi).', 'err'); return; }
-    S.confirmEnable = false; await refreshState(); say('Đã bật đồng bộ.', 'ok'); return syncNow('enable');
+    try { await VM().setSyncMeta('sync_enabled', true); } catch (e) { say('Couldn\'t turn sync on (IndexedDB error).', 'err'); return; }
+    S.confirmEnable = false; await refreshState(); say('Sync turned on.', 'ok'); return syncNow('enable');
   }
   async function disable() {
-    try { await VM().setSyncMeta('sync_enabled', false); } catch (e) { say('Không tắt được (IndexedDB lỗi).', 'err'); return; }
-    await refreshState(); S.phase = 'idle'; say('Đã tắt đồng bộ. Dữ liệu trên máy và trên cloud đều giữ nguyên; thay đổi mới chỉ nằm trên máy này.', 'ok'); emit();
+    try { await VM().setSyncMeta('sync_enabled', false); } catch (e) { say('Couldn\'t turn sync off (IndexedDB error).', 'err'); return; }
+    await refreshState(); S.phase = 'idle'; say('Sync turned off. Your data on this device and in the cloud is untouched; new changes now stay on this device only.', 'ok'); emit();
   }
   async function resolve(c, how) {
     if (S.busy) return; S.busy = true; paint();
     try {
       if (how === 'local') await VM().keepLocal(c.key, APPROVED); else await VM().takeRemote(c.key, APPROVED);
-      S.armed = null; await refreshState(); await withClashLocals(); say(how === 'local' ? 'Đã giữ bản trên máy này; đang gửi lên cloud.' : 'Đã lấy bản cloud.', 'ok'); dataChanged();
+      S.armed = null; await refreshState(); await withClashLocals(); say(how === 'local' ? 'Kept this device\'s version; uploading it to the cloud.' : 'Took the cloud version.', 'ok'); dataChanged();
       S.busy = false; paint(); syncNow('resolve');
-    } catch (e) { S.busy = false; await refreshState(); say('Không xử lý được xung đột này (' + clip((e && e.code) || 'lỗi', 30) + '). Thử đồng bộ lại.', 'err'); }
+    } catch (e) { S.busy = false; await refreshState(); say('Couldn\'t resolve this conflict (' + clip((e && e.code) || 'error', 30) + '). Try syncing again.', 'err'); }
   }
   async function dropStuck() {
     if (S.busy) return; S.busy = true; paint();
-    try { const ids = (await VM().listOutbox(500)).filter(isStuck).map((o) => o.op_id); const n = await VM().ackOutbox(ids); S.armed = null; await refreshState(); say('Đã bỏ ' + n + ' thao tác bị từ chối. Dữ liệu trên máy không bị xóa.', 'ok'); }
-    catch (e) { say('Không bỏ được các thao tác lỗi.', 'err'); }
+    try { const ids = (await VM().listOutbox(500)).filter(isStuck).map((o) => o.op_id); const n = await VM().ackOutbox(ids); S.armed = null; await refreshState(); say('Discarded ' + plural(n, 'rejected change') + '. Your data on this device was not deleted.', 'ok'); }
+    catch (e) { say('Couldn\'t discard the rejected changes.', 'err'); }
     S.busy = false; paint();
   }
-  async function manualSync() { if (S.busy) return; say(null); const r = await syncNow('manual'); if (r && r.skipped === 'offline') say('Đang offline.', 'info'); }
+  async function manualSync() { if (S.busy) return; say(null); const r = await syncNow('manual'); if (r && r.skipped === 'offline') say('You\'re offline.', 'info'); }
 
   /* ───────── UI: one block inside the Account dialog ───────── */
   function injectStyle() {
     if (document.getElementById('vpis-sync-style')) return;
     const css = [
-      '.vpis-sync-stat{margin:0 0 6px;font-size:.88rem;font-weight:600}',
+      '.vpis-sync-stat{margin:0;font-size:.9rem;font-weight:600;line-height:1.4}',
       '.vpis-sync-stat--ok{color:#2f6a4b}.vpis-sync-stat--bad{color:#a03647}.vpis-sync-stat--warn{color:#8a5517}',
       '.dark-mode .vpis-sync-stat--ok{color:#7fc3a0}.dark-mode .vpis-sync-stat--bad{color:#e58898}.dark-mode .vpis-sync-stat--warn{color:#e0a05f}',
-      '.vpis-sync-ver{border:1px solid var(--border-color);border-radius:10px;padding:6px 8px;margin:4px 0;background:var(--bg-white)}',
-      '.vpis-sync-ver b{font-size:.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em}',
-      '.vpis-sync-txt{margin:2px 0 0;white-space:pre-wrap;word-break:break-word;font-size:.82rem}',
-      '.vpis-sync-conf{border-top:1px dashed var(--border-color);padding-top:8px;margin-top:8px}',
-      '.vpis-sync-title{margin:0;font-weight:700;word-break:break-word}'
+      '.vpis-sync-ver{border:1px solid var(--border-color);border-radius:12px;padding:8px 10px;margin:6px 0 0;background:var(--bg-white)}',
+      '.vpis-sync-ver b{display:block;font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}',
+      '.vpis-sync-txt{margin:3px 0 0;white-space:pre-wrap;word-break:break-word;font-size:.82rem}',
+      '.vpis-sync-conf{border-top:1px solid var(--border-color);padding-top:12px;margin-top:12px}',
+      '.vpis-sync-title{margin:0 0 2px;font-weight:700;word-break:break-word}'
     ].join('\n');
     const st = document.createElement('style'); st.id = 'vpis-sync-style'; st.textContent = css; document.head.appendChild(st);
   }
@@ -251,7 +253,7 @@
 
   function describe(rec, type) {
     if (!rec) return null;
-    const del = rec.deleted_at ? ' · đã xóa' : '';
+    const del = rec.deleted_at ? ' · deleted' : '';
     if (type === 'profile') return { head: clip(rec.key, 60) + ' · ' + (rec.category || 'other') + del, body: clip(rec.content, 400) };
     return { head: clip(rec.title, 80) + ' · ' + (rec.status || '') + del, body: clip(rec.content, 400) + (rec.rationale ? '\n— ' + clip(rec.rationale, 150) : '') };
   }
@@ -260,38 +262,38 @@
     return el('div', { class: 'vpis-sync-ver' }, d ? [
       el('b', { text: label + ' · rev ' + (rev != null ? rev : rec.revision) + ' · ' + fmt(rec.updated_at) }),
       el('p', { class: 'vpis-sync-txt', text: d.head }), el('p', { class: 'vpis-sync-txt vpis-acc-sub', text: d.body })
-    ] : [el('b', { text: label }), el('p', { class: 'vpis-sync-txt vpis-acc-sub', text: 'Không đọc được bản này.' })]);
+    ] : [el('b', { text: label }), el('p', { class: 'vpis-sync-txt vpis-acc-sub', text: 'This version can\'t be read.' })]);
   }
-  const REASON = { stale_revision: 'Cả hai nơi cùng sửa mục này.', remote_changed_while_pending: 'Cloud đã có bản mới hơn trong khi máy này còn thay đổi chưa gửi.', revision_gap: 'Bản trên cloud và trên máy lệch nhau nhiều bước.', key_clash: 'Cloud có một mục hồ sơ khác dùng cùng key với mục trên máy này.' };
+  const REASON = { stale_revision: 'Both sides edited this item.', remote_changed_while_pending: 'The cloud has a newer version while this device still has unsent changes.', revision_gap: 'The cloud and this device are several revisions apart.', key_clash: 'The cloud has a different profile item that uses the same key as one on this device.' };
 
   function conflictView(c) {
     const type = c.entity_type, clash = c.reason === 'key_clash', srv = c.server && c.server.payload;
     const localRec = clash ? (c._clash || null) : c.local;
     const kLocal = c.key + ':local', kRemote = c.key + ':remote';
     return el('div', { class: 'vpis-sync-conf' }, [
-      el('p', { class: 'vpis-sync-title', text: (type === 'profile' ? 'Hồ sơ' : 'Quyết định') + ': ' + clip(srv ? (srv.key || srv.title) : (localRec && (localRec.key || localRec.title)) || c.entity_id, 60) }),
+      el('p', { class: 'vpis-sync-title', text: (type === 'profile' ? 'Profile' : 'Decision') + ': ' + clip(srv ? (srv.key || srv.title) : (localRec && (localRec.key || localRec.title)) || c.entity_id, 60) }),
       el('p', { class: 'vpis-acc-note', text: REASON[c.reason] || REASON.stale_revision }),
-      verBox('Máy này', localRec, type), verBox('Cloud', srv, type, c.server && c.server.revision),
+      verBox('This device', localRec, type), verBox('Cloud', srv, type, c.server && c.server.revision),
       el('div', { class: 'vpis-acc-row' }, [
-        btn(S.armed === kLocal ? 'Bấm lần nữa để xác nhận' : (clash ? 'Giữ bản máy này (xóa bản trùng trên cloud)' : 'Giữ bản máy này'), S.armed === kLocal ? 'vpis-acc-btn--confirm' : '',
+        btn(S.armed === kLocal ? 'Tap again to confirm' : (clash ? 'Keep this device\'s version (removes the cloud duplicate)' : 'Keep this device\'s version'), S.armed === kLocal ? 'vpis-acc-btn--confirm' : '',
           () => { if (!clash) return resolve(c, 'local'); if (S.armed !== kLocal) return arm(kLocal); resolve(c, 'local'); }, S.busy || (!clash && !localRec)),
-        btn(S.armed === kRemote ? 'Bấm lần nữa để xác nhận' : (clash ? 'Lấy bản cloud (xóa bản trùng trên máy)' : 'Lấy bản cloud'), S.armed === kRemote ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger',
+        btn(S.armed === kRemote ? 'Tap again to confirm' : (clash ? 'Take cloud version (removes the local duplicate)' : 'Take cloud version'), S.armed === kRemote ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger',
           () => { if (S.armed !== kRemote) return arm(kRemote); resolve(c, 'remote'); }, S.busy || !srv)
       ])
     ]);
   }
 
   function statusLine() {
-    if (!S.enabled) return ['Đang tắt. Bật để dùng chung Hồ sơ và Quyết định giữa laptop và iPhone.', ''];
-    const done = S.lastAt ? 'Đã đồng bộ lúc ' + fmt(S.lastAt) + '.' : 'Chưa đồng bộ lần nào.';
+    if (!S.enabled) return ['Sync is off. Turn it on to share your Profile and Decisions between laptop and iPhone.', ''];
+    const done = S.lastAt ? 'Last synced ' + fmt(S.lastAt) + '.' : 'Not synced yet.';
     switch (S.phase) {
-      case 'syncing': return ['Đang đồng bộ…', ''];
-      case 'offline': return ['Đang offline. Thay đổi được giữ trên máy và sẽ gửi khi có mạng.', 'warn'];
-      case 'auth': return ['Phiên đăng nhập đã hết hạn hoặc bị từ chối. Đăng xuất rồi đăng nhập lại.', 'bad'];
-      case 'signed_out': return ['Chưa đăng nhập, nên chưa đồng bộ.', 'warn'];
-      case 'needs_update': return ['Cloud có dữ liệu từ phiên bản app mới hơn. Tải lại trang để cập nhật rồi đồng bộ lại. Chưa có gì bị mất.', 'warn'];
-      case 'error': return ['Chưa đồng bộ được' + (S.lastErrCode ? ' (mã ' + S.lastErrCode + ')' : '') + '. Dữ liệu trên máy không bị ảnh hưởng; thử lại sau.', 'bad'];
-      default: return [S.conflicts.length ? 'Có xung đột cần bạn chọn bên dưới. ' + done : done, S.conflicts.length ? 'warn' : 'ok'];
+      case 'syncing': return ['Syncing…', ''];
+      case 'offline': return ['Offline. Changes stay on this device and will be sent when you\'re back online.', 'warn'];
+      case 'auth': return ['Your session expired or was rejected. Sign out and sign in again.', 'bad'];
+      case 'signed_out': return ['Not signed in, so nothing is syncing.', 'warn'];
+      case 'needs_update': return ['The cloud has data from a newer version of the app. Reload the page to update, then sync again. Nothing has been lost.', 'warn'];
+      case 'error': return ['Sync failed' + (S.lastErrCode ? ' (code ' + S.lastErrCode + ')' : '') + '. Your data on this device is unaffected; try again later.', 'bad'];
+      default: return [S.conflicts.length ? 'There are conflicts for you to resolve below. ' + done : done, S.conflicts.length ? 'warn' : 'ok'];
     }
   }
 
@@ -300,30 +302,33 @@
     paint();
   }
 
+  const chip = (label, n, tone) => el('span', { class: 'vpis-acc-chip' + (tone ? ' vpis-acc-chip--' + tone : '') }, [el('span', { text: label }), el('b', { text: String(n) })]);
   function build(box) {
     while (box.firstChild) box.removeChild(box.firstChild);
-    if (!VM() || typeof VM().getSyncState !== 'function') { box.appendChild(el('p', { class: 'vpis-acc-note', text: 'Chưa dùng được: thiếu venus-memory.js bản mới.' })); return; }
+    if (!VM() || typeof VM().getSyncState !== 'function') { box.appendChild(el('p', { class: 'vpis-acc-note', text: 'Unavailable: a newer venus-memory.js is required.' })); return; }
     const [line, tone] = statusLine();
-    const kids = [el('p', { class: 'vpis-acc-h', text: 'Đồng bộ bộ nhớ' }), el('p', { class: 'vpis-sync-stat' + (tone ? ' vpis-sync-stat--' + tone : ''), role: 'status', text: line })];
-    if (S.msg) kids.push(el('div', { class: 'vpis-acc-msg vpis-acc-msg--' + S.msg.type, style: 'margin:0 0 8px', text: S.msg.text }));
-    if (S.enabled) kids.push(el('p', { class: 'vpis-acc-sub', text: 'Chờ gửi: ' + S.pending + ' · Xung đột: ' + S.conflicts.length + (S.stuck ? ' · Bị từ chối: ' + S.stuck : '') }));
+    const kids = [
+      el('div', { class: 'vpis-acc-cardhead' }, [el('p', { class: 'vpis-acc-h', text: 'Memory sync' }), el('span', { class: 'vpis-acc-pill' + (S.enabled ? ' vpis-acc-pill--on' : ''), text: S.enabled ? 'On' : 'Off' })]),
+      el('p', { class: 'vpis-sync-stat' + (tone ? ' vpis-sync-stat--' + tone : ''), role: 'status', text: line })
+    ];
+    if (S.msg) kids.push(el('div', { class: 'vpis-acc-msg vpis-acc-msg--' + S.msg.type, style: 'margin:8px 0 0', text: S.msg.text }));
+    if (S.enabled) kids.push(el('div', { class: 'vpis-acc-chips' }, [chip('Pending', S.pending), chip('Conflicts', S.conflicts.length, S.conflicts.length ? 'warn' : ''), S.stuck ? chip('Rejected', S.stuck, 'bad') : null]));
     if (!S.enabled && S.confirmEnable) {
       const n = S.counts;
-      kids.push(el('div', { class: 'vpis-acc-warn', text: 'Bộ nhớ trên máy này' + (n ? ' (' + n.profile + ' mục hồ sơ, ' + n.decisions + ' quyết định)' : '') + ' sẽ được tải lên cloud và dùng chung với mọi thiết bị đăng nhập cùng tài khoản. Nội dung bộ nhớ sẽ rời khỏi máy này. Notes Vault, API key và token không bao giờ được gửi.' }));
-      kids.push(el('div', { class: 'vpis-acc-row' }, [btn('Xác nhận bật đồng bộ', 'vpis-acc-btn--pri', () => { enable(); }, S.busy), btn('Hủy', '', () => { S.confirmEnable = false; paint(); })]));
+      kids.push(el('div', { class: 'vpis-acc-warn', style: 'margin-top:10px', text: 'The memory on this device' + (n ? ' (' + plural(n.profile, 'profile item') + ', ' + plural(n.decisions, 'decision') + ')' : '') + ' will be uploaded to the cloud and shared with every device signed in to this account. Memory content will leave this device. Notes Vault, API keys and tokens are never sent.' }));
+      kids.push(el('div', { class: 'vpis-acc-row' }, [btn('Confirm and turn on', 'vpis-acc-btn--pri', () => { enable(); }, S.busy), btn('Cancel', '', () => { S.confirmEnable = false; paint(); })]));
     } else {
       kids.push(el('div', { class: 'vpis-acc-row' }, [
-        S.enabled ? btn('Đồng bộ ngay', 'vpis-acc-btn--pri', manualSync, S.phase === 'syncing' || S.busy) : btn('Bật đồng bộ…', 'vpis-acc-btn--pri', () => { S.confirmEnable = true; paint(); ensureCounts(); }),
-        S.enabled ? btn('Tắt đồng bộ', '', () => { disable(); }, S.phase === 'syncing' || S.busy) : null
+        S.enabled ? btn('Sync now', 'vpis-acc-btn--pri', manualSync, S.phase === 'syncing' || S.busy) : btn('Turn on sync…', 'vpis-acc-btn--pri', () => { S.confirmEnable = true; paint(); ensureCounts(); }),
+        S.enabled ? btn('Turn off sync', '', () => { disable(); }, S.phase === 'syncing' || S.busy) : null
       ]));
     }
     if (S.enabled && S.stuck) {
       const k = 'stuck';
-      kids.push(el('p', { class: 'vpis-acc-note', style: 'margin-top:8px', text: S.stuck + ' thay đổi bị server từ chối vì dữ liệu không hợp lệ và sẽ không được gửi lại. Dữ liệu trên máy vẫn còn.' }));
-      kids.push(el('div', { class: 'vpis-acc-row' }, [btn(S.armed === k ? 'Bấm lần nữa để bỏ' : 'Bỏ các thay đổi bị từ chối', S.armed === k ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger', () => { if (S.armed !== k) return arm(k); dropStuck(); }, S.busy)]));
+      kids.push(el('p', { class: 'vpis-acc-note', style: 'margin-top:12px', text: plural(S.stuck, 'change') + (S.stuck === 1 ? ' was' : ' were') + ' rejected by the server as invalid and will not be retried. Your data on this device is still there.' }));
+      kids.push(el('div', { class: 'vpis-acc-row', style: 'margin-top:8px' }, [btn(S.armed === k ? 'Tap again to discard' : 'Discard rejected changes', S.armed === k ? 'vpis-acc-btn--confirm' : 'vpis-acc-btn--danger', () => { if (S.armed !== k) return arm(k); dropStuck(); }, S.busy)]));
     }
     if (S.enabled) S.conflicts.forEach((c) => kids.push(conflictView(c)));
-    kids.push(el('p', { class: 'vpis-acc-sub', style: 'margin-top:8px', text: 'Chỉ Hồ sơ và Quyết định được đồng bộ. Notes Vault, API key, token và dữ liệu Tracker luôn ở lại trên máy.' }));
     kids.forEach((k) => box.appendChild(k));
   }
 
