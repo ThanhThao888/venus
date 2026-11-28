@@ -20,7 +20,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `FinanceTrackerVaultDB` | v4 [đã đọc: `vault.js:56–57`] | Notes, revisions, liên kết tệp, attachments | `vault.js` | **Có**, qua `NotesVault.getBackupParts()` (`vault.js:7009`, nối ở `index.html:81095`) | Không |
 | `VenusMemoryDB` | v1, `SCHEMA 1` [`venus-memory.js:20`] | Stores: `profile`, `decisions`, `outbox`, `syncMeta`, `audit_logs` | `venus-memory.js` | **Một phần:** chỉ `profile` + `decisions` (`exportAll`, `venus-memory.js:335`) | `profile` + `decisions` nếu bật sync |
-| `venus-ai` | v1, store `kv` (phiên bản IndexedDB giữ nguyên; schema nằm trong giá trị, xem 2.2) | Khóa `settings`: **nhiều profile AI, gồm `apiKey` của từng profile**; khóa `usage`: bộ đếm lượt gọi theo profile; khóa `lock` *(tùy chọn)*: PBKDF2-SHA256 hash + salt cho PIN khóa cổng AI Settings; khóa `chats:index` + `chat:<id>`: lịch sử chat AI (xem 2.2) | `ai.js` | **Không bao giờ** | Không |
+| `venus-ai` | v1, store `kv` (phiên bản IndexedDB giữ nguyên; schema nằm trong giá trị, xem 2.2) | Khóa `settings`: **nhiều profile AI, gồm `apiKey` của từng profile**; khóa `usage`: bộ đếm lượt gọi theo profile; khóa `lock` *(tùy chọn)*: PBKDF2-SHA256 hash + salt cho PIN khóa cổng AI Settings; khóa `chats:index` + `chat:<id>`: lịch sử chat AI (xem 2.2); khóa `vec:meta` + `vec:note:<id>`: vector cache cho tìm kiếm ngữ nghĩa Notes Vault (xem 2.2) | `ai.js` (`vault.js` đọc/ghi `vec:*` qua `window.VenusAI.vec*`) | **Không bao giờ** | Không |
 | `VenusAuthDB` | v1, store `kv` [`venus-account.js:21`] | Phiên đăng nhập Supabase (khóa `sb-venus-auth`) | `venus-account.js` | **Không bao giờ** | Là phiên của chính Supabase |
 
 ### 2.2 `venus-ai`: schema v2 (Zone A, chỉ trên thiết bị) [đã đọc code `ai.js`, 2026-11-28]
@@ -39,6 +39,17 @@
 - **Migrate tự động** (lần đầu đọc `settings` còn schema cũ, tức không có `schemaVersion: 2`): cấu hình chính → profile `prof_1` (đang dùng); mỗi mục `backups[]` có `model` hoặc `apiKey` → `prof_2`, `prof_3` (kế thừa giới hạn, ngôn ngữ, prompt… của cấu hình chính) và vào `fallbackProfileIds`; `usage` cũ của **ngày UTC hôm nay** → `prof_1`, của ngày cũ thì bỏ. Hướng dẫn riêng khác văn bản mặc định → `customPrompt`; bằng văn bản mặc định → rỗng. Máy mới chưa có gì thì chỉ giữ trong bộ nhớ, chưa ghi IndexedDB cho tới khi bạn bấm Lưu.
 - `VenusAI.getSettings()` vẫn trả các trường phẳng của profile đang dùng (`provider` được suy ra từ `baseUrl`, `instructions` = `customPrompt` hoặc mặc định) kèm `profiles`, `activeProfileId`, `fallbackProfileIds`, nên `vault.js` và `venus-review.js` không cần sửa.
 - **Lịch sử chat AI** (chỉ khi khung AI truyền `historyKey`; `ai-hub.js` không truyền nên không lưu): `chats:index` = `{ v:1, items:[{ id, scopeKey, title, createdAt, updatedAt, count }] }`; `chat:<id>` = `{ id, scopeKey, title, createdAt, updatedAt, turns:[{ q, shown?, a, at, men?:{names,blocked}, used?, trail? }] }`. Chỉ lưu câu hỏi và câu trả lời gốc, **không lưu khối `<context>`** (nội dung note). Tối đa 30 cuộc mỗi `scopeKey` (`vault:ask`, `vault:tab`, `vault:note:<id>`, `vault:sel`), cái cũ nhất bị xóa khi vượt. Câu trả lời có thể trích nội dung note nên cũng thuộc Zone A: không vào backup, không sync. Người dùng xóa từng cuộc hoặc cả scope trong menu lịch sử (bấm hai lần để xác nhận).
+- **Vector cache tìm kiếm ngữ nghĩa** (Zone A, chỉ trên thiết bị; không vào `localStorage`, backup JSON hay Supabase sync; store `kv` và phiên bản DB giữ nguyên v1) [đã đọc code `ai.js`, `vault.js`, 2026-11-28]:
+
+  | Khóa | Giá trị |
+  | :--- | :--- |
+  | `vec:meta` | `{ version: 1, model: 'gemini-embedding-001', dim: 768, gen, updatedAt }`. `gen` là mã ngẫu nhiên của lần dựng chỉ mục, để bản cache trong RAM biết chỉ mục đã bị xóa/dựng lại. Thiếu khóa này hoặc `version`/`model`/`dim` khác → xóa toàn bộ `vec:note:*` trước khi index lại |
+  | `vec:note:<noteId>` | `{ hash, updatedAt, chunks: [{ pos, vec }] }`, `vec` là `Float32Array(768)` đã chuẩn hóa L2. **Không lưu** văn bản, tiêu đề hay tag. `hash` tính từ tiêu đề + tag + `gaClean(markdown)`; `pos` trùng chỉ số đoạn của BM25 (`vqChunks`, tối đa 80 đoạn/note). Note lớn hoặc bị dừng giữa chừng có thể mới có một phần đoạn, lần sau chỉ gửi phần còn thiếu |
+
+  - **Note được index:** chưa xóa, không phải template, không gắn `noai`. Note `noai` không bao giờ được gửi tiêu đề, tag hay nội dung; trước mỗi batch, app kiểm tra lại cả bản trong bộ nhớ lẫn bản đã lưu trong `FinanceTrackerVaultDB`. `[[link]]` trỏ tới note `noai` (trong note khác hoặc trong câu hỏi) được thay/bỏ trước khi gửi. **Giới hạn:** tên một note `noai` được viết dạng chữ thường (không phải `[[link]]`) trong note khác hoặc câu hỏi thì app không nhận ra được.
+  - **Tự dọn:** mỗi lần tìm trong vault (kể cả khi offline hoặc không có key Gemini), `vec:note:<id>` của note đã xóa, thành template, hoặc mới gắn `noai` bị xóa. Việc xóa diễn ra ở lần tìm kế tiếp, không phải ngay lúc gắn tag.
+  - **Xóa thủ công:** AI Settings → "Chỉ mục tìm kiếm ngữ nghĩa" → "Xóa chỉ mục ngữ nghĩa" (bấm hai lần). Chỉ xóa `vec:*`; `settings`, `usage`, `lock`, lịch sử chat giữ nguyên. Lần tìm sau sẽ lập chỉ mục lại (gửi lại nội dung note).
+  - **API key:** lấy từ profile Gemini có key (ưu tiên profile đang dùng), gửi qua header `x-goog-api-key`, không nằm trên URL. Lượt gọi embedding **không** được tính vào `usage`.
 - Không có trường nào của `venus-ai` đi vào `localStorage`, backup hoặc đồng bộ.
 
 ### 2.3 `localStorage` (dữ liệu Tracker, không phải VPIS)
@@ -108,7 +119,7 @@ RLS bật trên mọi bảng (`auth.uid() = user_id`). Client **không** `insert
 
 - `BACKUP_SCHEMA_VERSION = 4` (`index.html:81062`): 3.x = `localStorage` + `notesVault`; **4 thêm `venusMemory` (profile + decisions)**.
 - `exportProgress()` (`index.html:81157`) gồm: `localStorage` (trừ khóa loại trừ) + Notes Vault + `venusMemory`. Nếu xuất `venusMemory` quá 5 giây hoặc lỗi, backup **vẫn tạo** nhưng cảnh báo "KHÔNG gồm bộ nhớ Venus" (`index.html:81102–81123, 81175`).
-- **Không bao giờ có trong backup:** API key & PIN hash (`venus-ai`), token/phiên (`VenusAuthDB`, khóa `sb-`), `outbox`, `audit_logs`, `device_id`, cursor đồng bộ.
+- **Không bao giờ có trong backup:** API key & PIN hash, lịch sử chat, vector cache `vec:*` (`venus-ai`), token/phiên (`VenusAuthDB`, khóa `sb-`), `outbox`, `audit_logs`, `device_id`, cursor đồng bộ.
 - `importProgress()` (`index.html:81192`): từ chối file có `backupSchemaVersion` mới hơn app hiểu (`index.html:81205`); khôi phục bộ nhớ qua `VenusMemory.importAll(data, { mode })` với `mode` `merge` hoặc `replace` (`venus-memory.js:343`), tối đa 5.000 bản ghi. **Restore cục bộ không ghi đè cloud**; thay đổi sẽ đồng bộ như một lần ghi bình thường nếu sync đang bật.
 
 ## 7. Cái gì rời khỏi máy?
@@ -118,7 +129,9 @@ RLS bật trên mọi bảng (`auth.uid() = user_id`). Client **không** `insert
 | **Supabase** (Zone B) | `payload` của profile/decisions (**văn bản thường**, không mã hóa đầu-cuối); `device_id`, nhãn thiết bị, user-agent | Chỉ khi bật đồng bộ | Công tắc đồng bộ (mặc định tắt) |
 | **Supabase Auth** | Email, phiên đăng nhập | Khi đăng nhập | — |
 | **Nhà cung cấp AI** (OpenRouter/Gemini/Groq/Ollama, tùy profile) | Gói số liệu Review tháng: số liệu đã tính, mục tiêu/deadline (tên, %, ngày còn lại), tối đa 10 mục hồ sơ và 8 quyết định đã duyệt, mỗi mục rút gọn ≤ 160 ký tự; tổng ≤ 8.000 ký tự (`LIM` trong `venus-review.js`) | Chỉ khi bạn bấm "Gửi cho AI" | Bạn **xem nguyên văn gói và nơi nhận** trước khi gửi; có thể bỏ phần bộ nhớ |
-| **Không đi đâu** | Notes Vault, API key, PIN hash, log ngủ/học thô, token | — | — |
+| **Nhà cung cấp AI chat** (tùy profile) | Notes Vault: chỉ phần dùng làm ngữ cảnh (đoạn trích khớp câu hỏi, note bạn chọn hoặc nhắc bằng `[[ ]]`), trừ note `noai` | Khi bạn hỏi AI về note | Phạm vi/ngữ cảnh bạn chọn; tag `noai` |
+| **Google Gemini Embedding API** | **Nội dung mọi note được index** (tiêu đề, tag, tên mục, văn bản của từng đoạn, trừ `noai`, đã xóa, template) và câu hỏi tìm kiếm (câu nối tiếp ngắn được ghép thêm câu trước). Xảy ra **kể cả khi chat bằng nhà khác hoặc Ollama**. Phạm vi/thư mục đang chọn không thu hẹp việc lập chỉ mục | Khi tìm trong vault ("Hỏi cả vault", hoặc tab AI có "Search the whole vault"/thư mục) và có profile Gemini có key: note mới/sửa và câu hỏi | Tag `noai`; không đặt key Gemini ở profile nào (khi đó chỉ dùng BM25 cục bộ). Free Tier: Google có thể dùng dữ liệu gửi đi để cải thiện sản phẩm. `denyTraining` không áp dụng |
+| **Không đi đâu** | API key (chỉ gửi tới đúng nhà cung cấp của nó), PIN hash, vector cache, log ngủ/học thô, token đăng nhập (trừ tới Supabase) | — | — |
 
 - Nội dung do AI trả về coi là dữ liệu không đáng tin: hiển thị bằng `textContent`; khi render Markdown thì qua DOMPurify chặn `img`, `svg`, `iframe`. Nội dung gửi cho AI được bọc trong `<context>` như dữ liệu, không phải chỉ thị.
 - **Lưu ý riêng tư:** nếu nhà cung cấp AI là dịch vụ ngoài, những gì có trong gói (kể cả đoạn trích hồ sơ) rời máy bạn. Dùng Ollama chạy trên máy nếu cần giữ hoàn toàn cục bộ.
