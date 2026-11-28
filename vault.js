@@ -3228,7 +3228,7 @@
             if (interactive !== false && target === el.read) {
                 const pb = document.createElement('button');
                 pb.type = 'button'; pb.className = 'nv-tbl-pencil'; pb.title = 'Edit this table in place'; pb.setAttribute('aria-label', 'Edit table');
-                pb.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
+                pb.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i> Edit table';
                 w.insertBefore(pb, tb);
             }
         });
@@ -16055,6 +16055,7 @@
         const cell = e.target.closest && e.target.closest('th,td');
         if (!cell || !tblSess) return;
         if (!(e.ctrlKey || e.metaKey)) e.stopPropagation();   // typing "/" or "?" in a cell must not trigger vault shortcuts
+        if (e.key === 'Escape') { e.preventDefault(); tblStop(); return; }   // Esc = save and leave table edit mode
         if (e.key !== 'Tab' && e.key !== 'Enter') return;
         e.preventDefault();
         if (e.key === 'Enter' && e.shiftKey) { document.execCommand('insertText', false, '<br>'); return; }
@@ -16460,6 +16461,7 @@
             if (cell && tblSess) tblSess.cur = { r: +cell.getAttribute('data-r'), c: +cell.getAttribute('data-c') };
         });
         el.read.addEventListener('keydown', tblKey);
+        document.addEventListener('mousedown', (e) => { if (tblSess && !tblSess.wrap.contains(e.target)) tblStop(); }, true);   // click outside = save and leave table edit mode
         el.read.addEventListener('input', (e) => {
             if (!tblSess || !(e.target.closest && e.target.closest('.nv-tbl-editing'))) return;
             clearTimeout(tblSess.t); const sess = tblSess;
