@@ -924,18 +924,18 @@
           fld(lockOn ? 'New PIN' : 'PIN', '<input type="password" id="vaiPin1" autocomplete="new-password" spellcheck="false" placeholder="At least 4 characters">')
           + fld('Confirm PIN', '<input type="password" id="vaiPin2" autocomplete="new-password" spellcheck="false">')
           + `<div class="vai-row" style="margin-bottom:14px"><button type="button" class="vai-btn vai-main" data-a="pinset">${lockOn ? 'Change PIN' : 'Set PIN'}</button>${lockOn ? `<button type="button" class="vai-btn" data-a="pinoff">${delArm === 'pin' ? 'Click again to remove' : 'Remove PIN'}</button>` : ''}</div>`)
-        + acc('vector', 'Chỉ mục tìm kiếm ngữ nghĩa',
-          `<div class="vai-f"><div class="vai-hint" style="margin-bottom:8px"><b>${semOn ? 'ĐANG BẬT' : 'ĐANG TẮT'}</b> — ${semOn ? 'nội dung note (trừ #noai) và câu hỏi tìm kiếm được gửi tới Google Gemini để tìm theo nghĩa.' : 'không có gì được gửi tới Google. Tìm toàn vault chỉ dùng từ khóa, hoàn toàn trên máy này.'}</div>`
-          + (semOn ? '<div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn vai-main" data-a="semoff">Tắt tìm kiếm ngữ nghĩa</button></div>'
-            : semAsk ? '<div class="vai-hint" style="margin-bottom:8px">Nếu bật: nội dung <b>mọi note không gắn #noai</b> (tiêu đề, tag, từng đoạn văn) và <b>mỗi câu hỏi bạn gõ</b> sẽ được gửi tới Google Gemini, kể cả khi bạn chat bằng AI khác. Google có thể giữ hoặc dùng dữ liệu này (Free Tier). Bạn có thể tắt lại bất cứ lúc nào.</div><div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn vai-main" data-a="semon">Tôi hiểu, bật</button><button type="button" class="vai-btn" data-a="semcancel">Giữ tắt</button></div>'
-            : '<div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn" data-a="semask">Bật tìm kiếm ngữ nghĩa…</button></div>')
-          + `<div id="vaiVec" role="status">Đang đọc chỉ mục…</div><div class="vai-row" style="margin-top:8px"><button type="button" class="vai-btn" data-a="vecclear">${delArm === 'vec' ? 'Bấm lần nữa để xóa' : 'Xóa chỉ mục ngữ nghĩa'}</button></div>`
-          + '<div class="vai-hint">Gemini AI Studio Free Tier miễn phí nhưng Google có thể dùng dữ liệu gửi đi để cải thiện sản phẩm; note gắn #noai không bao giờ được gửi.</div></div>');
+        + acc('vector', 'Semantic search index',
+          `<div class="vai-f"><div class="vai-hint" style="margin-bottom:8px"><b>${semOn ? 'ON' : 'OFF'}</b> — ${semOn ? 'note content (except #noai notes) and your search questions are sent to Google Gemini to search by meaning.' : 'nothing is sent to Google. Whole-vault search uses keywords only, entirely on this device.'}</div>`
+          + (semOn ? '<div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn vai-main" data-a="semoff">Turn off semantic search</button></div>'
+            : semAsk ? '<div class="vai-hint" style="margin-bottom:8px">If you turn this on, the content of <b>every note not tagged #noai</b> (title, tags and each paragraph) and <b>every question you type</b> will be sent to Google Gemini, even when you chat with a different AI. Google may keep or use this data (Free Tier). You can turn it off again at any time.</div><div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn vai-main" data-a="semon">I understand, turn on</button><button type="button" class="vai-btn" data-a="semcancel">Keep off</button></div>'
+            : '<div class="vai-row" style="margin-bottom:12px"><button type="button" class="vai-btn" data-a="semask">Turn on semantic search…</button></div>')
+          + `<div id="vaiVec" role="status">Reading the index…</div><div class="vai-row" style="margin-top:8px"><button type="button" class="vai-btn" data-a="vecclear">${delArm === 'vec' ? 'Click again to delete' : 'Delete semantic index'}</button></div>`
+          + '<div class="vai-hint">Gemini AI Studio Free Tier is free, but Google may use the data you send to improve its products. Notes tagged #noai are never sent.</div></div>');
       main.scrollTop = top; updateUse(); updateVec();
       const ki = q('[data-keymode="entry"]'); if (ki && pendingKey[p.id]) ki.value = pendingKey[p.id];
     }
     async function updateVec() {
-      let t; try { t = 'Đã lập chỉ mục ' + (await vecKeys()).length + ' note trên thiết bị này.'; } catch (e) { t = 'Không đọc được chỉ mục.'; }
+      let t; try { t = (n => 'Indexed ' + n + (n === 1 ? ' note' : ' notes') + ' on this device.')((await vecKeys()).length); } catch (e) { t = 'Could not read the index.'; }
       const el = q('#vaiVec'); if (el && !closed) el.textContent = t;
     }
     function updateUse() {
@@ -1022,15 +1022,15 @@
       else if (a === 'semask') { semAsk = true; renderForm(); }
       else if (a === 'semcancel') { semAsk = false; renderForm(); }
       else if (a === 'semon') {
-        try { await setSemanticEnabled(true); semOn = true; semAsk = false; renderForm(); msg('Đã bật tìm kiếm ngữ nghĩa.', 'vai-ok'); } catch (err) { semAsk = false; renderForm(); msg('Không lưu được lựa chọn, vẫn đang TẮT.', 'vai-bad'); }
+        try { await setSemanticEnabled(true); semOn = true; semAsk = false; renderForm(); msg('Semantic search turned on.', 'vai-ok'); } catch (err) { semAsk = false; renderForm(); msg('Could not save your choice; it is still OFF.', 'vai-bad'); }
       }
       else if (a === 'semoff') {
-        try { await setSemanticEnabled(false); semOn = false; semAsk = false; renderForm(); msg('Đã tắt. Không còn gửi gì tới Google.', 'vai-ok'); } catch (err) { semOn = false; renderForm(); msg('Không lưu được, nhưng tìm kiếm ngữ nghĩa đã bị chặn trong phiên này.', 'vai-bad'); }
+        try { await setSemanticEnabled(false); semOn = false; semAsk = false; renderForm(); msg('Turned off. Nothing is sent to Google any more.', 'vai-ok'); } catch (err) { semOn = false; renderForm(); msg('Could not save, but semantic search is blocked for this session.', 'vai-bad'); }
       }
       else if (a === 'vecclear') {
         if (delArm !== 'vec') { delArm = 'vec'; clearTimeout(delT); delT = setTimeout(() => { delArm = ''; if (!closed && draft) renderForm(); }, 4000); renderForm(); return; }
         delArm = '';
-        try { await vecClear(); renderForm(); msg('Đã xóa chỉ mục ngữ nghĩa.', 'vai-ok'); } catch (err) { renderForm(); msg('Không xóa được chỉ mục.', 'vai-bad'); }
+        try { await vecClear(); renderForm(); msg('Semantic index deleted.', 'vai-ok'); } catch (err) { renderForm(); msg('Could not delete the index.', 'vai-bad'); }
       }
       else if (a === 'save') {
         busy = true; renderFoot(); const ok = await commit(); busy = false; renderFoot();

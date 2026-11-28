@@ -17048,7 +17048,7 @@
                     batch.push(j); send.push(textFor(j, n, hidden));
                 });
                 if (!batch.length) continue;
-                if (onProgress) onProgress('Đang lập chỉ mục ngữ nghĩa ' + done + '/' + state.total + ' note…');
+                if (onProgress) onProgress('Building semantic index ' + done + '/' + state.total + ' notes…');
                 const vecs = await ai.embedTexts(send, { taskType: 'RETRIEVAL_DOCUMENT', signal });
                 const byNote = new Map();
                 batch.forEach((j, k) => { if (!byNote.has(j.id)) byNote.set(j.id, []); byNote.get(j.id).push({ j, vec: vecs[k] }); });
@@ -17077,7 +17077,7 @@
             run.then(res, rej).finally(() => signal.removeEventListener('abort', stop));
         });
     }
-    const vqWhy = (e) => ({ rate: 'Gemini đang hết hạn mức, thử lại sau', auth: 'key Gemini bị từ chối', network: 'không kết nối được Gemini', timeout: 'Gemini phản hồi quá chậm', server: 'Gemini đang lỗi' }[e && e.code] || 'tìm theo ngữ nghĩa đang lỗi');
+    const vqWhy = (e) => ({ rate: 'Gemini rate limit reached, try again later', auth: 'Gemini key was rejected', network: 'could not reach Gemini', timeout: 'Gemini took too long to respond', server: 'Gemini server error' }[e && e.code] || 'semantic search failed');
     /* Everything slow and networked for one question. → { qvec, partial } for hybrid ranking, or { reason } = keywords only.
        Never throws, except when the person pressed Stop. */
     async function vqSemantic(query, opts) {
@@ -17086,23 +17086,23 @@
         const live = () => S.notes.filter(vqEligible);
         try {
             try { await vqPruneVectors(S.notes); } catch (e) { console.warn('Notes Vault: could not tidy the semantic index', e); }
-            // Consent first: until the person turns semantic search on (⚙ → Chỉ mục tìm kiếm ngữ nghĩa), nothing is sent anywhere.
-            if (typeof ai.semanticEnabled !== 'function' || !(await ai.semanticEnabled())) return { reason: 'tìm theo ngữ nghĩa đang tắt, chỉ dùng từ khóa trên máy này' };
-            if (!(await ai.hasEmbeddingKey())) return { reason: 'thêm profile Gemini trong ⚙ để tìm theo ngữ nghĩa' };
-            if (navigator.onLine === false) return { reason: 'đang ngoại tuyến' };
+            // Consent first: until the person turns semantic search on (⚙ → Semantic search index), nothing is sent anywhere.
+            if (typeof ai.semanticEnabled !== 'function' || !(await ai.semanticEnabled())) return { reason: 'semantic search is off; keywords only, on this device' };
+            if (!(await ai.hasEmbeddingKey())) return { reason: 'add a Gemini profile in ⚙ to search by meaning' };
+            if (navigator.onLine === false) return { reason: 'offline' };
             let state = null, syncErr = null;
             try { state = await vqSyncVectors(live(), onProgress, signal); }
             catch (e) { if (e && e.name === 'AbortError') throw e; syncErr = e; console.warn('Notes Vault: semantic indexing stopped', (e && (e.code || e.message)) || e); }
-            if (!VQV.map.size) return { reason: syncErr ? vqWhy(syncErr) : 'chưa có chỉ mục ngữ nghĩa' };
+            if (!VQV.map.size) return { reason: syncErr ? vqWhy(syncErr) : 'no semantic index yet' };
             // [[links]] in the question: drop the ones naming a noai note, keep the words of the rest
             const hidden = vqHiddenTitles();
             const q = vqRedact(query, hidden).replace(/\[private link\]/g, ' ').replace(/\[\[|\]\]/g, ' ').replace(/\s+/g, ' ').trim();
             if (!q) return { reason: '' };
-            if (onProgress) onProgress('Đang tìm theo ngữ nghĩa…');
+            if (onProgress) onProgress('Searching by meaning…');
             const vecs = await ai.embedTexts([{ text: q.slice(-ai.embedInfo.textChars) }], { taskType: 'RETRIEVAL_QUERY', signal });
             let partial = '';
-            if (syncErr) { const st = vqIndexState(live()); if (st.todo.length) partial = 'mới lập chỉ mục ' + st.done + '/' + st.total + ' note: ' + vqWhy(syncErr); }
-            else if (state && state.done < state.total) partial = 'mới lập chỉ mục ' + state.done + '/' + state.total + ' note';
+            if (syncErr) { const st = vqIndexState(live()); if (st.todo.length) partial = 'only indexed ' + st.done + '/' + st.total + ' notes: ' + vqWhy(syncErr); }
+            else if (state && state.done < state.total) partial = 'only indexed ' + state.done + '/' + state.total + ' notes';
             return { qvec: vecs[0], partial };
         } catch (e) {
             if ((e && e.name === 'AbortError') || (signal && signal.aborted)) throw vqAbort();
@@ -17157,10 +17157,10 @@
         const kw = vqRank(query, ok), terms = kw.terms, hybrid = !!sem.qvec;
         // keyword-only: same list as before. Hybrid: weak keyword hits are dropped BEFORE merging (merged scores have another scale).
         const ranked = hybrid ? vqFuse(kw.ranked.filter((r) => r.s >= kw.ranked[0].s * 0.2), vqVecRank(sem.qvec, ok)) : kw.ranked;
-        const mode = hybrid ? 'Hybrid' : 'Từ khóa';
+        const mode = hybrid ? 'Hybrid' : 'Keywords';
         const modeNote = hybrid ? sem.partial : sem.reason;
         const tail = modeNote ? ' (' + modeNote + ')' : '';
-        if (!ranked.length) return withPin({ text: pin.text ? '' : '(No passages in the vault match this question.)', label: mode + ' · 0 đoạn khớp (trên ' + inScope + ' note)' + tail, details: [], mode: hybrid ? 'hybrid' : 'bm25' });
+        if (!ranked.length) return withPin({ text: pin.text ? '' : '(No passages in the vault match this question.)', label: mode + ' · 0 passages matched (of ' + inScope + ' notes)' + tail, details: [], mode: hybrid ? 'hybrid' : 'bm25' });
         const budget = Math.max(3000, (+cfg.maxChars || 30000) - 1500 - pin.text.length), per = new Map(), pick = []; let used = 0;
         for (const r of ranked) {
             if (pick.length >= K) break;
@@ -17183,8 +17183,8 @@
         const best = new Map(); pick.forEach((r) => { if (r.sim > (best.get(r.c.note.id) || 0)) best.set(r.c.note.id, r.sim); });
         return withPin({
             text, mode: hybrid ? 'hybrid' : 'bm25',
-            label: mode + ' · ' + order.length + ' note · ' + pick.length + ' đoạn (trên ' + inScope + ' note)' + tail,
-            details: order.map((n) => gaTitleOf(n) + ' — ' + by.get(n.id).length + ' passages' + (best.has(n.id) ? ' · độ gần nghĩa ' + best.get(n.id).toFixed(2) : ''))
+            label: mode + ' · ' + order.length + ' notes · ' + pick.length + ' passages (of ' + inScope + ' notes)' + tail,
+            details: order.map((n) => gaTitleOf(n) + ' — ' + by.get(n.id).length + ' passages' + (best.has(n.id) ? ' · semantic similarity ' + best.get(n.id).toFixed(2) : ''))
         });
     }
     function vaultLinkify(root, api) {
