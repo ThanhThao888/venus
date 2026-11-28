@@ -269,7 +269,11 @@
       const a = list[i], st = { got: false };
       try {
         const full = await callModel(a.p, a.model, opts, st);
-        if (opts.onModel) opts.onModel(a.name, tried);
+        if (opts.onModel) {
+          const mt = st.meta || {}, hh = hostOf(a.p.baseUrl);
+          opts.onModel(a.name, tried, { profile: a.p.name, host: hh, requested: a.model, served: mt.model, upstream: mt.provider, genId: mt.id,
+            local: /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:|$)/i.test(hh), training: a.p.requestFormat === 'openrouter' ? (a.p.denyTraining ? 'denied' : 'allowed') : 'unknown' });
+        }
         return full;
       } catch (e) {
         tried.push({ model: a.name, reason: (e && e.message) || 'error', code: (e && e.code) || '' });
@@ -327,7 +331,7 @@
       }
       let full = '';
       if (!res.body || !res.body.getReader) {
-        const j = await res.json();
+        const j = await res.json(); grabMeta(st, j);
         full = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
         if (full && opts.onDelta) opts.onDelta(full, full);
       } else {
@@ -347,6 +351,7 @@
             if (data === '[DONE]') continue;
             let j; try { j = JSON.parse(data); } catch (e) { continue; }
             if (j.error) throw aiErr('The provider reported an error midway.', j.error.message || JSON.stringify(j.error), 'stream');
+            grabMeta(st, j);
             const d = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
             if (d) { full += d; st.got = true; if (opts.onDelta) opts.onDelta(d, full); }
           }
@@ -355,6 +360,73 @@
       if (!full.trim()) throw aiErr('The model returned empty content (free models often do this). Try again or change the model.', '', 'empty');
       return full;
     } finally { clearTimeout(idle); }
+  }
+
+  /* ───────── answer receipt: where did this answer come from? ─────────
+     Built by the app from the request it actually made and from fields the provider returned (model, upstream provider, request id).
+     It never uses what the model says about itself: models often misname themselves. Kept on this device with the chat;
+     "Save as new note" copies a one-line source into the note. It never contains an API key. */
+  const RC_MAX_NOTES = 40;
+  const rcStr = (v, n) => (v == null ? '' : String(v)).replace(/[\r\n\t]+/g, ' ').trim().slice(0, n || 120);
+  function grabMeta(st, j) {   // first chunk (or the whole reply) of a response: keep what the provider reports about itself
+    if (!st || !j || typeof j !== 'object') return;
+    const m = st.meta || (st.meta = {});
+    if (!m.model && typeof j.model === 'string') m.model = rcStr(j.model, 120);
+    if (!m.provider) { const pv = j.provider, s = typeof pv === 'string' ? pv : (pv && typeof pv === 'object' ? (pv.name || pv.provider_name) : ''); if (s) m.provider = rcStr(s, 80); }
+    if (!m.id && typeof j.id === 'string') m.id = rcStr(j.id, 100);
+  }
+  function mkReceipt(meta, trail, sent) {   // also used to clean a receipt read back from storage
+    meta = meta && typeof meta === 'object' ? meta : {};
+    const tr = Array.isArray(trail) ? trail : [];
+    const sn = sent && typeof sent === 'object' ? sent : null;
+    return {
+      v: 1, at: +meta.at > 0 ? +meta.at : Date.now(),
+      profile: rcStr(meta.profile, 80), host: rcStr(meta.host, 80), requested: rcStr(meta.requested, 120),
+      served: rcStr(meta.served, 120), upstream: rcStr(meta.upstream, 80), genId: rcStr(meta.genId, 100),
+      local: !!meta.local, training: meta.training === 'denied' || meta.training === 'allowed' ? meta.training : 'unknown',
+      fallback: tr.length > 0,
+      tried: tr.slice(0, 8).map((t) => ({ model: rcStr(t && t.model, 120), reason: rcStr(t && t.reason, 160) })),
+      sent: sn ? { label: rcStr(sn.label, 160), chars: +sn.chars > 0 ? Math.round(+sn.chars) : 0, notes: (Array.isArray(sn.notes) ? sn.notes : []).slice(0, RC_MAX_NOTES).map((d) => rcStr(d, 160)) } : null
+    };
+  }
+  const rcClass = (rc) => (rc.fallback ? 'fb' : rc.local ? 'local' : 'cloud');
+  function rcptEl(rc) {   // small chip under the answer; click to open the full receipt
+    if (!rc || typeof rc !== 'object') return null;
+    rc = mkReceipt(rc, rc.tried, rc.sent);
+    const cls = rcClass(rc), model = rc.served || rc.requested || 'unknown model';
+    const kind = cls === 'local' ? 'on this device' : cls === 'fb' ? 'fallback model' : 'cloud';
+    const train = rc.local ? 'No: it stayed on this device.'
+      : rc.training === 'denied' ? 'The request told the provider not to keep or train on it (data_collection: deny). The provider’s own terms still apply.'
+      : rc.training === 'allowed' ? 'Allowed by this request (data_collection: allow). Check the provider’s terms.'
+      : 'Unknown. Check the provider’s terms.';
+    const row = (k, v) => '<dt>' + esc(k) + '</dt><dd>' + v + '</dd>';
+    let h = row('Profile', esc(rc.profile || '—')) + row('Sent to', esc(rc.host || '—') + (rc.local ? ' (this device)' : ''))
+      + row('Model requested', esc(rc.requested || '—')) + row('Model reported', esc(rc.served || 'not reported'))
+      + row('Upstream provider', esc(rc.upstream || 'not reported'));
+    if (rc.genId) h += row('Request id', esc(rc.genId));
+    h += row('Fallback used', rc.fallback ? 'Yes. Earlier attempts failed: ' + rc.tried.map((t) => esc(t.model) + ' (' + esc(t.reason) + ')').join(' · ') : 'No');
+    h += row('May keep / train', esc(train));
+    if (rc.sent) h += row('Data sent', esc(rc.sent.label || '—') + (rc.sent.chars ? ' · ' + rc.sent.chars.toLocaleString() + ' characters' : '') + (rc.sent.notes.length ? '<ul>' + rc.sent.notes.map((d) => '<li>' + esc(d) + '</li>').join('') + '</ul>' : ''));
+    h += row('Time', esc(new Date(rc.at).toLocaleString()));
+    const el = document.createElement('details'); el.className = 'vai-rcpt vai-rc-' + cls;
+    el.innerHTML = '<summary><span class="vai-rcdot"></span><b>' + esc(model) + '</b><span> · ' + esc(rc.profile || rc.host) + ' · ' + kind + '</span></summary><dl class="vai-rcbody">' + h + '</dl>';
+    return el;
+  }
+  function receiptLine(rc) {   // one line of Markdown for the top of a saved note
+    if (!rc || typeof rc !== 'object') return 'Source: not recorded (the answer was stopped early, or it came from an older chat).';
+    rc = mkReceipt(rc, rc.tried, rc.sent);
+    const d = new Date(rc.at), p2 = (n) => String(n).padStart(2, '0');
+    const model = (rc.served || rc.requested || 'unknown model').replace(/`/g, '');
+    return 'Source: ' + (rc.profile ? rc.profile + ' · ' : '') + '`' + model + '` via ' + (rc.local ? 'this device (' + rc.host + ')' : rc.host || 'unknown host')
+      + (rc.upstream ? ' → ' + rc.upstream : '') + (rc.fallback ? ' · fallback model used' : '')
+      + ' · ' + d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  }
+  function receiptTag(rc) {   // e.g. "ai-via-openrouter", so AI-written notes can be filtered by where they came from
+    if (!rc || typeof rc !== 'object') return '';
+    const h = String(rc.host || '').toLowerCase();
+    const s = rc.local ? 'local' : /googleapis/.test(h) ? 'gemini' : h.replace(/^api\./, '').split(/[.:]/)[0];
+    const slug = s.replace(/[^a-z0-9-]/g, '');
+    return slug ? 'ai-via-' + slug : '';
   }
 
   /* `url` may be the full chat URL or just the base; the models endpoint is derived from it */
@@ -583,6 +655,14 @@
       '.vai-md strong{font-weight:700}',
       '.vai-use,.vai-fbinfo{font-size:.78rem}',
       '.vai-fbinfo{padding:6px 10px;border-radius:10px;background:var(--bg-light,#faf3f6)}',
+      '.vai-rcpt{margin-top:6px;font-size:.78rem;border:1px solid var(--border-color,#f0d7de);border-radius:10px;background:var(--bg-light,#faf3f6);--rc:#c0762f}',
+      '.vai-rcpt.vai-rc-local{--rc:#3f8f5f}.vai-rcpt.vai-rc-fb{--rc:#b94a5a}',
+      '.vai-rcpt>summary{cursor:pointer;list-style:none;padding:5px 10px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;color:var(--text-muted,#9a7686)}',
+      '.vai-rcpt>summary::-webkit-details-marker{display:none}',
+      '.vai-rcdot{width:8px;height:8px;border-radius:50%;background:var(--rc);flex:none}',
+      '.vai-rcpt>summary b{font-weight:700;color:var(--text-main,inherit);word-break:break-all}',
+      '.vai-rcbody{margin:0;padding:2px 10px 8px;display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;word-break:break-word}',
+      '.vai-rcbody dt{color:var(--text-muted,#9a7686)}.vai-rcbody dd{margin:0}.vai-rcbody ul{margin:2px 0 0;padding-left:16px}',
       '.vai-err{padding:10px 12px;border-radius:12px;background:rgba(185,74,90,.09);border:1px solid rgba(185,74,90,.28)}',
       '.vai-foot{border-top:1px solid var(--border-color,#f0d7de);padding:10px 14px 14px}',
       '.vai-acts{margin-bottom:10px}',
@@ -1304,8 +1384,8 @@
       let raw = '', timer = 0; abort = new AbortController(); setBusy(true); lastPrompt = prompt;
       const paint = () => { timer = 0; renderInto(ans, raw); scroll(); };
       const after = () => { if (o.onRender) { try { o.onRender(ans, api); } catch (e) { console.warn('[VenusAI] onRender', e); } } };
-      let used = '', trail = [];
-      const keep = () => { turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt, shown: shown && String(shown) !== prompt ? String(shown) : '', a: raw, at: Date.now(), men: { names: men.names, blocked: men.blocked }, used, trail }); last = raw; needCtx = false; addCopyBar(turn, ans, raw); persist(); };
+      let used = '', trail = [], receipt = null, sentInfo = null;
+      const keep = () => { turns.push({ msgs: (store || pending).concat([{ role: 'assistant', content: raw }]), el: turn, q: prompt, shown: shown && String(shown) !== prompt ? String(shown) : '', a: raw, at: Date.now(), men: { names: men.names, blocked: men.blocked }, used, trail, rcpt: receipt }); last = raw; needCtx = false; addCopyBar(turn, ans, raw); persist(); };
       try {
         if (retr) {
           // "Ask the whole vault": the context is searched fresh for every question; history keeps only the questions and answers.
@@ -1317,6 +1397,7 @@
           let text = String((r && r.text) || '');
           if (text.length > c.maxChars) text = text.slice(0, c.maxChars) + '\n…[trimmed: character limit exceeded]';
           showMeta(r, text.length, c);
+          sentInfo = { label: r && r.label, chars: text.length, notes: r && r.details };
           store = [{ role: 'user', content: prompt }];
           pending = [{ role: 'user', content: (text ? '<context>\n' + text + '\n</context>\n\n' : '') + prompt }];
           msgs = [{ role: 'system', content: sysText(c) }].concat(...turns.map((t) => t.msgs), pending);
@@ -1324,9 +1405,10 @@
         await ensureMd();
         raw = await chat({ messages: msgs, signal: abort.signal, onDelta: (d, all) => { raw = all; if (!timer) timer = setTimeout(paint, 70); },
           onFallback: (f) => { const dd = ans.querySelector('.vai-dots'); if (dd) dd.textContent = f.from + ' failed — trying ' + f.to + '…'; },
-          onModel: (m, t) => { used = m; trail = t; } });
+          onModel: (m, t, meta) => { used = m; trail = t; receipt = mkReceipt(meta, t, sentInfo || { label: ctx.label, chars: ctx.text ? ctx.text.length : 0, notes: (ctx.details || []).concat(men.names.map((n) => 'Mentioned with [[ ]]: ' + n)) }); } });
         clearTimeout(timer); renderInto(ans, raw); after();
         { const fb = fbEl(used, trail); if (fb) turn.appendChild(fb); }
+        { const rc = rcptEl(receipt); if (rc) turn.appendChild(rc); }
         keep();
       } catch (e) {
         clearTimeout(timer);
@@ -1357,6 +1439,7 @@
         const r = { q: t.q, a: t.a, at: t.at };
         if (t.shown) r.shown = t.shown;
         if (t.men && ((t.men.names && t.men.names.length) || (t.men.blocked && t.men.blocked.length))) r.men = { names: t.men.names.slice(), blocked: t.men.blocked.slice() };
+        if (t.rcpt) r.rcpt = t.rcpt;
         if (t.trail && t.trail.length) { r.used = t.used; r.trail = t.trail.map((x) => ({ model: String(x.model), reason: String(x.reason) })); }
         return r;
       });
@@ -1378,8 +1461,9 @@
         logEl.appendChild(turn);
         if (o.onRender) { try { o.onRender(ans, api); } catch (e) { console.warn('[VenusAI] onRender', e); } }
         const trail = Array.isArray(t.trail) ? t.trail : [], fb = fbEl(t.used, trail); if (fb) turn.appendChild(fb);
+        const rcR = t.rcpt && typeof t.rcpt === 'object' ? mkReceipt(t.rcpt, t.rcpt.tried, t.rcpt.sent) : null; { const rc = rcptEl(rcR); if (rc) turn.appendChild(rc); }
         addCopyBar(turn, ans, t.a);
-        turns.push({ msgs: [{ role: 'user', content: t.q }, { role: 'assistant', content: t.a }], el: turn, q: t.q, shown: t.shown || '', a: t.a, at: t.at || 0, men, used: t.used || '', trail });
+        turns.push({ msgs: [{ role: 'user', content: t.q }, { role: 'assistant', content: t.a }], el: turn, q: t.q, shown: t.shown || '', a: t.a, at: t.at || 0, men, used: t.used || '', trail, rcpt: rcR });
       });
       chatId = rec.id; chatCreated = rec.createdAt || Date.now(); needCtx = true;
       const lt = turns[turns.length - 1]; last = lt ? lt.a : ''; lastPrompt = lt ? lt.q : '';
@@ -1486,7 +1570,7 @@
           last = turns.length ? turns[turns.length - 1].msgs.slice(-1)[0].content : '';
           ask(lastPrompt);
         }
-        else if (k[0] === 'x') { const a = o.actions[+k.slice(1)]; if (a && a.run) { try { await a.run(last, api, lastPrompt); } catch (err) { console.error(err); } } }
+        else if (k[0] === 'x') { const a = o.actions[+k.slice(1)]; if (a && a.run) { try { await a.run(last, api, lastPrompt, (turns.length && turns[turns.length - 1].rcpt) || null); } catch (err) { console.error(err); } } }
         return;
       }
       const b = e.target.closest('[data-a]'); if (!b) return;
@@ -1502,5 +1586,5 @@
     return api;
   }
 
-  window.VenusAI = { version: 4, hasEmbeddingKey, semanticEnabled, setSemanticEnabled, embedTexts, embedInfo: Object.freeze({ model: EMB.model, dim: EMB.dim, version: EMB.version, batchItems: EMB.batchItems, batchChars: EMB.batchChars, textChars: EMB.textChars }), vecGetMeta, vecSetMeta, vecKeys, vecGetNote, vecGetAllNotes, vecPutNote, vecDelNote, vecClear, vecEpoch: () => vecEp, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, getProfiles, setActiveProfile: (id) => saveSettings({ activeProfileId: id }), resolveChatUrl, resolveModelsUrl, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
+  window.VenusAI = { version: 4, receiptLine, receiptTag, hasEmbeddingKey, semanticEnabled, setSemanticEnabled, embedTexts, embedInfo: Object.freeze({ model: EMB.model, dim: EMB.dim, version: EMB.version, batchItems: EMB.batchItems, batchChars: EMB.batchChars, textChars: EMB.textChars }), vecGetMeta, vecSetMeta, vecKeys, vecGetNote, vecGetAllNotes, vecPutNote, vecDelNote, vecClear, vecEpoch: () => vecEp, getUsage: usageGet, resetUsage: usageReset, getSettings, saveSettings, getProfiles, setActiveProfile: (id) => saveSettings({ activeProfileId: id }), resolveChatUrl, resolveModelsUrl, openSettings, openPanel, chat, renderInto, ensureMd, isConfigured: async () => { const c = await getSettings(); return !!c.model && (!needsKey(c) || !!c.apiKey); } };
 })();

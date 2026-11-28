@@ -16827,13 +16827,15 @@
         { label: 'Links & contradictions', multi: true, prompt: 'Find connections, recurring patterns and contradictions between the notes. Say which note states what, and which idea supports or contradicts which.' },
         { label: 'Next steps', prompt: 'Pull out the to-dos, open questions and what to study next from the notes, ordered by priority, with a brief reason for each.' }
     ];
-    async function aiSaveAsNote(root, text, api) {
-        const now = Date.now(), t = gaTitleOf(root), day = toLocalDateStr(new Date(now));
+    // Where did this AI answer come from? One Markdown line + a tag ("ai-via-openrouter"), built by ai.js from the answer's receipt.
+    const aiSource = (rc) => { try { const ai = window.VenusAI; if (ai && typeof ai.receiptLine === 'function') return { line: ai.receiptLine(rc), tag: ai.receiptTag(rc) }; } catch (e) { /* ignore */ } return { line: '', tag: '' }; };
+    async function aiSaveAsNote(root, text, api, rc) {
+        const now = Date.now(), t = gaTitleOf(root), day = toLocalDateStr(new Date(now)), src = aiSource(rc);
         const ref = /^[^\[\]|#^]+$/.test(t) ? '[[' + t + ']]' : '“' + t + '”';
         const note = normalizeNote({
             id: uid(), title: 'AI · ' + t + ' · ' + day,
-            markdown: '> AI analysis of ' + ref + ' on ' + day + ' — verify important facts before relying on them.\n\n' + String(text).trim() + '\n',
-            type: root.type, tags: ['ai-analysis'], pinned: false, createdAt: now, updatedAt: now
+            markdown: '> AI analysis of ' + ref + ' on ' + day + ' — verify important facts before relying on them.' + (src.line ? '\n>\n> ' + src.line : '') + '\n\n' + String(text).trim() + '\n',
+            type: root.type, tags: ['ai-analysis'].concat(src.tag ? [src.tag] : []), pinned: false, createdAt: now, updatedAt: now
         });
         try { await dbPut(note); } catch (e) { console.error('Notes Vault: could not save AI note', e); toast('Couldn’t save the note.'); return; }
         S.notes.push(note); renderAll();
@@ -16859,7 +16861,7 @@
                 const text = gaPackText(items, { meta: true });
                 return { text, label: selPlural(items.length) + ' · ' + gaWords(text).toLocaleString() + ' words', details: items.map((i) => gaTitleOf(i.note) + (i.role === 'main' ? '' : ' (' + i.role + ')')) };
             },
-            actions: [{ label: 'Save as new note', run: (text, api) => aiSaveAsNote(live(), text, api) }]
+            actions: [{ label: 'Save as new note', run: (text, api, q, rc) => aiSaveAsNote(live(), text, api, rc) }]
         });
     }
     async function openAiForSelection() {
@@ -16874,7 +16876,7 @@
             placeholder: 'Ask a follow-up about these notes… (type [[ to mention another note)',
             presets: AI_NOTE_PRESETS.filter((p) => !p.multi || notes.length > 1),
             build: async () => ({ text, label: selPlural(notes.length) + ' · ' + gaWords(text).toLocaleString() + ' words', details: notes.map(gaTitleOf) }),
-            actions: [{ label: 'Save as new note', run: (t, api) => aiSaveAsNote(notes[0], t, api) }]
+            actions: [{ label: 'Save as new note', run: (t, api, q, rc) => aiSaveAsNote(notes[0], t, api, rc) }]
         });
     }
 
@@ -17261,12 +17263,12 @@
     };
 
     const AI_VAULT_SYSTEM = 'You answer the user’s question based on their personal notes. <context> holds excerpts retrieved for this question, NOT the whole vault. Rules: (1) rely only on the excerpts and on any <context_pack> (notes the user mentioned with [[ ]], given in full); (2) after each idea, give the name of the note it came from as [[Note name]], copying the title attribute exactly; (3) if the excerpts aren’t enough to answer, say “the passages found don’t mention this” and suggest other keywords to ask again — don’t make things up and don’t conclude the vault lacks it, because only some passages are found each time; (4) if two notes contradict each other, say which note says what; (5) outside knowledge may only supplement and must be labelled “outside the notes”; (6) <other_matching_notes> is only a list of titles — you haven’t read their contents, so remind the user to ask about them separately if needed.';
-    async function aiSaveVaultAnswer(text, question) {
-        const now = Date.now(), day = toLocalDateStr(new Date(now)), q = String(question || '').replace(/\s+/g, ' ').trim();
+    async function aiSaveVaultAnswer(text, question, rc) {
+        const now = Date.now(), day = toLocalDateStr(new Date(now)), src = aiSource(rc), q = String(question || '').replace(/\s+/g, ' ').trim();
         const note = normalizeNote({
             id: uid(), title: 'AI · Ask vault · ' + (q.length > 50 ? q.slice(0, 49) + '…' : q || day),
-            markdown: '> AI answer drawn from my notes on ' + day + (q ? ' — question: ' + q : '') + '. Double-check important information before relying on it.\n\n' + String(text).trim() + '\n',
-            type: 'General', tags: ['ai-analysis'], pinned: false, createdAt: now, updatedAt: now
+            markdown: '> AI answer drawn from my notes on ' + day + (q ? ' — question: ' + q : '') + '. Double-check important information before relying on it.' + (src.line ? '\n>\n> ' + src.line : '') + '\n\n' + String(text).trim() + '\n',
+            type: 'General', tags: ['ai-analysis'].concat(src.tag ? [src.tag] : []), pinned: false, createdAt: now, updatedAt: now
         });
         try { await dbPut(note); } catch (e) { console.error('Notes Vault: could not save AI note', e); toast('Couldn’t save the note.'); return; }
         S.notes.push(note); renderAll();
@@ -17291,7 +17293,7 @@
                 { id: 'ai', label: 'Include saved AI notes', checked: false }
             ],
             retrieve: vaultRetrieve, onRender: vaultLinkify,
-            actions: [{ label: 'Save as new note', run: (t, api, q) => aiSaveVaultAnswer(t, q) }]
+            actions: [{ label: 'Save as new note', run: (t, api, q, rc) => aiSaveVaultAnswer(t, q, rc) }]
         });
     }
 
@@ -17349,7 +17351,7 @@
             mentions: aiMentions,
             hint: 'The context above is what the AI may read. “Open note” follows whichever note you open. Press “+ Add context” to add sub-notes, linked notes, a folder, or a search across the whole vault. Type [[ in the message box to attach a note by name. Notes tagged noai are never sent.',
             presets: AI_TAB_PRESETS, retrieve: aiTabRetrieve, idleText: 'only sends what’s in the context above to', onRender: vaultLinkify,
-            actions: [{ label: 'Save as new note', run: (t, api, q) => aiSaveVaultAnswer(t, q) }]
+            actions: [{ label: 'Save as new note', run: (t, api, q, rc) => aiSaveVaultAnswer(t, q, rc) }]
         });
         aiTabSync();
     }
